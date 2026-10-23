@@ -89,7 +89,7 @@ def readiness() -> dict[str, str]:
 @app.get("/api/products")
 def list_products(
     search: str = Query(default="", max_length=120),
-    pincode: str = Query(default="", pattern=r"^$|^\\d{6}$"),
+    pincode: str = Query(default="", pattern=r"^$|^\d{6}$"),
     category: str = Query(default="", max_length=80),
     limit: int = Query(default=24, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
@@ -153,7 +153,7 @@ def list_products(
 
 
 @app.get("/api/serviceability")
-def check_serviceability(pincode: str = Query(..., pattern=r"^\\d{6}$")) -> dict[str, Any]:
+def check_serviceability(pincode: str = Query(..., pattern=r"^\d{6}$")) -> dict[str, Any]:
     """Check active warehouse coverage and inventory; never infer from PIN format alone."""
     db = get_pool()
     try:
