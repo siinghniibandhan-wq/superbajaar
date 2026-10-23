@@ -1,0 +1,1 @@
+source_system,source_record_id,purchase_order_number,supplier_code,order_date,expected_date,status,currency,subtotal,tax_total,grand_total,warehouse_code,notes
