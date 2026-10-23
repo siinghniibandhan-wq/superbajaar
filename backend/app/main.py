@@ -59,8 +59,8 @@ def _admin_token(username: str, expires: int) -> str:
 
 
 def require_admin(authorization: str | None) -> str:
-    if not ADMIN_TOKEN_SECRET or not ADMIN_PASSWORD:
-        raise HTTPException(status_code=503, detail="Admin login is not configured on the server")
+    if not ADMIN_PASSWORD or len(ADMIN_TOKEN_SECRET) < 32:
+        raise HTTPException(status_code=503, detail="Admin login is not configured securely; set ADMIN_PASSWORD and an ADMIN_TOKEN_SECRET of at least 32 characters")
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Admin login required")
     try:
@@ -147,8 +147,8 @@ def readiness() -> dict[str, str]:
 
 @app.post("/api/admin/login")
 def admin_login(credentials: AdminLogin) -> dict[str, Any]:
-    if not ADMIN_PASSWORD or not ADMIN_TOKEN_SECRET:
-        raise HTTPException(status_code=503, detail="Admin login is not configured. Set ADMIN_PASSWORD and ADMIN_TOKEN_SECRET.")
+    if not ADMIN_PASSWORD or len(ADMIN_TOKEN_SECRET) < 32:
+        raise HTTPException(status_code=503, detail="Admin login is not configured securely. Set ADMIN_PASSWORD and an ADMIN_TOKEN_SECRET of at least 32 characters.")
     valid_user = hmac.compare_digest(credentials.username, ADMIN_USERNAME)
     valid_password = hmac.compare_digest(credentials.password, ADMIN_PASSWORD)
     if not (valid_user and valid_password):
