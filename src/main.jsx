@@ -182,7 +182,12 @@ function App() {
       <section id="catalogue" className="catalogue">
         <div className="section-heading">
           <div><p className="eyebrow">PICKED FOR EVERYDAY</p><h2>Explore the catalogue<span>.</span></h2><p>Browse live products and choose the variant that suits you.</p></div>
-          <div className={`api-status status-${apiState}`}><i />{apiState === 'connected' ? 'Live catalogue connected' : apiState === 'connecting' ? 'Connecting to catalogue' : apiState === 'unconfigured' ? 'API setup required' : 'Catalogue unavailable'}</div>
+          <div className="heading-tools">
+            <div className="theme-switch" role="group" aria-label="Choose colour theme">
+              {['soft', 'light', 'dark'].map(option => <button type="button" key={option} aria-pressed={theme === option} className={theme === option ? 'selected' : ''} onClick={() => setTheme(option)}>{option[0].toUpperCase() + option.slice(1)}</button>)}
+            </div>
+            <div className={`api-status status-${apiState}`}><i />{apiState === 'connected' ? 'Live catalogue connected' : apiState === 'connecting' ? 'Connecting to catalogue' : apiState === 'unconfigured' ? 'API setup required' : 'Catalogue unavailable'}</div>
+          </div>
         </div>
         {products.length > 0 && <div className="category-row" aria-label="Filter by category">
           {categories.map(category => <button key={category} className={selectedCategory === category ? 'category-chip active' : 'category-chip'} onClick={() => setSelectedCategory(category)}>{category}<span>{category === 'All' ? products.length : products.filter(p => p.category === category).length}</span></button>)}
