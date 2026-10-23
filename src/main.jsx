@@ -280,6 +280,22 @@ function App() {
         </div>
       </section>
     </div>}
+    {cartOpen && <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setCartOpen(false); }}>
+      <section className="cart-modal" role="dialog" aria-modal="true" aria-labelledby="cart-title">
+        <button className="modal-close" aria-label="Close bag" onClick={() => setCartOpen(false)}>×</button>
+        <p className="eyebrow">YOUR SELECTION</p><h2 id="cart-title">Shopping bag ({cartCount})</h2>
+        {!cart.length ? <p className="cart-note">Your bag is empty. Add something from the catalogue.</p> : <>
+          <div className="cart-items">{cart.map(item => <article className="cart-item" key={item.key}>
+            <div><b>{item.name}</b><small>{item.option}</small><strong>{money(item.price, item.currency)}</strong></div>
+            <div className="quantity-control"><button onClick={() => changeCartQuantity(item.key,-1)} aria-label="Decrease quantity">−</button><span>{item.quantity}</span><button onClick={() => changeCartQuantity(item.key,1)} aria-label="Increase quantity">＋</button></div>
+            <button className="remove-item" onClick={() => setCart(previous => previous.filter(row => row.key !== item.key))}>Remove</button>
+          </article>)}</div>
+          <div className="cart-total"><span>Subtotal</span><strong>{money(cartTotal)}</strong></div>
+          <p className="cart-note">Bag saved on this device. Online checkout and payment are not connected yet.</p>
+        </>}
+        <button className="primary-link button-link" onClick={() => setCartOpen(false)}>Continue shopping <span>↗</span></button>
+      </section>
+    </div>}
   </div>;
 }
 
