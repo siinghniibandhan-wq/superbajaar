@@ -144,6 +144,68 @@ def readiness() -> dict[str, str]:
     return {"status": "ready"}
 
 
+
+@app.post("/api/admin/login")
+def admin_login(credentials: AdminLogin) -> dict[str, Any]:
+    if not ADMIN_PASSWORD or not ADMIN_TOKEN_SECRET:
+        raise HTTPException(status_code=503, detail="Admin login is not configured. Set ADMIN_PASSWORD and ADMIN_TOKEN_SECRET.")
+    valid_user = hmac.compare_digest(credentials.username, ADMIN_USERNAME)
+    valid_password = hmac.compare_digest(credentials.password, ADMIN_PASSWORD)
+    if not (valid_user and valid_password):
+        raise HTTPException(status_code=401, detail="Invalid admin ID or password")
+    expires = int(time.time()) + 8 * 60 * 60
+    return {"access_token": _admin_token(ADMIN_USERNAME, expires), "token_type": "bearer", "expires_in": 28800, "username": ADMIN_USERNAME}
+
+
+@app.get("/api/admin/products")
+def admin_list_products(authorization: str | None = None) -> dict[str, Any]:
+    require_admin(authorization)
+    db = get_pool()
+    with db.connection() as conn:
+        rows = conn.execute(
+            """SELECT p.id AS product_id, p.product_code, p.name, p.description, p.brand,
+                      p.status AS product_status, p.website_published, c.name AS category,
+                      v.id AS variant_id, v.sku, v.barcode, v.variant_attributes,
+                      v.mrp, v.selling_price, v.currency, v.status AS variant_status
+               FROM products p JOIN product_variants v ON v.product_id = p.id
+               LEFT JOIN product_categories c ON c.id = p.category_id
+               ORDER BY p.created_at DESC, p.name, v.sku LIMIT 500"""
+        ).fetchall()
+    return {"items": json_safe(rows)}
+
+
+@app.post("/api/admin/products", status_code=201)
+def admin_create_product(product: AdminProductInput, authorization: str | None = None) -> dict[str, Any]:
+    require_admin(authorization)
+    db = get_pool()
+    slug = re.sub(r"[^a-z0-9]+", "-", product.category.strip().lower()).strip("-") or "general"
+    status = "active" if product.active else "inactive"
+    with db.connection() as conn:
+        with conn.transaction():
+            category = conn.execute(
+                """INSERT INTO product_categories (category_code, name, status)
+                   VALUES (%s, %s, 'active')
+                   ON CONFLICT (category_code) DO UPDATE SET name = EXCLUDED.name
+                   RETURNING id""",
+                [slug[:80], product.category.strip()],
+            ).fetchone()
+            created = conn.execute(
+                """INSERT INTO products
+                   (product_code, name, description, brand, category_id, website_published, status)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                [product.product_code.strip(), product.name.strip(), product.description.strip(),
+                 product.brand.strip() or None, category["id"], product.published and product.active, status],
+            ).fetchone()
+            variant = conn.execute(
+                """INSERT INTO product_variants
+                   (product_id, sku, variant_attributes, mrp, selling_price, currency, status)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                [created["id"], product.sku.strip(), json.dumps(product.variant_attributes),
+                 product.mrp, product.selling_price, product.currency.upper(), status],
+            ).fetchone()
+    return {"product_id": created["id"], "variant_id": variant["id"], "message": "Product saved to the catalogue database"}
+
+
 @app.get("/api/products")
 def list_products(
     search: str = Query(default="", max_length=120),
