@@ -3,7 +3,6 @@ from contextlib import asynccontextmanager
 from decimal import Decimal
 import logging
 import os
-import re
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
