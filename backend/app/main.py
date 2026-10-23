@@ -39,7 +39,6 @@ class AdminProductInput(BaseModel):
     product_code: str = Field(min_length=1, max_length=80)
     sku: str = Field(min_length=1, max_length=100)
     description: str = Field(default="", max_length=5000)
-    image_url: str | None = Field(default=None, max_length=2048)
     brand: str = Field(default="", max_length=150)
     category: str = Field(default="General", min_length=1, max_length=100)
     selling_price: Decimal = Field(ge=0)
@@ -180,9 +179,6 @@ def admin_create_product(product: AdminProductInput, authorization: str | None =
     require_admin(authorization)
     if not product.name.strip() or not product.product_code.strip() or not product.sku.strip() or not product.category.strip():
         raise HTTPException(status_code=422, detail="Product name, product code, SKU, and category cannot be blank")
-    image_url = (product.image_url or "").strip()
-    if image_url and not image_url.lower().startswith(("https://", "http://")):
-        raise HTTPException(status_code=422, detail="Image URL must start with http:// or https://")
     db = get_pool()
     slug = re.sub(r"[^a-z0-9]+", "-", product.category.strip().lower()).strip("-") or "general"
     status = "active" if product.active else "inactive"
@@ -210,13 +206,6 @@ def admin_create_product(product: AdminProductInput, authorization: str | None =
                     [created["id"], product.sku.strip(), json.dumps(product.variant_attributes),
                      product.mrp, product.selling_price, product.currency.upper(), status],
                 ).fetchone()
-                if image_url:
-                    conn.execute(
-                        """INSERT INTO product_images (product_id, image_url, alt_text, is_primary)
-                           VALUES (%s, %s, %s, TRUE)""",
-                        [created["id"], image_url, product.name.strip()],
-                    )
-
     except UniqueViolation as exc:
         constraint = getattr(getattr(exc, "diag", None), "constraint_name", "")
         field = "SKU" if "sku" in constraint else "product code" if "product" in constraint else "category"
@@ -269,20 +258,15 @@ def list_products(
     where_sql = " AND ".join(conditions)
     query = f"""
         SELECT p.id AS product_id, p.product_code, p.name, p.description, p.brand,
-               pi.image_url, c.name AS category, v.id AS variant_id, v.sku, v.barcode,
+               c.name AS category, v.id AS variant_id, v.sku, v.barcode,
                v.variant_attributes, v.mrp, v.selling_price, v.currency,
                COALESCE(SUM(ib.quantity_on_hand - ib.quantity_reserved), 0) AS available_quantity
         FROM products p
         JOIN product_variants v ON v.product_id = p.id
         LEFT JOIN product_categories c ON c.id = p.category_id
-        LEFT JOIN LATERAL (
-            SELECT image_url FROM product_images
-            WHERE product_id = p.id
-            ORDER BY is_primary DESC, sort_order, id LIMIT 1
-        ) pi ON TRUE
         LEFT JOIN inventory_balances ib ON ib.product_variant_id = v.id
         WHERE {where_sql}
-        GROUP BY p.id, c.name, v.id, pi.image_url
+        GROUP BY p.id, c.name, v.id
         ORDER BY p.name, v.sku
         LIMIT %s OFFSET %s
     """
