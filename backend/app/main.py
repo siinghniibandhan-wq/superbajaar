@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from psycopg_pool import ConnectionPool
+from psycopg.errors import UniqueViolation
 from psycopg.rows import dict_row
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -176,32 +177,40 @@ def admin_list_products(authorization: str | None = Header(default=None)) -> dic
 @app.post("/api/admin/products", status_code=201)
 def admin_create_product(product: AdminProductInput, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     require_admin(authorization)
+    if not product.name.strip() or not product.product_code.strip() or not product.sku.strip() or not product.category.strip():
+        raise HTTPException(status_code=422, detail="Product name, product code, SKU, and category cannot be blank")
     db = get_pool()
     slug = re.sub(r"[^a-z0-9]+", "-", product.category.strip().lower()).strip("-") or "general"
     status = "active" if product.active else "inactive"
-    with db.connection() as conn:
-        with conn.transaction():
-            category = conn.execute(
-                """INSERT INTO product_categories (category_code, name, status)
-                   VALUES (%s, %s, 'active')
-                   ON CONFLICT (category_code) DO UPDATE SET name = EXCLUDED.name
-                   RETURNING id""",
-                [slug[:80], product.category.strip()],
-            ).fetchone()
-            created = conn.execute(
-                """INSERT INTO products
-                   (product_code, name, description, brand, category_id, website_published, status)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-                [product.product_code.strip(), product.name.strip(), product.description.strip(),
-                 product.brand.strip() or None, category["id"], product.active, status],
-            ).fetchone()
-            variant = conn.execute(
-                """INSERT INTO product_variants
-                   (product_id, sku, variant_attributes, mrp, selling_price, currency, status)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-                [created["id"], product.sku.strip(), json.dumps(product.variant_attributes),
-                 product.mrp, product.selling_price, product.currency.upper(), status],
-            ).fetchone()
+    try:
+        with db.connection() as conn:
+            with conn.transaction():
+                category = conn.execute(
+                    """INSERT INTO product_categories (category_code, name, status)
+                       VALUES (%s, %s, 'active')
+                       ON CONFLICT (category_code) DO UPDATE SET name = EXCLUDED.name
+                       RETURNING id""",
+                    [slug[:80], product.category.strip()],
+                ).fetchone()
+                created = conn.execute(
+                    """INSERT INTO products
+                       (product_code, name, description, brand, category_id, website_published, status)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                    [product.product_code.strip(), product.name.strip(), product.description.strip(),
+                     product.brand.strip() or None, category["id"], product.active, status],
+                ).fetchone()
+                variant = conn.execute(
+                    """INSERT INTO product_variants
+                       (product_id, sku, variant_attributes, mrp, selling_price, currency, status)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                    [created["id"], product.sku.strip(), json.dumps(product.variant_attributes),
+                     product.mrp, product.selling_price, product.currency.upper(), status],
+                ).fetchone()
+
+    except UniqueViolation as exc:
+        constraint = getattr(getattr(exc, "diag", None), "constraint_name", "")
+        field = "SKU" if "sku" in constraint else "product code" if "product" in constraint else "category"
+        raise HTTPException(status_code=409, detail=f"A record with this {field} already exists") from exc
     return {"product_id": created["id"], "variant_id": variant["id"], "message": "Product saved to the catalogue database"}
 
 
