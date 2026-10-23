@@ -12,7 +12,7 @@ import os
 from typing import Any
 
 from pydantic import BaseModel, Field
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from psycopg_pool import ConnectionPool
 from psycopg.rows import dict_row
@@ -158,7 +158,7 @@ def admin_login(credentials: AdminLogin) -> dict[str, Any]:
 
 
 @app.get("/api/admin/products")
-def admin_list_products(authorization: str | None = None) -> dict[str, Any]:
+def admin_list_products(authorization: str | None = Header(default=None)) -> dict[str, Any]:
     require_admin(authorization)
     db = get_pool()
     with db.connection() as conn:
@@ -175,7 +175,7 @@ def admin_list_products(authorization: str | None = None) -> dict[str, Any]:
 
 
 @app.post("/api/admin/products", status_code=201)
-def admin_create_product(product: AdminProductInput, authorization: str | None = None) -> dict[str, Any]:
+def admin_create_product(product: AdminProductInput, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     require_admin(authorization)
     db = get_pool()
     slug = re.sub(r"[^a-z0-9]+", "-", product.category.strip().lower()).strip("-") or "general"
