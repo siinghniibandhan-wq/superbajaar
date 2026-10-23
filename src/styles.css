@@ -136,3 +136,23 @@ footer{background:#211331;color:#fff}
 .app[data-theme="dark"] .floating-note{border-color:#ffffff24;background:#241a31ed;color:#c7b7d8}
 .app[data-theme="dark"] .floating-note b{color:#fff}
 .app[data-theme="dark"] .detail-art{background:linear-gradient(140deg,#332542,#3a2339)}
+
+.price-history{margin:5px 0 8px;color:var(--muted);font-size:9px;line-height:1.5}
+.price-history b{color:var(--success)}
+.add-cart-button{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;margin-top:10px;padding:11px 12px;border:0;border-radius:10px;background:linear-gradient(110deg,#7028d9,#d83f9b);color:#fff;font-size:11px;font-weight:800;box-shadow:0 5px 14px #7028d922}
+.add-cart-button:hover{filter:brightness(1.06);transform:translateY(-1px)}
+.add-cart-button:disabled{opacity:.6;cursor:wait}
+.cart-modal{position:relative;width:min(620px,100%);max-height:min(88vh,720px);overflow:auto;padding:28px;border:1px solid var(--line);border-radius:22px;background:var(--surface);color:var(--text);box-shadow:0 25px 90px #0003}
+.cart-modal h2{margin:0 0 20px;font:800 25px Manrope}
+.cart-items{display:flex;flex-direction:column;gap:10px}
+.cart-item{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:13px;padding:14px 0;border-bottom:1px solid var(--line)}
+.cart-item>div:first-child{display:flex;flex-direction:column;gap:5px;min-width:0}
+.cart-item b{font-size:12px;overflow-wrap:anywhere}.cart-item small{color:var(--muted);font-size:10px}.cart-item strong{font-size:12px}
+.quantity-control{display:flex;align-items:center;gap:10px;padding:4px;border:1px solid var(--line);border-radius:9px}
+.quantity-control button{width:25px;height:25px;border:0;border-radius:6px;background:var(--soft);color:var(--accent);font-weight:800}
+.quantity-control span{min-width:12px;text-align:center;font-size:11px}
+.remove-item{border:0;background:transparent;color:#d34d72;font-size:10px;font-weight:700}
+.cart-total{display:flex;justify-content:space-between;align-items:center;margin-top:20px;padding-top:16px;border-top:1px solid var(--line);font-size:13px}
+.cart-total strong{font:800 20px Manrope}
+.cart-note{color:var(--muted);font-size:10px;line-height:1.7;margin:14px 0}
+@media(max-width:480px){.cart-modal{padding:20px}.cart-item{grid-template-columns:minmax(0,1fr) auto;gap:8px}.remove-item{grid-column:1/-1;justify-self:start;padding:4px 0}}
