@@ -24,7 +24,7 @@ function normaliseProducts(payload) {
       id, name: row.name || row.product_name || 'Unnamed product',
       code: row.product_code || '', brand: row.brand || '',
       category: row.category || row.category_name || 'Everyday essentials',
-      description: row.description || '', variants: []
+      description: row.description || '', isBestseller: Boolean(row.is_bestseller || row.bestseller), variants: []
     });
     const product = grouped.get(id);
     const variantId = row.variant_id ?? row.sku ?? id;
@@ -64,14 +64,16 @@ function App() {
   const [notice, setNotice] = useState('');
   const [apiState, setApiState] = useState(API_BASE ? 'connecting' : 'unconfigured');
   const [detail, setDetail] = useState(null);
+  const [recentlyViewed, setRecentlyViewed] = useState(() => { try { return JSON.parse(localStorage.getItem('sb-recently-viewed') || '[]'); } catch { return []; } });
+  const [brandFilter, setBrandFilter] = useState('');
 
   const categories = useMemo(() => ['All', ...new Set(products.map(p => p.category).filter(Boolean))], [products]);
   const visibleProducts = useMemo(() => {
     const term = query.trim().toLowerCase();
-    return products.filter(p => (selectedCategory === 'All' || p.category === selectedCategory) &&
+    return products.filter(p => (!brandFilter || p.brand === brandFilter) && (selectedCategory === 'All' || p.category === selectedCategory) &&
       (!term || [p.name, p.brand, p.category, p.code, ...p.variants.map(v => v.sku)]
         .some(value => String(value || '').toLowerCase().includes(term))));
-  }, [products, query, selectedCategory]);
+  }, [products, query, selectedCategory, brandFilter]);
 
   async function loadProducts(search = query, pin = pincode) {
     if (!API_BASE) {
@@ -104,6 +106,7 @@ function App() {
         return updated;
       });
       setSelectedCategory('All');
+      setBrandFilter('');
       setApiState('connected');
     } catch (e) {
       setError(e.message || 'Unable to load the catalogue. Check the connection and retry.');
@@ -115,6 +118,11 @@ function App() {
 
   useEffect(() => { if (API_BASE) loadProducts('', ''); }, []);
   useEffect(() => { try { localStorage.setItem('sb-theme', theme); } catch {} }, [theme]);
+  useEffect(() => { try { localStorage.setItem('sb-recently-viewed', JSON.stringify(recentlyViewed.slice(0, 12))); } catch {} }, [recentlyViewed]);
+  function openProduct(product) { setDetail(product); setRecentlyViewed(previous => [product.id, ...previous.filter(id => String(id) !== String(product.id))].slice(0, 12)); }
+  const recentlyViewedProducts = recentlyViewed.map(id => products.find(product => String(product.id) === String(id))).filter(Boolean);
+  const bestsellerProducts = products.filter(product => product.isBestseller);
+  const brandGroups = [...new Set(products.map(product => product.brand).filter(Boolean))].map(brand => ({ brand, items: products.filter(product => product.brand === brand) }));
 
   async function checkServiceability(event) {
     event.preventDefault();
@@ -212,7 +220,7 @@ function App() {
           {visibleProducts.map(product => {
             const variant = selectedVariant(product);
             return <article className="product-card" key={product.id}>
-              <button className="product-image" onClick={() => setDetail(product)} aria-label={`View details for ${product.name}`}>
+              <button className="product-image" onClick={() => openProduct(product)} aria-label={`View details for ${product.name}`}>
                 <span className="image-monogram">SB<span>✦</span></span><span className="image-caption">{product.category}</span>
               </button>
               <div className="product-info">
