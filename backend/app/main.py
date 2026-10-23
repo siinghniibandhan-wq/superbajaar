@@ -277,7 +277,7 @@ def list_products(
         LEFT JOIN product_categories c ON c.id = p.category_id
         LEFT JOIN inventory_balances ib ON ib.product_variant_id = v.id
         WHERE {where_sql}
-        GROUP BY p.id, c.name, v.id
+        GROUP BY p.id, c.name, v.id, pi.image_url
         ORDER BY p.name, v.sku
         LIMIT %s OFFSET %s
     """
