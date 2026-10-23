@@ -1,10 +1,17 @@
 """Super Bajaar API foundation. No credentials or product data are hardcoded."""
 from contextlib import asynccontextmanager
 from decimal import Decimal
+import base64
+import hashlib
+import hmac
+import json
+import re
+import time
 import logging
 import os
 from typing import Any
 
+from pydantic import BaseModel, Field
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from psycopg_pool import ConnectionPool
@@ -16,6 +23,57 @@ logger = logging.getLogger("superbajaar.api")
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 CORS_ORIGINS = [origin.strip() for origin in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if origin.strip()]
 pool: ConnectionPool | None = None
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin").strip()
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
+ADMIN_TOKEN_SECRET = os.getenv("ADMIN_TOKEN_SECRET", "")
+
+
+class AdminLogin(BaseModel):
+    username: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=1, max_length=200)
+
+
+class AdminProductInput(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    product_code: str = Field(min_length=1, max_length=80)
+    sku: str = Field(min_length=1, max_length=100)
+    description: str = Field(default="", max_length=5000)
+    brand: str = Field(default="", max_length=150)
+    category: str = Field(default="General", min_length=1, max_length=100)
+    selling_price: Decimal = Field(ge=0)
+    mrp: Decimal | None = Field(default=None, ge=0)
+    currency: str = Field(default="INR", min_length=3, max_length=3)
+    published: bool = False
+    active: bool = True
+    variant_attributes: dict[str, Any] = Field(default_factory=dict)
+
+
+def _b64(value: bytes) -> str:
+    return base64.urlsafe_b64encode(value).decode().rstrip("=")
+
+
+def _admin_token(username: str, expires: int) -> str:
+    payload = _b64(json.dumps({"sub": username, "exp": expires}, separators=(",", ":")).encode())
+    signature = _b64(hmac.new(ADMIN_TOKEN_SECRET.encode(), payload.encode(), hashlib.sha256).digest())
+    return payload + "." + signature
+
+
+def require_admin(authorization: str | None) -> str:
+    if not ADMIN_TOKEN_SECRET or not ADMIN_PASSWORD:
+        raise HTTPException(status_code=503, detail="Admin login is not configured on the server")
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Admin login required")
+    try:
+        payload, signature = authorization[7:].split(".", 1)
+        expected = _b64(hmac.new(ADMIN_TOKEN_SECRET.encode(), payload.encode(), hashlib.sha256).digest())
+        if not hmac.compare_digest(signature, expected):
+            raise ValueError("invalid signature")
+        claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+        if claims.get("sub") != ADMIN_USERNAME or int(claims.get("exp", 0)) < int(time.time()):
+            raise ValueError("expired or invalid token")
+        return claims["sub"]
+    except Exception:
+        raise HTTPException(status_code=401, detail="Admin session expired; sign in again")
 
 
 @asynccontextmanager
