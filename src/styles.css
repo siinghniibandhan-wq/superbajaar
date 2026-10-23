@@ -129,3 +129,10 @@ footer{background:#211331;color:#fff}
 .theme-switch button.selected{border-color:var(--accent);background:var(--soft);color:var(--accent)}
 .theme-switch button:hover{color:var(--accent)}
 @media(max-width:760px){.heading-tools{justify-content:flex-start;align-items:flex-start;flex-direction:column}.theme-switch button{padding:7px 11px}}
+
+.app[data-theme="dark"] .hero{border-color:#49345f;background:linear-gradient(112deg,#2a1b3e 0%,#34203d 53%,#43223b 100%);color:#fbf4ff}
+.app[data-theme="dark"] .hero-kicker,.app[data-theme="dark"] .hero-copy>p,.app[data-theme="dark"] .hero-proof{color:#d0bfdf}
+.app[data-theme="dark"] .hero h1 span{color:#ff91c5}
+.app[data-theme="dark"] .floating-note{border-color:#ffffff24;background:#241a31ed;color:#c7b7d8}
+.app[data-theme="dark"] .floating-note b{color:#fff}
+.app[data-theme="dark"] .detail-art{background:linear-gradient(140deg,#332542,#3a2339)}
