@@ -43,7 +43,6 @@ class AdminProductInput(BaseModel):
     selling_price: Decimal = Field(ge=0)
     mrp: Decimal | None = Field(default=None, ge=0)
     currency: str = Field(default="INR", min_length=3, max_length=3)
-    published: bool = False
     active: bool = True
     variant_attributes: dict[str, Any] = Field(default_factory=dict)
 
@@ -194,7 +193,7 @@ def admin_create_product(product: AdminProductInput, authorization: str | None =
                    (product_code, name, description, brand, category_id, website_published, status)
                    VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
                 [product.product_code.strip(), product.name.strip(), product.description.strip(),
-                 product.brand.strip() or None, category["id"], product.published and product.active, status],
+                 product.brand.strip() or None, category["id"], product.active, status],
             ).fetchone()
             variant = conn.execute(
                 """INSERT INTO product_variants
