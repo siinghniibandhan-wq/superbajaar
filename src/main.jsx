@@ -121,10 +121,12 @@ function App() {
       const response = await fetch(endpoint('/serviceability?pincode=' + encodeURIComponent(pincode)), { headers: { Accept: 'application/json' } });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.detail || 'We could not verify delivery availability right now.');
-      setNotice(data.serviceable
-        ? `Delivery is available for ${pincode}.`
-        : `Delivery is not currently available for ${pincode}.`);
-      if (data.serviceable) await loadProducts(query, pincode);
+      if (data.serviceable) {
+        await loadProducts(query, pincode);
+        setNotice(`Delivery is available for ${pincode}.`);
+      } else {
+        setNotice(`Delivery is not currently available for ${pincode}.`);
+      }
     } catch (e) {
       setNotice(e.message || 'We could not verify delivery availability right now.');
     }
