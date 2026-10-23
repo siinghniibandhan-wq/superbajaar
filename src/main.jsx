@@ -90,7 +90,11 @@ function App() {
       setProducts(next);
       setSelectedVariants(previous => {
         const updated = { ...previous };
-        for (const product of next) if (!updated[product.id] && product.variants[0]) updated[product.id] = String(product.variants[0].id);
+        for (const product of next) {
+          const current = updated[product.id];
+          const stillExists = product.variants.some(variant => String(variant.id) === String(current));
+          if ((!current || !stillExists) && product.variants[0]) updated[product.id] = String(product.variants[0].id);
+        }
         return updated;
       });
       setSelectedCategory('All');
