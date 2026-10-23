@@ -24,7 +24,7 @@ function normaliseProducts(payload) {
       id, name: row.name || row.product_name || 'Unnamed product',
       code: row.product_code || '', brand: row.brand || '',
       category: row.category || row.category_name || 'Everyday essentials',
-      description: row.description || '', imageUrl: row.image_url || row.imageUrl || '', isBestseller: Boolean(row.is_bestseller || row.bestseller), variants: []
+      description: row.description || '', isBestseller: Boolean(row.is_bestseller || row.bestseller), variants: []
     });
     const product = grouped.get(id);
     const variantId = row.variant_id ?? row.sku ?? id;
@@ -230,7 +230,7 @@ function App() {
             const variant = selectedVariant(product);
             return <article className="product-card" key={product.id}>
               <button className="product-image" onClick={() => openProduct(product)} aria-label={`View details for ${product.name}`}>
-                {product.imageUrl ? <img className="catalogue-product-image" src={product.imageUrl} alt={product.name} loading="lazy" onError={e=>{e.currentTarget.style.display='none';}} /> : <span className="image-monogram">SB<span>✦</span></span>}<span className="image-caption">{product.category}</span>
+                <span className="image-monogram">SB<span>✦</span></span><span className="image-caption">{product.category}</span>
               </button>
               <div className="product-info">
                 <div className="product-meta"><span>{product.brand || product.category}</span>{variant.stock > 0 && <span className="stock-badge">In stock</span>}</div>
@@ -269,7 +269,7 @@ function App() {
     {detail && <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setDetail(null); }}>
       <section className="detail-modal" role="dialog" aria-modal="true" aria-labelledby="detail-title">
         <button className="modal-close" aria-label="Close product details" onClick={() => setDetail(null)}>×</button>
-        <div className="detail-art">{detail.imageUrl ? <img className="detail-product-image" src={detail.imageUrl} alt={detail.name} onError={e=>{e.currentTarget.style.display='none';}} /> : <span className="image-monogram">SB<span>✦</span></span>}</div>
+        <div className="detail-art"><span className="image-monogram">SB<span>✦</span></span></div>
         <div className="detail-copy"><p className="eyebrow">{detail.category}</p><h2 id="detail-title">{detail.name}</h2>{detail.brand && <p className="detail-brand">{detail.brand}</p>}
           <p className="detail-description">{detail.description || 'Product details will be shown here when provided by the live catalogue.'}</p>
           {detail.variants.length > 1 && <label className="variant-select">Choose option<select value={String(selectedVariant(detail).id)} onChange={e => setSelectedVariants(prev => ({ ...prev, [detail.id]: e.target.value }))}>{detail.variants.map(v => <option key={v.id} value={String(v.id)}>{variantLabel(v)}</option>)}</select></label>}
@@ -290,7 +290,7 @@ function AdminPanel() {
   const [tab, setTab] = useState('add');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
-  const [form, setForm] = useState({name:'',product_code:'',sku:'',brand:'',category:'Grocery & Staples',description:'',image_url:'',selling_price:'',mrp:'',currency:'INR',active:true});
+  const [form, setForm] = useState({name:'',product_code:'',sku:'',brand:'',category:'Grocery & Staples',description:'',selling_price:'',mrp:'',currency:'INR',active:true});
   const field = (key, value) => setForm(previous => ({...previous,[key]:value}));
   async function login(event) {
     event.preventDefault(); setBusy(true); setMessage('');
@@ -337,7 +337,6 @@ function AdminPanel() {
           <label>Product code *<input value={form.product_code} onChange={e=>field('product_code',e.target.value)} maxLength={80} required /></label>
           <label>SKU / variant code *<input value={form.sku} onChange={e=>field('sku',e.target.value)} maxLength={100} required /></label>
           <label>Brand<input value={form.brand} onChange={e=>field('brand',e.target.value)} maxLength={150} /></label>
-          <label className="admin-full">Product image URL (optional)<input type="url" value={form.image_url} onChange={e=>field('image_url',e.target.value)} maxLength={2048} placeholder="https://…" /></label>
           <label>Category *<input value={form.category} onChange={e=>field('category',e.target.value)} maxLength={100} required /></label>
           <label>Selling price (₹) *<input type="number" min="0" step="0.01" value={form.selling_price} onChange={e=>field('selling_price',e.target.value)} required /></label>
           <label>MRP (optional) ₹<input type="number" min="0" step="0.01" value={form.mrp} onChange={e=>field('mrp',e.target.value)} /></label>
