@@ -123,6 +123,7 @@ def list_products(
             FROM warehouse_serviceability ws
             JOIN inventory_balances ib ON ib.warehouse_id = ws.warehouse_id
             WHERE ws.pincode = %s AND ws.status = 'active'
+              AND ws.valid_from <= now() AND (ws.valid_to IS NULL OR ws.valid_to > now())
               AND ib.product_variant_id = v.id
               AND (ib.quantity_on_hand - ib.quantity_reserved) > 0
         )""")
@@ -168,6 +169,7 @@ def check_serviceability(pincode: str = Query(..., pattern=r"^\d{6}$")) -> dict[
                    FROM warehouse_serviceability ws
                    JOIN warehouses w ON w.id = ws.warehouse_id
                    WHERE ws.pincode = %s AND ws.status = 'active' AND w.status = 'active'
+                     AND ws.valid_from <= now() AND (ws.valid_to IS NULL OR ws.valid_to > now())
                      AND EXISTS (
                        SELECT 1 FROM inventory_balances ib
                        WHERE ib.warehouse_id = ws.warehouse_id
