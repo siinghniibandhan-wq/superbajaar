@@ -24,7 +24,7 @@ function normaliseProducts(payload) {
       id, name: row.name || row.product_name || 'Unnamed product',
       code: row.product_code || '', brand: row.brand || '',
       category: row.category || row.category_name || 'Everyday essentials',
-      description: row.description || '', variants: []
+      description: row.description || '', isBestseller: Boolean(row.is_bestseller || row.bestseller), variants: []
     });
     const product = grouped.get(id);
     const variantId = row.variant_id ?? row.sku ?? id;
@@ -64,14 +64,16 @@ function App() {
   const [notice, setNotice] = useState('');
   const [apiState, setApiState] = useState(API_BASE ? 'connecting' : 'unconfigured');
   const [detail, setDetail] = useState(null);
+  const [recentlyViewed, setRecentlyViewed] = useState(() => { try { return JSON.parse(localStorage.getItem('sb-recently-viewed') || '[]'); } catch { return []; } });
+  const [brandFilter, setBrandFilter] = useState('');
 
   const categories = useMemo(() => ['All', ...new Set(products.map(p => p.category).filter(Boolean))], [products]);
   const visibleProducts = useMemo(() => {
     const term = query.trim().toLowerCase();
-    return products.filter(p => (selectedCategory === 'All' || p.category === selectedCategory) &&
+    return products.filter(p => (!brandFilter || p.brand === brandFilter) && (selectedCategory === 'All' || p.category === selectedCategory) &&
       (!term || [p.name, p.brand, p.category, p.code, ...p.variants.map(v => v.sku)]
         .some(value => String(value || '').toLowerCase().includes(term))));
-  }, [products, query, selectedCategory]);
+  }, [products, query, selectedCategory, brandFilter]);
 
   async function loadProducts(search = query, pin = pincode) {
     if (!API_BASE) {
@@ -104,6 +106,7 @@ function App() {
         return updated;
       });
       setSelectedCategory('All');
+      setBrandFilter('');
       setApiState('connected');
     } catch (e) {
       setError(e.message || 'Unable to load the catalogue. Check the connection and retry.');
@@ -115,6 +118,11 @@ function App() {
 
   useEffect(() => { if (API_BASE) loadProducts('', ''); }, []);
   useEffect(() => { try { localStorage.setItem('sb-theme', theme); } catch {} }, [theme]);
+  useEffect(() => { try { localStorage.setItem('sb-recently-viewed', JSON.stringify(recentlyViewed.slice(0, 12))); } catch {} }, [recentlyViewed]);
+  function openProduct(product) { setDetail(product); setRecentlyViewed(previous => [product.id, ...previous.filter(id => String(id) !== String(product.id))].slice(0, 12)); }
+  const recentlyViewedProducts = recentlyViewed.map(id => products.find(product => String(product.id) === String(id))).filter(Boolean);
+  const bestsellerProducts = products.filter(product => product.isBestseller);
+  const brandGroups = [...new Set(products.map(product => product.brand).filter(Boolean))].map(brand => ({ brand, items: products.filter(product => product.brand === brand) }));
 
   async function checkServiceability(event) {
     event.preventDefault();
@@ -201,18 +209,27 @@ function App() {
             <div className={`api-status status-${apiState}`}><i />{apiState === 'connected' ? 'Live catalogue connected' : apiState === 'connecting' ? 'Connecting to catalogue' : apiState === 'unconfigured' ? 'API setup required' : 'Catalogue unavailable'}</div>
           </div>
         </div>
+
+        {products.length > 0 && <div className="home-discovery">
+          <section className="discovery-section" aria-labelledby="bestsellers-title">
+            <div className="discovery-heading"><div><p className="eyebrow">CUSTOMER FAVOURITES</p><h2 id="bestsellers-title">Bestsellers<span>.</span></h2><p>Products customers are choosing most.</p></div><span className="discovery-icon">★</span></div>
+            {bestsellerProducts.length ? <div className="discovery-row">{bestsellerProducts.slice(0,8).map(product => <button className="discovery-product" key={product.id} onClick={() => openProduct(product)}><span className="discovery-product-art">SB<span>✦</span></span><b>{product.name}</b><small>{product.brand || product.category}</small><strong>{money(selectedVariant(product).price,selectedVariant(product).currency)}</strong></button>)}</div> : <p className="discovery-empty">Bestsellers will appear here once sales or bestseller labels are available in the catalogue. We won't guess which products sell most.</p>}
+          </section>
+          {brandGroups.length > 0 && <section className="discovery-section" aria-labelledby="brands-title"><div className="discovery-heading"><div><p className="eyebrow">SHOP YOUR FAVOURITES</p><h2 id="brands-title">Shop by brand<span>.</span></h2><p>Explore products from the brands in our catalogue.</p></div><span className="discovery-icon">✦</span></div><div className="brand-catalogue">{brandGroups.slice(0,12).map(group=><button className="brand-tile" key={group.brand} onClick={()=>{setQuery('');setSelectedCategory('All');setBrandFilter(group.brand);document.getElementById('catalogue-grid')?.scrollIntoView({behavior:'smooth'});}}><span className="brand-initial">{group.brand.trim().charAt(0).toUpperCase()}</span><span><b>{group.brand}</b><small>{group.items.length} {group.items.length===1?'product':'products'}</small></span><i>↗</i></button>)}</div></section>}
+          {recentlyViewedProducts.length > 0 && <section className="discovery-section" aria-labelledby="recent-title"><div className="discovery-heading"><div><p className="eyebrow">PICK UP WHERE YOU LEFT OFF</p><h2 id="recent-title">Recently viewed<span>.</span></h2><p>Your recently opened products, saved on this device.</p></div><span className="discovery-icon">◷</span></div><div className="discovery-row">{recentlyViewedProducts.map(product=><button className="discovery-product" key={product.id} onClick={()=>openProduct(product)}><span className="discovery-product-art">SB<span>✦</span></span><b>{product.name}</b><small>{product.brand || product.category}</small><strong>{money(selectedVariant(product).price,selectedVariant(product).currency)}</strong></button>)}</div></section>}
+        </div>}
         {products.length > 0 && <div className="category-row" aria-label="Filter by category">
           {categories.map(category => <button key={category} className={selectedCategory === category ? 'category-chip active' : 'category-chip'} onClick={() => setSelectedCategory(category)}>{category}<span>{category === 'All' ? products.length : products.filter(p => p.category === category).length}</span></button>)}
         </div>}
         {loading && <div className="catalogue-state"><div className="loader" /><h3>Finding your everyday favourites</h3><p>Loading the latest catalogue information…</p></div>}
         {!loading && error && <div className="catalogue-state error-state"><div className="state-symbol">↻</div><h3>We couldn't load the catalogue</h3><p>{error}</p><button className="primary-link button-link" onClick={() => loadProducts(query, pincode)}>Try again <span>↗</span></button></div>}
         {!loading && !error && products.length === 0 && <div className="catalogue-state"><div className="state-symbol">✳</div><h3>Your next favourite starts here</h3><p>No published products were returned by the catalogue. When products are available, they will appear here automatically.</p><button className="secondary-button" onClick={() => loadProducts('', '')}>Refresh catalogue</button></div>}
-        {!loading && !error && products.length > 0 && visibleProducts.length === 0 && <div className="catalogue-state"><div className="state-symbol">⌕</div><h3>No matches found</h3><p>Try another search or choose a different category.</p><button className="secondary-button" onClick={() => { setQuery(''); setSelectedCategory('All'); }}>Clear filters</button></div>}
-        {!loading && !error && visibleProducts.length > 0 && <div className="product-grid">
+        {!loading && !error && products.length > 0 && visibleProducts.length === 0 && <div className="catalogue-state"><div className="state-symbol">⌕</div><h3>No matches found</h3><p>Try another search or choose a different category.</p><button className="secondary-button" onClick={() => { setQuery(''); setSelectedCategory('All'); setBrandFilter(''); }}>Clear filters</button></div>}
+        {!loading && !error && visibleProducts.length > 0 && <div id="catalogue-grid" className="product-grid">
           {visibleProducts.map(product => {
             const variant = selectedVariant(product);
             return <article className="product-card" key={product.id}>
-              <button className="product-image" onClick={() => setDetail(product)} aria-label={`View details for ${product.name}`}>
+              <button className="product-image" onClick={() => openProduct(product)} aria-label={`View details for ${product.name}`}>
                 <span className="image-monogram">SB<span>✦</span></span><span className="image-caption">{product.category}</span>
               </button>
               <div className="product-info">
