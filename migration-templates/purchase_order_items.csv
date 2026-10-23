@@ -1,0 +1,1 @@
+source_system,source_record_id,purchase_order_number,line_number,product_sku,description,ordered_quantity,received_quantity,unit_cost,discount,tax_rate,line_total,lot_or_batch,expiry_date
