@@ -2,7 +2,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+const configuredApiBase = (import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/$/, '');
+const API_BASE = (() => {
+  // Keep the storefront usable during initial testing even if Amplify's env var
+  // has not been configured yet. Accept either the host or the full /api base.
+  const candidate = configuredApiBase || 'https://superappkart.duckdns.org/api';
+  return candidate.endsWith('/api') ? candidate : candidate + '/api';
+})();
 const endpoint = (path) => `${API_BASE}${path}`;
 const money = (value, currency = 'INR') => value == null
   ? 'Price unavailable'
