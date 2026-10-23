@@ -269,12 +269,17 @@ def list_products(
     where_sql = " AND ".join(conditions)
     query = f"""
         SELECT p.id AS product_id, p.product_code, p.name, p.description, p.brand,
-               c.name AS category, v.id AS variant_id, v.sku, v.barcode,
+               pi.image_url, c.name AS category, v.id AS variant_id, v.sku, v.barcode,
                v.variant_attributes, v.mrp, v.selling_price, v.currency,
                COALESCE(SUM(ib.quantity_on_hand - ib.quantity_reserved), 0) AS available_quantity
         FROM products p
         JOIN product_variants v ON v.product_id = p.id
         LEFT JOIN product_categories c ON c.id = p.category_id
+        LEFT JOIN LATERAL (
+            SELECT image_url FROM product_images
+            WHERE product_id = p.id
+            ORDER BY is_primary DESC, sort_order, id LIMIT 1
+        ) pi ON TRUE
         LEFT JOIN inventory_balances ib ON ib.product_variant_id = v.id
         WHERE {where_sql}
         GROUP BY p.id, c.name, v.id, pi.image_url
