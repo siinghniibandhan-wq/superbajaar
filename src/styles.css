@@ -204,3 +204,8 @@ footer{background:#211331;color:#fff}
 @media(max-width:640px){.admin-heading{align-items:flex-start;flex-direction:column}.admin-count{flex-direction:row}.admin-product-form,.admin-product-list{padding:16px}.admin-form-grid{grid-template-columns:1fr}.admin-full{grid-column:auto}.admin-form-actions{flex-direction:column-reverse;align-items:stretch}.admin-form-actions .add-cart-button{width:100%}.admin-tabs button{padding:10px}.admin-login{padding:24px}}
 
 .admin-module-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px;margin:0 0 28px}.admin-module-card{display:flex;gap:13px;align-items:flex-start;min-height:112px;padding:17px;border:1px solid #ece5f4;border-radius:15px;background:#fff}.admin-module-card.module-active{border-color:#c9b0f4;box-shadow:0 6px 22px #7028d90c}.admin-module-icon{display:grid;place-items:center;flex:0 0 38px;width:38px;height:38px;border-radius:12px;background:#f2eaff;color:#7028d9;font-weight:800;font-size:18px}.admin-module-card h2{margin:0 0 5px;font:800 13px Manrope;color:#291a3d}.admin-module-card p{margin:0 0 9px;color:#7b7189;font-size:10px;line-height:1.5}.admin-module-status{display:inline-block;padding:4px 7px;border-radius:20px;background:#f6f2fa;color:#7b7189;font-size:9px;font-weight:700}.module-active .admin-module-status{background:#e8f7ef;color:#237b53}@media(max-width:850px){.admin-module-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.admin-module-grid{grid-template-columns:1fr}}
+
+
+/* Real catalogue image support */
+.catalogue-product-image { width: 100%; height: 100%; display: block; object-fit: contain; object-position: center; }
+.detail-product-image { width: 100%; height: 100%; display: block; object-fit: contain; object-position: center; }
