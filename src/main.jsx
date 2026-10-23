@@ -319,7 +319,7 @@ function AdminPanel() {
       const data = await response.json().catch(()=>({}));
       if(!response.ok) throw new Error(data.detail || 'Could not save product');
       setMessage('Product saved successfully. Active products are eligible for storefront display. No stock was added.');
-      setForm({name:'',product_code:'',sku:'',brand:'',category:'Grocery & Staples',description:'',image_url:'',selling_price:'',mrp:'',currency:'INR',active:true});
+      setForm({name:'',product_code:'',sku:'',brand:'',category:'Grocery & Staples',description:'',selling_price:'',mrp:'',currency:'INR',active:true});
       await loadAdminProducts();
     } catch(error) { setMessage(error.message); }
     finally { setBusy(false); }
