@@ -318,7 +318,7 @@ function AdminPanel() {
       const response = await fetch(endpoint('/admin/products'),{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify(payload)});
       const data = await response.json().catch(()=>({}));
       if(!response.ok) throw new Error(data.detail || 'Could not save product');
-      setMessage('Product saved successfully. It remains hidden from the storefront unless you publish it.');
+      setMessage('Product saved successfully. Active products are eligible for storefront display.');
       setForm({name:'',product_code:'',sku:'',brand:'',category:'Grocery & Staples',description:'',selling_price:'',mrp:'',currency:'INR',published:false,active:true});
       await loadAdminProducts();
     } catch(error) { setMessage(error.message); }
