@@ -94,9 +94,9 @@ def list_products(
     limit: int = Query(default=24, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
-    """Return published products with current prices and stock-backed serviceability."""
+    """Return active catalogue products with current prices and stock-backed serviceability."""
     db = get_pool()
-    conditions = ["p.website_published = TRUE", "p.status = 'active'", "v.status = 'active'"]
+    conditions = ["p.status = 'active'", "v.status = 'active'"]
     params: list[Any] = []
     if search.strip():
         conditions.append("(p.name ILIKE %s OR p.brand ILIKE %s OR v.sku ILIKE %s)")
