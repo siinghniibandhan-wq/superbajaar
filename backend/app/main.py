@@ -129,10 +129,26 @@ def list_products(
         )""")
         params.append(pincode)
     where_sql = " AND ".join(conditions)
+    history_select = "NULL::numeric AS lowest_selling_price_30d,"
+    try:
+        with db.connection() as conn:
+            history_exists = conn.execute(
+                "SELECT to_regclass('public.product_price_history') AS table_name"
+            ).fetchone()["table_name"] is not None
+        if history_exists:
+            history_select = """(
+                SELECT MIN(ph.price) FROM product_price_history ph
+                WHERE ph.product_variant_id = v.id
+                  AND ph.price_type = 'selling'
+                  AND ph.valid_from >= now() - interval '30 days'
+            ) AS lowest_selling_price_30d,"""
+    except Exception:
+        logger.exception("Could not inspect price history table; continuing without 30-day price")
     query = f"""
         SELECT p.id AS product_id, p.product_code, p.name, p.description, p.brand,
                c.name AS category, v.id AS variant_id, v.sku, v.barcode,
                v.variant_attributes, v.mrp, v.selling_price, v.currency,
+               {history_select}
                COALESCE(SUM(ib.quantity_on_hand - ib.quantity_reserved), 0) AS available_quantity
         FROM products p
         JOIN product_variants v ON v.product_id = p.id
