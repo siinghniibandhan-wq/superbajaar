@@ -161,16 +161,20 @@ def admin_login(credentials: AdminLogin) -> dict[str, Any]:
 def admin_list_products(authorization: str | None = Header(default=None)) -> dict[str, Any]:
     require_admin(authorization)
     db = get_pool()
-    with db.connection() as conn:
-        rows = conn.execute(
-            """SELECT p.id AS product_id, p.product_code, p.name, p.description, p.brand,
-                      p.status AS product_status, p.website_published, c.name AS category,
-                      v.id AS variant_id, v.sku, v.barcode, v.variant_attributes,
-                      v.mrp, v.selling_price, v.currency, v.status AS variant_status
-               FROM products p JOIN product_variants v ON v.product_id = p.id
-               LEFT JOIN product_categories c ON c.id = p.category_id
-               ORDER BY p.created_at DESC, p.name, v.sku LIMIT 500"""
-        ).fetchall()
+    try:
+        with db.connection() as conn:
+            rows = conn.execute(
+                """SELECT p.id AS product_id, p.product_code, p.name, p.description, p.brand,
+                          p.status AS product_status, p.website_published, c.name AS category,
+                          v.id AS variant_id, v.sku, v.barcode, v.variant_attributes,
+                          v.mrp, v.selling_price, v.currency, v.status AS variant_status
+                   FROM products p JOIN product_variants v ON v.product_id = p.id
+                   LEFT JOIN product_categories c ON c.id = p.category_id
+                   ORDER BY p.created_at DESC, p.name, v.sku LIMIT 500"""
+            ).fetchall()
+    except Exception:
+        logger.exception("Admin product-list query failed")
+        raise HTTPException(status_code=503, detail="Product catalogue is temporarily unavailable") from None
     return {"items": json_safe(rows)}
 
 
@@ -210,6 +214,9 @@ def admin_create_product(product: AdminProductInput, authorization: str | None =
         constraint = getattr(getattr(exc, "diag", None), "constraint_name", "")
         field = "SKU" if "sku" in constraint else "product code" if "product" in constraint else "category"
         raise HTTPException(status_code=409, detail=f"A record with this {field} already exists") from exc
+    except Exception:
+        logger.exception("Admin product creation failed")
+        raise HTTPException(status_code=503, detail="Product could not be saved; check database availability and schema") from None
     return {"product_id": created["id"], "variant_id": variant["id"], "message": "Product saved to the catalogue database"}
 
 
