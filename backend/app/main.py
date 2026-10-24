@@ -1,9 +1,12 @@
 import os
 import logging
+import hmac
 from typing import Any
 
+from pydantic import BaseModel, Field
+
 import psycopg
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from psycopg.rows import dict_row
 
@@ -22,8 +25,8 @@ app.add_middleware(
     allow_origins=origins,
     allow_origin_regex=r"https://.*\.app\.github\.dev",
     allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Accept", "Content-Type", "Authorization"],
+    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
+    allow_headers=["Accept", "Content-Type", "Authorization", "X-Review-Moderation-Token"],
 )
 
 
@@ -134,6 +137,150 @@ def get_product_by_variant(variant_id: int) -> dict[str, Any]:
     except psycopg.Error as exc:
         logger.exception("Product detail query failed")
         raise HTTPException(status_code=503, detail="Product details are temporarily unavailable") from exc
+
+
+
+DEFAULT_REVIEW_FLAG_WORDS = ("fuck", "shit", "bitch", "bastard", "asshole", "motherfucker", "cunt", "dickhead")
+
+
+def review_needs_moderation(text: str) -> bool:
+    """Flag obvious profanity for manual review; ordinary positive or negative opinions publish immediately."""
+    configured = os.getenv("REVIEW_FLAG_WORDS", "").strip()
+    words = tuple(word.strip().casefold() for word in configured.split(",") if word.strip()) if configured else DEFAULT_REVIEW_FLAG_WORDS
+    lowered = text.casefold()
+    import re
+    return any(re.search(r"(?<!\w)" + re.escape(word) + r"(?!\w)", lowered) for word in words)
+
+
+class ProductReviewInput(BaseModel):
+    reviewer_name: str = Field(min_length=1, max_length=80)
+    rating: int = Field(ge=1, le=5)
+    review_text: str = Field(min_length=3, max_length=2000)
+
+@app.get("/api/products/{product_id}/reviews")
+def list_product_reviews(product_id: int) -> dict[str, Any]:
+    """Return only approved reviews; safely report empty when migration is not applied."""
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            if not conn.execute("SELECT to_regclass('public.product_reviews') AS table_name").fetchone()["table_name"]:
+                return {"items": [], "message": "Reviews are not configured yet"}
+            rows = conn.execute(
+                """SELECT id, reviewer_name, rating, review_text, created_at
+                   FROM product_reviews
+                   WHERE product_id = %s AND status = 'approved'
+                   ORDER BY created_at DESC LIMIT 100""",
+                (product_id,),
+            ).fetchall()
+            summary = conn.execute(
+                """SELECT COUNT(*)::int AS review_count, COALESCE(AVG(rating), 0)::numeric(3,2) AS average_rating
+                   FROM product_reviews WHERE product_id = %s AND status = 'approved'""",
+                (product_id,),
+            ).fetchone()
+            return {"items": rows, **summary}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        logger.exception("Could not load product reviews")
+        raise HTTPException(status_code=503, detail="Reviews are temporarily unavailable") from exc
+
+
+@app.post("/api/products/{product_id}/reviews", status_code=202)
+def submit_product_review(product_id: int, review: ProductReviewInput) -> dict[str, str]:
+    """Publish ordinary reviews immediately; hold reviews containing flagged profanity for moderation."""
+    reviewer_name = review.reviewer_name.strip()
+    review_text = review.review_text.strip()
+    if not reviewer_name or not review_text:
+        raise HTTPException(status_code=422, detail="Name and review cannot be blank")
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            if not conn.execute("SELECT to_regclass('public.product_reviews') AS table_name").fetchone()["table_name"]:
+                raise HTTPException(status_code=503, detail="Review submission is not configured yet")
+            product_columns = get_columns(conn, "products")
+            if not product_columns:
+                raise HTTPException(status_code=503, detail="Catalogue is not available")
+            status_filter = " AND status = 'active'" if "status" in product_columns else ""
+            product = conn.execute(
+                f"SELECT id FROM products WHERE id = %s{status_filter} LIMIT 1",
+                (product_id,),
+            ).fetchone()
+            if not product:
+                raise HTTPException(status_code=404, detail="Product not found")
+            flagged = review_needs_moderation(review_text)
+            review_status = "pending" if flagged else "approved"
+            conn.execute(
+                """INSERT INTO product_reviews
+                   (product_id, reviewer_name, rating, review_text, status)
+                   VALUES (%s, %s, %s, %s, %s)""",
+                (product_id, reviewer_name, review.rating, review_text, review_status),
+            )
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        logger.exception("Could not save product review")
+        raise HTTPException(status_code=503, detail="Review submission failed") from exc
+    return {"message": "Your review is published. Thank you for sharing your feedback." if review_status == "approved" else "Your review was saved and is awaiting a quick content check."}
+
+
+
+def require_review_moderator(token: str) -> None:
+    expected = os.getenv("REVIEW_MODERATION_TOKEN", "").strip()
+    if not expected:
+        raise HTTPException(status_code=503, detail="Review moderation is not configured on the server")
+    if not token or not hmac.compare_digest(token, expected):
+        raise HTTPException(status_code=401, detail="Invalid review moderation token")
+
+
+@app.get("/api/admin/reviews")
+def list_reviews_for_moderation(
+    x_review_moderation_token: str = Header(default="", alias="X-Review-Moderation-Token"),
+) -> dict[str, Any]:
+    """List pending reviews for the separately token-protected moderation workspace."""
+    require_review_moderator(x_review_moderation_token)
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            table = conn.execute("SELECT to_regclass('public.product_reviews') AS table_name").fetchone()["table_name"]
+            if not table:
+                raise HTTPException(status_code=503, detail="Review schema migration has not been applied")
+            rows = conn.execute(
+                """SELECT r.id, r.product_id, p.name AS product_name, r.reviewer_name,
+                          r.rating, r.review_text, r.created_at, r.status
+                   FROM product_reviews r JOIN products p ON p.id = r.product_id
+                   WHERE r.status = 'pending' ORDER BY r.created_at ASC LIMIT 200"""
+            ).fetchall()
+            return {"items": rows}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        logger.exception("Could not load pending reviews")
+        raise HTTPException(status_code=503, detail="Review moderation is temporarily unavailable") from exc
+
+
+@app.patch("/api/admin/reviews/{review_id}")
+def moderate_product_review(
+    review_id: int,
+    status: str = Query(..., pattern="^(approved|rejected)$"),
+    x_review_moderation_token: str = Header(default="", alias="X-Review-Moderation-Token"),
+) -> dict[str, str]:
+    """Approve or reject one pending review using the server-side moderation token."""
+    require_review_moderator(x_review_moderation_token)
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            table = conn.execute("SELECT to_regclass('public.product_reviews') AS table_name").fetchone()["table_name"]
+            if not table:
+                raise HTTPException(status_code=503, detail="Review schema migration has not been applied")
+            row = conn.execute(
+                """UPDATE product_reviews SET status = %s, moderated_at = now()
+                   WHERE id = %s AND status = 'pending' RETURNING id""",
+                (status, review_id),
+            ).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Pending review not found")
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        logger.exception("Could not moderate product review")
+        raise HTTPException(status_code=503, detail="Review moderation failed") from exc
+    return {"message": "Review " + status + ".", "status": status}
 
 
 @app.get("/api/categories")
