@@ -311,6 +311,8 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
     try:
         with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
             _ensure_commerce_schema(conn)
+            from .operations import _ensure as ensure_operations
+            ensure_operations(conn)
             products: list[dict[str, Any]] = []
             subtotal = Decimal("0")
             for variant_id, quantity in quantities.items():
@@ -371,8 +373,17 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
                     (row["id"], product["variant_id"], product["product_id"], product["sku"],
                      product["name"], product["quantity"], product["unit_price"], product["line_total"])
                 )
+                stock=conn.execute("SELECT quantity FROM sb_stock WHERE variant_id=%s AND warehouse='Main' FOR UPDATE",(product["variant_id"],)).fetchone()
+                # Enforce inventory only for variants explicitly tracked in the stock ledger.
+                if stock:
+                    available=Decimal(str(stock["quantity"]))
+                    if available < product["quantity"]:
+                        raise HTTPException(status_code=422,detail=f"Insufficient stock for {product['name']}; available {available}")
+                    conn.execute("UPDATE sb_stock SET quantity=quantity-%s,updated_at=now() WHERE variant_id=%s AND warehouse='Main'",(product["quantity"],product["variant_id"]))
+                    conn.execute("""INSERT INTO sb_stock_movements(variant_id,warehouse,movement_type,quantity,reference_type,reference_id)
+                        VALUES(%s,'Main','website_sale',%s,'website_order',%s)""",(product["variant_id"],product["quantity"],row["id"]))
             return {"order": _order_detail(conn, row["id"]),
-                    "message": "Order placed. Payment is due on delivery."}
+                    "message": "Order placed. Tracked inventory is deducted atomically; payment is due on delivery."}
     except HTTPException:
         raise
     except psycopg.Error as exc:
@@ -448,14 +459,32 @@ def update_admin_order(
     try:
         with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
             _ensure_commerce_schema(conn)
-            row = conn.execute(
-                """UPDATE store_orders SET status=%s,updated_at=now()
-                   WHERE id=%s AND status NOT IN ('cancelled','delivered') RETURNING id""",
-                (body.status, order_id)
-            ).fetchone()
-            if not row:
-                raise HTTPException(status_code=404, detail="Order not found or already closed.")
-            return {"order": _order_detail(conn, row["id"]), "updated_by": actor["id"]}
+            from .operations import _ensure as ensure_operations
+            ensure_operations(conn)
+            with conn.transaction():
+                previous=conn.execute("SELECT * FROM store_orders WHERE id=%s FOR UPDATE",(order_id,)).fetchone()
+                if not previous or previous["status"] in ("cancelled","delivered"):
+                    raise HTTPException(status_code=404, detail="Order not found or already closed.")
+                if body.status=="cancelled":
+                    lines=conn.execute("SELECT variant_id,quantity FROM store_order_items WHERE order_id=%s",(order_id,)).fetchall()
+                    for line in lines:
+                        stock=conn.execute("SELECT quantity FROM sb_stock WHERE variant_id=%s AND warehouse='Main' FOR UPDATE",(line["variant_id"],)).fetchone()
+                        if stock:
+                            conn.execute("UPDATE sb_stock SET quantity=quantity+%s,updated_at=now() WHERE variant_id=%s AND warehouse='Main'",(line["quantity"],line["variant_id"]))
+                            conn.execute("""INSERT INTO sb_stock_movements(variant_id,warehouse,movement_type,quantity,reference_type,reference_id,created_by)
+                                VALUES(%s,'Main','return_in',%s,'website_order_cancel',%s,%s)""",(line["variant_id"],line["quantity"],order_id,actor["id"]))
+                row=conn.execute("UPDATE store_orders SET status=%s,updated_at=now() WHERE id=%s RETURNING id",(body.status,order_id)).fetchone()
+                journal_id=None
+                if body.status=="delivered":
+                    from .operations import _post_journal
+                    subtotal=Decimal(str(previous["subtotal"]))
+                    total=Decimal(str(previous["total"]))
+                    shipping=Decimal(str(previous["shipping_fee"]))
+                    lines=[("accounts_receivable",total,Decimal("0")),("sales",Decimal("0"),subtotal)]
+                    if shipping:
+                        lines.append(("other_income",Decimal("0"),shipping))
+                    journal_id=_post_journal(conn,date.today(),previous["order_number"],"Website sale "+previous["order_number],"website",order_id,lines,actor["id"])
+                return {"order": _order_detail(conn, row["id"]), "updated_by": actor["id"], "journal_id":journal_id}
     except HTTPException:
         raise
     except psycopg.Error as exc:
