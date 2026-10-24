@@ -384,9 +384,11 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
                 if body.super_coins_to_redeem > int(wallet["balance"]):
                     raise HTTPException(status_code=422, detail="Not enough Super Coins in your wallet")
                 maximum = (total_before_coins * Decimal(str(program["max_redemption_percent"])) / Decimal("100")).quantize(Decimal("0.01"))
-                loyalty_discount = min((Decimal(body.super_coins_to_redeem) * Decimal(str(program["redemption_value"]))).quantize(Decimal("0.01")), maximum, subtotal)
-                coins_used = int((loyalty_discount / Decimal(str(program["redemption_value"]))).to_integral_value(rounding=ROUND_DOWN))
-                if coins_used <= 0:
+                redemption_value = Decimal(str(program["redemption_value"]))
+                max_discount = min(maximum, subtotal)
+                coins_used = min(body.super_coins_to_redeem, int((max_discount / redemption_value).to_integral_value(rounding=ROUND_DOWN)))
+                loyalty_discount = (Decimal(coins_used) * redemption_value).quantize(Decimal("0.01"))
+                if coins_used <= 0 or loyalty_discount <= 0:
                     raise HTTPException(status_code=422, detail="Coin redemption is below the allowed amount")
             total = max(Decimal("0"), total_before_coins - loyalty_discount)
             order_number = "SB-" + secrets.token_hex(5).upper()
