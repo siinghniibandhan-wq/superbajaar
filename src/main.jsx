@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
-const API = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');\nconst API_PATH = path => API.endsWith('/api') ? API + path : API + '/api' + path;
+const API = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+const API_PATH = path => API.endsWith('/api') ? API + path : API + '/api' + path;
 const NAV = [
  {id:'overview',label:'Overview',icon:'◫',group:'WORKSPACE'},
  {id:'orders',label:'Sales & Orders',icon:'▤',group:'COMMERCE'},
