@@ -488,6 +488,13 @@ def update_admin_order(
                             conn.execute("""INSERT INTO sb_stock_movements(variant_id,warehouse,movement_type,quantity,reference_type,reference_id,created_by)
                                 VALUES(%s,'Main','return_in',%s,'website_order_cancel',%s,%s)""",(line["variant_id"],line["quantity"],order_id,actor["id"]))
                 row=conn.execute("UPDATE store_orders SET status=%s,updated_at=now() WHERE id=%s RETURNING id",(body.status,order_id)).fetchone()
+                if body.status in ("packed","shipped"):
+                    shipment=conn.execute("SELECT id FROM sb_shipments WHERE order_type='website' AND order_id=%s AND status NOT IN ('cancelled','delivered') ORDER BY id DESC LIMIT 1",(order_id,)).fetchone()
+                    shipment_status="packed" if body.status=="packed" else "in_transit"
+                    if shipment:
+                        conn.execute("UPDATE sb_shipments SET status=%s WHERE id=%s",(shipment_status,shipment["id"]))
+                    else:
+                        conn.execute("INSERT INTO sb_shipments(order_type,order_id,status) VALUES('website',%s,%s)",(order_id,shipment_status))
                 journal_id=None
                 if body.status=="delivered":
                     from .operations import _post_journal
