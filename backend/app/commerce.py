@@ -127,18 +127,23 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
             products: list[dict[str, Any]] = []
             subtotal = Decimal("0")
             for variant_id, quantity in quantities.items():
+                product_columns = {r["column_name"] for r in conn.execute(
+                    "SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='products'"
+                ).fetchall()}
+                variant_columns = {r["column_name"] for r in conn.execute(
+                    "SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='product_variants'"
+                ).fetchall()}
+                if not {"id", "name"}.issubset(product_columns) or not {"id", "product_id", "selling_price"}.issubset(variant_columns):
+                    raise HTTPException(status_code=503, detail="The existing catalogue schema does not support checkout.")
+                active_product = " AND p.status='active'" if "status" in product_columns else ""
+                active_variant = " AND v.status='active'" if "status" in variant_columns else ""
+                sku_select = "v.sku" if "sku" in variant_columns else "NULL::text"
                 product = conn.execute(
-                    """SELECT p.id AS product_id,p.name,v.id AS variant_id,
-                              v.selling_price,v.sku
-                       FROM products p JOIN product_variants v ON v.product_id=p.id
-                       WHERE v.id=%s
-                         AND (NOT EXISTS (SELECT 1 FROM information_schema.columns
-                              WHERE table_schema=current_schema() AND table_name='products' AND column_name='status')
-                              OR p.status='active')
-                         AND (NOT EXISTS (SELECT 1 FROM information_schema.columns
-                              WHERE table_schema=current_schema() AND table_name='product_variants' AND column_name='status')
-                              OR v.status='active')
-                       FOR SHARE OF p,v""", (variant_id,)
+                    f"""SELECT p.id AS product_id,p.name,v.id AS variant_id,
+                               v.selling_price,{sku_select} AS sku
+                        FROM products p JOIN product_variants v ON v.product_id=p.id
+                        WHERE v.id=%s{active_product}{active_variant}
+                        FOR SHARE OF p,v""", (variant_id,)
                 ).fetchone()
                 if not product:
                     raise HTTPException(status_code=409, detail=f"Product variant {variant_id} is no longer available.")
