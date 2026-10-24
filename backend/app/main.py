@@ -110,6 +110,23 @@ async def lifespan(app: FastAPI):
             open=True,
         )
         logger.info("Database connection pool initialized")
+        # Safe, additive, idempotent migration: product images are optional until populated.
+        # Run only when the product variant table exists; do not block older/incomplete schemas.
+        try:
+            with pool.connection() as conn:
+                with conn.transaction():
+                    variants_table_exists = conn.execute(
+                        "SELECT to_regclass('public.product_variants') AS table_name"
+                    ).fetchone()["table_name"] is not None
+                    if variants_table_exists:
+                        conn.execute(
+                            "ALTER TABLE public.product_variants ADD COLUMN IF NOT EXISTS image_url TEXT"
+                        )
+                        logger.info("Product image schema migration verified")
+                    else:
+                        logger.warning("product_variants table is not present; skipped product image migration")
+        except Exception:
+            logger.exception("Product image schema migration failed; API will start, but image URL writes may be unavailable")
     else:
         logger.warning("DATABASE_URL is not configured; database endpoints will return 503")
     yield
