@@ -698,6 +698,9 @@ def payroll_run(body:PayrollInput,authorization:str|None=Header(default=None))->
                     ON CONFLICT(period_start,period_end) DO UPDATE SET period_start=EXCLUDED.period_start
                     RETURNING *""",(body.period_start,body.period_end,user["id"])).fetchone()
                 if run["status"]!="draft": raise HTTPException(status_code=409,detail="Payroll run already approved or paid")
+                # Rebuild draft lines from the current active employee set so employees
+                # deactivated since the previous calculation are not left on the run.
+                conn.execute("DELETE FROM sb_payroll_lines WHERE run_id=%s",(run["id"],))
                 staff=conn.execute("SELECT id,monthly_gross FROM sb_employees WHERE status='active' ORDER BY id").fetchall()
                 lines=[]
                 for employee in staff:
