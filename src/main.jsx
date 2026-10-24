@@ -201,7 +201,7 @@ function OperationsManager({module}){
     const receiptLines=[];
     for(const line of pending){
      const remaining=Number(line.outstanding_quantity);
-     const answer=window.prompt('Variant '+line.variant_id+' — outstanding '+remaining+'. Enter quantity received (0 to skip):',''+remaining);
+     const answer=window.prompt('Variant '+line.variant_id+' — outstanding '+remaining+'. Enter quantity received (0 to skip):','0');
      if(answer===null)continue;
      const quantity=Number(answer);
      if(!Number.isFinite(quantity)||quantity<0||quantity>remaining){
