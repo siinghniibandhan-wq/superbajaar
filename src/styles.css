@@ -155,3 +155,11 @@
 .admin-shell .module-placeholder p{color:var(--admin-muted);line-height:1.6}
 @media(max-width:900px){.admin-shell .module-overview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:520px){.admin-shell .module-overview-panel{padding:14px}.admin-shell .module-overview-grid{grid-template-columns:1fr}.admin-shell .module-overview-card{min-height:90px}}
+
+.admin-shell .module-section-heading{padding:16px 20px;margin:0 0 16px;background:var(--admin-surface);border:1px solid var(--admin-border);border-radius:16px;color:var(--admin-text)}
+.admin-shell .module-section-heading .panel-heading{margin:0;align-items:center}
+.admin-shell .module-section-heading h2{margin:5px 0;color:var(--admin-text)}
+.admin-shell .module-section-heading p{margin:4px 0 0;color:var(--admin-muted);font-size:12px}
+.admin-shell .module-tab-guidance{padding:20px;margin:16px 0;background:var(--admin-surface);border:1px solid var(--admin-border);border-radius:16px;color:var(--admin-text)}
+.admin-shell .module-tab-guidance h3{margin:0 0 8px;color:var(--admin-text)}
+.admin-shell .module-tab-guidance p{color:var(--admin-muted);font-size:13px;line-height:1.6}
