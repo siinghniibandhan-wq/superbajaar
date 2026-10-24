@@ -325,7 +325,15 @@ function AdminPanel() {
       const payload = {...form,selling_price:Number(form.selling_price),mrp:form.mrp===''?null:Number(form.mrp)};
       const response = await fetch(endpoint('/admin/products'),{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify(payload)});
       const data = await response.json().catch(()=>({}));
-      if(!response.ok) throw new Error(data.detail || 'Could not save product');
+      if(!response.ok) {
+        if(response.status === 401) {
+          setToken('');
+          setItems([]);
+          try { sessionStorage.removeItem('sb-admin-token'); } catch {}
+          throw new Error('Your admin session has expired. Please sign in again.');
+        }
+        throw new Error(data.detail || 'Could not save product');
+      }
       setMessage('Product saved successfully. Active products are eligible for storefront display. No stock was added.');
       setForm({name:'',product_code:'',sku:'',brand:'',category:'Grocery & Staples',description:'',selling_price:'',mrp:'',currency:'INR',active:true});
       await loadAdminProducts();
