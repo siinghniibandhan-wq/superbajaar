@@ -371,16 +371,36 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
             if delivery_quote["serviceable"] is not True:
                 raise HTTPException(status_code=422, detail=delivery_quote["message"])
             shipping_fee = Decimal(str(delivery_quote["shipping_fee"]))
-            total = subtotal + shipping_fee
+            total_before_coins = subtotal + shipping_fee
+            loyalty_discount = Decimal("0")
+            coins_used = 0
+            if body.super_coins_to_redeem:
+                program = loyalty_program(conn)
+                if not program["enabled"]:
+                    raise HTTPException(status_code=409, detail="Super Coins are currently disabled")
+                wallet = loyalty_wallet(conn, int(user["id"]))
+                if body.super_coins_to_redeem < int(program["min_redeem_coins"]):
+                    raise HTTPException(status_code=422, detail=f"Minimum redemption is {program['min_redeem_coins']} Super Coins")
+                if body.super_coins_to_redeem > int(wallet["balance"]):
+                    raise HTTPException(status_code=422, detail="Not enough Super Coins in your wallet")
+                maximum = (total_before_coins * Decimal(str(program["max_redemption_percent"])) / Decimal("100")).quantize(Decimal("0.01"))
+                loyalty_discount = min((Decimal(body.super_coins_to_redeem) * Decimal(str(program["redemption_value"]))).quantize(Decimal("0.01")), maximum, subtotal)
+                coins_used = int((loyalty_discount / Decimal(str(program["redemption_value"]))).to_integral_value(rounding=ROUND_DOWN))
+                if coins_used <= 0:
+                    raise HTTPException(status_code=422, detail="Coin redemption is below the allowed amount")
+            total = max(Decimal("0"), total_before_coins - loyalty_discount)
             order_number = "SB-" + secrets.token_hex(5).upper()
             row = conn.execute(
                 """INSERT INTO store_orders
-                   (order_number,user_id,status,payment_method,payment_status,subtotal,shipping_fee,total,shipping_address,customer_note)
-                   VALUES (%s,%s,'placed','cash_on_delivery','pending',%s,%s,%s,%s::jsonb,%s)
+                   (order_number,user_id,status,payment_method,payment_status,subtotal,shipping_fee,total,loyalty_discount,shipping_address,customer_note)
+                   VALUES (%s,%s,'placed','cash_on_delivery','pending',%s,%s,%s,%s,%s::jsonb,%s)
                    RETURNING id""",
-                (order_number, user["id"], subtotal, shipping_fee, total,
+                (order_number, user["id"], subtotal, shipping_fee, total, loyalty_discount,
                  json.dumps(body.shipping_address.model_dump()), body.customer_note.strip())
             ).fetchone()
+            if coins_used:
+                post_loyalty(conn, int(user["id"]), "redeem", coins_used, f"DEBIT:Redeemed on order {order_number}",
+                    order_id=int(row["id"]), key=f"order:{row['id']}:redeem")
             for product in products:
                 conn.execute(
                     """INSERT INTO store_order_items
