@@ -133,6 +133,19 @@ class ProgramInput(BaseModel):
     expiry_days: int | None = Field(default=None, ge=0, le=3650)
 
 
+
+class TierInput(BaseModel):
+    name: str = Field(min_length=2, max_length=50)
+    min_lifetime_earned: int = Field(default=0, ge=0, le=1000000000)
+    earn_multiplier: Decimal = Field(default=Decimal("1"), ge=0, le=100)
+    benefits: list[str] = Field(default_factory=list, max_length=20)
+    is_active: bool = True
+    sort_order: int = Field(default=0, ge=0, le=10000)
+
+
+class TiersInput(BaseModel):
+    tiers: list[TierInput] = Field(min_length=1, max_length=20)
+
 class AdjustmentInput(BaseModel):
     user_id: int = Field(gt=0)
     coins: int = Field(gt=0, le=1000000)
@@ -182,6 +195,29 @@ def update_program(body: ProgramInput, authorization: str | None = Header(defaul
             return {"program":row}
     except Exception as exc: raise HTTPException(status_code=503,detail="Loyalty programme settings could not be saved") from exc
 
+
+
+@router.put("/tiers")
+def update_tiers(body: TiersInput, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    user=_require(authorization,{"super_admin","admin"})
+    names=[t.name.strip().lower() for t in body.tiers]
+    thresholds=[t.min_lifetime_earned for t in body.tiers]
+    if len(names)!=len(set(names)): raise HTTPException(status_code=422,detail="Tier names must be unique")
+    if len(thresholds)!=len(set(thresholds)): raise HTTPException(status_code=422,detail="Tier earning thresholds must be unique")
+    try:
+        with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
+            _ensure(conn)
+            with conn.transaction():
+                for tier in body.tiers:
+                    conn.execute("""INSERT INTO sb_loyalty_tiers(name,min_lifetime_earned,earn_multiplier,benefits,is_active,sort_order)
+                        VALUES(%s,%s,%s,%s::jsonb,%s,%s) ON CONFLICT(name) DO UPDATE SET
+                        min_lifetime_earned=EXCLUDED.min_lifetime_earned,earn_multiplier=EXCLUDED.earn_multiplier,
+                        benefits=EXCLUDED.benefits,is_active=EXCLUDED.is_active,sort_order=EXCLUDED.sort_order""",
+                        (tier.name.strip(),tier.min_lifetime_earned,tier.earn_multiplier,json.dumps(tier.benefits),tier.is_active,tier.sort_order))
+                conn.execute("UPDATE sb_loyalty_wallets w SET tier=(SELECT t.name FROM sb_loyalty_tiers t WHERE t.is_active AND t.min_lifetime_earned<=w.lifetime_earned ORDER BY t.min_lifetime_earned DESC,t.sort_order DESC LIMIT 1)")
+                return {"tiers":conn.execute("SELECT * FROM sb_loyalty_tiers ORDER BY sort_order,id").fetchall(),"message":"Loyalty tiers saved"}
+    except HTTPException: raise
+    except Exception as exc: raise HTTPException(status_code=503,detail="Loyalty tiers could not be saved") from exc
 
 @router.post("/adjust")
 def adjust_wallet(body: AdjustmentInput, authorization: str | None = Header(default=None)) -> dict[str, Any]:
