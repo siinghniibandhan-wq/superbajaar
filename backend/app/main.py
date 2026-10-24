@@ -140,6 +140,18 @@ def get_product_by_variant(variant_id: int) -> dict[str, Any]:
 
 
 
+DEFAULT_REVIEW_FLAG_WORDS = ("fuck", "shit", "bitch", "bastard", "asshole", "motherfucker", "cunt", "dickhead")
+
+
+def review_needs_moderation(text: str) -> bool:
+    """Flag obvious profanity for manual review; ordinary positive or negative opinions publish immediately."""
+    configured = os.getenv("REVIEW_FLAG_WORDS", "").strip()
+    words = tuple(word.strip().casefold() for word in configured.split(",") if word.strip()) if configured else DEFAULT_REVIEW_FLAG_WORDS
+    lowered = text.casefold()
+    import re
+    return any(re.search(r"(?<!\\w)" + re.escape(word) + r"(?!\\w)", lowered) for word in words)
+
+
 class ProductReviewInput(BaseModel):
     reviewer_name: str = Field(min_length=1, max_length=80)
     rating: int = Field(ge=1, le=5)
@@ -174,7 +186,7 @@ def list_product_reviews(product_id: int) -> dict[str, Any]:
 
 @app.post("/api/products/{product_id}/reviews", status_code=202)
 def submit_product_review(product_id: int, review: ProductReviewInput) -> dict[str, str]:
-    """Accept a review for moderation; never publish user-submitted content immediately."""
+    """Publish ordinary reviews immediately; hold reviews containing flagged profanity for moderation."""
     reviewer_name = review.reviewer_name.strip()
     review_text = review.review_text.strip()
     if not reviewer_name or not review_text:
@@ -193,18 +205,20 @@ def submit_product_review(product_id: int, review: ProductReviewInput) -> dict[s
             ).fetchone()
             if not product:
                 raise HTTPException(status_code=404, detail="Product not found")
+            flagged = review_needs_moderation(review_text)
+            review_status = "pending" if flagged else "approved"
             conn.execute(
                 """INSERT INTO product_reviews
                    (product_id, reviewer_name, rating, review_text, status)
-                   VALUES (%s, %s, %s, %s, 'pending')""",
-                (product_id, reviewer_name, review.rating, review_text),
+                   VALUES (%s, %s, %s, %s, %s)""",
+                (product_id, reviewer_name, review.rating, review_text, review_status),
             )
     except HTTPException:
         raise
     except psycopg.Error as exc:
         logger.exception("Could not save product review")
         raise HTTPException(status_code=503, detail="Review submission failed") from exc
-    return {"message": "Thank you. Your review was submitted for moderation."}
+    return {"message": "Your review is published. Thank you for sharing your feedback." if review_status == "approved" else "Your review was saved and is awaiting a quick content check."}
 
 
 
