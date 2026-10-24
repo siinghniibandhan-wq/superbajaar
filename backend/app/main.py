@@ -1,11 +1,12 @@
 import os
 import logging
+import hmac
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
 import psycopg
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from psycopg.rows import dict_row
 
@@ -25,7 +26,7 @@ app.add_middleware(
     allow_origin_regex=r"https://.*\.app\.github\.dev",
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Accept", "Content-Type", "Authorization"],
+    allow_headers=["Accept", "Content-Type", "Authorization", "X-Review-Moderation-Token"],
 )
 
 
@@ -209,6 +210,68 @@ def submit_product_review(product_id: int, review: ProductReviewInput) -> dict[s
         logger.exception("Could not save product review")
         raise HTTPException(status_code=503, detail="Review submission failed") from exc
     return {"message": "Thank you. Your review was submitted for moderation."}
+
+
+
+def require_review_moderator(token: str) -> None:
+    expected = os.getenv("REVIEW_MODERATION_TOKEN", "").strip()
+    if not expected:
+        raise HTTPException(status_code=503, detail="Review moderation is not configured on the server")
+    if not token or not hmac.compare_digest(token, expected):
+        raise HTTPException(status_code=401, detail="Invalid review moderation token")
+
+
+@app.get("/api/admin/reviews")
+def list_reviews_for_moderation(
+    x_review_moderation_token: str = Header(default="", alias="X-Review-Moderation-Token"),
+) -> dict[str, Any]:
+    """List pending reviews for the separately token-protected moderation workspace."""
+    require_review_moderator(x_review_moderation_token)
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            table = conn.execute("SELECT to_regclass('public.product_reviews') AS table_name").fetchone()["table_name"]
+            if not table:
+                raise HTTPException(status_code=503, detail="Review schema migration has not been applied")
+            rows = conn.execute(
+                """SELECT r.id, r.product_id, p.name AS product_name, r.reviewer_name,
+                          r.rating, r.review_text, r.created_at, r.status
+                   FROM product_reviews r JOIN products p ON p.id = r.product_id
+                   WHERE r.status = 'pending' ORDER BY r.created_at ASC LIMIT 200"""
+            ).fetchall()
+            return {"items": rows}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        logger.exception("Could not load pending reviews")
+        raise HTTPException(status_code=503, detail="Review moderation is temporarily unavailable") from exc
+
+
+@app.patch("/api/admin/reviews/{review_id}")
+def moderate_product_review(
+    review_id: int,
+    status: str = Query(..., pattern="^(approved|rejected)$"),
+    x_review_moderation_token: str = Query(default="", include_in_schema=False),
+) -> dict[str, str]:
+    """Approve or reject one pending review using the server-side moderation token."""
+    require_review_moderator(x_review_moderation_token)
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            table = conn.execute("SELECT to_regclass('public.product_reviews') AS table_name").fetchone()["table_name"]
+            if not table:
+                raise HTTPException(status_code=503, detail="Review schema migration has not been applied")
+            row = conn.execute(
+                """UPDATE product_reviews SET status = %s, moderated_at = now()
+                   WHERE id = %s AND status = 'pending' RETURNING id""",
+                (status, review_id),
+            ).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Pending review not found")
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        logger.exception("Could not moderate product review")
+        raise HTTPException(status_code=503, detail="Review moderation failed") from exc
+    return {"message": "Review " + status + ".", "status": status}
 
 
 @app.get("/api/categories")
