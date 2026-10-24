@@ -167,7 +167,7 @@ function App() {
     <div className="announcement"><span className="announcement-dot" /> Everyday essentials, all in one place <span className="announcement-note">Your Everyday Super Store</span></div>
     <header className="header">
       <a className="brand" href="#home" aria-label="Super Bajaar home" onClick={e => { e.preventDefault(); setActivePage('home'); window.scrollTo({top:0,behavior:'smooth'}); }}>
-        <span className="brand-mark" aria-hidden="true"><svg viewBox="0 0 48 48" focusable="false"><path d="M13 17h22l3 24H10l3-24Z" fill="currentColor"/><path d="M17 18v-4a7 7 0 0 1 14 0v4" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round"/><path d="M17 25c1 5 4 8 7 8s6-3 7-8" fill="none" stroke="#fff" strokeWidth="2.8" strokeLinecap="round"/></svg></span>
+        <span className="brand-mark" aria-hidden="true"><svg viewBox="0 0 48 48" focusable="false" aria-hidden="true"><defs><linearGradient id="sbBagGradient" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#5420d4"/><stop offset="55%" stopColor="#8129db"/><stop offset="100%" stopColor="#ff8739"/></linearGradient></defs><path d="M18 15V12a6 6 0 0 1 12 0v4" fill="none" stroke="#7fc4ff" strokeWidth="3.6" strokeLinecap="round"/><rect x="7" y="15" width="34" height="29" rx="7" fill="url(#sbBagGradient)"/><path d="M14 22c.7 6.2 4.7 10 10 10s9.3-3.8 10-10" fill="none" stroke="#fff" strokeWidth="3.2" strokeLinecap="round"/></svg></span>
         <span className="brand-word">Super <span>Bajaar</span><small>Your Everyday Super Store</small></span>
       </a>
       <form className="search" role="search" onSubmit={e => { e.preventDefault(); setActivePage('shop'); loadProducts(query, pincode); }}>
@@ -369,7 +369,7 @@ function App() {
       <div className="footer-main">
         <div className="footer-brand-column">
           <a className="brand footer-brand" href="#home" aria-label="Super Bajaar home" onClick={e => { e.preventDefault(); setActivePage('home'); window.scrollTo({top:0,behavior:'smooth'}); }}>
-            <span className="brand-mark" aria-hidden="true"><svg viewBox="0 0 48 48" focusable="false"><path d="M13 17h22l3 24H10l3-24Z" fill="currentColor"/><path d="M17 18v-4a7 7 0 0 1 14 0v4" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round"/><path d="M17 25c1 5 4 8 7 8s6-3 7-8" fill="none" stroke="#fff" strokeWidth="2.8" strokeLinecap="round"/></svg></span>
+            <span className="brand-mark" aria-hidden="true"><svg viewBox="0 0 48 48" focusable="false" aria-hidden="true"><defs><linearGradient id="sbBagGradient" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#5420d4"/><stop offset="55%" stopColor="#8129db"/><stop offset="100%" stopColor="#ff8739"/></linearGradient></defs><path d="M18 15V12a6 6 0 0 1 12 0v4" fill="none" stroke="#7fc4ff" strokeWidth="3.6" strokeLinecap="round"/><rect x="7" y="15" width="34" height="29" rx="7" fill="url(#sbBagGradient)"/><path d="M14 22c.7 6.2 4.7 10 10 10s9.3-3.8 10-10" fill="none" stroke="#fff" strokeWidth="3.2" strokeLinecap="round"/></svg></span>
             <span className="brand-word">Super <span>Bajaar</span><small>Your Everyday Super Store</small></span>
           </a>
           <p>Everyday essentials, thoughtfully brought together. A simpler way to shop for your day.</p>
