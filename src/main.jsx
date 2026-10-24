@@ -113,7 +113,7 @@ function AdminOrders(){
 function ProductManager(){
  const [items,setItems]=useState([]),[categories,setCategories]=useState([]),[editing,setEditing]=useState(null),[formOpen,setFormOpen]=useState(false);
  const [form,setForm]=useState({name:'',selling_price:'',mrp:'',brand:'',description:'',category_id:'',sku:'',image_url:'',status:'active'});
- const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[selectedSale,setSelectedSale]=useState(null),[saleDetailBusy,setSaleDetailBusy]=useState(false);
+ const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]='';
  const token=()=>localStorage.getItem('sb_admin_token')||'';
  async function load(){setError('');try{const [p,c]=await Promise.all([fetch(API_PATH('/products?limit=100')),fetch(API_PATH('/categories'))]);const pj=await p.json().catch(()=>({}));if(!p.ok)throw Error(pj.detail||'Could not load products');const cj=await c.json().catch(()=>({}));setItems(Array.isArray(pj)?pj:(pj.items||[]));setCategories(cj.items||[])}catch(e){setError(e.message||'Could not load catalogue')}}
  useEffect(()=>{load();const openCreate=()=>start(null);window.addEventListener('sb-product-create',openCreate);return()=>window.removeEventListener('sb-product-create',openCreate)},[]);
@@ -165,7 +165,7 @@ function LoyaltyProgramManager(){
 
 function OperationsManager({module}){
  const [items,setItems]=useState([]),[payrollRuns,setPayrollRuns]=useState([]),[attendanceRows,setAttendanceRows]=useState([]),[leaveRows,setLeaveRows]=useState([]),[products,setProducts]=useState([]),[customers,setCustomers]=useState([]),[vendors,setVendors]=useState([]),[taxRows,setTaxRows]=useState([]),[taxForm,setTaxForm]=useState({variant_id:'',hsn_sac:'',gst_rate:'0',classification:'taxable'}),[attendanceForm,setAttendanceForm]=useState({employee_id:'',work_date:new Date().toISOString().slice(0,10),status:'present',hours_worked:'8',note:''}),[leaveForm,setLeaveForm]=useState({employee_id:'',start_date:'',end_date:'',leave_type:'annual',days:'1',paid:true,reason:''});
- const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
+ const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[selectedSale,setSelectedSale]=useState(null),[saleDetailBusy,setSaleDetailBusy]=useState(false);
  const [form,setForm]=useState({}),[partyForm,setPartyForm]=useState({name:'',phone:'',email:'',gstin:''}),[partyOpen,setPartyOpen]=useState(false),[lines,setLines]=useState([{variant_id:'',quantity:'1',unit_price:'',unit_cost:'',tax_rate:'0'}]);
  const token=()=>localStorage.getItem('sb_admin_token')||'';
  const configs={
