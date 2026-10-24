@@ -214,6 +214,7 @@ def update_tiers(body: TiersInput, authorization: str | None = Header(default=No
                         min_lifetime_earned=EXCLUDED.min_lifetime_earned,earn_multiplier=EXCLUDED.earn_multiplier,
                         benefits=EXCLUDED.benefits,is_active=EXCLUDED.is_active,sort_order=EXCLUDED.sort_order""",
                         (tier.name.strip(),tier.min_lifetime_earned,tier.earn_multiplier,json.dumps(tier.benefits),tier.is_active,tier.sort_order))
+                conn.execute("UPDATE sb_loyalty_tiers SET is_active=FALSE WHERE NOT (name = ANY(%s))", ([t.name.strip() for t in body.tiers],))
                 conn.execute("UPDATE sb_loyalty_wallets w SET tier=(SELECT t.name FROM sb_loyalty_tiers t WHERE t.is_active AND t.min_lifetime_earned<=w.lifetime_earned ORDER BY t.min_lifetime_earned DESC,t.sort_order DESC LIMIT 1)")
                 return {"tiers":conn.execute("SELECT * FROM sb_loyalty_tiers ORDER BY sort_order,id").fetchall(),"message":"Loyalty tiers saved"}
     except HTTPException: raise
