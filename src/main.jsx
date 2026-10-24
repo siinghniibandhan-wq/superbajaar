@@ -225,14 +225,80 @@ function App() {
           </div>
         </div>
 
-        {activePage === 'home' && products.length > 0 && <div className="home-discovery">
-          <section className="discovery-section" aria-labelledby="bestsellers-title">
-            <div className="discovery-heading"><div><p className="eyebrow">CUSTOMER FAVOURITES</p><h2 id="bestsellers-title">Bestsellers<span>.</span></h2><p>Products customers are choosing most.</p></div><span className="discovery-icon">★</span></div>
-            {bestsellerProducts.length ? <div className="discovery-row">{bestsellerProducts.slice(0,8).map(product => <button className="discovery-product" key={product.id} onClick={() => openProduct(product)}><span className="discovery-product-art">SB<span>✦</span></span><b>{product.name}</b><small>{product.brand || product.category}</small><strong>{money(selectedVariant(product).price,selectedVariant(product).currency)}</strong></button>)}</div> : <p className="discovery-empty">Bestsellers will appear here once sales or bestseller labels are available in the catalogue. We won't guess which products sell most.</p>}
-          </section>
-          <section className="discovery-section" aria-labelledby="new-arrivals-title"><div className="discovery-heading"><div><p className="eyebrow">JUST LANDED</p><h2 id="new-arrivals-title">New arrivals<span>.</span></h2><p>Fresh additions marked as new in the product catalogue.</p></div><span className="discovery-icon">✧</span></div>{newArrivalProducts.length ? <div className="discovery-row">{newArrivalProducts.slice(0,8).map(product=><button className="discovery-product" key={product.id} onClick={()=>openProduct(product)}><span className="discovery-product-art">NEW<span>✦</span></span><b>{product.name}</b><small>{product.brand || product.category}</small><strong>{money(selectedVariant(product).price,selectedVariant(product).currency)}</strong></button>)}</div> : <p className="discovery-empty">New products will appear here when they are marked as new arrivals in the catalogue.</p></section>}
-          {recentlyViewedProducts.length > 0 && <section className="discovery-section" aria-labelledby="recent-title"><div className="discovery-heading"><div><p className="eyebrow">PICK UP WHERE YOU LEFT OFF</p><h2 id="recent-title">Recently viewed<span>.</span></h2><p>Your recently opened products, saved on this device.</p></div><span className="discovery-icon">◷</span></div><div className="discovery-row">{recentlyViewedProducts.map(product=><button className="discovery-product" key={product.id} onClick={()=>openProduct(product)}><span className="discovery-product-art">SB<span>✦</span></span><b>{product.name}</b><small>{product.brand || product.category}</small><strong>{money(selectedVariant(product).price,selectedVariant(product).currency)}</strong></button>)}</div></section>}
-        </div>}
+        {activePage === 'home' && products.length > 0 && (
+          <div className="home-discovery">
+            <section className="discovery-section" aria-labelledby="bestsellers-title">
+              <div className="discovery-heading">
+                <div>
+                  <p className="eyebrow">CUSTOMER FAVOURITES</p>
+                  <h2 id="bestsellers-title">Bestsellers<span>.</span></h2>
+                  <p>Products customers are choosing most.</p>
+                </div>
+                <span className="discovery-icon">★</span>
+              </div>
+              {bestsellerProducts.length > 0 ? (
+                <div className="discovery-row">
+                  {bestsellerProducts.slice(0, 8).map(product => (
+                    <button className="discovery-product" key={product.id} onClick={() => openProduct(product)}>
+                      <span className="discovery-product-art">SB<span>✦</span></span>
+                      <b>{product.name}</b>
+                      <small>{product.brand || product.category}</small>
+                      <strong>{money(selectedVariant(product).price, selectedVariant(product).currency)}</strong>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="discovery-empty">Bestsellers will appear here once sales or bestseller labels are available in the catalogue. We won't guess which products sell most.</p>
+              )}
+            </section>
+            <section className="discovery-section" aria-labelledby="new-arrivals-title">
+              <div className="discovery-heading">
+                <div>
+                  <p className="eyebrow">JUST LANDED</p>
+                  <h2 id="new-arrivals-title">New arrivals<span>.</span></h2>
+                  <p>Fresh additions marked as new in the product catalogue.</p>
+                </div>
+                <span className="discovery-icon">✧</span>
+              </div>
+              {newArrivalProducts.length > 0 ? (
+                <div className="discovery-row">
+                  {newArrivalProducts.slice(0, 8).map(product => (
+                    <button className="discovery-product" key={product.id} onClick={() => openProduct(product)}>
+                      <span className="discovery-product-art">NEW<span>✦</span></span>
+                      <b>{product.name}</b>
+                      <small>{product.brand || product.category}</small>
+                      <strong>{money(selectedVariant(product).price, selectedVariant(product).currency)}</strong>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="discovery-empty">New products will appear here when they are marked as new arrivals in the catalogue.</p>
+              )}
+            </section>
+            {recentlyViewedProducts.length > 0 && (
+              <section className="discovery-section" aria-labelledby="recent-title">
+                <div className="discovery-heading">
+                  <div>
+                    <p className="eyebrow">PICK UP WHERE YOU LEFT OFF</p>
+                    <h2 id="recent-title">Recently viewed<span>.</span></h2>
+                    <p>Your recently opened products, saved on this device.</p>
+                  </div>
+                  <span className="discovery-icon">◷</span>
+                </div>
+                <div className="discovery-row">
+                  {recentlyViewedProducts.map(product => (
+                    <button className="discovery-product" key={product.id} onClick={() => openProduct(product)}>
+                      <span className="discovery-product-art">SB<span>✦</span></span>
+                      <b>{product.name}</b>
+                      <small>{product.brand || product.category}</small>
+                      <strong>{money(selectedVariant(product).price, selectedVariant(product).currency)}</strong>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
+        )}
         {activePage === 'shop' && products.length > 0 && <div className="category-row" aria-label="Filter by category">
           {categories.map(category => <button key={category} className={selectedCategory === category ? 'category-chip active' : 'category-chip'} onClick={() => setSelectedCategory(category)}>{category}<span>{category === 'All' ? products.length : products.filter(p => p.category === category).length}</span></button>)}
         </div>}
