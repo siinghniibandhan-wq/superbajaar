@@ -116,15 +116,22 @@ def _post(conn: Any, user_id: int, kind: str, coins: int, description: str, *,
         if old:
             wallet=conn.execute("SELECT * FROM sb_loyalty_wallets WHERE user_id=%s",(user_id,)).fetchone()
             return {"transaction":old,"wallet":wallet,"duplicate":True}
-    signed=coins if kind in ("earn","welcome","referral","admin_adjustment") and not description.startswith("DEBIT:") else -coins
+    positive_kinds=("earn","welcome","referral","refund","admin_adjustment")
+    signed=coins if kind in positive_kinds and not description.startswith("DEBIT:") else -coins
     if kind!="expiry":
         _expire_due(conn,user_id)
     wallet=_wallet(conn,user_id)
     if signed<0 and wallet["balance"]<coins:
         raise HTTPException(status_code=422,detail="Not enough Super Coins in your wallet")
     new_balance=int(wallet["balance"])+signed
-    earned=int(wallet["lifetime_earned"])+(coins if signed>0 else 0)
-    redeemed=int(wallet["lifetime_redeemed"])+(coins if signed<0 else 0)
+    # Refunds restore spent coins without inflating lifetime earnings, and reverse
+    # the corresponding lifetime-redemption total.
+    earned=int(wallet["lifetime_earned"])+(coins if signed>0 and kind!="refund" else 0)
+    redeemed=int(wallet["lifetime_redeemed"])
+    if signed<0:
+        redeemed+=coins
+    elif kind=="refund":
+        redeemed=max(0,redeemed-coins)
     tier=_tier(conn,earned)
     conn.execute("""UPDATE sb_loyalty_wallets SET balance=%s,lifetime_earned=%s,lifetime_redeemed=%s,tier=%s,updated_at=now()
         WHERE user_id=%s""",(new_balance,earned,redeemed,tier["name"],user_id))
