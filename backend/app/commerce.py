@@ -515,6 +515,20 @@ def update_admin_order(
                             conn.execute("UPDATE sb_stock SET quantity=quantity+%s,updated_at=now() WHERE variant_id=%s AND warehouse='Main'",(line["quantity"],line["variant_id"]))
                             conn.execute("""INSERT INTO sb_stock_movements(variant_id,warehouse,movement_type,quantity,reference_type,reference_id,created_by)
                                 VALUES(%s,'Main','return_in',%s,'website_order_cancel',%s,%s)""",(line["variant_id"],line["quantity"],order_id,actor["id"]))
+                if body.status=="cancelled" and int(previous.get("loyalty_coins_redeemed") or 0)>0:
+                    from .loyalty import _ensure as ensure_loyalty, _program as loyalty_program, _post as post_loyalty
+                    ensure_loyalty(conn)
+                    program=loyalty_program(conn)
+                    refund_expiry=None
+                    if program["expiry_days"] is not None:
+                        from datetime import timedelta
+                        refund_expiry=conn.execute("SELECT now() + (%s * interval '1 day') AS value",(program["expiry_days"],)).fetchone()["value"]
+                    post_loyalty(
+                        conn,int(previous["user_id"]),"refund",int(previous["loyalty_coins_redeemed"]),
+                        f"Super Coins refunded for cancelled order {previous['order_number']}",
+                        order_id=order_id,key=f"order:{order_id}:loyalty-refund",expires_at=refund_expiry,
+                        created_by=int(actor["id"])
+                    )
                 row=conn.execute("UPDATE store_orders SET status=%s,updated_at=now() WHERE id=%s RETURNING id",(body.status,order_id)).fetchone()
                 if body.status in ("packed","shipped"):
                     shipment=conn.execute("SELECT id FROM sb_shipments WHERE order_type='website' AND order_id=%s AND status NOT IN ('cancelled','delivered') ORDER BY id DESC LIMIT 1",(order_id,)).fetchone()
