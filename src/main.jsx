@@ -582,6 +582,8 @@ function AdminPanel() {
   const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('');
   const [items, setItems] = useState([]);
+  const [categoryItems, setCategoryItems] = useState([]);
+  const [categoryName, setCategoryName] = useState('');
   const [tab, setTab] = useState('add');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -595,7 +597,7 @@ function AdminPanel() {
       const data = await response.json().catch(()=>({}));
       if(!response.ok) throw new Error(data.detail || 'Admin sign-in failed');
       setToken(data.access_token); try { sessionStorage.setItem('sb-admin-token',data.access_token); } catch {} setPassword('');
-      setMessage('Signed in successfully'); await loadAdminProducts(data.access_token);
+      setMessage('Signed in successfully'); await Promise.all([loadAdminProducts(data.access_token), loadCategories(data.access_token)]);
     } catch(error) { setMessage(error.message); }
     finally { setBusy(false); }
   }
@@ -614,6 +616,30 @@ function AdminPanel() {
       }
       setItems(data.items || []);
     } catch(error) { setMessage(error.message); }
+  }
+  async function loadCategories(access=token) {
+    try {
+      const response = await fetch(endpoint('/admin/categories'), {headers:{Authorization:'Bearer '+access,Accept:'application/json'}});
+      const data = await response.json().catch(()=>({}));
+      if (!response.ok) throw new Error(data.detail || 'Could not load categories');
+      setCategoryItems(data.items || []);
+    } catch(error) { setMessage(error.message); }
+  }
+  async function saveCategory(event) {
+    event.preventDefault(); setBusy(true); setMessage('');
+    try {
+      const response = await fetch(endpoint('/admin/categories'), {
+        method:'POST',
+        headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},
+        body:JSON.stringify({name:categoryName})
+      });
+      const data = await response.json().catch(()=>({}));
+      if (!response.ok) throw new Error(data.detail || 'Could not save category');
+      setCategoryName('');
+      setMessage('Category saved. You can now assign it to a product.');
+      await loadCategories();
+    } catch(error) { setMessage(error.message); }
+    finally { setBusy(false); }
   }
   async function saveProduct(event) {
     event.preventDefault(); setBusy(true); setMessage('');
@@ -634,19 +660,19 @@ function AdminPanel() {
       setMessage(editing ? 'Product updated successfully.' : 'Product saved successfully. Active products are eligible for storefront display. No stock was added.');
       setEditing(null);
       setForm({name:'',product_code:'',sku:'',brand:'',category:'Grocery & Staples',description:'',image_url:'',selling_price:'',mrp:'',currency:'INR',active:true});
-      await loadAdminProducts();
+      await Promise.all([loadAdminProducts(), loadCategories()]);
     } catch(error) { setMessage(error.message); }
     finally { setBusy(false); }
   }
   function signOut(){setToken('');setItems([]);try { sessionStorage.removeItem('sb-admin-token'); } catch {} setMessage('Signed out');}
   useEffect(() => {
-    if (token) loadAdminProducts(token);
+    if (token) { loadAdminProducts(token); loadCategories(token); }
   }, []);
   return <div className="admin-shell">
     <header className="admin-top"><a className="brand" href="/"><span className="brand-mark">S</span><span className="brand-word">super<span>bajaar</span><small>Product management</small></span></a><span className="admin-badge">ADMIN CONSOLE</span>{token && <button className="header-link" onClick={signOut}>Sign out</button>}</header>
     {!token ? <main className="admin-login-wrap"><form className="admin-login" onSubmit={login}><p className="eyebrow">RESTRICTED ACCESS</p><h1>Admin sign in</h1><p>Only authorised staff can manage the catalogue.</p><label>Admin ID<input autoComplete="username" value={username} onChange={e=>setUsername(e.target.value)} required /></label><label>Password<input type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required /></label><button className="add-cart-button" disabled={busy}>{busy?'Signing in…':'Sign in securely'}</button>{message&&<p className="admin-message" role="status">{message}</p>}</form></main> : <main className="admin-main">
       <div className="admin-heading"><div><p className="eyebrow">SUPER BAJAAR OPERATIONS</p><h1>Admin dashboard</h1><p>Central workspace for product, inventory, purchasing, sales, finance, logistics and people operations.</p></div><div className="admin-count"><b>{items.length}</b><span>catalogue records</span></div></div><section className="admin-module-grid" aria-label="Admin modules">{[{icon:"▦",name:"Products",desc:"Product master, SKU, variants and pricing",status:"Available",active:true},{icon:"▤",name:"Inventory",desc:"Warehouses, stock ledger and adjustments",status:"Next phase"},{icon:"🛒",name:"Sales",desc:"Orders, fulfilment, invoices and returns",status:"Next phase"},{icon:"📥",name:"Purchase",desc:"Suppliers, purchase orders and GRN",status:"Next phase"},{icon:"⇢",name:"Logistics",desc:"Dispatch, tracking and delivery exceptions",status:"Next phase"},{icon:"₹",name:"Accounting",desc:"Ledger, receivables, payables and GST",status:"Next phase"},{icon:"♙",name:"Employees",desc:"Employee records, departments and roles",status:"Next phase"},{icon:"◷",name:"Attendance",desc:"Shifts, check-in/out and leave",status:"Next phase"},{icon:"▥",name:"Payroll",desc:"Salary runs, deductions and payslips",status:"Next phase"},{icon:"♧",name:"Customers & Suppliers",desc:"Profiles, contacts and transaction history",status:"Next phase"},{icon:"▧",name:"Reports",desc:"Sales, inventory, purchasing and finance",status:"Next phase"},{icon:"⚙",name:"Settings & Access",desc:"Users, permissions, taxes and numbering",status:"Next phase"}].map(module=><article key={module.name} className={"admin-module-card"+(module.active?" module-active":"")}><span className="admin-module-icon">{module.icon}</span><div><h2>{module.name}</h2><p>{module.desc}</p><span className="admin-module-status">{module.status}</span></div></article>)}</section>
-      <div className="admin-tabs"><button className={tab==='add'?'active':''} onClick={()=>setTab('add')}>＋ Add product</button><button className={tab==='list'?'active':''} onClick={()=>{setTab('list');loadAdminProducts();}}>Product list ({items.length})</button><button className={tab==='reviews'?'active':''} onClick={()=>{setTab('reviews');loadAdminReviews();}}>Review moderation ({reviewItems.filter(r=>r.status==='pending').length} pending)</button></div>
+      <div className="admin-tabs"><button className={tab==='add'?'active':''} onClick={()=>setTab('add')}>＋ Add product</button><button className={tab==='list'?'active':''} onClick={()=>{setTab('list');loadAdminProducts();}}>Product list ({items.length})</button><button className={tab==='categories'?'active':''} onClick={()=>{setTab('categories');loadCategories();}}>Categories ({categoryItems.length})</button><button className={tab==='reviews'?'active':''} onClick={()=>{setTab('reviews');loadAdminReviews();}}>Review moderation ({reviewItems.filter(r=>r.status==='pending').length} pending)</button></div>
       {message&&<p className="admin-message" role="status">{message}</p>}
       {tab === 'add' && (<form className="admin-product-form" onSubmit={saveProduct}><div className="admin-form-heading"><h2>{editing?'Edit product':'Product information'}</h2><p>Required fields are marked with *.</p></div>
         <div className="admin-form-grid">
@@ -664,6 +690,7 @@ function AdminPanel() {
         <div className="admin-publish-options"><label className="admin-check"><input type="checkbox" checked={form.active} onChange={e=>field('active',e.target.checked)} /> Product active</label><p>Active products are eligible for storefront display. Saving a product does not add stock; inventory will be managed through receiving and stock-movement workflows.</p></div>
         <div className="admin-form-actions"><button type="button" className="secondary-button" onClick={()=>{setEditing(null);setForm({name:'',product_code:'',sku:'',brand:'',category:'Grocery & Staples',description:'',image_url:'',selling_price:'',mrp:'',currency:'INR',active:true});}}>Clear form</button>{editing&&<button type="button" className="secondary-button" onClick={()=>{setEditing(null);setForm({name:'',product_code:'',sku:'',brand:'',category:'Grocery & Staples',description:'',image_url:'',selling_price:'',mrp:'',currency:'INR',active:true});}}>Cancel edit</button>}<button className="add-cart-button" disabled={busy}>{busy?(editing?'Updating…':'Saving…'):(editing?'Update product':'Save product')}</button></div>
       </form>)}
+      {tab === 'categories' && (<section className="admin-product-list"><div className="admin-form-heading"><h2>Product categories</h2><button type="button" className="secondary-button" onClick={()=>loadCategories()}>Refresh categories</button></div><form className="admin-product-form" onSubmit={saveCategory}><div className="admin-form-grid"><label>New category name *<input value={categoryName} onChange={event=>setCategoryName(event.target.value)} maxLength={100} required placeholder="e.g. Personal Care" /></label></div><div className="admin-form-actions"><button className="add-cart-button" disabled={busy || !categoryName.trim()}>{busy?'Saving…':'Create category'}</button></div></form>{categoryItems.length===0?<p>No categories found in the database.</p>:<div className="admin-table-wrap"><table><thead><tr><th>Category</th><th>Code</th><th>Status</th></tr></thead><tbody>{categoryItems.map(category=><tr key={category.id}><td>{category.name}</td><td>{category.category_code}</td><td>{category.status}</td></tr>)}</tbody></table></div>}</section>)}
       {tab === 'reviews' && (<section className="admin-product-list"><div className="admin-form-heading"><h2>Customer reviews</h2><button className="secondary-button" onClick={()=>loadAdminReviews()}>Refresh reviews</button></div>{reviewItems.length===0?<p>No review submissions yet.</p>:<div className="admin-table-wrap"><table><thead><tr><th>Product</th><th>Customer</th><th>Rating</th><th>Review</th><th>Status</th><th>Submitted</th><th>Action</th></tr></thead><tbody>{reviewItems.map(review=><tr key={review.id}><td>{review.product_name}</td><td>{review.reviewer_name}</td><td>{'★'.repeat(Number(review.rating))}{'☆'.repeat(5-Number(review.rating))}</td><td>{review.review_text}</td><td>{review.status}</td><td>{review.created_at?new Date(review.created_at).toLocaleDateString('en-IN'):''}</td><td>{review.status==='pending'?<div className="admin-review-actions"><button type="button" className="secondary-button" disabled={busy} onClick={()=>moderateReview(review.id,'approved')}>Approve</button><button type="button" className="secondary-button" disabled={busy} onClick={()=>moderateReview(review.id,'rejected')}>Reject</button></div>:<span>Moderated</span>}</td></tr>)}</tbody></table></div></section>)}
       {tab === 'list' && (<section className="admin-product-list"><div className="admin-form-heading"><h2>All products</h2><button className="secondary-button" onClick={()=>loadAdminProducts()}>Refresh list</button></div>{items.length===0?<p>No product records returned.</p>:<div className="admin-table-wrap"><table><thead><tr><th>Product</th><th>Image</th><th>SKU</th><th>Category</th><th>Selling price</th><th>Product status</th><th>Variant status</th><th>Visibility</th><th>Action</th></tr></thead><tbody>{items.map(item=><tr key={item.variant_id}><td><b>{item.name}</b><br /><small>{item.product_code}</small></td><td>{item.image_url ? <a href={item.image_url} target="_blank" rel="noreferrer">View image ↗</a> : '—'}</td><td>{item.sku}</td><td>{item.category||'—'}</td><td>{money(item.selling_price,item.currency)}</td><td>{item.product_status}</td><td>{item.variant_status}</td><td>{item.product_status==='active'&&item.variant_status==='active'?'Storefront eligible':'Not eligible'}</td><td><button type="button" className="secondary-button" onClick={()=>{setEditing({product_id:item.product_id,variant_id:item.variant_id});setForm({name:item.name||'',product_code:item.product_code||'',sku:item.sku||'',brand:item.brand||'',category:item.category||'General',description:item.description||'',image_url:item.image_url||'',selling_price:item.selling_price==null?'':String(item.selling_price),mrp:item.mrp==null?'':String(item.mrp),currency:item.currency||'INR',active:item.product_status==='active'&&item.variant_status==='active'});setTab('add');setMessage('Editing '+item.name);}}>Edit</button></td></tr>)}</tbody></table></div>}</section>)}
     </main>}
