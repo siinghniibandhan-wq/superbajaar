@@ -73,6 +73,27 @@ def _ensure(conn: Any) -> None:
         deductions NUMERIC(14,2) NOT NULL DEFAULT 0, net_pay NUMERIC(14,2) NOT NULL,
         UNIQUE(run_id,employee_id))""")
 
+def _post_journal(conn: Any, entry_date: date, reference: str, description: str, source_module: str, source_id: int, lines: list[tuple[str, Decimal, Decimal]], user_id: int) -> int:
+    """Post a balanced journal using seeded account detail types."""
+    from .accounting import _ensure as ensure_accounting
+    ensure_accounting(conn)
+    resolved=[]
+    for detail_type,debit,credit in lines:
+        if debit == 0 and credit == 0:
+            continue
+        account=conn.execute("SELECT id FROM sb_accounts WHERE detail_type=%s AND is_active=TRUE ORDER BY id LIMIT 1",(detail_type,)).fetchone()
+        if not account:
+            raise HTTPException(status_code=503,detail=f"Accounting account is missing: {detail_type}")
+        resolved.append((account["id"],debit,credit,detail_type))
+    if sum((x[1] for x in resolved),Decimal("0")) != sum((x[2] for x in resolved),Decimal("0")):
+        raise HTTPException(status_code=422,detail="Generated accounting journal is not balanced")
+    journal=conn.execute("""INSERT INTO sb_journals(entry_date,reference,description,source_module,source_id,status,created_by)
+        VALUES(%s,%s,%s,%s,%s,'posted',%s) RETURNING id""",(entry_date,reference,description,source_module,str(source_id),user_id)).fetchone()
+    for account_id,debit,credit,detail in resolved:
+        conn.execute("""INSERT INTO sb_journal_lines(journal_id,account_id,debit,credit,description)
+            VALUES(%s,%s,%s,%s,%s)""",(journal["id"],account_id,debit,credit,detail.replace("_"," ")))
+    return journal["id"]
+
 class PartyInput(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     phone: str = Field(default="", max_length=40)
@@ -303,7 +324,11 @@ def pos_sale(body:POSInput,authorization:str|None=Header(default=None))->dict[st
                     conn.execute("UPDATE sb_stock SET quantity=quantity-%s,updated_at=now() WHERE variant_id=%s AND warehouse='Main'",(line.quantity,line.variant_id))
                     conn.execute("""INSERT INTO sb_stock_movements(variant_id,warehouse,movement_type,quantity,reference_type,reference_id,created_by)
                         VALUES(%s,'Main','pos_sale',%s,'pos',%s,%s)""",(line.variant_id,line.quantity,sale["id"],user["id"]))
-                return {"sale":sale,"receipt_number":receipt,"message":"POS sale saved and inventory deducted atomically."}
+                journal_lines=[("cash",total,Decimal("0")),("sales",Decimal("0"),subtotal)]
+                if tax_total:
+                    journal_lines.append(("output_gst",Decimal("0"),tax_total))
+                journal_id=_post_journal(conn,date.today(),receipt,"POS sale "+receipt,"pos",sale["id"],journal_lines,user["id"])
+                return {"sale":sale,"receipt_number":receipt,"journal_id":journal_id,"message":"POS sale saved, inventory deducted and accounting journal posted atomically."}
     except HTTPException: raise
     except Exception as exc: raise HTTPException(status_code=503,detail="POS sale could not be completed") from exc
 
@@ -408,3 +433,23 @@ def payroll_runs(authorization:str|None=Header(default=None))->dict[str,Any]:
             _ensure(conn)
             return {"items":conn.execute("SELECT * FROM sb_payroll_runs ORDER BY period_start DESC").fetchall()}
     except Exception as exc: raise HTTPException(status_code=503,detail="Payroll runs unavailable") from exc
+
+@router.post("/payroll/runs/{run_id}/approve")
+def approve_payroll(run_id:int,authorization:str|None=Header(default=None))->dict[str,Any]:
+    user=_admin(authorization)
+    try:
+        with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
+            _ensure(conn)
+            with conn.transaction():
+                run=conn.execute("SELECT * FROM sb_payroll_runs WHERE id=%s FOR UPDATE",(run_id,)).fetchone()
+                if not run: raise HTTPException(status_code=404,detail="Payroll run not found")
+                if run["status"]!="draft": raise HTTPException(status_code=409,detail="Payroll run is not in draft status")
+                totals=conn.execute("SELECT COALESCE(SUM(gross),0) AS gross,COALESCE(SUM(deductions),0) AS deductions,COALESCE(SUM(net_pay),0) AS net FROM sb_payroll_lines WHERE run_id=%s",(run_id,)).fetchone()
+                gross=Decimal(str(totals["gross"])); net=Decimal(str(totals["net"])); deductions=Decimal(str(totals["deductions"]))
+                if gross<=0: raise HTTPException(status_code=422,detail="Payroll run has no salary lines")
+                journal_id=_post_journal(conn,run["period_end"],f"PAYROLL-{run_id}",f"Payroll for {run['period_start']} to {run['period_end']}","payroll",run_id,
+                    [("salary",gross,Decimal("0")),("tds_payable",Decimal("0"),deductions),("accounts_payable",Decimal("0"),net)],user["id"])
+                conn.execute("UPDATE sb_payroll_runs SET status='approved' WHERE id=%s",(run_id,))
+                return {"run_id":run_id,"status":"approved","journal_id":journal_id,"gross":gross,"deductions":deductions,"net_pay":net}
+    except HTTPException: raise
+    except Exception as exc: raise HTTPException(status_code=503,detail="Payroll approval and accounting posting failed") from exc
