@@ -205,6 +205,11 @@ def register(body: RegisterInput) -> dict[str, Any]:
                 (email, body.full_name.strip(), _hash_password(body.password)),
             ).fetchone()
             _audit(conn, row["id"], row["id"], "account.registered", {})
+            from .loyalty import _ensure as ensure_loyalty, _program as loyalty_program, _post as post_loyalty
+            ensure_loyalty(conn)
+            welcome=int(loyalty_program(conn)["welcome_coins"])
+            if welcome>0:
+                post_loyalty(conn,int(row["id"]),"welcome",welcome,"Welcome to Super Bajaar loyalty",key=f"user:{row['id']}:welcome")
             return {"user": row, "access_token": _token(row["id"]), "token_type": "bearer"}
     except psycopg.errors.UniqueViolation:
         raise HTTPException(status_code=409, detail="An account with this email already exists")
