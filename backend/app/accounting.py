@@ -111,7 +111,7 @@ def account_types() -> dict[str, Any]:
 def list_accounts(authorization: str | None = Header(default=None), include_inactive: bool = False) -> dict[str, Any]:
     _admin(authorization)
     try:
-        with _db() as conn:
+        with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
             _ensure(conn)
             where = "" if include_inactive else "WHERE is_active=TRUE"
             rows = conn.execute(f"SELECT id,code,name,account_type,detail_type,parent_id,is_system,is_active FROM sb_accounts {where} ORDER BY code").fetchall()
