@@ -394,6 +394,7 @@ def list_products(
                c.name AS category, v.id AS variant_id, v.sku, v.barcode,
                v.variant_attributes, v.mrp, v.selling_price, v.currency,
                {history_select}
+               {review_select}
                COALESCE(SUM(ib.quantity_on_hand - ib.quantity_reserved), 0) AS available_quantity
         FROM products p
         JOIN product_variants v ON v.product_id = p.id
