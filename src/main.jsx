@@ -24,7 +24,7 @@ function normaliseProducts(payload) {
       id, name: row.name || row.product_name || 'Unnamed product',
       code: row.product_code || '', brand: row.brand || '',
       category: row.category || row.category_name || 'Everyday essentials',
-      description: row.description || '', isBestseller: Boolean(row.is_bestseller || row.bestseller), variants: []
+      description: row.description || '', isBestseller: Boolean(row.is_bestseller || row.bestseller), isNewArrival: Boolean(row.is_new_arrival || row.new_arrival || row.is_new), variants: []
     });
     const product = grouped.get(id);
     const variantId = row.variant_id ?? row.sku ?? id;
@@ -54,6 +54,7 @@ function App() {
   const [theme, setTheme] = useState(() => {
     try { return localStorage.getItem('sb-theme') || 'soft'; } catch { return 'soft'; }
   });
+  const [activePage, setActivePage] = useState('home');
   const [query, setQuery] = useState('');
   const [pincode, setPincode] = useState('');
   const [products, setProducts] = useState([]);
@@ -134,6 +135,7 @@ function App() {
   function openProduct(product) { setDetail(product); setRecentlyViewed(previous => [product.id, ...previous.filter(id => String(id) !== String(product.id))].slice(0, 12)); }
   const recentlyViewedProducts = recentlyViewed.map(id => products.find(product => String(product.id) === String(id))).filter(Boolean);
   const bestsellerProducts = products.filter(product => product.isBestseller);
+  const newArrivalProducts = products.filter(product => product.isNewArrival);
   const brandGroups = [...new Set(products.map(product => product.brand).filter(Boolean))].map(brand => ({ brand, items: products.filter(product => product.brand === brand) }));
 
   async function checkServiceability(event) {
@@ -167,16 +169,17 @@ function App() {
   return <div className="app" data-theme={theme}>
     <div className="announcement"><span className="announcement-dot" /> Everyday essentials, all in one place <span className="announcement-note">Your Everyday Super Store</span></div>
     <header className="header">
-      <a className="brand" href="#" aria-label="Super Bajaar home">
+      <a className="brand" href="#home" aria-label="Super Bajaar home" onClick={e => { e.preventDefault(); setActivePage('home'); window.scrollTo({top:0,behavior:'smooth'}); }}>
         <span className="brand-mark">S</span>
         <span className="brand-word">super<span>bajaar</span><small>Your Everyday Super Store</small></span>
       </a>
-      <form className="search" role="search" onSubmit={e => { e.preventDefault(); loadProducts(query, pincode); }}>
+      <form className="search" role="search" onSubmit={e => { e.preventDefault(); setActivePage('shop'); loadProducts(query, pincode); }}>
         <span className="search-icon" aria-hidden="true">⌕</span>
         <input aria-label="Search products" placeholder="Search products, brands or SKU" value={query} onChange={e => setQuery(e.target.value)} />
         {query && <button className="clear-search" type="button" aria-label="Clear search" onClick={() => setQuery('')}>×</button>}
         <button type="submit">Search</button>
       </form>
+      <nav className="main-nav" aria-label="Main navigation"><button className={activePage === 'home' ? 'active' : ''} onClick={() => { setActivePage('home'); window.scrollTo({top:0,behavior:'smooth'}); }}>Home</button><button className={activePage === 'shop' ? 'active' : ''} onClick={() => { setActivePage('shop'); window.scrollTo({top:0,behavior:'smooth'}); }}>Shop all</button></nav>
       <div className="header-actions">
         <button className="header-link" onClick={() => setNotice('Customer accounts will be enabled when the authentication flow is ready.')}>Account</button>
         <button className="cart-button" onClick={() => setCartOpen(true)}>Bag <span>{cartCount}</span></button>
@@ -189,7 +192,7 @@ function App() {
           <div className="hero-kicker"><span>THE EVERYDAY EDIT</span><i /></div>
           <h1>Good finds.<br /><span>Better everyday.</span></h1>
           <p>Discover your everyday favourites with a simpler, brighter shopping experience. Prices and availability come from the live catalogue.</p>
-          <a href="#catalogue" className="primary-link">Explore the catalogue <span aria-hidden="true">↗</span></a>
+          <button type="button" className="primary-link" onClick={() => { setActivePage('shop'); document.getElementById('catalogue')?.scrollIntoView({behavior:'smooth'}); }}>Explore the catalogue <span aria-hidden="true">↗</span></button>
           <div className="hero-proof"><span>✦ Thoughtful essentials</span><span>✓ Real catalogue data</span></div>
         </div>
         <div className="hero-art" aria-hidden="true">
@@ -213,7 +216,7 @@ function App() {
 
       <section id="catalogue" className="catalogue">
         <div className="section-heading">
-          <div><p className="eyebrow">PICKED FOR EVERYDAY</p><h2>Explore the catalogue<span>.</span></h2><p>Browse live products and choose the variant that suits you.</p></div>
+          <div><p className="eyebrow">{activePage === 'home' ? 'PICKED FOR EVERYDAY' : 'THE FULL COLLECTION'}</p><h2>{activePage === 'home' ? 'Discover your favourites' : 'Shop all products'}<span>.</span></h2><p>{activePage === 'home' ? 'Bestsellers, new arrivals and products you recently viewed.' : 'Browse the complete live catalogue and choose the variant that suits you.'}</p></div>
           <div className="heading-tools">
             <div className="theme-switch" role="group" aria-label="Choose colour theme">
               {['soft', 'light', 'dark'].map(option => <button type="button" key={option} aria-pressed={theme === option} className={theme === option ? 'selected' : ''} onClick={() => setTheme(option)}>{option[0].toUpperCase() + option.slice(1)}</button>)}
@@ -222,22 +225,22 @@ function App() {
           </div>
         </div>
 
-        {products.length > 0 && <div className="home-discovery">
+        {activePage === 'home' && products.length > 0 && <div className="home-discovery">
           <section className="discovery-section" aria-labelledby="bestsellers-title">
             <div className="discovery-heading"><div><p className="eyebrow">CUSTOMER FAVOURITES</p><h2 id="bestsellers-title">Bestsellers<span>.</span></h2><p>Products customers are choosing most.</p></div><span className="discovery-icon">★</span></div>
             {bestsellerProducts.length ? <div className="discovery-row">{bestsellerProducts.slice(0,8).map(product => <button className="discovery-product" key={product.id} onClick={() => openProduct(product)}><span className="discovery-product-art">SB<span>✦</span></span><b>{product.name}</b><small>{product.brand || product.category}</small><strong>{money(selectedVariant(product).price,selectedVariant(product).currency)}</strong></button>)}</div> : <p className="discovery-empty">Bestsellers will appear here once sales or bestseller labels are available in the catalogue. We won't guess which products sell most.</p>}
           </section>
-          {brandGroups.length > 0 && <section className="discovery-section" aria-labelledby="brands-title"><div className="discovery-heading"><div><p className="eyebrow">SHOP YOUR FAVOURITES</p><h2 id="brands-title">Shop by brand<span>.</span></h2><p>Explore products from the brands in our catalogue.</p></div><span className="discovery-icon">✦</span></div><div className="brand-catalogue">{brandGroups.slice(0,12).map(group=><button className="brand-tile" key={group.brand} onClick={()=>{setQuery('');setSelectedCategory('All');setBrandFilter(group.brand);document.getElementById('catalogue-grid')?.scrollIntoView({behavior:'smooth'});}}><span className="brand-initial">{group.brand.trim().charAt(0).toUpperCase()}</span><span><b>{group.brand}</b><small>{group.items.length} {group.items.length===1?'product':'products'}</small></span><i>↗</i></button>)}</div></section>}
+          <section className="discovery-section" aria-labelledby="new-arrivals-title"><div className="discovery-heading"><div><p className="eyebrow">JUST LANDED</p><h2 id="new-arrivals-title">New arrivals<span>.</span></h2><p>Fresh additions marked as new in the product catalogue.</p></div><span className="discovery-icon">✧</span></div>{newArrivalProducts.length ? <div className="discovery-row">{newArrivalProducts.slice(0,8).map(product=><button className="discovery-product" key={product.id} onClick={()=>openProduct(product)}><span className="discovery-product-art">NEW<span>✦</span></span><b>{product.name}</b><small>{product.brand || product.category}</small><strong>{money(selectedVariant(product).price,selectedVariant(product).currency)}</strong></button>)}</div> : <p className="discovery-empty">New products will appear here when they are marked as new arrivals in the catalogue.</p></section>}
           {recentlyViewedProducts.length > 0 && <section className="discovery-section" aria-labelledby="recent-title"><div className="discovery-heading"><div><p className="eyebrow">PICK UP WHERE YOU LEFT OFF</p><h2 id="recent-title">Recently viewed<span>.</span></h2><p>Your recently opened products, saved on this device.</p></div><span className="discovery-icon">◷</span></div><div className="discovery-row">{recentlyViewedProducts.map(product=><button className="discovery-product" key={product.id} onClick={()=>openProduct(product)}><span className="discovery-product-art">SB<span>✦</span></span><b>{product.name}</b><small>{product.brand || product.category}</small><strong>{money(selectedVariant(product).price,selectedVariant(product).currency)}</strong></button>)}</div></section>}
         </div>}
-        {products.length > 0 && <div className="category-row" aria-label="Filter by category">
+        {activePage === 'shop' && products.length > 0 && <div className="category-row" aria-label="Filter by category">
           {categories.map(category => <button key={category} className={selectedCategory === category ? 'category-chip active' : 'category-chip'} onClick={() => setSelectedCategory(category)}>{category}<span>{category === 'All' ? products.length : products.filter(p => p.category === category).length}</span></button>)}
         </div>}
         {loading && <div className="catalogue-state"><div className="loader" /><h3>Finding your everyday favourites</h3><p>Loading the latest catalogue information…</p></div>}
         {!loading && error && <div className="catalogue-state error-state"><div className="state-symbol">↻</div><h3>We couldn't load the catalogue</h3><p>{error}</p><button className="primary-link button-link" onClick={() => loadProducts(query, pincode)}>Try again <span>↗</span></button></div>}
-        {!loading && !error && products.length === 0 && <div className="catalogue-state"><div className="state-symbol">✳</div><h3>Your next favourite starts here</h3><p>No published products were returned by the catalogue. When products are available, they will appear here automatically.</p><button className="secondary-button" onClick={() => loadProducts('', '')}>Refresh catalogue</button></div>}
-        {!loading && !error && products.length > 0 && visibleProducts.length === 0 && <div className="catalogue-state"><div className="state-symbol">⌕</div><h3>No matches found</h3><p>Try another search or choose a different category.</p><button className="secondary-button" onClick={() => { setQuery(''); setSelectedCategory('All'); setBrandFilter(''); }}>Clear filters</button></div>}
-        {!loading && !error && visibleProducts.length > 0 && <div id="catalogue-grid" className="product-grid">
+        {activePage === 'shop' && !loading && !error && products.length === 0 && <div className="catalogue-state"><div className="state-symbol">✳</div><h3>Your next favourite starts here</h3><p>No published products were returned by the catalogue. When products are available, they will appear here automatically.</p><button className="secondary-button" onClick={() => loadProducts('', '')}>Refresh catalogue</button></div>}
+        {activePage === 'shop' && !loading && !error && products.length > 0 && visibleProducts.length === 0 && <div className="catalogue-state"><div className="state-symbol">⌕</div><h3>No matches found</h3><p>Try another search or choose a different category.</p><button className="secondary-button" onClick={() => { setQuery(''); setSelectedCategory('All'); setBrandFilter(''); }}>Clear filters</button></div>}
+        {activePage === 'shop' && !loading && !error && visibleProducts.length > 0 && <div id="catalogue-grid" className="product-grid">
           {visibleProducts.map(product => {
             const variant = selectedVariant(product);
             return <article className="product-card" key={product.id}>
@@ -259,7 +262,7 @@ function App() {
             </article>;
           })}
         </div>}
-        {products.length > 0 && <p className="catalogue-footnote">Showing real catalogue records only. Price and availability are subject to backend confirmation.</p>}
+        {activePage === 'shop' && products.length > 0 && <p className="catalogue-footnote">Showing real catalogue records only. Price and availability are subject to backend confirmation.</p>}
       </section>
 
       <section className="promise-grid" aria-label="Shopping principles">
@@ -287,7 +290,7 @@ function App() {
           {detail.variants.length > 1 && <label className="variant-select">Choose option<select value={String(selectedVariant(detail).id)} onChange={e => setSelectedVariants(prev => ({ ...prev, [detail.id]: e.target.value }))}>{detail.variants.map(v => <option key={v.id} value={String(v.id)}>{variantLabel(v)}</option>)}</select></label>}
           <div className="detail-price">{money(selectedVariant(detail).price, selectedVariant(detail).currency)}</div><p className="detail-sku">SKU: {selectedVariant(detail).sku || 'Not provided'} · Stock: {selectedVariant(detail).stock > 0 ? selectedVariant(detail).stock : 'Not confirmed'}</p>
           <div className="detail-notice">Cart and checkout will be enabled when the corresponding backend APIs are available.</div>
-          <button className="primary-link button-link" onClick={() => setDetail(null)}>Continue browsing <span>↗</span></button>
+          <button className="primary-link button-link" onClick={() => { setDetail(null); setActivePage('shop'); }}>Continue shopping <span>↗</span></button>
         </div>
       </section>
     </div>}
