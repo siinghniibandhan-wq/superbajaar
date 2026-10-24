@@ -7,7 +7,7 @@
       "Action": [
         "ssm:GetParameter"
       ],
-      "Resource": "arn:aws:ssm:${aws:Region}:${aws:AccountId}:parameter/superbajaar/*"
+      "Resource": "arn:aws:ssm:REGION:ACCOUNT_ID:parameter/superbajaar/*"
     }
   ]
 }
