@@ -20,7 +20,7 @@ origins = list(dict.fromkeys(configured_origins + [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_origin_regex=r"https://.*\\.app\\.github\\.dev",
+    allow_origin_regex=r"https://.*\.app\.github\.dev",
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Accept", "Content-Type", "Authorization"],
