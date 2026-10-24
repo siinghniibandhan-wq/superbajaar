@@ -34,6 +34,18 @@ class AdminLogin(BaseModel):
     password: str = Field(min_length=1, max_length=200)
 
 
+class AdminCategoryInput(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+    @field_validator("name")
+    @classmethod
+    def strip_category_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Category name cannot be blank")
+        return value
+
+
 class AdminProductInput(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     product_code: str = Field(min_length=1, max_length=80)
@@ -219,6 +231,43 @@ def admin_list_products(authorization: str | None = Header(default=None)) -> dic
         logger.exception("Admin product-list query failed")
         raise HTTPException(status_code=503, detail="Product catalogue is temporarily unavailable") from None
     return {"items": json_safe(rows)}
+
+
+@app.get("/api/admin/categories")
+def admin_list_categories(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    require_admin(authorization)
+    try:
+        with get_pool().connection() as conn:
+            rows = conn.execute(
+                """SELECT id, category_code, name, parent_id, status
+                   FROM product_categories
+                   ORDER BY name"""
+            ).fetchall()
+        return {"items": json_safe(rows)}
+    except Exception:
+        logger.exception("Admin category-list query failed")
+        raise HTTPException(status_code=503, detail="Categories are temporarily unavailable") from None
+
+
+@app.post("/api/admin/categories", status_code=201)
+def admin_create_category(category: AdminCategoryInput, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    require_admin(authorization)
+    slug = re.sub(r"[^a-z0-9]+", "-", category.name.lower()).strip("-") or "category"
+    try:
+        with get_pool().connection() as conn:
+            with conn.transaction():
+                row = conn.execute(
+                    """INSERT INTO product_categories (category_code, name, status)
+                       VALUES (%s, %s, 'active')
+                       ON CONFLICT (category_code) DO UPDATE
+                         SET name = EXCLUDED.name
+                       RETURNING id, category_code, name, parent_id, status""",
+                    [slug[:80], category.name],
+                ).fetchone()
+        return {"item": json_safe(row), "message": "Category saved"}
+    except Exception:
+        logger.exception("Admin category creation failed")
+        raise HTTPException(status_code=503, detail="Category could not be saved") from None
 
 
 @app.post("/api/admin/products", status_code=201)
@@ -460,7 +509,7 @@ def list_products(
     query = f"""
         SELECT p.id AS product_id, p.product_code, p.name, p.description, p.brand,
                c.name AS category, v.id AS variant_id, v.sku, v.barcode,
-               v.variant_attributes, v.mrp, v.selling_price, v.currency,
+               v.variant_attributes, {image_select}, v.mrp, v.selling_price, v.currency,
                {history_select}
                {review_select}
                COALESCE(SUM(ib.quantity_on_hand - ib.quantity_reserved), 0) AS available_quantity
