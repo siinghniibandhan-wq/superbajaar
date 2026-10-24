@@ -12,12 +12,15 @@ from fastapi import APIRouter, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 from psycopg.rows import dict_row
 
-from .auth import _require, _db
+from .auth import _require, _db, _current
 
 router = APIRouter(prefix="/api/operations", tags=["operations"])
 
 def _admin(authorization: str | None) -> dict[str, Any]:
     return _require(authorization, {"super_admin", "admin"})
+
+def _current_user_id(authorization: str | None) -> int:
+    return int(_admin(authorization)["id"])
 
 def _ensure(conn: Any) -> None:
     conn.execute("""CREATE TABLE IF NOT EXISTS sb_customers (
@@ -32,6 +35,10 @@ def _ensure(conn: Any) -> None:
     conn.execute("""CREATE TABLE IF NOT EXISTS sb_stock (
         variant_id BIGINT NOT NULL, warehouse TEXT NOT NULL DEFAULT 'Main', quantity NUMERIC(14,3) NOT NULL DEFAULT 0 CHECK(quantity>=0),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), PRIMARY KEY(variant_id,warehouse))""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS sb_product_tax (
+        variant_id BIGINT PRIMARY KEY, hsn_sac TEXT, gst_rate NUMERIC(5,2) NOT NULL DEFAULT 0 CHECK(gst_rate>=0 AND gst_rate<=100),
+        classification TEXT NOT NULL DEFAULT 'taxable' CHECK(classification IN ('taxable','nil_rated','exempt','non_gst')),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_by BIGINT)""")
     conn.execute("""CREATE TABLE IF NOT EXISTS sb_stock_movements (
         id BIGSERIAL PRIMARY KEY, variant_id BIGINT NOT NULL, warehouse TEXT NOT NULL DEFAULT 'Main',
         movement_type TEXT NOT NULL, quantity NUMERIC(14,3) NOT NULL CHECK(quantity>0),
@@ -103,6 +110,40 @@ class PartyInput(BaseModel):
 class VendorInput(PartyInput):
     address: dict[str, Any] = Field(default_factory=dict)
     payment_terms_days: int = Field(default=0, ge=0, le=365)
+
+
+class ProductTaxInput(BaseModel):
+    hsn_sac: str = Field(default="", max_length=20)
+    gst_rate: Decimal = Field(default=Decimal("0"), ge=0, le=100)
+    classification: str = Field(default="taxable", pattern="^(taxable|nil_rated|exempt|non_gst)$")
+
+@router.get("/product-tax")
+def list_product_tax(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _admin(authorization)
+    try:
+        with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
+            _ensure(conn)
+            return {"items": conn.execute("SELECT * FROM sb_product_tax ORDER BY variant_id").fetchall()}
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Product GST mapping unavailable") from exc
+
+@router.put("/product-tax/{variant_id}")
+def set_product_tax(variant_id: int, body: ProductTaxInput, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _admin(authorization)
+    try:
+        with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
+            _ensure(conn)
+            exists=conn.execute("SELECT id FROM product_variants WHERE id=%s",(variant_id,)).fetchone()
+            if not exists:
+                raise HTTPException(status_code=404, detail="Product variant not found in catalogue")
+            row=conn.execute("""INSERT INTO sb_product_tax(variant_id,hsn_sac,gst_rate,classification,updated_by)
+                VALUES(%s,%s,%s,%s,%s) ON CONFLICT(variant_id) DO UPDATE SET hsn_sac=EXCLUDED.hsn_sac,
+                gst_rate=EXCLUDED.gst_rate,classification=EXCLUDED.classification,updated_by=EXCLUDED.updated_by,updated_at=now()
+                RETURNING *""",(variant_id,body.hsn_sac.strip() or None,body.gst_rate,body.classification,_current_user_id(authorization)))
+            return {"item":row}
+    except HTTPException: raise
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Product GST mapping could not be saved") from exc
 
 class StockInput(BaseModel):
     variant_id: int = Field(gt=0)
