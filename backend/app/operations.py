@@ -292,7 +292,9 @@ def receive_purchase(purchase_id:int,authorization:str|None=Header(default=None)
                         VALUES(%s,'Main','purchase_receipt',%s,'purchase',%s,%s)""",(line["variant_id"],remaining,purchase_id,user["id"]))
                     conn.execute("UPDATE sb_purchase_lines SET received_qty=quantity WHERE id=%s",(line["id"],))
                 conn.execute("UPDATE sb_purchase_orders SET status='received' WHERE id=%s",(purchase_id,))
-                return {"purchase_id":purchase_id,"status":"received","message":"Received quantities posted to inventory."}
+                journal_id=_post_journal(conn,date.today(),f"PO-{purchase_id}",f"Goods received for purchase order {purchase_id}","purchase",purchase_id,
+                    [("inventory",Decimal(str(po["total"])),Decimal("0")),("accounts_payable",Decimal("0"),Decimal(str(po["total"])))],user["id"])
+                return {"purchase_id":purchase_id,"status":"received","journal_id":journal_id,"message":"Received quantities posted to inventory and supplier payable accounting."}
     except HTTPException: raise
     except Exception as exc: raise HTTPException(status_code=503,detail="Purchase receipt could not be posted") from exc
 
