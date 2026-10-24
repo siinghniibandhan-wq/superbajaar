@@ -4,6 +4,7 @@ These tables are isolated from the catalogue and are initialized lazily. No Odoo
 sync, product import, or payment-provider simulation is performed here.
 """
 import json
+import re
 import secrets
 from decimal import Decimal
 from typing import Any
@@ -96,6 +97,73 @@ class OrderStatusUpdate(BaseModel):
     status: str
 
 
+def _validated_delivery_setting(value: dict[str, Any]) -> dict[str, Any]:
+    """Validate the explicit delivery contract stored in the existing settings table."""
+    if not value:
+        return {}
+    allowed = {"enabled", "serviceable_pincodes", "shipping_fee", "free_shipping_threshold", "message"}
+    unknown = set(value) - allowed
+    if unknown:
+        raise HTTPException(status_code=422, detail="Unsupported delivery setting fields: " + ", ".join(sorted(unknown)))
+    if not isinstance(value.get("enabled"), bool):
+        raise HTTPException(status_code=422, detail="Delivery settings require an enabled boolean.")
+    pins = value.get("serviceable_pincodes", [])
+    if not isinstance(pins, list) or any(not isinstance(pin, str) or not re.fullmatch(r"[0-9]{6}", pin.strip()) for pin in pins):
+        raise HTTPException(status_code=422, detail="Serviceable pincodes must be a list of six-digit strings.")
+    pins = list(dict.fromkeys(pin.strip() for pin in pins))
+    if value["enabled"] and not pins:
+        raise HTTPException(status_code=422, detail="Add verified serviceable pincodes before enabling delivery.")
+
+    def amount(field: str, default: Any = None) -> float | None:
+        raw = value.get(field, default)
+        if raw is None:
+            return None
+        if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+            raise HTTPException(status_code=422, detail=f"{field} must be a non-negative number.")
+        try:
+            number = Decimal(str(raw))
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"{field} must be a valid amount.") from exc
+        if not number.is_finite() or number < 0 or number.quantize(Decimal("0.01")) != number:
+            raise HTTPException(status_code=422, detail=f"{field} must be a non-negative amount with at most two decimal places.")
+        return float(number)
+
+    fee = amount("shipping_fee", 0)
+    threshold = amount("free_shipping_threshold")
+    message = value.get("message", "")
+    if not isinstance(message, str) or len(message) > 240:
+        raise HTTPException(status_code=422, detail="Delivery message must be text up to 240 characters.")
+    return {
+        "enabled": value["enabled"],
+        "serviceable_pincodes": pins,
+        "shipping_fee": fee,
+        "free_shipping_threshold": threshold,
+        "message": message.strip(),
+    }
+
+
+def _delivery_quote(config: Any, pincode: str | None, subtotal: Decimal) -> dict[str, Any]:
+    if not isinstance(config, dict) or config.get("enabled") is not True:
+        return {"configured": False, "serviceable": None, "shipping_fee": None,
+                "message": "Delivery coverage and charges have not been configured by the store."}
+    pins = config.get("serviceable_pincodes")
+    if not isinstance(pins, list) or not pins or any(not isinstance(pin, str) or not re.fullmatch(r"[0-9]{6}", pin) for pin in pins):
+        return {"configured": False, "serviceable": None, "shipping_fee": None,
+                "message": "Delivery settings need valid serviceable pincodes."}
+    if not pincode:
+        return {"configured": True, "serviceable": None, "shipping_fee": None,
+                "message": config.get("message") or "Enter a delivery pincode to check serviceability."}
+    if pincode not in pins:
+        return {"configured": True, "serviceable": False, "shipping_fee": None,
+                "message": "Delivery is not available for this pincode."}
+    fee = Decimal(str(config.get("shipping_fee", 0)))
+    threshold = config.get("free_shipping_threshold")
+    if threshold is not None and subtotal >= Decimal(str(threshold)):
+        fee = Decimal("0.00")
+    return {"configured": True, "serviceable": True, "shipping_fee": f"{fee:.2f}",
+            "message": config.get("message") or ("Free delivery applied." if fee == 0 else "Delivery is available.")}
+
+
 def _order_detail(conn: Any, order_id: int) -> dict[str, Any]:
     order = conn.execute(
         """SELECT id,order_number,user_id,status,payment_method,payment_status,currency,
@@ -109,6 +177,28 @@ def _order_detail(conn: Any, order_id: int) -> dict[str, Any]:
            FROM store_order_items WHERE order_id=%s ORDER BY id""", (order_id,)
     ).fetchall()
     return order
+
+
+@router.get("/checkout-options")
+def checkout_options(
+    pincode: str | None = Query(default=None, pattern=r"^[0-9]{6}$"),
+    subtotal: Decimal = Query(default=Decimal("0"), ge=0, le=Decimal("9999999999.99")),
+) -> dict[str, Any]:
+    try:
+        with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
+            _ensure_commerce_schema(conn)
+            row = conn.execute("SELECT setting_value FROM store_settings WHERE setting_key='delivery'").fetchone()
+            delivery = _delivery_quote(row["setting_value"] if row else None, pincode, subtotal)
+            return {
+                "payment_methods": [{"id": "cash_on_delivery", "enabled": True}],
+                "online_payment": {"enabled": False, "provider_configured": False,
+                                   "message": "Online payments are deferred until a provider is explicitly configured."},
+                "delivery": delivery,
+            }
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(status_code=503, detail="Checkout options are temporarily unavailable.") from exc
 
 
 @router.post("/checkout", status_code=201)
@@ -153,8 +243,19 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
                 line_total = (price * quantity).quantize(Decimal("0.01"))
                 subtotal += line_total
                 products.append({**product, "quantity": quantity, "unit_price": price, "line_total": line_total})
-            # Shipping is deliberately zero until an admin configures a verified shipping rule.
-            shipping_fee = Decimal("0.00")
+            delivery_row = conn.execute(
+                "SELECT setting_value FROM store_settings WHERE setting_key='delivery'"
+            ).fetchone()
+            delivery_quote = _delivery_quote(
+                delivery_row["setting_value"] if delivery_row else None,
+                body.shipping_address.pincode,
+                subtotal,
+            )
+            if not delivery_quote["configured"]:
+                raise HTTPException(status_code=503, detail=delivery_quote["message"])
+            if delivery_quote["serviceable"] is not True:
+                raise HTTPException(status_code=422, detail=delivery_quote["message"])
+            shipping_fee = Decimal(str(delivery_quote["shipping_fee"]))
             total = subtotal + shipping_fee
             order_number = "SB-" + secrets.token_hex(5).upper()
             row = conn.execute(
@@ -285,7 +386,8 @@ def update_store_setting(
     if setting_key not in {"brand", "catalogue", "checkout", "delivery", "policies"}:
         raise HTTPException(status_code=422, detail="Unsupported store setting key.")
     # Settings are JSON objects with strict size limits; no executable templates or secrets.
-    encoded = json.dumps(body.value, separators=(",", ":"))
+    value = _validated_delivery_setting(body.value) if setting_key == "delivery" else body.value
+    encoded = json.dumps(value, separators=(",", ":"))
     if len(encoded) > 20000:
         raise HTTPException(status_code=413, detail="Setting payload is too large.")
     try:
