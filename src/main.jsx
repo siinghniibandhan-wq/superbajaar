@@ -179,12 +179,49 @@ function App() {
         {query && <button className="clear-search" type="button" aria-label="Clear search" onClick={() => setQuery('')}>×</button>}
         <button type="submit">Search</button>
       </form>
-      <nav className="main-nav" aria-label="Main navigation"><button className={activePage === 'home' ? 'active' : ''} onClick={() => { setActivePage('home'); window.scrollTo({top:0,behavior:'smooth'}); }}>Home</button><button className={activePage === 'shop' ? 'active' : ''} onClick={() => { setActivePage('shop'); window.scrollTo({top:0,behavior:'smooth'}); }}>Shop all</button></nav>
+      
       <div className="header-actions">
         <button className="header-link" onClick={() => setNotice('Customer accounts will be enabled when the authentication flow is ready.')}>Account</button>
         <button className="cart-button" onClick={() => setCartOpen(true)}>Bag <span>{cartCount}</span></button>
       </div>
     </header>
+
+    <nav className="category-navigation" aria-label="Shop categories">
+      <div className="category-navigation-links">
+        <button className={activePage === 'home' ? 'active' : ''} onClick={() => { setActivePage('home'); setQuery(''); window.scrollTo({top:0,behavior:'smooth'}); }}>Home</button>
+        <button className={activePage === 'shop' && selectedCategory === 'All' && !query ? 'active' : ''} onClick={() => { setActivePage('shop'); setQuery(''); setSelectedCategory('All'); loadProducts('', pincode); window.scrollTo({top:0,behavior:'smooth'}); }}>Shop All</button>
+      </div>
+      <div className="category-card-track">
+        {[
+          { name: 'Grocery', image: 'photo-1542838132-92c53300491e', terms: ['grocery', 'groceries', 'grocery & staples', 'staples'] },
+          { name: 'Fashion', image: 'photo-1483985988355-763728e1935b', terms: ['fashion', 'clothing', 'apparel'] },
+          { name: 'Electronics', image: 'photo-1498049794561-7780e7231661', terms: ['electronics', 'electronic'] },
+          { name: 'Home Essentials', image: 'photo-1616486338812-3dadae4b4ace', terms: ['home essentials', 'home', 'household'] },
+          { name: 'Pharmacy', image: 'photo-1576602976047-174e57a47881', terms: ['pharmacy', 'health', 'personal care', 'medicine'] },
+          { name: 'Pet Care', image: 'photo-1548199973-03cce0bbc87b', terms: ['pet care', 'pet'] },
+          { name: 'Fresh Products', image: 'photo-1610832958506-aa56368176cf', terms: ['fresh products', 'fresh', 'fruits', 'vegetables', 'produce'] }
+        ].map(category => (
+          <button type="button" className="category-image-card" key={category.name} onClick={() => {
+            setActivePage('shop');
+            const match = categories.find(existing => category.terms.some(term => existing.toLowerCase().includes(term)));
+            if (match) {
+              setSelectedCategory(match);
+              setQuery('');
+              setBrandFilter('');
+              window.scrollTo({top:0,behavior:'smooth'});
+            } else {
+              setSelectedCategory('All');
+              setQuery(category.name);
+              loadProducts(category.name, pincode);
+              window.scrollTo({top:0,behavior:'smooth'});
+            }
+          }}>
+            <span className="category-card-image" style={{backgroundImage: `url(https://images.unsplash.com/${category.image}?auto=format&fit=crop&w=360&q=80)`}} role="img" aria-label={category.name} />
+            <span className="category-card-label">{category.name}</span>
+          </button>
+        ))}
+      </div>
+    </nav>
 
     <main>
       <section className="hero">

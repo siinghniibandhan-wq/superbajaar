@@ -232,3 +232,16 @@ footer{background:#211331;color:#fff}
 .discovery-empty{margin:0;padding:16px;border:1px dashed var(--line);border-radius:12px;color:var(--muted);font-size:11px;line-height:1.7}
 .primary-link[type=button]{font-family:inherit;cursor:pointer}
 @media(max-width:760px){.main-nav{order:3;width:100%;justify-content:center}.header-actions{margin-left:auto}.main-nav button{flex:1}}
+
+/* Modern image-led category navigation */
+.category-navigation{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:18px;padding:12px clamp(16px,4vw,56px);border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--surface) 94%,transparent);backdrop-filter:blur(14px)}
+.category-navigation-links{display:flex;gap:6px;flex-shrink:0;padding-right:16px;border-right:1px solid var(--line)}
+.category-navigation-links button{padding:9px 13px;border:1px solid transparent;border-radius:10px;background:transparent;color:var(--muted);font-size:11px;font-weight:800;white-space:nowrap}
+.category-navigation-links button:hover,.category-navigation-links button.active{border-color:var(--line);background:var(--soft);color:var(--accent)}
+.category-card-track{display:flex;align-items:center;gap:11px;min-width:0;overflow-x:auto;scrollbar-width:thin;scroll-padding:8px;padding:1px 1px 5px}
+.category-image-card{display:flex;flex:0 0 100px;flex-direction:column;align-items:center;gap:7px;padding:5px;border:1px solid var(--line);border-radius:15px;background:var(--surface);color:var(--text);cursor:pointer;transition:transform .18s,border-color .18s,box-shadow .18s}
+.category-image-card:hover{transform:translateY(-2px);border-color:var(--accent);box-shadow:0 8px 20px #4d237212}
+.category-card-image{display:block;width:100%;height:58px;border-radius:10px;background-color:var(--soft);background-position:center;background-size:cover}
+.category-card-label{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;font-weight:800}
+@media(max-width:760px){.category-navigation{position:relative;top:auto;display:block;padding:10px 14px}.category-navigation-links{padding:0 0 9px;margin-bottom:8px;border-right:0;border-bottom:1px solid var(--line)}.category-navigation-links button{flex:1}.category-card-track{gap:9px}.category-image-card{flex-basis:88px}.category-card-image{height:54px}}
+@media(min-width:761px){.category-navigation{top:0}}
