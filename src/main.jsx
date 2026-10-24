@@ -25,7 +25,7 @@ const DETAILS = {
  settings:{title:'Store customisation',sub:'Control brand identity, catalogue rules and access from one workspace.',stats:['Storefront','Catalogue','Access control'],features:[['Brand & appearance','Logo, colours, typography, banners, navigation and responsive layout.'],['Catalogue settings','Category tree, product attributes, filters, badges and merchandising.'],['Checkout & delivery','Serviceable pincodes, shipping rules, payment methods and order policies.'],['Roles & permissions','Role-based access, approvals, session controls and audit history.']]}
 };
 const MODULE_TABS = {
- orders:[['overview','Overview'],['workspace','POS Sales & Website Orders'],['returns','Returns & Refunds']],
+ orders:[['overview','Overview'],['pos','POS Sales'],['website-orders','Website Orders'],['returns','Returns & Refunds']],
  products:[['overview','Overview'],['workspace','Products & Stock'],['movements','Stock Movements'],['categories','Categories']],
  purchases:[['overview','Overview'],['workspace','Purchase Orders'],['vendors','Vendors & Goods Received'],['supplier-payments','Supplier Payments']],
  logistics:[['overview','Overview'],['workspace','Shipments'],['routes','Routes & Drivers'],['tracking','Delivery Tracking']],
