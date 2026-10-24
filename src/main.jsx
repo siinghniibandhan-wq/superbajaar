@@ -205,7 +205,7 @@ function App() {
           { name: 'Pet Care', image: 'photo-1548199973-03cce0bbc87b', terms: ['pet care', 'pet'] }
         ].map(category => (
           <button type="button" className="category-image-card" key={category.name} onClick={() => {
-            setActivePage('shop');
+            navigate('/shop', 'shop');
             const match = categories.find(existing => category.terms.some(term => existing.toLowerCase().includes(term)));
             navigate('/shop', 'shop');
             if (match) {
@@ -420,7 +420,7 @@ function App() {
         </div>
         <div className="footer-links">
           <div><h3>Shop</h3>
-            <button onClick={() => { setActivePage('home'); window.scrollTo({top:0,behavior:'smooth'}); }}>Home</button>
+            <button onClick={() => navigate('/', 'home')}>Home</button>
             <button onClick={() => { goShop(''); }}>Shop all products</button>
             <button onClick={() => { setCartOpen(true); window.scrollTo({top:0,behavior:'smooth'}); }}>Shopping bag ({cartCount})</button>
           </div>
