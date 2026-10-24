@@ -450,7 +450,7 @@ def approve_payroll(run_id:int,authorization:str|None=Header(default=None))->dic
                 gross=Decimal(str(totals["gross"])); net=Decimal(str(totals["net"])); deductions=Decimal(str(totals["deductions"]))
                 if gross<=0: raise HTTPException(status_code=422,detail="Payroll run has no salary lines")
                 journal_id=_post_journal(conn,run["period_end"],f"PAYROLL-{run_id}",f"Payroll for {run['period_start']} to {run['period_end']}","payroll",run_id,
-                    [("salary",gross,Decimal("0")),("tds_payable",Decimal("0"),deductions),("accounts_payable",Decimal("0"),net)],user["id"])
+                    [("salary",gross,Decimal("0")),("payroll_deductions_payable",Decimal("0"),deductions),("accounts_payable",Decimal("0"),net)],user["id"])
                 conn.execute("UPDATE sb_payroll_runs SET status='approved' WHERE id=%s",(run_id,))
                 return {"run_id":run_id,"status":"approved","journal_id":journal_id,"gross":gross,"deductions":deductions,"net_pay":net}
     except HTTPException: raise
