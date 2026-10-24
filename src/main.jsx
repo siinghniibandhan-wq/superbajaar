@@ -51,9 +51,7 @@ function variantLabel(variant) {
 }
 
 function App() {
-  const [theme, setTheme] = useState(() => {
-    try { return localStorage.getItem('sb-theme') || 'soft'; } catch { return 'soft'; }
-  });
+  const [theme] = useState('soft');
   const [activePage, setActivePage] = useState('home');
   const [query, setQuery] = useState('');
   const [pincode, setPincode] = useState('');
@@ -120,7 +118,6 @@ function App() {
   }
 
   useEffect(() => { if (API_BASE) loadProducts('', ''); }, []);
-  useEffect(() => { try { localStorage.setItem('sb-theme', theme); } catch {} }, [theme]);
   useEffect(() => { try { localStorage.setItem('sb-cart', JSON.stringify(cart)); } catch {} }, [cart]);
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const cartTotal = cart.reduce((sum, item) => sum + Number(item.price || 0) * item.quantity, 0);
@@ -170,8 +167,8 @@ function App() {
     <div className="announcement"><span className="announcement-dot" /> Everyday essentials, all in one place <span className="announcement-note">Your Everyday Super Store</span></div>
     <header className="header">
       <a className="brand" href="#home" aria-label="Super Bajaar home" onClick={e => { e.preventDefault(); setActivePage('home'); window.scrollTo({top:0,behavior:'smooth'}); }}>
-        <span className="brand-mark">S</span>
-        <span className="brand-word">super<span>bajaar</span><small>Your Everyday Super Store</small></span>
+        <span className="brand-mark" aria-hidden="true"><svg viewBox="0 0 48 48" focusable="false"><path d="M13 17h22l3 24H10l3-24Z" fill="currentColor"/><path d="M17 18v-4a7 7 0 0 1 14 0v4" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round"/><path d="M17 25c1 5 4 8 7 8s6-3 7-8" fill="none" stroke="#fff" strokeWidth="2.8" strokeLinecap="round"/></svg></span>
+        <span className="brand-word">Super <span>Bajaar</span><small>Your Everyday Super Store</small></span>
       </a>
       <form className="search" role="search" onSubmit={e => { e.preventDefault(); setActivePage('shop'); loadProducts(query, pincode); }}>
         <span className="search-icon" aria-hidden="true">⌕</span>
@@ -230,7 +227,7 @@ function App() {
         </div>
         <div className="hero-art" aria-hidden="true">
           <div className="hero-halo halo-one" /><div className="hero-halo halo-two" />
-          <div className="hero-bag"><span className="bag-handle" /><b>S</b><i>+</i></div>
+          <div className="hero-bag"><span className="bag-handle" /><b>SB</b><i>✦</i></div>
           <div className="floating-note"><span>YOUR DAY,</span><b>made easier.</b><small>Everyday shopping, simplified.</small></div>
           <div className="sparkle sparkle-one">✦</div><div className="sparkle sparkle-two">✳</div>
         </div>
@@ -251,9 +248,6 @@ function App() {
         <div className="section-heading">
           <div><p className="eyebrow">{activePage === 'home' ? 'PICKED FOR EVERYDAY' : 'THE FULL COLLECTION'}</p><h2>{activePage === 'home' ? 'Discover your favourites' : 'Shop all products'}<span>.</span></h2><p>{activePage === 'home' ? 'Bestsellers, new arrivals and products you recently viewed.' : 'Browse the complete live catalogue and choose the variant that suits you.'}</p></div>
           <div className="heading-tools">
-            <div className="theme-switch" role="group" aria-label="Choose colour theme">
-              {['soft', 'light', 'dark'].map(option => <button type="button" key={option} aria-pressed={theme === option} className={theme === option ? 'selected' : ''} onClick={() => setTheme(option)}>{option[0].toUpperCase() + option.slice(1)}</button>)}
-            </div>
             <div className={`api-status status-${apiState}`}><i />{apiState === 'connected' ? 'Live catalogue connected' : apiState === 'connecting' ? 'Connecting to catalogue' : apiState === 'unconfigured' ? 'API setup required' : 'Catalogue unavailable'}</div>
           </div>
         </div>
@@ -371,13 +365,31 @@ function App() {
       </section>
     </main>
 
-    <footer>
+    <footer className="site-footer">
       <div className="footer-main">
-        <a className="brand footer-brand" href="#"><span className="brand-mark">S</span><span className="brand-word">super<span>bajaar</span><small>Your Everyday Super Store</small></span></a>
-        <p>Little things for everyday living. A simpler way to find what you need.</p>
-        <a className="back-top" href="#">Back to top ↑</a>
+        <div className="footer-brand-column">
+          <a className="brand footer-brand" href="#home" aria-label="Super Bajaar home" onClick={e => { e.preventDefault(); setActivePage('home'); window.scrollTo({top:0,behavior:'smooth'}); }}>
+            <span className="brand-mark" aria-hidden="true"><svg viewBox="0 0 48 48" focusable="false"><path d="M13 17h22l3 24H10l3-24Z" fill="currentColor"/><path d="M17 18v-4a7 7 0 0 1 14 0v4" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round"/><path d="M17 25c1 5 4 8 7 8s6-3 7-8" fill="none" stroke="#fff" strokeWidth="2.8" strokeLinecap="round"/></svg></span>
+            <span className="brand-word">Super <span>Bajaar</span><small>Your Everyday Super Store</small></span>
+          </a>
+          <p>Everyday essentials, thoughtfully brought together. A simpler way to shop for your day.</p>
+        </div>
+        <div className="footer-links">
+          <div><h3>Shop</h3>
+            <button onClick={() => { setActivePage('home'); window.scrollTo({top:0,behavior:'smooth'}); }}>Home</button>
+            <button onClick={() => { setActivePage('shop'); loadProducts('', pincode); window.scrollTo({top:0,behavior:'smooth'}); }}>Shop all products</button>
+            <button onClick={() => { setCartOpen(true); window.scrollTo({top:0,behavior:'smooth'}); }}>Shopping bag ({cartCount})</button>
+          </div>
+          <div><h3>Customer help</h3>
+            <button onClick={() => { document.getElementById('service-title')?.scrollIntoView({behavior:'smooth',block:'center'}); }}>Delivery availability</button>
+            <button onClick={() => setNotice('For product questions, please use the product details available in the catalogue. Customer support contact details will be added once confirmed.')}>Product help</button>
+            <button onClick={() => setNotice('Online checkout and payment are not connected yet. Your shopping bag is saved on this device.')}>Orders & payments</button>
+          </div>
+          <div className="footer-trust"><h3>Our promise</h3><p><span>✓</span> Catalogue-led product details</p><p><span>✓</span> Clear pricing when provided</p><p><span>✓</span> Delivery checks by PIN code</p></div>
+        </div>
+        <a className="back-top" href="#home" onClick={e => { e.preventDefault(); window.scrollTo({top:0,behavior:'smooth'}); }}>Back to top ↑</a>
       </div>
-      <div className="footer-bottom"><span>© {new Date().getFullYear()} Super Bajaar</span><span>Your Everyday Super Store</span></div>
+      <div className="footer-bottom"><span>© {new Date().getFullYear()} Super Bajaar. All rights reserved.</span><span>Your Everyday Super Store</span><span>Made for everyday living <b>✦</b></span></div>
     </footer>
 
     {detail && <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setDetail(null); }}>
