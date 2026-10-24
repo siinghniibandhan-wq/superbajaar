@@ -11,8 +11,20 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("superbajaar.api")
 app = FastAPI(title="Super Bajaar API", version="1.0.0")
 
-origins = [item.strip() for item in os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:5173").split(",") if item.strip()]
-app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=False, allow_methods=["GET", "POST", "OPTIONS"], allow_headers=["Accept", "Content-Type", "Authorization"])
+configured_origins = [item.strip() for item in os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:5173").split(",") if item.strip()]
+# Keep the configured origins and explicitly allow the production storefront plus Codespaces previews.
+origins = list(dict.fromkeys(configured_origins + [
+    "https://bw7rptzexc5.amplifyapp.com",
+    "https://main.d33bw7rptzexc5.amplifyapp.com",
+]))
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_origin_regex=r"https://.*\\.app\\.github\\.dev",
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Accept", "Content-Type", "Authorization"],
+)
 
 
 def database_url() -> str:
