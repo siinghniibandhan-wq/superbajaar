@@ -158,18 +158,35 @@ def _delivery_quote(config: Any, pincode: str | None, subtotal: Decimal) -> dict
     if not isinstance(pins, list) or not pins or any(not isinstance(pin, str) or not re.fullmatch(r"[0-9]{6}", pin) for pin in pins):
         return {"configured": False, "serviceable": None, "shipping_fee": None,
                 "message": "Delivery settings need valid serviceable pincodes."}
+    if "shipping_fee" not in config:
+        return {"configured": False, "serviceable": None, "shipping_fee": None,
+                "message": "Delivery settings need an explicit shipping fee."}
+    try:
+        fee = Decimal(str(config["shipping_fee"]))
+        threshold_value = config.get("free_shipping_threshold")
+        threshold = Decimal(str(threshold_value)) if threshold_value is not None else None
+        if not fee.is_finite() or fee < 0 or fee > Decimal("9999999999.99"):
+            raise ValueError("invalid fee")
+        if threshold is not None and (not threshold.is_finite() or threshold < 0 or threshold > Decimal("9999999999.99")):
+            raise ValueError("invalid free-shipping threshold")
+        if fee.quantize(Decimal("0.01")) != fee or (threshold is not None and threshold.quantize(Decimal("0.01")) != threshold):
+            raise ValueError("invalid decimal precision")
+    except Exception:
+        return {"configured": False, "serviceable": None, "shipping_fee": None,
+                "message": "Delivery settings contain an invalid fee or threshold."}
+    message = config.get("message", "")
+    if not isinstance(message, str):
+        message = ""
     if not pincode:
         return {"configured": True, "serviceable": None, "shipping_fee": None,
-                "message": config.get("message") or "Enter a delivery pincode to check serviceability."}
+                "message": message or "Enter a delivery pincode to check serviceability."}
     if pincode not in pins:
         return {"configured": True, "serviceable": False, "shipping_fee": None,
                 "message": "Delivery is not available for this pincode."}
-    fee = Decimal(str(config.get("shipping_fee", 0)))
-    threshold = config.get("free_shipping_threshold")
-    if threshold is not None and subtotal >= Decimal(str(threshold)):
+    if threshold is not None and subtotal >= threshold:
         fee = Decimal("0.00")
     return {"configured": True, "serviceable": True, "shipping_fee": f"{fee:.2f}",
-            "message": config.get("message") or ("Free delivery applied." if fee == 0 else "Delivery is available.")}
+            "message": message or ("Free delivery applied." if fee == 0 else "Delivery is available.")}
 
 
 def _order_detail(conn: Any, order_id: int) -> dict[str, Any]:
