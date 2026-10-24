@@ -307,7 +307,15 @@ function AdminPanel() {
     try {
       const response = await fetch(endpoint('/admin/products'),{headers:{Authorization:'Bearer '+access,Accept:'application/json'}});
       const data = await response.json().catch(()=>({}));
-      if(!response.ok) throw new Error(data.detail || 'Could not load products');
+      if(!response.ok) {
+        if(response.status === 401) {
+          setToken('');
+          setItems([]);
+          try { sessionStorage.removeItem('sb-admin-token'); } catch {}
+          throw new Error('Your admin session has expired. Please sign in again.');
+        }
+        throw new Error(data.detail || 'Could not load products');
+      }
       setItems(data.items || []);
     } catch(error) { setMessage(error.message); }
   }
@@ -325,6 +333,9 @@ function AdminPanel() {
     finally { setBusy(false); }
   }
   function signOut(){setToken('');setItems([]);try { sessionStorage.removeItem('sb-admin-token'); } catch {} setMessage('Signed out');}
+  useEffect(() => {
+    if (token) loadAdminProducts(token);
+  }, []);
   return <div className="admin-shell">
     <header className="admin-top"><a className="brand" href="/"><span className="brand-mark">S</span><span className="brand-word">super<span>bajaar</span><small>Product management</small></span></a><span className="admin-badge">ADMIN CONSOLE</span>{token && <button className="header-link" onClick={signOut}>Sign out</button>}</header>
     {!token ? <main className="admin-login-wrap"><form className="admin-login" onSubmit={login}><p className="eyebrow">RESTRICTED ACCESS</p><h1>Admin sign in</h1><p>Only authorised staff can manage the catalogue.</p><label>Admin ID<input autoComplete="username" value={username} onChange={e=>setUsername(e.target.value)} required /></label><label>Password<input type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required /></label><button className="add-cart-button" disabled={busy}>{busy?'Signing in…':'Sign in securely'}</button>{message&&<p className="admin-message" role="status">{message}</p>}</form></main> : <main className="admin-main">
