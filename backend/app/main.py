@@ -3,7 +3,7 @@ import logging
 import hmac
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 import psycopg
 from fastapi import FastAPI, Header, HTTPException, Query
@@ -145,15 +145,6 @@ class ProductReviewInput(BaseModel):
     rating: int = Field(ge=1, le=5)
     review_text: str = Field(min_length=3, max_length=2000)
 
-    @field_validator("reviewer_name", "review_text")
-    @classmethod
-    def trim_and_validate_text(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise ValueError("This field cannot be blank")
-        return value
-
-
 @app.get("/api/products/{product_id}/reviews")
 def list_product_reviews(product_id: int) -> dict[str, Any]:
     """Return only approved reviews; safely report empty when migration is not applied."""
@@ -184,6 +175,10 @@ def list_product_reviews(product_id: int) -> dict[str, Any]:
 @app.post("/api/products/{product_id}/reviews", status_code=202)
 def submit_product_review(product_id: int, review: ProductReviewInput) -> dict[str, str]:
     """Accept a review for moderation; never publish user-submitted content immediately."""
+    reviewer_name = review.reviewer_name.strip()
+    review_text = review.review_text.strip()
+    if not reviewer_name or not review_text:
+        raise HTTPException(status_code=422, detail="Name and review cannot be blank")
     try:
         with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
             if not conn.execute("SELECT to_regclass('public.product_reviews') AS table_name").fetchone()["table_name"]:
@@ -202,7 +197,7 @@ def submit_product_review(product_id: int, review: ProductReviewInput) -> dict[s
                 """INSERT INTO product_reviews
                    (product_id, reviewer_name, rating, review_text, status)
                    VALUES (%s, %s, %s, %s, 'pending')""",
-                (product_id, review.reviewer_name, review.rating, review.review_text),
+                (product_id, reviewer_name, review.rating, review_text),
             )
     except HTTPException:
         raise
