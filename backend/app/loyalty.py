@@ -152,6 +152,7 @@ def award_order_coins(conn: Any, user_id: int, order_id: int, subtotal: Decimal,
     if not program["enabled"] or Decimal(str(program["earn_rate"]))<=0:
         return None
     basis=total if program["earn_basis"]=="total" else subtotal
+    _expire_due(conn,user_id)
     wallet=_wallet(conn,user_id)
     tier=_tier(conn,int(wallet["lifetime_earned"]))
     raw=basis*Decimal(str(program["earn_rate"]))*Decimal(str(tier["earn_multiplier"]))
