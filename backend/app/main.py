@@ -324,3 +324,8 @@ def get_variant_price_history(variant_id: int, days: int = Query(default=30, ge=
 # Authentication and role-based user administration are isolated from catalogue routes.
 from .auth import router as auth_router
 app.include_router(auth_router)
+
+
+# Authenticated checkout, order management, and persisted store settings.
+from .commerce import router as commerce_router
+app.include_router(commerce_router)
