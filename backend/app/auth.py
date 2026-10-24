@@ -156,6 +156,9 @@ def register(body: RegisterInput) -> dict[str, Any]:
     email = body.email.strip().lower()
     if "@" not in email or "." not in email.rsplit("@", 1)[-1]:
         raise HTTPException(status_code=422, detail="Enter a valid email address")
+    configured_super_admin = _setting("SUPER_ADMIN_EMAIL").strip().lower()
+    if configured_super_admin and hmac.compare_digest(email, configured_super_admin):
+        raise HTTPException(status_code=403, detail="This email is reserved for Super Admin bootstrap")
     try:
         with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
             row = conn.execute(
@@ -246,6 +249,15 @@ def update_user(user_id: int, body: UserUpdate, authorization: str | None = Head
         raise HTTPException(status_code=422, detail="Provide at least one field")
     if "role" in changes and changes["role"] not in ROLES:
         raise HTTPException(status_code=422, detail="Invalid role")
+    if "role" in changes and changes["role"] == "super_admin":
+        configured_super_admin = _setting("SUPER_ADMIN_EMAIL").strip().lower()
+        try:
+            with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
+                target = conn.execute("SELECT email FROM app_users WHERE id=%s", (user_id,)).fetchone()
+        except psycopg.Error as exc:
+            raise HTTPException(status_code=503, detail="Could not verify Super Admin identity") from exc
+        if not target or not configured_super_admin or target["email"].strip().lower() != configured_super_admin:
+            raise HTTPException(status_code=403, detail="Only the configured Super Admin email can hold this role")
     if "status" in changes and changes["status"] not in STATUSES:
         raise HTTPException(status_code=422, detail="Invalid account status")
     if user_id == actor["id"] and (changes.get("role", actor["role"]) != "super_admin" or changes.get("status", actor["status"]) != "active"):
