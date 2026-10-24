@@ -124,8 +124,14 @@ def _validated_delivery_setting(value: dict[str, Any]) -> dict[str, Any]:
             number = Decimal(str(raw))
         except Exception as exc:
             raise HTTPException(status_code=422, detail=f"{field} must be a valid amount.") from exc
-        if not number.is_finite() or number < 0 or number.quantize(Decimal("0.01")) != number:
-            raise HTTPException(status_code=422, detail=f"{field} must be a non-negative amount with at most two decimal places.")
+        if not number.is_finite() or number < 0 or number > Decimal("9999999999.99"):
+            raise HTTPException(status_code=422, detail=f"{field} must be a valid non-negative amount.")
+        try:
+            rounded = number.quantize(Decimal("0.01"))
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"{field} is outside the supported amount range.") from exc
+        if rounded != number:
+            raise HTTPException(status_code=422, detail=f"{field} must have at most two decimal places.")
         return float(number)
 
     fee = amount("shipping_fee", 0)
