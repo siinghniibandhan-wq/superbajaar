@@ -203,6 +203,8 @@ def update_tiers(body: TiersInput, authorization: str | None = Header(default=No
     thresholds=[t.min_lifetime_earned for t in body.tiers]
     if len(names)!=len(set(names)): raise HTTPException(status_code=422,detail="Tier names must be unique")
     if len(thresholds)!=len(set(thresholds)): raise HTTPException(status_code=422,detail="Tier earning thresholds must be unique")
+    if not any(t.is_active and t.min_lifetime_earned==0 for t in body.tiers):
+        raise HTTPException(status_code=422,detail="Keep at least one active base tier with a zero-coin threshold")
     try:
         with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
             _ensure(conn)
