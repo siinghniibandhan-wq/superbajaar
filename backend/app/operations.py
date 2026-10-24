@@ -439,6 +439,8 @@ def pos_sale(body:POSInput,authorization:str|None=Header(default=None))->dict[st
             _ensure(conn)
             with conn.transaction():
                 if body.customer_id and not conn.execute("SELECT id FROM sb_customers WHERE id=%s",(body.customer_id,)).fetchone(): raise HTTPException(status_code=404,detail="Customer not found")
+                variant_ids=[line.variant_id for line in body.lines]
+                if len(variant_ids)!=len(set(variant_ids)): raise HTTPException(status_code=422,detail="Each product variant can appear only once per POS sale; combine its quantity.")
                 subtotal=Decimal("0"); tax_total=Decimal("0"); cogs_total=Decimal("0"); resolved=[]
                 for line in body.lines:
                     stock=conn.execute("SELECT quantity FROM sb_stock WHERE variant_id=%s AND warehouse='Main' FOR UPDATE",(line.variant_id,)).fetchone()
@@ -455,14 +457,14 @@ def pos_sale(body:POSInput,authorization:str|None=Header(default=None))->dict[st
                         WHERE pl.variant_id=%s AND po.status='received'""",(line.variant_id,)).fetchone()
                     avg_cost=Decimal(str(cost_row["avg_cost"] or 0))
                     cogs_total+=(avg_cost*line.quantity).quantize(Decimal("0.01"))
-                    subtotal+=base; tax_total+=tax; resolved.append((line,price,base+tax))
+                    subtotal+=base; tax_total+=tax; resolved.append((line,price,applied_rate,base+tax))
                 total=subtotal+tax_total
                 receipt="POS-"+__import__("secrets").token_hex(6).upper()
                 sale=conn.execute("""INSERT INTO sb_pos_sales(receipt_number,customer_id,subtotal,tax_total,total,payment_method,created_by)
                     VALUES(%s,%s,%s,%s,%s,%s,%s) RETURNING *""",(receipt,body.customer_id,subtotal,tax_total,total,body.payment_method,user["id"])).fetchone()
-                for line,price,line_total in resolved:
+                for line,price,applied_rate,line_total in resolved:
                     conn.execute("""INSERT INTO sb_pos_sale_lines(sale_id,variant_id,quantity,unit_price,tax_rate,line_total)
-                        VALUES(%s,%s,%s,%s,%s,%s)""",(sale["id"],line.variant_id,line.quantity,price,line.tax_rate,line_total))
+                        VALUES(%s,%s,%s,%s,%s,%s)""",(sale["id"],line.variant_id,line.quantity,price,applied_rate,line_total))
                     conn.execute("UPDATE sb_stock SET quantity=quantity-%s,updated_at=now() WHERE variant_id=%s AND warehouse='Main'",(line.quantity,line.variant_id))
                     conn.execute("""INSERT INTO sb_stock_movements(variant_id,warehouse,movement_type,quantity,reference_type,reference_id,created_by)
                         VALUES(%s,'Main','pos_sale',%s,'pos',%s,%s)""",(line.variant_id,line.quantity,sale["id"],user["id"]))
