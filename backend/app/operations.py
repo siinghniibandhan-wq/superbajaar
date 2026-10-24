@@ -643,3 +643,23 @@ def approve_payroll(run_id:int,authorization:str|None=Header(default=None))->dic
                 return {"run_id":run_id,"status":"approved","journal_id":journal_id,"gross":gross,"deductions":deductions,"net_pay":net}
     except HTTPException: raise
     except Exception as exc: raise HTTPException(status_code=503,detail="Payroll approval and accounting posting failed") from exc
+
+@router.post("/payroll/runs/{run_id}/pay")
+def mark_payroll_paid(run_id:int,payment_account:str=Query(default="bank",pattern="^(bank|cash)$"),authorization:str|None=Header(default=None))->dict[str,Any]:
+    user=_admin(authorization)
+    try:
+        with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
+            _ensure(conn)
+            with conn.transaction():
+                run=conn.execute("SELECT * FROM sb_payroll_runs WHERE id=%s FOR UPDATE",(run_id,)).fetchone()
+                if not run: raise HTTPException(status_code=404,detail="Payroll run not found")
+                if run["status"]!="approved": raise HTTPException(status_code=409,detail="Only approved payroll can be marked paid")
+                totals=conn.execute("SELECT COALESCE(SUM(net_pay),0) AS net FROM sb_payroll_lines WHERE run_id=%s",(run_id,)).fetchone()
+                net=Decimal(str(totals["net"]))
+                if net<=0: raise HTTPException(status_code=422,detail="Payroll net pay must be greater than zero")
+                journal_id=_post_journal(conn,run["period_end"],f"PAYROLL-PAY-{run_id}",f"Payroll payment for run {run_id}","payroll_payment",run_id,
+                    [("accounts_payable",net,Decimal("0")),(payment_account,Decimal("0"),net)],user["id"])
+                conn.execute("UPDATE sb_payroll_runs SET status='paid' WHERE id=%s",(run_id,))
+                return {"run_id":run_id,"status":"paid","journal_id":journal_id,"net_pay":net,"payment_account":payment_account}
+    except HTTPException: raise
+    except Exception as exc: raise HTTPException(status_code=503,detail="Payroll payment posting failed") from exc
