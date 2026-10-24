@@ -631,8 +631,10 @@ def update_shipment(shipment_id:int,body:ShipmentUpdate,authorization:str|None=H
             with conn.transaction():
                 shipment=conn.execute("SELECT * FROM sb_shipments WHERE id=%s FOR UPDATE",(shipment_id,)).fetchone()
                 if not shipment: raise HTTPException(status_code=404,detail="Shipment not found")
+                if shipment["status"] in ("delivered","cancelled") and body.status != shipment["status"]:
+                    raise HTTPException(status_code=409,detail=f"A {shipment['status']} shipment is closed and cannot change status.")
                 row=conn.execute("""UPDATE sb_shipments SET status=%s,note=COALESCE(NULLIF(%s,''),note),
-                    delivered_at=CASE WHEN %s='delivered' THEN now() ELSE delivered_at END WHERE id=%s RETURNING *""",
+                    delivered_at=CASE WHEN %s='delivered' AND delivered_at IS NULL THEN now() ELSE delivered_at END WHERE id=%s RETURNING *""",
                     (body.status,body.note,body.status,shipment_id)).fetchone()
                 journal_id=None
                 target=None
