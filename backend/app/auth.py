@@ -4,6 +4,7 @@ import json
 import os
 import secrets
 import time
+from functools import lru_cache
 from typing import Any
 
 import psycopg
@@ -12,6 +13,31 @@ from pydantic import BaseModel, Field
 from psycopg.rows import dict_row
 
 router = APIRouter(prefix="/api/auth", tags=["authentication"])
+
+
+@lru_cache(maxsize=8)
+def _read_ssm_parameter(name: str) -> str:
+    """Read a deployment secret from Parameter Store using the EC2 instance role."""
+    import boto3
+
+    region = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
+    client = boto3.client("ssm", region_name=region) if region else boto3.client("ssm")
+    path = f"/superbajaar/{name}"
+    return client.get_parameter(Name=path, WithDecryption=True)["Parameter"]["Value"]
+
+
+def _setting(name: str) -> str:
+    """Prefer an explicitly injected environment value; otherwise use AWS SSM."""
+    value = os.getenv(name, "").strip()
+    if value:
+        return value
+    try:
+        return _read_ssm_parameter(name).strip()
+    except Exception:
+        # Never log parameter values or cloud credentials; callers return safe config errors.
+        return ""
+
+
 ROLES = {"super_admin", "admin", "staff", "customer"}
 STATUSES = {"active", "suspended", "disabled"}
 
@@ -39,7 +65,7 @@ def _check_password(password: str, encoded: str) -> bool:
 
 
 def _secret() -> bytes:
-    value = os.getenv("AUTH_TOKEN_SECRET", "")
+    value = _setting("AUTH_TOKEN_SECRET")
     if len(value) < 32:
         raise HTTPException(status_code=503, detail="AUTH_TOKEN_SECRET must be configured with at least 32 characters")
     return value.encode()
@@ -149,8 +175,8 @@ def login(body: LoginInput) -> dict[str, Any]:
 
 @router.post("/bootstrap", status_code=201)
 def bootstrap(body: BootstrapInput) -> dict[str, Any]:
-    expected_key = os.getenv("SUPER_ADMIN_BOOTSTRAP_KEY", "")
-    configured_email = os.getenv("SUPER_ADMIN_EMAIL", "").strip().lower()
+    expected_key = _setting("SUPER_ADMIN_BOOTSTRAP_KEY")
+    configured_email = _setting("SUPER_ADMIN_EMAIL").strip().lower()
     if len(expected_key) < 24 or not configured_email:
         raise HTTPException(status_code=503, detail="Configure SUPER_ADMIN_EMAIL and SUPER_ADMIN_BOOTSTRAP_KEY first")
     if not hmac.compare_digest(body.bootstrap_key, expected_key) or body.email.strip().lower() != configured_email:
