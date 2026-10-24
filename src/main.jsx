@@ -191,7 +191,32 @@ function OperationsManager({module}){
  setNotice(j.message||'Saved successfully.');setForm({});setLines([{variant_id:'',quantity:'1',unit_price:'',unit_cost:'',tax_rate:'0'}]);await load();
  }catch(e){setError(e.message||'Could not save record')}}
  async function addParty(e){e.preventDefault();setError('');try{const path=module==='orders'?'/operations/customers':'/operations/vendors';const j=await request(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(partyForm)});setNotice(module==='orders'?'Customer added.':'Vendor added.');setPartyForm({name:'',phone:'',email:'',gstin:''});setPartyOpen(false);if(module==='orders')setCustomers([...customers,j.customer]);else setVendors([...vendors,j.vendor]);setForm({...form,[module==='orders'?'customer_id':'vendor_id']:String((module==='orders'?j.customer:j.vendor).id)})}catch(e){setError(e.message||'Could not add record')}}
- async function receive(id){try{const j=await request('/operations/purchases/'+id+'/receive',{method:'POST'});setNotice(j.message||'Goods receipt posted to inventory.');await load()}catch(e){setError(e.message)}}
+ async function receive(id){
+  setError('');setNotice('');
+  try{
+   let options={method:'POST'};
+   if(!window.confirm('Receive all outstanding quantities for PO-'+id+'? Choose Cancel to enter a partial receipt.')){
+    const detail=await request('/operations/purchases/'+id);
+    const pending=(detail.lines||[]).filter(line=>Number(line.outstanding_quantity)>0);
+    const receiptLines=[];
+    for(const line of pending){
+     const remaining=Number(line.outstanding_quantity);
+     const answer=window.prompt('Variant '+line.variant_id+' — outstanding '+remaining+'. Enter quantity received (0 to skip):',''+remaining);
+     if(answer===null)continue;
+     const quantity=Number(answer);
+     if(!Number.isFinite(quantity)||quantity<0||quantity>remaining){
+      throw Error('Enter a quantity from 0 to '+remaining+' for variant '+line.variant_id+'.');
+     }
+     if(quantity>0)receiptLines.push({line_id:Number(line.id),quantity});
+    }
+    if(!receiptLines.length){setNotice('No quantities were received. Purchase order unchanged.');return}
+    options={...options,headers:{'Content-Type':'application/json'},body:JSON.stringify({lines:receiptLines})};
+   }
+   const j=await request('/operations/purchases/'+id+'/receive',options);
+   setNotice(j.message||'Goods receipt posted to inventory.');
+   await load();
+  }catch(e){setError(e.message||'Goods receipt failed')}
+ }
  async function payPurchase(id){try{const account=window.confirm('Pay from bank account? Choose Cancel to use cash.')?'bank':'cash';const j=await request('/operations/purchases/'+id+'/pay?'+new URLSearchParams({payment_account:account}),{method:'POST'});setNotice(j.message||'Supplier payment recorded.');await load()}catch(e){setError(e.message)}}
  async function status(id,value){try{await request('/operations/shipments/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:value})});setNotice('Shipment status updated.');await load()}catch(e){setError(e.message)}}
  async function saveProductTax(e){e.preventDefault();setError('');try{const j=await request('/operations/product-tax/'+Number(taxForm.variant_id),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({hsn_sac:taxForm.hsn_sac,gst_rate:Number(taxForm.gst_rate),classification:taxForm.classification})});setNotice('Product GST mapping saved.');setTaxRows([...taxRows.filter(x=>x.variant_id!==j.item.variant_id),j.item].sort((a,b)=>a.variant_id-b.variant_id));}catch(e){setError(e.message||'Could not save GST mapping')}}
