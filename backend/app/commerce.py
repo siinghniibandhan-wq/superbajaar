@@ -326,7 +326,7 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
         with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
             _ensure_commerce_schema(conn)
             from .operations import _ensure as ensure_operations
-            from .loyalty import _ensure as ensure_loyalty, _program as loyalty_program, _wallet as loyalty_wallet, _post as post_loyalty
+            from .loyalty import _ensure as ensure_loyalty, _program as loyalty_program, _wallet as loyalty_wallet, _post as post_loyalty, _expire_due as expire_loyalty
             ensure_operations(conn)
             ensure_loyalty(conn)
             products: list[dict[str, Any]] = []
@@ -378,6 +378,7 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
                 program = loyalty_program(conn)
                 if not program["enabled"]:
                     raise HTTPException(status_code=409, detail="Super Coins are currently disabled")
+                expire_loyalty(conn, int(user["id"]))
                 wallet = loyalty_wallet(conn, int(user["id"]))
                 if body.super_coins_to_redeem < int(program["min_redeem_coins"]):
                     raise HTTPException(status_code=422, detail=f"Minimum redemption is {program['min_redeem_coins']} Super Coins")
