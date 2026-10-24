@@ -201,6 +201,29 @@ def create_journal(body: JournalInput, authorization: str | None = Header(defaul
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Journal could not be saved") from exc
 
+@router.get("/journals")
+def list_journals(start_date: date | None = None, end_date: date | None = None, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _admin(authorization)
+    if start_date and end_date and end_date < start_date:
+        raise HTTPException(status_code=422, detail="End date must be on or after start date")
+    try:
+        with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
+            _ensure(conn)
+            rows = conn.execute(
+                """SELECT j.id,j.entry_date,j.reference,j.description,j.source_module,j.source_id,j.status,
+                          COALESCE(SUM(l.debit),0) AS total_debit,COALESCE(SUM(l.credit),0) AS total_credit
+                   FROM sb_journals j LEFT JOIN sb_journal_lines l ON l.journal_id=j.id
+                   WHERE (%s::date IS NULL OR j.entry_date >= %s)
+                     AND (%s::date IS NULL OR j.entry_date <= %s)
+                   GROUP BY j.id ORDER BY j.entry_date DESC,j.id DESC LIMIT 500""",
+                (start_date,start_date,end_date,end_date),
+            ).fetchall()
+            return {"items": rows}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Journal register is temporarily unavailable") from exc
+
 @router.get("/profit-loss")
 def profit_loss(start_date: date = Query(...), end_date: date = Query(...), authorization: str | None = Header(default=None)) -> dict[str, Any]:
     _admin(authorization)
