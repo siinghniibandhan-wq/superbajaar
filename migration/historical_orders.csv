@@ -1,1 +1,0 @@
-external_source,external_id,order_number,customer_external_id,order_date,currency,order_status,subtotal,discount_total,tax_total,shipping_total,grand_total,line_items_json
