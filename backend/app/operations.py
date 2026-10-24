@@ -522,7 +522,7 @@ def pos_sale(body:POSInput,authorization:str|None=Header(default=None))->dict[st
                     base=price*line.quantity; tax=(base*applied_rate/Decimal("100")).quantize(Decimal("0.01"))
                     cost_row=conn.execute("""SELECT COALESCE(SUM(pl.unit_cost*pl.received_qty)/NULLIF(SUM(pl.received_qty),0),0) AS avg_cost
                         FROM sb_purchase_lines pl JOIN sb_purchase_orders po ON po.id=pl.purchase_id
-                        WHERE pl.variant_id=%s AND po.status='received'""",(line.variant_id,)).fetchone()
+                        WHERE pl.variant_id=%s AND po.status IN ('part_received','received')""",(line.variant_id,)).fetchone()
                     avg_cost=Decimal(str(cost_row["avg_cost"] or 0))
                     cogs_total+=(avg_cost*line.quantity).quantize(Decimal("0.01"))
                     subtotal+=base; tax_total+=tax; resolved.append((line,price,applied_rate,base+tax))
