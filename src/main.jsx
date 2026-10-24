@@ -290,6 +290,7 @@ function AdminPanel() {
   const [tab, setTab] = useState('add');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({name:'',product_code:'',sku:'',brand:'',category:'Grocery & Staples',description:'',selling_price:'',mrp:'',currency:'INR',active:true});
   const field = (key, value) => setForm(previous => ({...previous,[key]:value}));
   async function login(event) {
@@ -323,7 +324,8 @@ function AdminPanel() {
     event.preventDefault(); setBusy(true); setMessage('');
     try {
       const payload = {...form,selling_price:Number(form.selling_price),mrp:form.mrp===''?null:Number(form.mrp)};
-      const response = await fetch(endpoint('/admin/products'),{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify(payload)});
+      const target = editing ? `/admin/products/${editing.product_id}/variants/${editing.variant_id}` : '/admin/products';
+      const response = await fetch(endpoint(target),{method:editing?'PUT':'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify(payload)});
       const data = await response.json().catch(()=>({}));
       if(!response.ok) {
         if(response.status === 401) {
@@ -334,7 +336,8 @@ function AdminPanel() {
         }
         throw new Error(data.detail || 'Could not save product');
       }
-      setMessage('Product saved successfully. Active products are eligible for storefront display. No stock was added.');
+      setMessage(editing ? 'Product updated successfully.' : 'Product saved successfully. Active products are eligible for storefront display. No stock was added.');
+      setEditing(null);
       setForm({name:'',product_code:'',sku:'',brand:'',category:'Grocery & Staples',description:'',selling_price:'',mrp:'',currency:'INR',active:true});
       await loadAdminProducts();
     } catch(error) { setMessage(error.message); }
@@ -350,7 +353,7 @@ function AdminPanel() {
       <div className="admin-heading"><div><p className="eyebrow">SUPER BAJAAR OPERATIONS</p><h1>Admin dashboard</h1><p>Central workspace for product, inventory, purchasing, sales, finance, logistics and people operations.</p></div><div className="admin-count"><b>{items.length}</b><span>catalogue records</span></div></div><section className="admin-module-grid" aria-label="Admin modules">{[{icon:"▦",name:"Products",desc:"Product master, SKU, variants and pricing",status:"Available",active:true},{icon:"▤",name:"Inventory",desc:"Warehouses, stock ledger and adjustments",status:"Next phase"},{icon:"🛒",name:"Sales",desc:"Orders, fulfilment, invoices and returns",status:"Next phase"},{icon:"📥",name:"Purchase",desc:"Suppliers, purchase orders and GRN",status:"Next phase"},{icon:"⇢",name:"Logistics",desc:"Dispatch, tracking and delivery exceptions",status:"Next phase"},{icon:"₹",name:"Accounting",desc:"Ledger, receivables, payables and GST",status:"Next phase"},{icon:"♙",name:"Employees",desc:"Employee records, departments and roles",status:"Next phase"},{icon:"◷",name:"Attendance",desc:"Shifts, check-in/out and leave",status:"Next phase"},{icon:"▥",name:"Payroll",desc:"Salary runs, deductions and payslips",status:"Next phase"},{icon:"♧",name:"Customers & Suppliers",desc:"Profiles, contacts and transaction history",status:"Next phase"},{icon:"▧",name:"Reports",desc:"Sales, inventory, purchasing and finance",status:"Next phase"},{icon:"⚙",name:"Settings & Access",desc:"Users, permissions, taxes and numbering",status:"Next phase"}].map(module=><article key={module.name} className={"admin-module-card"+(module.active?" module-active":"")}><span className="admin-module-icon">{module.icon}</span><div><h2>{module.name}</h2><p>{module.desc}</p><span className="admin-module-status">{module.status}</span></div></article>)}</section>
       <div className="admin-tabs"><button className={tab==='add'?'active':''} onClick={()=>setTab('add')}>＋ Add product</button><button className={tab==='list'?'active':''} onClick={()=>{setTab('list');loadAdminProducts();}}>Product list ({items.length})</button></div>
       {message&&<p className="admin-message" role="status">{message}</p>}
-      {tab==='add' ? <form className="admin-product-form" onSubmit={saveProduct}><div className="admin-form-heading"><h2>Product information</h2><p>Required fields are marked with *.</p></div>
+      {tab==='add' ? <form className="admin-product-form" onSubmit={saveProduct}><div className="admin-form-heading"><h2>{editing?'Edit product':'Product information'}</h2><p>Required fields are marked with *.</p></div>
         <div className="admin-form-grid">
           <label>Product name *<input value={form.name} onChange={e=>field('name',e.target.value)} maxLength={200} required /></label>
           <label>Product code *<input value={form.product_code} onChange={e=>field('product_code',e.target.value)} maxLength={80} required /></label>
@@ -363,8 +366,8 @@ function AdminPanel() {
           <label className="admin-full">Detailed description<textarea rows="5" value={form.description} onChange={e=>field('description',e.target.value)} maxLength={5000} placeholder="Product details, ingredients/material, size, usage, care instructions, etc." /></label>
         </div>
         <div className="admin-publish-options"><label className="admin-check"><input type="checkbox" checked={form.active} onChange={e=>field('active',e.target.checked)} /> Product active</label><p>Active products are eligible for storefront display. Saving a product does not add stock; inventory will be managed through receiving and stock-movement workflows.</p></div>
-        <div className="admin-form-actions"><button type="button" className="secondary-button" onClick={()=>setForm({name:'',product_code:'',sku:'',brand:'',category:'Grocery & Staples',description:'',selling_price:'',mrp:'',currency:'INR',active:true})}>Clear form</button><button className="add-cart-button" disabled={busy}>{busy?'Saving…':'Save product'}</button></div>
-      </form> : <section className="admin-product-list"><div className="admin-form-heading"><h2>All products</h2><button className="secondary-button" onClick={()=>loadAdminProducts()}>Refresh list</button></div>{items.length===0?<p>No product records returned.</p>:<div className="admin-table-wrap"><table><thead><tr><th>Product</th><th>SKU</th><th>Category</th><th>Selling price</th><th>Product status</th><th>Variant status</th><th>Visibility</th></tr></thead><tbody>{items.map(item=><tr key={item.variant_id}><td><b>{item.name}</b><small>{item.product_code}</small></td><td>{item.sku}</td><td>{item.category||'—'}</td><td>{money(item.selling_price,item.currency)}</td><td>{item.product_status}</td><td>{item.variant_status}</td><td>{item.product_status==='active'&&item.variant_status==='active'?'Storefront eligible':'Not eligible'}</td></tr>)}</tbody></table></div>}</section>}
+        <div className="admin-form-actions"><button type="button" className="secondary-button" onClick={()=>{setEditing(null);setForm({name:'',product_code:'',sku:'',brand:'',category:'Grocery & Staples',description:'',selling_price:'',mrp:'',currency:'INR',active:true});}}>Clear form</button>{editing&&<button type="button" className="secondary-button" onClick={()=>{setEditing(null);setForm({name:'',product_code:'',sku:'',brand:'',category:'Grocery & Staples',description:'',selling_price:'',mrp:'',currency:'INR',active:true});}}>Cancel edit</button>}<button className="add-cart-button" disabled={busy}>{busy?(editing?'Updating…':'Saving…'):(editing?'Update product':'Save product')}</button></div>
+      </form> : <section className="admin-product-list"><div className="admin-form-heading"><h2>All products</h2><button className="secondary-button" onClick={()=>loadAdminProducts()}>Refresh list</button></div>{items.length===0?<p>No product records returned.</p>:<div className="admin-table-wrap"><table><thead><tr><th>Product</th><th>SKU</th><th>Category</th><th>Selling price</th><th>Product status</th><th>Variant status</th><th>Visibility</th><th>Action</th></tr></thead><tbody>{items.map(item=><tr key={item.variant_id}><td><b>{item.name}</b><small>{item.product_code}</small></td><td>{item.sku}</td><td>{item.category||'—'}</td><td>{money(item.selling_price,item.currency)}</td><td>{item.product_status}</td><td>{item.variant_status}</td><td>{item.product_status==='active'&&item.variant_status==='active'?'Storefront eligible':'Not eligible'}</td><td><button type="button" className="secondary-button" onClick={()=>{setEditing({product_id:item.product_id,variant_id:item.variant_id});setForm({name:item.name||'',product_code:item.product_code||'',sku:item.sku||'',brand:item.brand||'',category:item.category||'General',description:item.description||'',selling_price:item.selling_price==null?'':String(item.selling_price),mrp:item.mrp==null?'':String(item.mrp),currency:item.currency||'INR',active:item.product_status==='active'&&item.variant_status==='active'});setTab('add');setMessage('Editing '+item.name);}}>Edit</button></td></tr>)}</tbody></table></div>}</section>}
     </main>}
   </div>;
 }
