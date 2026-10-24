@@ -237,6 +237,17 @@ def operations_readiness(authorization: str | None = Header(default=None)) -> di
                 and {"id", "name"}.issubset(columns.get("products", set()))
                 and {"id", "product_id", "selling_price"}.issubset(columns.get("product_variants", set()))
             )
+            from .operations import _ensure as ensure_operations
+            ensure_operations(conn)
+            address=body.shipping_address.model_dump()
+            customer_email=(address.get("email") or user.get("email") or "").strip().lower()
+            customer_name=(address.get("full_name") or user.get("full_name") or "Website customer").strip()
+            customer_phone=(address.get("phone") or "").strip()
+            if customer_email:
+                conn.execute("""INSERT INTO sb_customers(name,phone,email) VALUES(%s,%s,%s)
+                    ON CONFLICT (lower(email)) WHERE email IS NOT NULL AND email<>'' DO UPDATE
+                    SET name=EXCLUDED.name,phone=COALESCE(EXCLUDED.phone,sb_customers.phone)""",
+                    (customer_name,customer_phone or None,customer_email))
             delivery_row = conn.execute(
                 "SELECT setting_value FROM store_settings WHERE setting_key='delivery'"
             ).fetchone()
@@ -469,8 +480,10 @@ def update_admin_order(
                 if body.status=="cancelled":
                     lines=conn.execute("SELECT variant_id,quantity FROM store_order_items WHERE order_id=%s",(order_id,)).fetchall()
                     for line in lines:
+                        reserved=conn.execute("""SELECT id FROM sb_stock_movements WHERE variant_id=%s AND reference_type='website_order'
+                            AND reference_id=%s AND movement_type='website_sale' LIMIT 1""",(line["variant_id"],order_id)).fetchone()
                         stock=conn.execute("SELECT quantity FROM sb_stock WHERE variant_id=%s AND warehouse='Main' FOR UPDATE",(line["variant_id"],)).fetchone()
-                        if stock:
+                        if reserved and stock:
                             conn.execute("UPDATE sb_stock SET quantity=quantity+%s,updated_at=now() WHERE variant_id=%s AND warehouse='Main'",(line["quantity"],line["variant_id"]))
                             conn.execute("""INSERT INTO sb_stock_movements(variant_id,warehouse,movement_type,quantity,reference_type,reference_id,created_by)
                                 VALUES(%s,'Main','return_in',%s,'website_order_cancel',%s,%s)""",(line["variant_id"],line["quantity"],order_id,actor["id"]))
