@@ -24,7 +24,7 @@ def database_url() -> str:
 
 def get_columns(conn: psycopg.Connection, table: str) -> set[str]:
     rows = conn.execute("SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = %s", (table,)).fetchall()
-    return {row[0] for row in rows}
+    return {row["column_name"] for row in rows}
 
 
 @app.get("/api/health")
@@ -50,9 +50,9 @@ def list_products(
             product_status = "p.status = 'active'" if "status" in product_columns else "TRUE"
             variant_status = "v.status = 'active'" if "status" in variant_columns else "TRUE"
             image_select = "v.image_url AS image_url" if "image_url" in variant_columns else "NULL::text AS image_url"
-            brand_select = "p.brand" if "brand" in product_columns else "NULL::text AS brand"
-            description_select = "p.description" if "description" in product_columns else "NULL::text AS description"
-            currency_select = "v.currency" if "currency" in variant_columns else "'INR'::text AS currency"
+            brand_select = "p.brand AS brand" if "brand" in product_columns else "NULL::text AS brand"
+            description_select = "p.description AS description" if "description" in product_columns else "NULL::text AS description"
+            currency_select = "v.currency AS currency" if "currency" in variant_columns else "'INR'::text AS currency"
             category_join = "LEFT JOIN product_categories c ON c.id = p.category_id" if "category_id" in product_columns else "LEFT JOIN product_categories c ON FALSE"
             where = [product_status, variant_status]
             params: list[Any] = []
@@ -67,12 +67,12 @@ def list_products(
                 where.append("c.name = %s")
                 params.append(category.strip())
             params.extend([limit, offset])
-            query = f"""SELECT p.id AS product_id, p.name, {description_select} AS description, {brand_select} AS brand,
+            query = f"""SELECT p.id AS product_id, p.name, {description_select}, {brand_select},
                               c.name AS category, v.id AS variant_id,
                               {('v.sku' if 'sku' in variant_columns else 'NULL::text AS sku')},
                               {('v.mrp' if 'mrp' in variant_columns else 'NULL::numeric AS mrp')},
                               {('v.selling_price' if 'selling_price' in variant_columns else 'NULL::numeric AS selling_price')},
-                              {currency_select} AS currency, {image_select}
+                              {currency_select}, {image_select}
                        FROM products p
                        JOIN product_variants v ON v.product_id = p.id
                        {category_join}
