@@ -242,3 +242,43 @@ footer{background:#211331;color:#fff}
 .category-card-label{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;font-weight:800}
 @media(max-width:760px){.category-navigation{position:relative;top:auto;padding:10px 14px}.category-card-track{gap:9px}.category-image-card{flex-basis:100px;padding:6px;border-radius:15px}.category-card-image{border-radius:10px}.category-card-label{font-size:9px}}
 @media(min-width:761px){.category-navigation{top:0}}
+
+
+/* Super Bajaar brand system: one consistent purple-first storefront theme */
+.app{--page:#fbf9ff;--surface:#fff;--text:#2b1742;--muted:#756582;--line:#e9def5;--accent:#6420c8;--accent-dark:#4b159e;--accent2:#ef8b35;--soft:#f2e8ff;--success:#237b53;color-scheme:light}
+.brand{gap:10px;text-decoration:none;color:var(--text)}
+.brand-mark{display:grid;place-items:center;width:46px;height:46px;border-radius:15px;background:linear-gradient(135deg,#5d19c9 0%,#8a2de2 62%,#f08b38 100%);color:#fff;box-shadow:0 7px 18px #6420c826}
+.brand-mark svg{width:31px;height:31px;overflow:visible}
+.brand-word{font-size:21px;letter-spacing:-.8px;white-space:nowrap;color:var(--text)}
+.brand-word>span{color:#6420c8}
+.brand-word small{letter-spacing:.01em}
+.app .primary-link,.app .add-cart-button,.app .search button[type=submit],.app .service-form button{background:linear-gradient(115deg,#5d19c9 0%,#7025d4 72%,#8530d8 100%);color:#fff;box-shadow:0 6px 15px #6420c81c}
+.app .primary-link:hover,.app .add-cart-button:hover,.app .search button[type=submit]:hover,.app .service-form button:hover{background:linear-gradient(115deg,#4b159e,#6420c8);filter:none}
+.app .add-cart-button{border-radius:11px}
+.app .hero{background:linear-gradient(115deg,#f8f2ff 0%,#fff 58%,#fff7ed 100%);border-color:#e6d8fa}
+.app .hero h1 span{color:#6420c8}
+.app .hero-kicker i{background:#ef8b35}
+.app .hero-bag{background:linear-gradient(140deg,#5d19c9 0%,#852bd9 62%,#f08b38 100%)}
+.app .hero-bag i{color:#ffbd74}
+.app .category-image-card:hover,.app .discovery-product:hover{border-color:#6420c8}
+.app .discovery-icon,.app .promise-icon{background:#f2e8ff;color:#6420c8}
+.app .footer-brand .brand-word{color:#fff}
+.app .footer-brand .brand-word>span{color:#ffb16a}
+.site-footer{margin-top:16px;background:#241039;color:#fff}
+.footer-main{display:grid;grid-template-columns:minmax(220px,1fr) 2fr auto;align-items:start;gap:36px;width:min(1276px,100%);margin:auto;padding:42px clamp(18px,5.5vw,82px) 34px}
+.footer-brand-column{max-width:310px}
+.footer-brand-column>p{margin:17px 0 0;color:#d0c1e1;font-size:11px;line-height:1.8}
+.footer-brand .brand-mark{box-shadow:none}
+.footer-brand .brand-word{color:#fff}
+.footer-links{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:25px}
+.footer-links h3{margin:3px 0 15px;color:#fff;font:800 12px Manrope}
+.footer-links>div{display:flex;flex-direction:column;align-items:flex-start;gap:10px}
+.footer-links button{padding:0;border:0;background:transparent;color:#d0c1e1;text-align:left;font:500 10px 'DM Sans',sans-serif;cursor:pointer}
+.footer-links button:hover{color:#ffb16a}
+.footer-trust p{display:flex;gap:8px;margin:0;color:#d0c1e1;font-size:10px;line-height:1.6}
+.footer-trust p span{color:#ffb16a;font-weight:800}
+.site-footer .back-top{align-self:start;white-space:nowrap}
+.site-footer .footer-bottom{width:min(1276px,100%);border-top:1px solid #ffffff20;color:#d0c1e1;font-size:10px;flex-wrap:wrap}
+.site-footer .footer-bottom b{color:#ffb16a}
+@media(max-width:900px){.footer-main{grid-template-columns:1fr auto;gap:28px}.footer-links{grid-column:1/-1;grid-row:2}.site-footer .back-top{grid-column:2;grid-row:1}}
+@media(max-width:600px){.footer-main{grid-template-columns:1fr;gap:26px;padding:30px 18px}.footer-links{grid-template-columns:repeat(2,minmax(0,1fr));gap:25px 16px;grid-column:1;grid-row:auto}.footer-trust{grid-column:1/-1}.site-footer .back-top{grid-column:1;grid-row:auto}.site-footer .footer-bottom{flex-direction:column;gap:8px;padding:15px 18px}.brand-mark{width:41px;height:41px}.brand-word{font-size:20px}}
