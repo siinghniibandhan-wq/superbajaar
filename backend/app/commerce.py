@@ -185,6 +185,78 @@ def _order_detail(conn: Any, order_id: int) -> dict[str, Any]:
     return order
 
 
+@router.get("/admin/operations/readiness")
+def operations_readiness(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _require(authorization, {"super_admin", "admin", "staff"})
+    try:
+        with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
+            _ensure_commerce_schema(conn)
+            table_rows = conn.execute(
+                """SELECT table_name FROM information_schema.tables
+                   WHERE table_schema=current_schema() AND table_type='BASE TABLE'"""
+            ).fetchall()
+            tables = {row["table_name"] for row in table_rows}
+            column_rows = conn.execute(
+                """SELECT table_name,column_name,data_type FROM information_schema.columns
+                   WHERE table_schema=current_schema()"""
+            ).fetchall()
+            columns: dict[str, set[str]] = {}
+            for row in column_rows:
+                columns.setdefault(row["table_name"], set()).add(row["column_name"])
+
+            def module_status(required_tables: set[str]) -> dict[str, Any]:
+                found = sorted(tables.intersection(required_tables))
+                return {
+                    "status": "schema_detected_review_required" if found else "blocked_missing_schema",
+                    "tables_detected": found,
+                    "integrated": False,
+                }
+
+            catalogue_ok = (
+                {"products", "product_variants", "product_categories"}.issubset(tables)
+                and {"id", "name"}.issubset(columns.get("products", set()))
+                and {"id", "product_id", "selling_price"}.issubset(columns.get("product_variants", set()))
+            )
+            delivery_row = conn.execute(
+                "SELECT setting_value FROM store_settings WHERE setting_key='delivery'"
+            ).fetchone()
+            delivery = _delivery_quote(delivery_row["setting_value"] if delivery_row else None, None, Decimal("0"))
+            stock_columns = sorted(
+                columns.get("product_variants", set()).intersection(
+                    {"stock_quantity", "stock_qty", "available_quantity", "quantity_in_stock", "inventory_quantity"}
+                )
+            )
+            return {
+                "catalogue": {"status": "connected" if catalogue_ok else "blocked_schema_mismatch", "integrated": catalogue_ok},
+                "inventory": {
+                    "status": "schema_detected_review_required" if stock_columns else "blocked_missing_schema",
+                    "integrated": False,
+                    "stock_columns_detected": stock_columns,
+                    "message": "No stock mutation or reservation is enabled until an explicit stock schema and concurrency rules are verified.",
+                },
+                "delivery": {
+                    "status": "configured" if delivery["configured"] else "needs_configuration",
+                    "integrated": delivery["configured"],
+                    "message": delivery["message"],
+                },
+                "payments": {
+                    "status": "cod_only",
+                    "cash_on_delivery": True,
+                    "online_payment": False,
+                    "provider_configured": False,
+                    "message": "Online payments remain deferred; no gateway credentials or payment flow are enabled.",
+                },
+                "purchasing": module_status({"suppliers", "purchase_orders", "goods_receipts"}),
+                "accounting": module_status({"chart_of_accounts", "journal_entries", "ledger_entries", "supplier_bills"}),
+                "logistics": module_status({"shipments", "delivery_jobs", "routes", "drivers", "hubs"}),
+                "people": module_status({"employees", "attendance", "payroll_runs", "shifts"}),
+            }
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(status_code=503, detail="Operational readiness could not be read.") from exc
+
+
 @router.get("/checkout-options")
 def checkout_options(
     pincode: str | None = Query(default=None, pattern=r"^[0-9]{6}$"),
