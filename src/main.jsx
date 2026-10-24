@@ -298,7 +298,7 @@ function AdminPanel() {
       const response = await fetch(endpoint('/admin/login'), {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})});
       const data = await response.json().catch(()=>({}));
       if(!response.ok) throw new Error(data.detail || 'Admin sign-in failed');
-      setToken(data.access_token); sessionStorage.setItem('sb-admin-token',data.access_token); setPassword('');
+      setToken(data.access_token); try { sessionStorage.setItem('sb-admin-token',data.access_token); } catch {} setPassword('');
       setMessage('Signed in successfully'); await loadAdminProducts(data.access_token);
     } catch(error) { setMessage(error.message); }
     finally { setBusy(false); }
@@ -324,7 +324,7 @@ function AdminPanel() {
     } catch(error) { setMessage(error.message); }
     finally { setBusy(false); }
   }
-  function signOut(){setToken('');setItems([]);sessionStorage.removeItem('sb-admin-token');setMessage('Signed out');}
+  function signOut(){setToken('');setItems([]);try { sessionStorage.removeItem('sb-admin-token'); } catch {} setMessage('Signed out');}
   return <div className="admin-shell">
     <header className="admin-top"><a className="brand" href="/"><span className="brand-mark">S</span><span className="brand-word">super<span>bajaar</span><small>Product management</small></span></a><span className="admin-badge">ADMIN CONSOLE</span>{token && <button className="header-link" onClick={signOut}>Sign out</button>}</header>
     {!token ? <main className="admin-login-wrap"><form className="admin-login" onSubmit={login}><p className="eyebrow">RESTRICTED ACCESS</p><h1>Admin sign in</h1><p>Only authorised staff can manage the catalogue.</p><label>Admin ID<input autoComplete="username" value={username} onChange={e=>setUsername(e.target.value)} required /></label><label>Password<input type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required /></label><button className="add-cart-button" disabled={busy}>{busy?'Signing in…':'Sign in securely'}</button>{message&&<p className="admin-message" role="status">{message}</p>}</form></main> : <main className="admin-main">
