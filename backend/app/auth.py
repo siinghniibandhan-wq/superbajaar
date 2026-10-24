@@ -60,9 +60,11 @@ STATUSES = {"active", "suspended", "disabled"}
 
 
 def _db() -> str:
-    value = os.getenv("DATABASE_URL", "").strip()
+    # Prefer the deployment environment, then AWS SSM Parameter Store on EC2.
+    # The instance role must be allowed to read /superbajaar/DATABASE_URL.
+    value = _setting("DATABASE_URL")
     if not value:
-        raise HTTPException(status_code=503, detail="Database is not configured")
+        raise HTTPException(status_code=503, detail="Database connection is not configured in the backend environment or AWS Parameter Store")
     return value
 
 
