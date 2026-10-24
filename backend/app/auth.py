@@ -122,6 +122,43 @@ def _require(authorization: str | None, roles: set[str]) -> dict[str, Any]:
     return user
 
 
+def _ensure_user_schema(conn: Any) -> None:
+    """Create only the isolated Super Bajaar account tables when first needed.
+
+    This is independent of Odoo and does not alter catalogue or product tables.
+    CREATE TABLE IF NOT EXISTS is safe to repeat on subsequent bootstrap attempts.
+    """
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS app_users (
+            id BIGSERIAL PRIMARY KEY,
+            email TEXT NOT NULL UNIQUE,
+            full_name TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'customer'
+                CHECK (role IN ('super_admin', 'admin', 'staff', 'customer')),
+            status TEXT NOT NULL DEFAULT 'active'
+                CHECK (status IN ('active', 'suspended', 'disabled')),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            last_login TIMESTAMPTZ
+        )
+    """)
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS app_users_email_lower_unique ON app_users (lower(email))")
+    conn.execute("CREATE INDEX IF NOT EXISTS app_users_role_status_idx ON app_users (role, status)")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS user_audit_log (
+            id BIGSERIAL PRIMARY KEY,
+            actor_user_id BIGINT REFERENCES app_users(id) ON DELETE SET NULL,
+            target_user_id BIGINT REFERENCES app_users(id) ON DELETE SET NULL,
+            action TEXT NOT NULL,
+            details JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS user_audit_log_created_idx ON user_audit_log (created_at DESC)")
+    conn.execute("CREATE INDEX IF NOT EXISTS user_audit_log_target_idx ON user_audit_log (target_user_id, created_at DESC)")
+
+
 def _audit(conn: Any, actor_id: int | None, target_id: int | None, action: str, details: dict[str, Any]) -> None:
     conn.execute("INSERT INTO user_audit_log(actor_user_id,target_user_id,action,details) VALUES (%s,%s,%s,%s::jsonb)",
                  (actor_id, target_id, action, json.dumps(details)))
@@ -203,6 +240,7 @@ def bootstrap(body: BootstrapInput) -> dict[str, Any]:
         raise HTTPException(status_code=403, detail="Bootstrap credentials do not match server configuration")
     try:
         with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
+            _ensure_user_schema(conn)
             conn.execute("LOCK TABLE app_users IN EXCLUSIVE MODE")
             if conn.execute("SELECT id FROM app_users WHERE role='super_admin' LIMIT 1").fetchone():
                 raise HTTPException(status_code=409, detail="Super Admin has already been initialized")
