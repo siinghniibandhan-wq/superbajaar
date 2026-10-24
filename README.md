@@ -23,6 +23,7 @@ This package starts with the customer-facing website, while establishing the pro
 
 The frontend is a scaffold and will show a clear API connection state until a backend is connected. It is not a live commerce system yet.
 
+
 ## Architecture
 `Customer Website / Admin UI → Backend API (authentication + business rules) → Odoo and/or application database`
 
