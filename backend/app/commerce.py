@@ -228,6 +228,11 @@ def list_admin_orders(
                    WHERE """ + " AND ".join(where) + " ORDER BY o.created_at DESC LIMIT 200",
                 params
             ).fetchall()
+            for row in rows:
+                row["items"] = conn.execute(
+                    """SELECT variant_id,product_id,sku,product_name,quantity,unit_price,line_total
+                       FROM store_order_items WHERE order_id=%s ORDER BY id""", (row["id"],)
+                ).fetchall()
             return {"items": rows}
     except psycopg.Error as exc:
         raise HTTPException(status_code=503, detail="Order management is temporarily unavailable.") from exc
