@@ -188,4 +188,3 @@ def check_serviceability(pincode: str = Query(..., pattern=r"^\d{6}$")) -> dict[
         "warehouse_count": len(rows),
         "message": "Delivery available" if rows else "Delivery is not currently available for this PIN code",
     }
-this is a syntax error (((
