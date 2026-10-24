@@ -24,7 +24,8 @@ function normaliseProducts(payload) {
       id, name: row.name || row.product_name || 'Unnamed product',
       code: row.product_code || '', brand: row.brand || '',
       category: row.category || row.category_name || 'Everyday essentials',
-      description: row.description || '', isBestseller: Boolean(row.is_bestseller || row.bestseller), isNewArrival: Boolean(row.is_new_arrival || row.new_arrival || row.is_new), variants: []
+      description: row.description || '', averageRating: Number(row.average_rating || 0), reviewCount: Number(row.review_count || 0),
+      isBestseller: Boolean(row.is_bestseller || row.bestseller), isNewArrival: Boolean(row.is_new_arrival || row.new_arrival || row.is_new), variants: []
     });
     const product = grouped.get(id);
     const variantId = row.variant_id ?? row.sku ?? id;
@@ -77,6 +78,77 @@ function ProductDisplayTemplate({ product, variant, attributes, variantImage, va
   </div>;
 }
 
+
+function ProductReviews({ productId, averageRating = 0, reviewCount = 0 }) {
+  const [reviews, setReviews] = useState([]);
+  const [loadingReviews, setLoadingReviews] = useState(true);
+  const [reviewName, setReviewName] = useState('');
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewText, setReviewText] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingReviews(true);
+    fetch(endpoint('/products/' + encodeURIComponent(productId) + '/reviews'), { headers: { Accept: 'application/json' } })
+      .then(response => { if (!response.ok) throw new Error('Reviews are temporarily unavailable.'); return response.json(); })
+      .then(payload => { if (!cancelled) setReviews(Array.isArray(payload?.items) ? payload.items : []); })
+      .catch(() => { if (!cancelled) setReviews([]); })
+      .finally(() => { if (!cancelled) setLoadingReviews(false); });
+    return () => { cancelled = true; };
+  }, [productId]);
+
+  async function submitReview(event) {
+    event.preventDefault();
+    setMessage('');
+    if (!reviewName.trim() || reviewText.trim().length < 3) {
+      setMessage('Please enter your name and a review of at least 3 characters.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const response = await fetch(endpoint('/products/' + encodeURIComponent(productId) + '/reviews'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ reviewer_name: reviewName.trim(), rating: Number(reviewRating), review_text: reviewText.trim() })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.detail || 'Your review could not be submitted right now.');
+      setReviewName('');
+      setReviewText('');
+      setReviewRating(5);
+      setMessage(payload.message || 'Thank you. Your review was submitted for moderation.');
+    } catch (error) {
+      setMessage(error.message || 'Your review could not be submitted right now.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return <section className="product-reviews" aria-labelledby="reviews-heading">
+    <div className="reviews-heading-row">
+      <div><p className="eyebrow">CUSTOMER FEEDBACK</p><h2 id="reviews-heading">Ratings &amp; reviews</h2></div>
+      <div className="reviews-summary"><strong>★ {Number(averageRating || 0).toFixed(1)}</strong><span>{Number(reviewCount || 0)} {Number(reviewCount || 0) === 1 ? 'review' : 'reviews'}</span></div>
+    </div>
+    {loadingReviews ? <p className="reviews-empty">Loading customer reviews…</p> : reviews.length ? <div className="review-list">
+      {reviews.map(review => <article className="review-item" key={review.id}>
+        <div className="review-item-top"><strong>{review.reviewer_name}</strong><span className="review-stars" aria-label={review.rating + ' out of 5 stars'}>{'★'.repeat(Number(review.rating))}{'☆'.repeat(5 - Number(review.rating))}</span></div>
+        <p>{review.review_text}</p><time>{review.created_at ? new Date(review.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}</time>
+      </article>)}
+    </div> : <p className="reviews-empty">No reviews yet. Share your experience with this product.</p>}
+    <form className="review-form" onSubmit={submitReview}>
+      <h3>Write a review</h3>
+      <label>Your name<input value={reviewName} onChange={event => setReviewName(event.target.value)} maxLength={80} autoComplete="name" required /></label>
+      <label>Your rating<select value={reviewRating} onChange={event => setReviewRating(Number(event.target.value))}>{[5,4,3,2,1].map(rating => <option key={rating} value={rating}>{rating} star{rating === 1 ? '' : 's'}</option>)}</select></label>
+      <label>Your review<textarea value={reviewText} onChange={event => setReviewText(event.target.value)} minLength={3} maxLength={2000} rows={4} required placeholder="What did you think about this product?" /></label>
+      <button type="submit" disabled={submitting}>{submitting ? 'Submitting…' : 'Submit review'}</button>
+      {message && <p className="review-form-message" role="status">{message}</p>}
+      <small>Reviews are checked before they appear publicly.</small>
+    </form>
+  </section>;
+}
+
 function App() {
   const [theme] = useState('soft');
   const routeFromPath = () => { const path = window.location.pathname; if (path.startsWith('/product/')) return 'product'; if (path === '/shop' || path === '/catalogue') return 'shop'; return 'home'; };
@@ -118,6 +190,7 @@ function App() {
     setApiState('connecting');
     try {
       const params = new URLSearchParams({ limit: '100' });
+      if (activePage === 'product' && routeProductId) params.set('product_id', routeProductId);
       if (search.trim()) params.set('search', search.trim());
       if (pin.trim()) params.set('pincode', pin.trim());
       const response = await fetch(endpoint('/products?' + params.toString()), { headers: { Accept: 'application/json' } });
@@ -381,6 +454,7 @@ function App() {
               <div className="product-info">
                 <div className="product-meta"><span>{product.brand || product.category}</span>{variant.stock > 0 && <span className="stock-badge">In stock</span>}</div>
                 <button className="product-title" onClick={() => openProduct(product)}>{product.name}</button>
+                <button className="product-card-rating" onClick={() => openProduct(product)} aria-label={'View reviews for ' + product.name}><span>★</span> {Number(product.averageRating || 0).toFixed(1)} <small>({Number(product.reviewCount || 0)} {Number(product.reviewCount || 0) === 1 ? 'review' : 'reviews'})</small></button>
                 {product.variants.length > 1 && <label className="variant-select">Choose option
                   <select aria-label={`Choose variant for ${product.name}`} value={String(variant.id)} onChange={e => setSelectedVariants(prev => ({ ...prev, [product.id]: e.target.value }))}>
                     {product.variants.map(v => <option key={v.id} value={String(v.id)}>{variantLabel(v)}</option>)}
@@ -408,7 +482,7 @@ function App() {
         {!routeProduct ? <section className="catalogue-state"><h2>Product not found</h2><p>This product is not in the current catalogue results.</p><button className="primary-link button-link" onClick={() => goShop('')}>Back to shop <span>↗</span></button></section> : (() => {
           const product = routeProduct; const variant = currentVariant; const attributes = variantAttributes(variant);
           const optionGroups = attributes.reduce((groups, attr) => { const key = attr.key.toLowerCase(); if (!groups[key]) groups[key] = { label: attr.key, options: [] }; if (!groups[key].options.some(v => String(v.value) === String(attr.value))) groups[key].options.push({ value: attr.value, variantId: variant.id }); return groups; }, {});
-          return <ProductDisplayTemplate product={product} variant={variant} attributes={attributes} variantImage={variantImage} variantAttributes={variantAttributes} selectedVariants={selectedVariants} setSelectedVariants={setSelectedVariants} productQty={productQty} setProductQty={setProductQty} money={money} onBack={() => goShop('')} onAddToBag={(qty) => { for(let i=0;i<qty;i++) addToCart(product,variant); }} />;
+          return <><ProductDisplayTemplate product={product} variant={variant} attributes={attributes} variantImage={variantImage} variantAttributes={variantAttributes} selectedVariants={selectedVariants} setSelectedVariants={setSelectedVariants} productQty={productQty} setProductQty={setProductQty} money={money} onBack={() => goShop('')} onAddToBag={(qty) => { for(let i=0;i<qty;i++) addToCart(product,variant); }} /><ProductReviews productId={product.id} averageRating={product.averageRating} reviewCount={product.reviewCount} /></>;
           
         })()}
       </main>

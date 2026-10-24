@@ -299,11 +299,15 @@ def list_products(
     category: str = Query(default="", max_length=80),
     limit: int = Query(default=24, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    product_id: int | None = Query(default=None, ge=1),
 ) -> dict[str, Any]:
-    """Return active catalogue products with current prices and stock-backed serviceability."""
+    """Return active catalogue products with current prices, stock, and approved review summaries."""
     db = get_pool()
     conditions = ["p.status = 'active'", "v.status = 'active'"]
     params: list[Any] = []
+    if product_id is not None:
+        conditions.append("p.id = %s")
+        params.append(product_id)
     if search.strip():
         conditions.append("(p.name ILIKE %s OR p.brand ILIKE %s OR v.sku ILIKE %s)")
         term = f"%{search.strip()}%"
@@ -350,11 +354,31 @@ def list_products(
             ) AS lowest_selling_price_30d,"""
     except Exception:
         logger.exception("Could not inspect price history table; continuing without 30-day price")
+    review_select = """0::numeric AS average_rating, 0::bigint AS review_count,"""
+    try:
+        with db.connection() as conn:
+            reviews_exists = conn.execute(
+                "SELECT to_regclass('public.product_reviews') AS table_name"
+            ).fetchone()["table_name"] is not None
+        if reviews_exists:
+            review_select = """COALESCE((
+                    SELECT ROUND(AVG(pr.rating)::numeric, 1)
+                    FROM product_reviews pr
+                    WHERE pr.product_id = p.id AND pr.status = 'approved'
+                ), 0) AS average_rating,
+                (
+                    SELECT COUNT(*) FROM product_reviews pr
+                    WHERE pr.product_id = p.id AND pr.status = 'approved'
+                ) AS review_count,"""
+    except Exception:
+        logger.exception("Could not inspect product review schema; returning empty review summaries")
+
     query = f"""
         SELECT p.id AS product_id, p.product_code, p.name, p.description, p.brand,
                c.name AS category, v.id AS variant_id, v.sku, v.barcode,
                v.variant_attributes, v.mrp, v.selling_price, v.currency,
                {history_select}
+               {review_select}
                COALESCE(SUM(ib.quantity_on_hand - ib.quantity_reserved), 0) AS available_quantity
         FROM products p
         JOIN product_variants v ON v.product_id = p.id
@@ -370,6 +394,7 @@ def list_products(
                c.name AS category, v.id AS variant_id, v.sku, v.barcode,
                v.variant_attributes, v.mrp, v.selling_price, v.currency,
                {history_select}
+               {review_select}
                COALESCE(SUM(ib.quantity_on_hand - ib.quantity_reserved), 0) AS available_quantity
         FROM products p
         JOIN product_variants v ON v.product_id = p.id
