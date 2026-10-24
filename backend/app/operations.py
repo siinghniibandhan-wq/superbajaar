@@ -575,6 +575,23 @@ def pos_sales(authorization:str|None=Header(default=None),limit:int=Query(100,ge
             return {"items":conn.execute("SELECT * FROM sb_pos_sales ORDER BY id DESC LIMIT %s",(limit,)).fetchall()}
     except Exception as exc: raise HTTPException(status_code=503,detail="POS sales unavailable") from exc
 
+@router.get("/pos/sales/{sale_id}")
+def pos_sale_detail(sale_id:int,authorization:str|None=Header(default=None))->dict[str,Any]:
+    _admin(authorization)
+    try:
+        with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
+            _ensure(conn)
+            sale=conn.execute("""SELECT s.*,c.name AS customer_name,c.email AS customer_email
+                FROM sb_pos_sales s LEFT JOIN sb_customers c ON c.id=s.customer_id
+                WHERE s.id=%s""",(sale_id,)).fetchone()
+            if not sale:
+                raise HTTPException(status_code=404,detail="POS sale not found")
+            lines=conn.execute("""SELECT id,sale_id,variant_id,quantity,unit_price,tax_rate,line_total
+                FROM sb_pos_sale_lines WHERE sale_id=%s ORDER BY id""",(sale_id,)).fetchall()
+            return {"sale":sale,"lines":lines}
+    except HTTPException: raise
+    except Exception as exc: raise HTTPException(status_code=503,detail="POS sale details unavailable") from exc
+
 @router.post("/shipments",status_code=201)
 def create_shipment(body:ShipmentInput,authorization:str|None=Header(default=None))->dict[str,Any]:
     _admin(authorization)
