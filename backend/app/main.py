@@ -509,7 +509,7 @@ def list_products(
     query = f"""
         SELECT p.id AS product_id, p.product_code, p.name, p.description, p.brand,
                c.name AS category, v.id AS variant_id, v.sku, v.barcode,
-               v.variant_attributes, v.mrp, v.selling_price, v.currency,
+               v.variant_attributes, {image_select}, v.mrp, v.selling_price, v.currency,
                {history_select}
                {review_select}
                COALESCE(SUM(ib.quantity_on_hand - ib.quantity_reserved), 0) AS available_quantity
