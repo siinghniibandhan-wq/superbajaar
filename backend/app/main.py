@@ -1,13 +1,21 @@
 """Super Bajaar API foundation. No credentials or product data are hardcoded."""
 from contextlib import asynccontextmanager
 from decimal import Decimal
+import base64
+import hashlib
+import hmac
+import json
+import re
+import time
 import logging
 import os
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException, Query
+from pydantic import BaseModel, Field, field_validator, model_validator
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from psycopg_pool import ConnectionPool
+from psycopg.errors import UniqueViolation
 from psycopg.rows import dict_row
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -16,6 +24,69 @@ logger = logging.getLogger("superbajaar.api")
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 CORS_ORIGINS = [origin.strip() for origin in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if origin.strip()]
 pool: ConnectionPool | None = None
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin").strip()
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
+ADMIN_TOKEN_SECRET = os.getenv("ADMIN_TOKEN_SECRET", "")
+
+
+class AdminLogin(BaseModel):
+    username: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=1, max_length=200)
+
+
+class AdminProductInput(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    product_code: str = Field(min_length=1, max_length=80)
+    sku: str = Field(min_length=1, max_length=100)
+    description: str = Field(default="", max_length=5000)
+    brand: str = Field(default="", max_length=150)
+    category: str = Field(default="General", min_length=1, max_length=100)
+    selling_price: Decimal = Field(ge=0)
+    mrp: Decimal | None = Field(default=None, ge=0)
+    currency: Literal["INR", "USD"] = "INR"
+    active: bool = True
+    variant_attributes: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("selling_price", "mrp")
+    @classmethod
+    def validate_money_precision(cls, value: Decimal | None) -> Decimal | None:
+        if value is not None and max(0, -value.as_tuple().exponent) > 2:
+            raise ValueError("Prices must have no more than two decimal places")
+        return value
+
+    @model_validator(mode="after")
+    def validate_mrp_not_below_selling_price(self):
+        if self.mrp is not None and self.mrp < self.selling_price:
+            raise ValueError("MRP must be greater than or equal to the selling price")
+        return self
+
+
+def _b64(value: bytes) -> str:
+    return base64.urlsafe_b64encode(value).decode().rstrip("=")
+
+
+def _admin_token(username: str, expires: int) -> str:
+    payload = _b64(json.dumps({"sub": username, "exp": expires}, separators=(",", ":")).encode())
+    signature = _b64(hmac.new(ADMIN_TOKEN_SECRET.encode(), payload.encode(), hashlib.sha256).digest())
+    return payload + "." + signature
+
+
+def require_admin(authorization: str | None) -> str:
+    if not ADMIN_PASSWORD or len(ADMIN_TOKEN_SECRET) < 32:
+        raise HTTPException(status_code=503, detail="Admin login is not configured securely; set ADMIN_PASSWORD and an ADMIN_TOKEN_SECRET of at least 32 characters")
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Admin login required")
+    try:
+        payload, signature = authorization[7:].split(".", 1)
+        expected = _b64(hmac.new(ADMIN_TOKEN_SECRET.encode(), payload.encode(), hashlib.sha256).digest())
+        if not hmac.compare_digest(signature, expected):
+            raise ValueError("invalid signature")
+        claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+        if claims.get("sub") != ADMIN_USERNAME or int(claims.get("exp", 0)) < int(time.time()):
+            raise ValueError("expired or invalid token")
+        return claims["sub"]
+    except Exception:
+        raise HTTPException(status_code=401, detail="Admin session expired; sign in again")
 
 
 @asynccontextmanager
@@ -84,6 +155,141 @@ def readiness() -> dict[str, str]:
         logger.exception("Readiness database check failed")
         raise HTTPException(status_code=503, detail="Database unavailable")
     return {"status": "ready"}
+
+
+
+@app.post("/api/admin/login")
+def admin_login(credentials: AdminLogin) -> dict[str, Any]:
+    if not ADMIN_PASSWORD or len(ADMIN_TOKEN_SECRET) < 32:
+        raise HTTPException(status_code=503, detail="Admin login is not configured securely. Set ADMIN_PASSWORD and an ADMIN_TOKEN_SECRET of at least 32 characters.")
+    valid_user = hmac.compare_digest(credentials.username, ADMIN_USERNAME)
+    valid_password = hmac.compare_digest(credentials.password, ADMIN_PASSWORD)
+    if not (valid_user and valid_password):
+        raise HTTPException(status_code=401, detail="Invalid admin ID or password")
+    expires = int(time.time()) + 8 * 60 * 60
+    return {"access_token": _admin_token(ADMIN_USERNAME, expires), "token_type": "bearer", "expires_in": 28800, "username": ADMIN_USERNAME}
+
+
+@app.get("/api/admin/products")
+def admin_list_products(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    require_admin(authorization)
+    db = get_pool()
+    try:
+        with db.connection() as conn:
+            rows = conn.execute(
+                """SELECT p.id AS product_id, p.product_code, p.name, p.description, p.brand,
+                          p.status AS product_status, p.website_published, c.name AS category,
+                          v.id AS variant_id, v.sku, v.barcode, v.variant_attributes,
+                          v.mrp, v.selling_price, v.currency, v.status AS variant_status
+                   FROM products p JOIN product_variants v ON v.product_id = p.id
+                   LEFT JOIN product_categories c ON c.id = p.category_id
+                   ORDER BY p.created_at DESC, p.name, v.sku LIMIT 500"""
+            ).fetchall()
+    except Exception:
+        logger.exception("Admin product-list query failed")
+        raise HTTPException(status_code=503, detail="Product catalogue is temporarily unavailable") from None
+    return {"items": json_safe(rows)}
+
+
+@app.post("/api/admin/products", status_code=201)
+def admin_create_product(product: AdminProductInput, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    require_admin(authorization)
+    if not product.name.strip() or not product.product_code.strip() or not product.sku.strip() or not product.category.strip():
+        raise HTTPException(status_code=422, detail="Product name, product code, SKU, and category cannot be blank")
+    db = get_pool()
+    slug = re.sub(r"[^a-z0-9]+", "-", product.category.strip().lower()).strip("-") or "general"
+    status = "active" if product.active else "inactive"
+    try:
+        with db.connection() as conn:
+            with conn.transaction():
+                category = conn.execute(
+                    """INSERT INTO product_categories (category_code, name, status)
+                       VALUES (%s, %s, 'active')
+                       ON CONFLICT (category_code) DO UPDATE SET name = product_categories.name
+                       RETURNING id""",
+                    [slug[:80], product.category.strip()],
+                ).fetchone()
+                created = conn.execute(
+                    """INSERT INTO products
+                       (product_code, name, description, brand, category_id, website_published, status)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                    [product.product_code.strip(), product.name.strip(), product.description.strip(),
+                     product.brand.strip() or None, category["id"], product.active, status],
+                ).fetchone()
+                variant = conn.execute(
+                    """INSERT INTO product_variants
+                       (product_id, sku, variant_attributes, mrp, selling_price, currency, status)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                    [created["id"], product.sku.strip(), json.dumps(product.variant_attributes),
+                     product.mrp, product.selling_price, product.currency.upper(), status],
+                ).fetchone()
+    except UniqueViolation as exc:
+        constraint = getattr(getattr(exc, "diag", None), "constraint_name", "")
+        field = "SKU" if "sku" in constraint else "product code" if "product" in constraint else "category"
+        raise HTTPException(status_code=409, detail=f"A record with this {field} already exists") from exc
+    except Exception:
+        logger.exception("Admin product creation failed")
+        raise HTTPException(status_code=503, detail="Product could not be saved; check database availability and schema") from None
+    return {"product_id": created["id"], "variant_id": variant["id"], "message": "Product saved to the catalogue database"}
+
+
+@app.put("/api/admin/products/{product_id}/variants/{variant_id}")
+def admin_update_product(
+    product_id: int,
+    variant_id: int,
+    product: AdminProductInput,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    require_admin(authorization)
+    if product_id < 1 or variant_id < 1:
+        raise HTTPException(status_code=422, detail="Product and variant IDs must be positive")
+    if not product.name.strip() or not product.product_code.strip() or not product.sku.strip() or not product.category.strip():
+        raise HTTPException(status_code=422, detail="Product name, product code, SKU, and category cannot be blank")
+    db = get_pool()
+    slug = re.sub(r"[^a-z0-9]+", "-", product.category.strip().lower()).strip("-") or "general"
+    status = "active" if product.active else "inactive"
+    try:
+        with db.connection() as conn:
+            with conn.transaction():
+                existing = conn.execute(
+                    "SELECT id FROM product_variants WHERE id = %s AND product_id = %s",
+                    [variant_id, product_id],
+                ).fetchone()
+                if existing is None:
+                    raise HTTPException(status_code=404, detail="Product variant not found")
+                category = conn.execute(
+                    """INSERT INTO product_categories (category_code, name, status)
+                       VALUES (%s, %s, 'active')
+                       ON CONFLICT (category_code) DO UPDATE SET name = product_categories.name
+                       RETURNING id""",
+                    [slug[:80], product.category.strip()],
+                ).fetchone()
+                conn.execute(
+                    """UPDATE products
+                       SET product_code = %s, name = %s, description = %s, brand = %s,
+                           category_id = %s, website_published = %s, status = %s, updated_at = now()
+                       WHERE id = %s""",
+                    [product.product_code.strip(), product.name.strip(), product.description.strip(),
+                     product.brand.strip() or None, category["id"], product.active, status, product_id],
+                )
+                conn.execute(
+                    """UPDATE product_variants
+                       SET sku = %s, variant_attributes = %s, mrp = %s, selling_price = %s,
+                           currency = %s, status = %s
+                       WHERE id = %s AND product_id = %s""",
+                    [product.sku.strip(), json.dumps(product.variant_attributes), product.mrp,
+                     product.selling_price, product.currency, status, variant_id, product_id],
+                )
+    except HTTPException:
+        raise
+    except UniqueViolation as exc:
+        constraint = getattr(getattr(exc, "diag", None), "constraint_name", "")
+        field = "SKU" if "sku" in constraint else "product code" if "product" in constraint else "category"
+        raise HTTPException(status_code=409, detail=f"A record with this {field} already exists") from exc
+    except Exception:
+        logger.exception("Admin product update failed")
+        raise HTTPException(status_code=503, detail="Product could not be updated; check database availability and schema") from None
+    return {"product_id": product_id, "variant_id": variant_id, "message": "Product updated successfully"}
 
 
 @app.get("/api/products")
