@@ -100,6 +100,42 @@ def list_products(
         raise HTTPException(status_code=503, detail="Catalogue is temporarily unavailable") from exc
 
 
+@app.get("/api/products/by-variant/{variant_id}")
+def get_product_by_variant(variant_id: int) -> dict[str, Any]:
+    """Return one active catalogue variant for a direct product URL."""
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            product_columns = get_columns(conn, "products")
+            variant_columns = get_columns(conn, "product_variants")
+            category_columns = get_columns(conn, "product_categories")
+            if not product_columns or not variant_columns or not category_columns:
+                raise HTTPException(status_code=503, detail="The existing catalogue tables are not available")
+            product_status = "p.status = 'active'" if "status" in product_columns else "TRUE"
+            variant_status = "v.status = 'active'" if "status" in variant_columns else "TRUE"
+            image_select = "v.image_url AS image_url" if "image_url" in variant_columns else "NULL::text AS image_url"
+            brand_select = "p.brand AS brand" if "brand" in product_columns else "NULL::text AS brand"
+            description_select = "p.description AS description" if "description" in product_columns else "NULL::text AS description"
+            currency_select = "v.currency AS currency" if "currency" in variant_columns else "'INR'::text AS currency"
+            category_join = "LEFT JOIN product_categories c ON c.id = p.category_id" if "category_id" in product_columns else "LEFT JOIN product_categories c ON FALSE"
+            sku_select = "v.sku AS sku" if "sku" in variant_columns else "NULL::text AS sku"
+            mrp_select = "v.mrp AS mrp" if "mrp" in variant_columns else "NULL::numeric AS mrp"
+            price_select = "v.selling_price AS selling_price" if "selling_price" in variant_columns else "NULL::numeric AS selling_price"
+            row = conn.execute(f"""SELECT p.id AS product_id, p.name, {description_select}, {brand_select},
+                c.name AS category, v.id AS variant_id, {sku_select}, {mrp_select},
+                {price_select}, {currency_select}, {image_select}
+                FROM products p JOIN product_variants v ON v.product_id = p.id
+                {category_join} WHERE v.id = %s AND {product_status} AND {variant_status}
+                LIMIT 1""", (variant_id,)).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Product not found")
+            return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        logger.exception("Product detail query failed")
+        raise HTTPException(status_code=503, detail="Product details are temporarily unavailable") from exc
+
+
 @app.get("/api/categories")
 def list_categories() -> dict[str, Any]:
     try:
