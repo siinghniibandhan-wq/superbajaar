@@ -245,7 +245,7 @@ def list_reviews_for_moderation(
 def moderate_product_review(
     review_id: int,
     status: str = Query(..., pattern="^(approved|rejected)$"),
-    x_review_moderation_token: str = Query(default="", include_in_schema=False),
+    x_review_moderation_token: str = Header(default="", alias="X-Review-Moderation-Token"),
 ) -> dict[str, str]:
     """Approve or reject one pending review using the server-side moderation token."""
     require_review_moderator(x_review_moderation_token)
