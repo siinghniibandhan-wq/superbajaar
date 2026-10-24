@@ -588,8 +588,23 @@ def payroll_run(body:PayrollInput,authorization:str|None=Header(default=None))->
                 lines=[]
                 for employee in staff:
                     gross=Decimal(str(employee["monthly_gross"]))
-                    deduction=body.deductions.get(employee["id"],Decimal("0"))
-                    if deduction>gross: raise HTTPException(status_code=422,detail=f"Deductions exceed gross salary for employee {employee['id']}")
+                    custom_deduction=body.deductions.get(employee["id"],Decimal("0"))
+                    leave_row=conn.execute("""SELECT COALESCE(SUM(days *
+                        (LEAST(end_date,%s)-GREATEST(start_date,%s)+1)::numeric/(end_date-start_date+1)),0) AS days
+                        FROM sb_leave_requests WHERE employee_id=%s AND status='approved' AND paid=FALSE
+                        AND start_date<=%s AND end_date>=%s""",
+                        (body.period_end,body.period_start,employee["id"],body.period_end,body.period_start)).fetchone()
+                    unpaid_days=Decimal(str(leave_row["days"] or 0))
+                    attendance_row=conn.execute("""SELECT COALESCE(SUM(CASE WHEN a.status='absent' THEN 1
+                        WHEN a.status='half_day' THEN 0.5 ELSE 0 END),0) AS days
+                        FROM sb_attendance a WHERE a.employee_id=%s AND a.work_date BETWEEN %s AND %s
+                        AND NOT EXISTS (SELECT 1 FROM sb_leave_requests l WHERE l.employee_id=a.employee_id
+                            AND l.status='approved' AND l.paid=FALSE AND a.work_date BETWEEN l.start_date AND l.end_date)""",
+                        (employee["id"],body.period_start,body.period_end)).fetchone()
+                    unpaid_days += Decimal(str(attendance_row["days"] or 0))
+                    absence_deduction=(gross/Decimal("30")*unpaid_days).quantize(Decimal("0.01"))
+                    deduction=custom_deduction+absence_deduction
+                    if deduction>gross: raise HTTPException(status_code=422,detail=f"Total deductions exceed gross salary for employee {employee['id']}")
                     line=conn.execute("""INSERT INTO sb_payroll_lines(run_id,employee_id,gross,deductions,net_pay) VALUES(%s,%s,%s,%s,%s)
                         ON CONFLICT(run_id,employee_id) DO UPDATE SET gross=EXCLUDED.gross,deductions=EXCLUDED.deductions,net_pay=EXCLUDED.net_pay
                         RETURNING *""",(run["id"],employee["id"],gross,deduction,gross-deduction)).fetchone()
