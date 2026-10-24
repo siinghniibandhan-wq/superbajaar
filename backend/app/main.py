@@ -201,7 +201,7 @@ def submit_product_review(product_id: int, review: ProductReviewInput) -> dict[s
                 """INSERT INTO product_reviews
                    (product_id, reviewer_name, rating, review_text, status)
                    VALUES (%s, %s, %s, %s, 'pending')""",
-                (review.reviewer_name, review.rating, review.review_text),
+                (product_id, review.reviewer_name, review.rating, review.review_text),
             )
     except HTTPException:
         raise
