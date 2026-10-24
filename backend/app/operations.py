@@ -282,9 +282,19 @@ def create_leave(body:LeaveInput,authorization:str|None=Header(default=None))->d
     try:
         with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
             _ensure(conn)
-            row=conn.execute("""INSERT INTO sb_leave_requests(employee_id,start_date,end_date,leave_type,days,paid,reason)
-                VALUES(%s,%s,%s,%s,%s,%s,%s) RETURNING *""",(body.employee_id,body.start_date,body.end_date,body.leave_type.strip(),body.days,body.paid,body.reason.strip() or None)).fetchone()
-            return {"leave":row}
+            with conn.transaction():
+                employee=conn.execute("SELECT id FROM sb_employees WHERE id=%s",(body.employee_id,)).fetchone()
+                if not employee:
+                    raise HTTPException(status_code=404,detail="Employee not found")
+                overlap=conn.execute("""SELECT id FROM sb_leave_requests
+                    WHERE employee_id=%s AND status IN ('pending','approved')
+                    AND start_date<=%s AND end_date>=%s
+                    LIMIT 1""",(body.employee_id,body.end_date,body.start_date)).fetchone()
+                if overlap:
+                    raise HTTPException(status_code=409,detail=f"Leave dates overlap with existing request {overlap['id']}.")
+                row=conn.execute("""INSERT INTO sb_leave_requests(employee_id,start_date,end_date,leave_type,days,paid,reason)
+                    VALUES(%s,%s,%s,%s,%s,%s,%s) RETURNING *""",(body.employee_id,body.start_date,body.end_date,body.leave_type.strip(),body.days,body.paid,body.reason.strip() or None)).fetchone()
+                return {"leave":row}
     except Exception as exc: raise HTTPException(status_code=503,detail="Leave request could not be saved") from exc
 
 @router.patch("/leave/{leave_id}")
