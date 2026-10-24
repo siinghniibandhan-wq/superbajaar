@@ -32,7 +32,7 @@ function normaliseProducts(payload) {
       product.variants.push({
         id: variantId, sku: row.sku || '', barcode: row.barcode || '',
         attributes: row.variant_attributes || null,
-        price: row.selling_price, mrp: row.mrp, currency: row.currency || 'INR',
+        price: row.selling_price, mrp: row.mrp, lowest30: row.lowest_selling_price_30d, currency: row.currency || 'INR', imageUrl: row.image_url || row.image || '',
         stock: Number(row.available_quantity ?? row.stock_quantity ?? 0)
       });
     }
@@ -64,6 +64,8 @@ function App() {
   const [notice, setNotice] = useState('');
   const [apiState, setApiState] = useState(API_BASE ? 'connecting' : 'unconfigured');
   const [detail, setDetail] = useState(null);
+  const [cart, setCart] = useState(() => { try { return JSON.parse(localStorage.getItem('sb-cart') || '[]'); } catch { return []; } });
+  const [cartOpen, setCartOpen] = useState(false);
   const [recentlyViewed, setRecentlyViewed] = useState(() => { try { return JSON.parse(localStorage.getItem('sb-recently-viewed') || '[]'); } catch { return []; } });
   const [brandFilter, setBrandFilter] = useState('');
 
@@ -118,6 +120,16 @@ function App() {
 
   useEffect(() => { if (API_BASE) loadProducts('', ''); }, []);
   useEffect(() => { try { localStorage.setItem('sb-theme', theme); } catch {} }, [theme]);
+  useEffect(() => { try { localStorage.setItem('sb-cart', JSON.stringify(cart)); } catch {} }, [cart]);
+  const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const cartTotal = cart.reduce((sum, item) => sum + Number(item.price || 0) * item.quantity, 0);
+  function addToCart(product, variant) {
+    if (variant.price == null || Number(variant.price) <= 0) { setNotice('Selling price is not available for this product yet.'); return; }
+    const key = String(product.id) + ':' + String(variant.id);
+    setCart(previous => { const existing = previous.find(item => item.key === key); if (existing) return previous.map(item => item.key === key ? { ...item, quantity: item.quantity + 1 } : item); return [...previous, { key, name: product.name, option: variantLabel(variant), price: Number(variant.price), currency: variant.currency, quantity: 1 }]; });
+    setNotice(product.name + ' added to your bag.');
+  }
+  function changeCartQuantity(key, delta) { setCart(previous => previous.map(item => item.key === key ? { ...item, quantity: item.quantity + delta } : item).filter(item => item.quantity > 0)); }
   useEffect(() => { try { localStorage.setItem('sb-recently-viewed', JSON.stringify(recentlyViewed.slice(0, 12))); } catch {} }, [recentlyViewed]);
   function openProduct(product) { setDetail(product); setRecentlyViewed(previous => [product.id, ...previous.filter(id => String(id) !== String(product.id))].slice(0, 12)); }
   const recentlyViewedProducts = recentlyViewed.map(id => products.find(product => String(product.id) === String(id))).filter(Boolean);
@@ -167,7 +179,7 @@ function App() {
       </form>
       <div className="header-actions">
         <button className="header-link" onClick={() => setNotice('Customer accounts will be enabled when the authentication flow is ready.')}>Account</button>
-        <button className="cart-button" onClick={() => setNotice('The catalogue is connected; cart and checkout require their backend endpoints.')}>Bag <span>0</span></button>
+        <button className="cart-button" onClick={() => setCartOpen(true)}>Bag <span>{cartCount}</span></button>
       </div>
     </header>
 
@@ -240,9 +252,9 @@ function App() {
                     {product.variants.map(v => <option key={v.id} value={String(v.id)}>{variantLabel(v)}</option>)}
                   </select>
                 </label>}
-                <div className="product-price"><strong>{money(variant.price, variant.currency)}</strong>{variant.mrp != null && Number(variant.mrp) > Number(variant.price) && <del>{money(variant.mrp, variant.currency)}</del>}</div>
+                <div className="product-price"><strong>{money(variant.price, variant.currency)}</strong>{variant.mrp != null && Number(variant.mrp) > Number(variant.price) && <del>{money(variant.mrp, variant.currency)}</del>}</div>{variant.lowest30 != null && <div className="price-history">Lowest selling price · 30 days: <b>{money(variant.lowest30, variant.currency)}</b></div>}
                 <div className="product-stock">{variant.stock > 0 ? `${variant.stock} available` : 'Availability not confirmed'}</div>
-                <button className="details-button" onClick={() => setDetail(product)}>View details <span>↗</span></button>
+                <button className="add-cart-button" onClick={() => addToCart(product, variant)}>＋ Add to bag</button><button className="details-button" onClick={() => setDetail(product)}>View details <span>↗</span></button>
               </div>
             </article>;
           })}
@@ -277,6 +289,22 @@ function App() {
           <div className="detail-notice">Cart and checkout will be enabled when the corresponding backend APIs are available.</div>
           <button className="primary-link button-link" onClick={() => setDetail(null)}>Continue browsing <span>↗</span></button>
         </div>
+      </section>
+    </div>}
+    {cartOpen && <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setCartOpen(false); }}>
+      <section className="cart-modal" role="dialog" aria-modal="true" aria-labelledby="cart-title">
+        <button className="modal-close" aria-label="Close bag" onClick={() => setCartOpen(false)}>×</button>
+        <p className="eyebrow">YOUR SELECTION</p><h2 id="cart-title">Shopping bag ({cartCount})</h2>
+        {!cart.length ? <p className="cart-note">Your bag is empty. Add something from the catalogue.</p> : <>
+          <div className="cart-items">{cart.map(item => <article className="cart-item" key={item.key}>
+            <div><b>{item.name}</b><small>{item.option}</small><strong>{money(item.price, item.currency)}</strong></div>
+            <div className="quantity-control"><button onClick={() => changeCartQuantity(item.key,-1)} aria-label="Decrease quantity">−</button><span>{item.quantity}</span><button onClick={() => changeCartQuantity(item.key,1)} aria-label="Increase quantity">＋</button></div>
+            <button className="remove-item" onClick={() => setCart(previous => previous.filter(row => row.key !== item.key))}>Remove</button>
+          </article>)}</div>
+          <div className="cart-total"><span>Subtotal</span><strong>{money(cartTotal)}</strong></div>
+          <p className="cart-note">Bag saved on this device. Online checkout and payment are not connected yet.</p>
+        </>}
+        <button className="primary-link button-link" onClick={() => setCartOpen(false)}>Continue shopping <span>↗</span></button>
       </section>
     </div>}
   </div>;
