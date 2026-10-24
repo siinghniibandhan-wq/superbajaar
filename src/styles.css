@@ -108,3 +108,8 @@
 .loyalty-redeem-box h3{margin:4px 0}.loyalty-redeem-box p,.loyalty-redeem-box small{font-size:12px;opacity:.8}.loyalty-redeem-box label{display:grid;gap:6px;font-size:12px;font-weight:700}.loyalty-redeem-box input{width:100%;min-width:0;padding:11px;border:1px solid var(--border-color,rgba(120,100,150,.25));border-radius:10px;background:var(--input-bg,transparent);color:inherit}.loyalty-redeem-box>small{grid-column:1/-1}
 .loyalty-admin{margin-top:20px}.loyalty-admin form{margin:18px 0}.loyalty-admin .loyalty-toggle{display:flex;align-items:center;gap:10px}.loyalty-admin .loyalty-toggle input{width:18px;height:18px}.loyalty-tier-list{padding-top:16px;border-top:1px solid var(--border-color,rgba(120,100,150,.16))}
 @media(max-width:640px){.loyalty-wallet-summary{grid-template-columns:1fr}.loyalty-redeem-box{grid-template-columns:1fr}.loyalty-redeem-box>small{grid-column:auto}.loyalty-card-visual{padding:20px;min-height:200px}.loyalty-card-visual>strong{font-size:30px}.loyalty-tier-row{align-items:flex-start;flex-wrap:wrap}}
+
+.loyalty-tier-edit{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:16px;margin:12px 0;border:1px solid var(--border-color,rgba(120,100,150,.16));border-radius:14px}
+.loyalty-tier-edit label{display:grid;gap:6px;font-size:12px;font-weight:700}
+.loyalty-tier-edit input:not([type=checkbox]){width:100%;min-width:0;padding:10px;border:1px solid var(--border-color,rgba(120,100,150,.22));border-radius:9px;background:var(--input-bg,transparent);color:inherit}
+@media(max-width:640px){.loyalty-tier-edit{grid-template-columns:1fr}}
