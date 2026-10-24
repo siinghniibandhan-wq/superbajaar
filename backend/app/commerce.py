@@ -52,6 +52,7 @@ def _ensure_commerce_schema(conn: Any) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS store_orders_user_created_idx ON store_orders(user_id, created_at DESC)")
     conn.execute("CREATE INDEX IF NOT EXISTS store_orders_status_created_idx ON store_orders(status, created_at DESC)")
     conn.execute("ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS loyalty_discount NUMERIC(12,2) NOT NULL DEFAULT 0")
+    conn.execute("ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS loyalty_coins_redeemed BIGINT NOT NULL DEFAULT 0")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS store_order_items (
             id BIGSERIAL PRIMARY KEY,
