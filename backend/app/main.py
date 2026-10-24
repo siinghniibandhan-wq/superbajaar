@@ -291,6 +291,127 @@ def moderate_product_review(
     return {"message": "Review " + status + ".", "status": status}
 
 
+
+class ProductWriteInput(BaseModel):
+    name: str = Field(min_length=1, max_length=240)
+    selling_price: float = Field(gt=0, le=9999999999)
+    mrp: float | None = Field(default=None, gt=0, le=9999999999)
+    brand: str = Field(default="", max_length=160)
+    description: str = Field(default="", max_length=4000)
+    category_id: int | None = Field(default=None, gt=0)
+    sku: str = Field(default="", max_length=120)
+    image_url: str = Field(default="", max_length=2000)
+    status: str = Field(default="active", pattern="^(active|inactive|draft)$")
+
+
+def _admin_catalogue_user(authorization: str | None) -> dict[str, Any]:
+    from .auth import _require
+    return _require(authorization, {"super_admin", "admin"})
+
+
+def _catalogue_columns(conn: Any, table: str) -> dict[str, dict[str, Any]]:
+    rows = conn.execute(
+        """SELECT column_name, is_nullable, column_default, is_identity
+           FROM information_schema.columns
+           WHERE table_schema=current_schema() AND table_name=%s""", (table,)
+    ).fetchall()
+    return {r["column_name"]: r for r in rows}
+
+
+def _catalogue_insert(conn: Any, table: str, values: dict[str, Any]) -> dict[str, Any]:
+    columns = _catalogue_columns(conn, table)
+    if not columns:
+        raise HTTPException(status_code=503, detail=f"The existing {table} table is unavailable.")
+    chosen = {k: v for k, v in values.items() if k in columns and k != "id" and v is not None}
+    missing = [name for name, meta in columns.items()
+               if name not in chosen and name != "id" and meta["is_nullable"] == "NO"
+               and meta["column_default"] is None and meta["is_identity"] != "YES"]
+    if missing:
+        raise HTTPException(status_code=503, detail=f"Catalogue schema requires additional fields: {', '.join(sorted(missing))}.")
+    if not chosen:
+        raise HTTPException(status_code=503, detail=f"No compatible fields found for {table}.")
+    names = list(chosen)
+    sql = f"INSERT INTO {table} ({', '.join(names)}) VALUES ({', '.join(['%s'] * len(names))}) RETURNING *"
+    return conn.execute(sql, [chosen[k] for k in names]).fetchone()
+
+
+@app.post("/api/admin/products", status_code=201)
+def create_catalogue_product(
+    body: ProductWriteInput,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    _admin_catalogue_user(authorization)
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            product_columns = _catalogue_columns(conn, "products")
+            variant_columns = _catalogue_columns(conn, "product_variants")
+            if not product_columns or not variant_columns:
+                raise HTTPException(status_code=503, detail="The existing catalogue schema is unavailable.")
+            product_values = {"name": body.name.strip(), "brand": body.brand.strip(),
+                              "description": body.description.strip(), "category_id": body.category_id,
+                              "status": body.status}
+            product = _catalogue_insert(conn, "products", product_values)
+            variant_values = {"product_id": product["id"], "selling_price": body.selling_price,
+                              "mrp": body.mrp, "sku": body.sku.strip() or None,
+                              "image_url": body.image_url.strip() or None, "status": body.status}
+            variant = _catalogue_insert(conn, "product_variants", variant_values)
+            return {"product": product, "variant": variant}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        logger.exception("Catalogue product creation failed")
+        raise HTTPException(status_code=503, detail="Product could not be saved to the catalogue.") from exc
+
+
+@app.put("/api/admin/products/{product_id}")
+def update_catalogue_product(
+    product_id: int,
+    body: ProductWriteInput,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    _admin_catalogue_user(authorization)
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            product_columns = _catalogue_columns(conn, "products")
+            variant_columns = _catalogue_columns(conn, "product_variants")
+            if not product_columns or not variant_columns:
+                raise HTTPException(status_code=503, detail="The existing catalogue schema is unavailable.")
+            product_values = {"name": body.name.strip(), "brand": body.brand.strip(),
+                              "description": body.description.strip(), "category_id": body.category_id,
+                              "status": body.status}
+            product_values = {k: v for k, v in product_values.items() if k in product_columns}
+            if not product_values:
+                raise HTTPException(status_code=503, detail="The product schema has no editable fields.")
+            assignments = ", ".join(f"{k}=%s" for k in product_values)
+            product = conn.execute(
+                f"UPDATE products SET {assignments} WHERE id=%s RETURNING *",
+                [*product_values.values(), product_id]
+            ).fetchone()
+            if not product:
+                raise HTTPException(status_code=404, detail="Product not found.")
+            variant_values = {"selling_price": body.selling_price, "mrp": body.mrp,
+                              "sku": body.sku.strip() or None, "image_url": body.image_url.strip() or None,
+                              "status": body.status}
+            variant_values = {k: v for k, v in variant_values.items() if k in variant_columns and v is not None}
+            variant = conn.execute(
+                "SELECT id FROM product_variants WHERE product_id=%s ORDER BY id LIMIT 1", (product_id,)
+            ).fetchone()
+            if variant and variant_values:
+                assignments = ", ".join(f"{k}=%s" for k in variant_values)
+                variant = conn.execute(
+                    f"UPDATE product_variants SET {assignments} WHERE id=%s RETURNING *",
+                    [*variant_values.values(), variant["id"]]
+                ).fetchone()
+            else:
+                raise HTTPException(status_code=404, detail="No variant exists for this product.")
+            return {"product": product, "variant": variant}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        logger.exception("Catalogue product update failed")
+        raise HTTPException(status_code=503, detail="Product could not be updated.") from exc
+
+
 @app.get("/api/categories")
 def list_categories() -> dict[str, Any]:
     try:
