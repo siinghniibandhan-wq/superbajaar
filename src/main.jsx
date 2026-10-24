@@ -376,6 +376,39 @@ function App() {
       </section>}
     </main>}
 
+    {activePage === 'product' && (
+      <main className="product-page">
+        {!routeProduct ? <section className="catalogue-state"><h2>Product not found</h2><p>This product is not in the current catalogue results.</p><button className="primary-link button-link" onClick={() => goShop('')}>Back to shop <span>↗</span></button></section> : (() => {
+          const product = routeProduct; const variant = currentVariant; const attributes = variantAttributes(variant);
+          const optionGroups = attributes.reduce((groups, attr) => { const key = attr.key.toLowerCase(); if (!groups[key]) groups[key] = { label: attr.key, options: [] }; if (!groups[key].options.some(v => String(v.value) === String(attr.value))) groups[key].options.push({ value: attr.value, variantId: variant.id }); return groups; }, {});
+          return <div className="product-detail-layout">
+            <div className="product-detail-gallery">
+              <div className="product-main-image">{variantImage ? <img src={variantImage} alt={product.name} /> : <div className="image-monogram">SB<span>✦</span></div>}</div>
+              <div className="product-gallery-note">{variantImage ? 'Product image' : 'Product image not supplied by catalogue'}</div>
+            </div>
+            <section className="product-detail-info">
+              <button className="product-back-link" onClick={() => goShop('')}>← Back to shop</button>
+              <p className="eyebrow">{product.category}</p><h1>{product.name}</h1>
+              {product.brand && <p className="product-detail-brand">Brand: <strong>{product.brand}</strong></p>}
+              <div className="product-detail-price"><strong>{money(variant?.price, variant?.currency)}</strong>{variant?.mrp != null && Number(variant.mrp)>Number(variant.price) && <del>{money(variant.mrp,variant.currency)}</del>}</div>
+              {variant?.lowest30 != null && <p className="price-history">Lowest selling price · 30 days: <b>{money(variant.lowest30,variant.currency)}</b></p>}
+              <p className="product-detail-stock">{variant?.stock > 0 ? 'In stock · ' + variant.stock + ' available' : 'Availability not confirmed'}</p>
+              {product.variants.length > 1 && <div className="product-variant-selectors"><h2>Choose options</h2>{[...new Set(product.variants.flatMap(v => variantAttributes(v).map(attr => attr.key)))].map(attributeName => {
+                const values = [...new Map(product.variants.flatMap(v => variantAttributes(v).filter(attr => attr.key === attributeName).map(attr => [String(attr.value), { value: attr.value, variantId: v.id }]))).values()];
+                if (!values.length) return null;
+                const selectedAttr = variantAttributes(variant).find(attr => attr.key === attributeName);
+                return <label key={attributeName}>{attributeName}<select aria-label={'Choose '+attributeName} value={String(selectedAttr?.value ?? '')} onChange={e => { const match = product.variants.find(v => variantAttributes(v).some(attr => attr.key === attributeName && String(attr.value) === e.target.value)); if (match) setSelectedVariants(prev => ({...prev,[product.id]:String(match.id)})); }}>{values.map(option => <option key={String(option.value)} value={String(option.value)}>{option.value}</option>)}</select></label>;
+              })}</div>}
+              {attributes.length > 0 && <div className="product-attributes"><h2>Selected option details</h2>{attributes.map((attr,i)=><div className="product-attribute-row" key={attr.key+'-'+i}><span>{attr.key}</span><strong>{attr.value}</strong></div>)}</div>}
+              <div className="product-quantity-control"><span>Quantity</span><div><button type="button" onClick={() => setProductQty(q=>Math.max(1,q-1))} aria-label="Decrease quantity">−</button><strong>{productQty}</strong><button type="button" onClick={() => setProductQty(q=>Math.min(99,q+1))} aria-label="Increase quantity">＋</button></div></div>
+              <button className="add-cart-button product-add-button" onClick={() => { for(let i=0;i<productQty;i++) addToCart(product,variant); }}>＋ Add to bag</button>
+              <section className="product-description"><h2>Product details</h2><p>{product.description || 'Detailed product information has not been provided in the live catalogue yet.'}</p><div className="product-detail-facts"><div><span>Category</span><strong>{product.category || 'Not provided'}</strong></div><div><span>SKU</span><strong>{variant?.sku || 'Not provided'}</strong></div><div><span>Brand</span><strong>{product.brand || 'Not provided'}</strong></div>{attributes.map((attr,i)=><div key={attr.key+'-fact-'+i}><span>{attr.key}</span><strong>{attr.value}</strong></div>)}</div></section>
+            </section>
+          </div>;
+        })()}
+      </main>
+    )}
+
     <footer className="site-footer">
       <div className="footer-main">
         <div className="footer-brand-column">
@@ -403,37 +436,6 @@ function App() {
       <div className="footer-bottom"><span>© {new Date().getFullYear()} Super Bajaar. All rights reserved.</span><span>Your Everyday Super Store</span><span>Made for everyday living <b>✦</b></span></div>
     </footer>
 
-    {activePage === 'product' && (
-      <main className="product-page">
-        {!routeProduct ? <section className="catalogue-state"><h2>Product not found</h2><p>This product is not in the current catalogue results.</p><button className="primary-link button-link" onClick={() => goShop('')}>Back to shop <span>↗</span></button></section> : (() => {
-          const product = routeProduct; const variant = currentVariant; const attributes = variantAttributes(variant);
-          const optionGroups = attributes.reduce((groups, attr) => { const key = attr.key.toLowerCase(); if (!groups[key]) groups[key] = { label: attr.key, options: [] }; if (!groups[key].options.some(v => String(v.value) === String(attr.value))) groups[key].options.push({ value: attr.value, variantId: variant.id }); return groups; }, {});
-          return <div className="product-detail-layout">
-            <div className="product-detail-gallery">
-              <div className="product-main-image">{variantImage ? <img src={variantImage} alt={product.name} /> : <div className="image-monogram">SB<span>✦</span></div>}</div>
-              <div className="product-gallery-note">{variantImage ? 'Product image' : 'Product image not supplied by catalogue'}</div>
-            </div>
-            <section className="product-detail-info">
-              <button className="product-back-link" onClick={() => goShop('')}>← Back to shop</button>
-              <p className="eyebrow">{product.category}</p><h1>{product.name}</h1>
-              {product.brand && <p className="product-detail-brand">Brand: <strong>{product.brand}</strong></p>}
-              <div className="product-detail-price"><strong>{money(variant?.price, variant?.currency)}</strong>{variant?.mrp != null && Number(variant.mrp)>Number(variant.price) && <del>{money(variant.mrp,variant.currency)}</del>}</div>
-              {variant?.lowest30 != null && <p className="price-history">Lowest selling price · 30 days: <b>{money(variant.lowest30,variant.currency)}</b></p>}
-              <p className="product-detail-stock">{variant?.stock > 0 ? 'In stock · ' + variant.stock + ' available' : 'Availability not confirmed'}</p>
-              {product.variants.length > 1 && <label className="product-variant-select">Choose variant
-                <select aria-label="Choose product variant" value={String(variant.id)} onChange={e => setSelectedVariants(prev => ({...prev,[product.id]:e.target.value}))}>
-                  {product.variants.map(v => <option key={v.id} value={String(v.id)}>{variantLabel(v)}</option>)}
-                </select>
-              </label>}
-              {attributes.length > 0 && <div className="product-attributes"><h2>Product options</h2>{attributes.map((attr,i)=><div className="product-attribute-row" key={attr.key+'-'+i}><span>{attr.key}</span><strong>{attr.value}</strong></div>)}</div>}
-              <div className="product-quantity-control"><span>Quantity</span><div><button type="button" onClick={() => setProductQty(q=>Math.max(1,q-1))} aria-label="Decrease quantity">−</button><strong>{productQty}</strong><button type="button" onClick={() => setProductQty(q=>Math.min(99,q+1))} aria-label="Increase quantity">＋</button></div></div>
-              <button className="add-cart-button product-add-button" onClick={() => { for(let i=0;i<productQty;i++) addToCart(product,variant); }}>＋ Add to bag</button>
-              <section className="product-description"><h2>Product details</h2><p>{product.description || 'Detailed product information has not been provided in the live catalogue yet.'}</p><div className="product-detail-facts"><div><span>Category</span><strong>{product.category || 'Not provided'}</strong></div><div><span>SKU</span><strong>{variant?.sku || 'Not provided'}</strong></div><div><span>Brand</span><strong>{product.brand || 'Not provided'}</strong></div>{attributes.map((attr,i)=><div key={attr.key+'-fact-'+i}><span>{attr.key}</span><strong>{attr.value}</strong></div>)}</div></section>
-            </section>
-          </div>;
-        })()}
-      </main>
-    )}
     {cartOpen && <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setCartOpen(false); }}>
       <section className="cart-modal" role="dialog" aria-modal="true" aria-labelledby="cart-title">
         <button className="modal-close" aria-label="Close bag" onClick={() => setCartOpen(false)}>×</button>
