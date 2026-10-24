@@ -467,3 +467,8 @@ app.include_router(commerce_router)
 # Accounting foundation: chart of accounts, GST setup, journals and P&L.
 from .accounting import router as accounting_router
 app.include_router(accounting_router)
+
+
+# Shared operational APIs: customers, vendors, inventory, POS, purchasing, logistics and payroll.
+from .operations import router as operations_router
+app.include_router(operations_router)
