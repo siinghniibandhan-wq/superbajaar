@@ -39,6 +39,7 @@ class AdminProductInput(BaseModel):
     product_code: str = Field(min_length=1, max_length=80)
     sku: str = Field(min_length=1, max_length=100)
     description: str = Field(default="", max_length=5000)
+    image_url: str = Field(default="", max_length=2048)
     brand: str = Field(default="", max_length=150)
     category: str = Field(default="General", min_length=1, max_length=100)
     selling_price: Decimal = Field(ge=0)
@@ -46,6 +47,14 @@ class AdminProductInput(BaseModel):
     currency: Literal["INR", "USD"] = "INR"
     active: bool = True
     variant_attributes: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("image_url")
+    @classmethod
+    def image_url_must_be_http(cls, value: str) -> str:
+        value = value.strip()
+        if value and not value.startswith(("https://", "http://")):
+            raise ValueError("Product image URL must start with https:// or http://")
+        return value
 
     @field_validator("selling_price", "mrp")
     @classmethod
@@ -176,11 +185,15 @@ def admin_list_products(authorization: str | None = Header(default=None)) -> dic
     db = get_pool()
     try:
         with db.connection() as conn:
+            image_column_exists = conn.execute(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'product_variants' AND column_name = 'image_url') AS present"
+            ).fetchone()["present"]
+            image_select = "v.image_url" if image_column_exists else "NULL::text AS image_url"
             rows = conn.execute(
-                """SELECT p.id AS product_id, p.product_code, p.name, p.description, p.brand,
+                f"""SELECT p.id AS product_id, p.product_code, p.name, p.description, p.brand,
                           p.status AS product_status, p.website_published, c.name AS category,
                           v.id AS variant_id, v.sku, v.barcode, v.variant_attributes,
-                          v.mrp, v.selling_price, v.currency, v.status AS variant_status
+                          {image_select}, v.mrp, v.selling_price, v.currency, v.status AS variant_status
                    FROM products p JOIN product_variants v ON v.product_id = p.id
                    LEFT JOIN product_categories c ON c.id = p.category_id
                    ORDER BY p.created_at DESC, p.name, v.sku LIMIT 500"""
@@ -216,13 +229,27 @@ def admin_create_product(product: AdminProductInput, authorization: str | None =
                     [product.product_code.strip(), product.name.strip(), product.description.strip(),
                      product.brand.strip() or None, category["id"], product.active, status],
                 ).fetchone()
-                variant = conn.execute(
-                    """INSERT INTO product_variants
-                       (product_id, sku, variant_attributes, mrp, selling_price, currency, status)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-                    [created["id"], product.sku.strip(), json.dumps(product.variant_attributes),
-                     product.mrp, product.selling_price, product.currency.upper(), status],
-                ).fetchone()
+                image_column_exists = conn.execute(
+                    "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'product_variants' AND column_name = 'image_url') AS present"
+                ).fetchone()["present"]
+                if product.image_url and not image_column_exists:
+                    raise HTTPException(status_code=503, detail="Product image storage is not migrated yet; apply backend/schema/005_product_images.sql")
+                if image_column_exists:
+                    variant = conn.execute(
+                        """INSERT INTO product_variants
+                           (product_id, sku, variant_attributes, image_url, mrp, selling_price, currency, status)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                        [created["id"], product.sku.strip(), json.dumps(product.variant_attributes),
+                         product.image_url or None, product.mrp, product.selling_price, product.currency.upper(), status],
+                    ).fetchone()
+                else:
+                    variant = conn.execute(
+                        """INSERT INTO product_variants
+                           (product_id, sku, variant_attributes, mrp, selling_price, currency, status)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                        [created["id"], product.sku.strip(), json.dumps(product.variant_attributes),
+                         product.mrp, product.selling_price, product.currency.upper(), status],
+                    ).fetchone()
     except UniqueViolation as exc:
         constraint = getattr(getattr(exc, "diag", None), "constraint_name", "")
         field = "SKU" if "sku" in constraint else "product code" if "product" in constraint else "category"
@@ -272,14 +299,29 @@ def admin_update_product(
                     [product.product_code.strip(), product.name.strip(), product.description.strip(),
                      product.brand.strip() or None, category["id"], product.active, status, product_id],
                 )
-                conn.execute(
-                    """UPDATE product_variants
-                       SET sku = %s, variant_attributes = %s, mrp = %s, selling_price = %s,
-                           currency = %s, status = %s
-                       WHERE id = %s AND product_id = %s""",
-                    [product.sku.strip(), json.dumps(product.variant_attributes), product.mrp,
-                     product.selling_price, product.currency, status, variant_id, product_id],
-                )
+                image_column_exists = conn.execute(
+                    "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'product_variants' AND column_name = 'image_url') AS present"
+                ).fetchone()["present"]
+                if product.image_url and not image_column_exists:
+                    raise HTTPException(status_code=503, detail="Product image storage is not migrated yet; apply backend/schema/005_product_images.sql")
+                if image_column_exists:
+                    conn.execute(
+                        """UPDATE product_variants
+                           SET sku = %s, variant_attributes = %s, image_url = %s, mrp = %s, selling_price = %s,
+                               currency = %s, status = %s
+                           WHERE id = %s AND product_id = %s""",
+                        [product.sku.strip(), json.dumps(product.variant_attributes), product.image_url or None,
+                         product.mrp, product.selling_price, product.currency, status, variant_id, product_id],
+                    )
+                else:
+                    conn.execute(
+                        """UPDATE product_variants
+                           SET sku = %s, variant_attributes = %s, mrp = %s, selling_price = %s,
+                               currency = %s, status = %s
+                           WHERE id = %s AND product_id = %s""",
+                        [product.sku.strip(), json.dumps(product.variant_attributes), product.mrp,
+                         product.selling_price, product.currency, status, variant_id, product_id],
+                    )
     except HTTPException:
         raise
     except UniqueViolation as exc:
@@ -373,10 +415,19 @@ def list_products(
     except Exception:
         logger.exception("Could not inspect product review schema; returning empty review summaries")
 
+    image_column_exists = False
+    try:
+        with db.connection() as conn:
+            image_column_exists = conn.execute(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'product_variants' AND column_name = 'image_url') AS present"
+            ).fetchone()["present"]
+    except Exception:
+        logger.exception("Could not inspect product image column; returning empty image URLs")
+    image_select = "v.image_url" if image_column_exists else "NULL::text AS image_url"
     query = f"""
         SELECT p.id AS product_id, p.product_code, p.name, p.description, p.brand,
                c.name AS category, v.id AS variant_id, v.sku, v.barcode,
-               v.variant_attributes, v.mrp, v.selling_price, v.currency,
+               v.variant_attributes, {image_select}, v.mrp, v.selling_price, v.currency,
                {history_select}
                {review_select}
                COALESCE(SUM(ib.quantity_on_hand - ib.quantity_reserved), 0) AS available_quantity
@@ -419,6 +470,18 @@ class ProductReviewInput(BaseModel):
     reviewer_name: str = Field(min_length=1, max_length=80)
     rating: int = Field(ge=1, le=5)
     review_text: str = Field(min_length=3, max_length=2000)
+
+    @field_validator("reviewer_name", "review_text")
+    @classmethod
+    def strip_review_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("This field cannot be blank")
+        return value
+
+
+class ProductReviewModeration(BaseModel):
+    status: Literal["approved", "rejected"]
 
 
 @app.get("/api/products/{product_id}/reviews")
@@ -472,6 +535,53 @@ def submit_product_review(product_id: int, review: ProductReviewInput) -> dict[s
         logger.exception("Could not save product review")
         raise HTTPException(status_code=503, detail="Review submission failed")
     return {"message": "Thank you. Your review was submitted for moderation."}
+
+
+@app.get("/api/admin/reviews")
+def admin_list_reviews(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    require_admin(authorization)
+    db = get_pool()
+    try:
+        with db.connection() as conn:
+            exists = conn.execute("SELECT to_regclass('public.product_reviews') AS table_name").fetchone()["table_name"] is not None
+            if not exists:
+                return {"items": [], "message": "Review schema is not installed yet"}
+            rows = conn.execute(
+                """SELECT pr.id, pr.product_id, p.name AS product_name, pr.reviewer_name,
+                          pr.rating, pr.review_text, pr.status, pr.created_at
+                   FROM product_reviews pr JOIN products p ON p.id = pr.product_id
+                   ORDER BY CASE pr.status WHEN 'pending' THEN 0 ELSE 1 END, pr.created_at DESC
+                   LIMIT 500"""
+            ).fetchall()
+    except Exception:
+        logger.exception("Admin review list failed")
+        raise HTTPException(status_code=503, detail="Reviews are temporarily unavailable")
+    return {"items": json_safe(rows)}
+
+
+@app.patch("/api/admin/reviews/{review_id}")
+def admin_moderate_review(
+    review_id: int,
+    moderation: ProductReviewModeration,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    require_admin(authorization)
+    db = get_pool()
+    try:
+        with db.connection() as conn:
+            with conn.transaction():
+                row = conn.execute(
+                    "UPDATE product_reviews SET status = %s, moderated_at = now() WHERE id = %s RETURNING id, status",
+                    [moderation.status, review_id],
+                ).fetchone()
+                if row is None:
+                    raise HTTPException(status_code=404, detail="Review not found")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Review moderation failed")
+        raise HTTPException(status_code=503, detail="Could not update review status")
+    return {"review_id": row["id"], "status": row["status"], "message": "Review status updated"}
 
 
 @app.get("/api/serviceability")
