@@ -653,7 +653,7 @@ def update_shipment(shipment_id:int,body:ShipmentUpdate,authorization:str|None=H
                                 COALESCE(SUM(CASE WHEN po.id IS NOT NULL THEN pl.unit_cost*pl.received_qty ELSE 0 END)/
                                 NULLIF(SUM(CASE WHEN po.id IS NOT NULL THEN pl.received_qty ELSE 0 END),0),0) AS avg_cost
                                 FROM store_order_items oi LEFT JOIN sb_purchase_lines pl ON pl.variant_id=oi.variant_id
-                                LEFT JOIN sb_purchase_orders po ON po.id=pl.purchase_id AND po.status='received'
+                                LEFT JOIN sb_purchase_orders po ON po.id=pl.purchase_id AND po.status IN ('part_received','received')
                                 WHERE oi.order_id=%s GROUP BY oi.variant_id,oi.quantity""",(order["id"],)).fetchall()
                             cogs=sum((Decimal(str(x["avg_cost"] or 0))*Decimal(str(x["quantity"])) for x in cost_rows),Decimal("0")).quantize(Decimal("0.01"))
                             if cogs: journal_lines.extend([("cost_of_goods_sold",cogs,Decimal("0")),("inventory",Decimal("0"),cogs)])
