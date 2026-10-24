@@ -4,7 +4,7 @@ from decimal import Decimal, ROUND_DOWN
 from typing import Any
 
 import psycopg
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 from psycopg.rows import dict_row
 
@@ -199,7 +199,7 @@ def adjust_wallet(body: AdjustmentInput, authorization: str | None = Header(defa
 
 
 @router.post("/redeem")
-def redeem_coins(coins: int = Field(gt=0), authorization: str | None = Header(default=None)) -> dict[str, Any]:
+def redeem_coins(coins: int = Query(gt=0, le=10000000), authorization: str | None = Header(default=None)) -> dict[str, Any]:
     user=_current(authorization)
     try:
         with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
