@@ -395,10 +395,10 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
             order_number = "SB-" + secrets.token_hex(5).upper()
             row = conn.execute(
                 """INSERT INTO store_orders
-                   (order_number,user_id,status,payment_method,payment_status,subtotal,shipping_fee,total,loyalty_discount,shipping_address,customer_note)
-                   VALUES (%s,%s,'placed','cash_on_delivery','pending',%s,%s,%s,%s,%s::jsonb,%s)
+                   (order_number,user_id,status,payment_method,payment_status,subtotal,shipping_fee,total,loyalty_discount,loyalty_coins_redeemed,shipping_address,customer_note)
+                   VALUES (%s,%s,'placed','cash_on_delivery','pending',%s,%s,%s,%s,%s,%s::jsonb,%s)
                    RETURNING id""",
-                (order_number, user["id"], subtotal, shipping_fee, total, loyalty_discount,
+                (order_number, user["id"], subtotal, shipping_fee, total, loyalty_discount, coins_used,
                  json.dumps(body.shipping_address.model_dump()), body.customer_note.strip())
             ).fetchone()
             if coins_used:
