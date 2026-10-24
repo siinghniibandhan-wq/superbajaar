@@ -367,6 +367,8 @@ def stock_movement(body: StockInput, authorization: str | None = Header(default=
         with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
             _ensure(conn)
             with conn.transaction():
+                if not conn.execute("SELECT id FROM product_variants WHERE id=%s",(body.variant_id,)).fetchone():
+                    raise HTTPException(status_code=404,detail="Product variant not found")
                 current=conn.execute("SELECT quantity FROM sb_stock WHERE variant_id=%s AND warehouse=%s FOR UPDATE",(body.variant_id,body.warehouse)).fetchone()
                 old=Decimal(str(current["quantity"])) if current else Decimal("0")
                 delta=body.quantity if body.movement_type in {"opening","adjustment_in","return_in","transfer_in"} else -body.quantity
