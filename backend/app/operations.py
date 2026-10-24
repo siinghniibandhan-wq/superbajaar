@@ -415,6 +415,13 @@ def create_purchase(body: PurchaseInput,authorization: str | None = Header(defau
             _ensure(conn)
             with conn.transaction():
                 if not conn.execute("SELECT id FROM sb_vendors WHERE id=%s",(body.vendor_id,)).fetchone(): raise HTTPException(status_code=404,detail="Vendor not found")
+                variant_ids={line.variant_id for line in body.lines}
+                found_ids={int(row["id"]) for row in conn.execute(
+                    "SELECT id FROM product_variants WHERE id = ANY(%s)",(list(variant_ids),)
+                ).fetchall()}
+                missing_ids=sorted(variant_ids-found_ids)
+                if missing_ids:
+                    raise HTTPException(status_code=422,detail=f"Unknown product variant ID(s): {', '.join(map(str,missing_ids))}.")
                 total=sum((x.quantity*x.unit_cost for x in body.lines),Decimal("0"))
                 po=conn.execute("""INSERT INTO sb_purchase_orders(vendor_id,order_date,total,note,created_by)
                     VALUES(%s,%s,%s,%s,%s) RETURNING *""",(body.vendor_id,body.order_date,total,body.note.strip() or None,user["id"])).fetchone()
