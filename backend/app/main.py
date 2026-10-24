@@ -31,9 +31,17 @@ app.add_middleware(
 
 
 def database_url() -> str:
+    # Prefer the deployment environment, then AWS SSM Parameter Store on EC2.
+    # The instance role must be allowed to read /superbajaar/DATABASE_URL.
     value = os.getenv("DATABASE_URL", "").strip()
     if not value:
-        raise HTTPException(status_code=503, detail="Catalogue database is not configured")
+        try:
+            from .auth import _setting
+            value = _setting("DATABASE_URL")
+        except Exception:
+            value = ""
+    if not value:
+        raise HTTPException(status_code=503, detail="Database connection is not configured in the backend environment or AWS Parameter Store")
     return value
 
 
