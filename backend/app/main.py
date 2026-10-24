@@ -319,3 +319,8 @@ def get_variant_price_history(variant_id: int, days: int = Query(default=30, ge=
     except psycopg.Error as exc:
         logger.exception("Could not load variant price history")
         raise HTTPException(status_code=503, detail="Price history is temporarily unavailable") from exc
+
+
+# Authentication and role-based user administration are isolated from catalogue routes.
+from .auth import router as auth_router
+app.include_router(auth_router)
