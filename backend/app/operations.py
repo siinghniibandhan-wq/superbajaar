@@ -474,6 +474,21 @@ def pos_sale(body:POSInput,authorization:str|None=Header(default=None))->dict[st
                 if cogs_total:
                     journal_lines.extend([("cost_of_goods_sold",cogs_total,Decimal("0")),("inventory",Decimal("0"),cogs_total)])
                 journal_id=_post_journal(conn,date.today(),receipt,"POS sale "+receipt,"pos",sale["id"],journal_lines,user["id"])
+                loyalty_award=None
+                if body.customer_id:
+                    from .loyalty import _ensure as ensure_loyalty, _program as loyalty_program, _wallet as loyalty_wallet, _tier as loyalty_tier, _post as post_loyalty
+                    ensure_loyalty(conn)
+                    program=loyalty_program(conn)
+                    if program["enabled"] and Decimal(str(program["earn_rate"]))>0:
+                        wallet=loyalty_wallet(conn,int(body.customer_id))
+                        tier=loyalty_tier(conn,int(wallet["lifetime_earned"]))
+                        basis=total if program["earn_basis"]=="total" else subtotal
+                        coins=int(basis*Decimal(str(program["earn_rate"]))*Decimal(str(tier["earn_multiplier"])))
+                        if coins>0:
+                            expiry=None
+                            if program["expiry_days"] is not None:
+                                expiry=conn.execute("SELECT now() + (%s * interval '1 day') AS value",(program["expiry_days"],)).fetchone()["value"]
+                            loyalty_award=post_loyalty(conn,int(body.customer_id),"earn",coins,"Super Coins earned for POS receipt "+receipt,order_id=int(sale["id"]),key="pos:"+str(sale["id"])+":earn",expires_at=expiry)
                 return {"sale":sale,"receipt_number":receipt,"journal_id":journal_id,"message":"POS sale saved, inventory deducted and accounting journal posted atomically."}
     except HTTPException: raise
     except Exception as exc: raise HTTPException(status_code=503,detail="POS sale could not be completed") from exc
