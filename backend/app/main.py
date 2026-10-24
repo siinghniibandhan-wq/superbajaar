@@ -9,7 +9,7 @@ import re
 import time
 import logging
 import os
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 from fastapi import FastAPI, Header, HTTPException, Query
@@ -43,7 +43,7 @@ class AdminProductInput(BaseModel):
     category: str = Field(default="General", min_length=1, max_length=100)
     selling_price: Decimal = Field(ge=0)
     mrp: Decimal | None = Field(default=None, ge=0)
-    currency: str = Field(default="INR", min_length=3, max_length=3)
+    currency: Literal["INR", "USD"] = "INR"
     active: bool = True
     variant_attributes: dict[str, Any] = Field(default_factory=dict)
 
