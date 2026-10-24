@@ -7,7 +7,7 @@ import json
 import re
 import secrets
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN
 from typing import Any
 
 import psycopg
@@ -51,6 +51,7 @@ def _ensure_commerce_schema(conn: Any) -> None:
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS store_orders_user_created_idx ON store_orders(user_id, created_at DESC)")
     conn.execute("CREATE INDEX IF NOT EXISTS store_orders_status_created_idx ON store_orders(status, created_at DESC)")
+    conn.execute("ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS loyalty_discount NUMERIC(12,2) NOT NULL DEFAULT 0")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS store_order_items (
             id BIGSERIAL PRIMARY KEY,
@@ -88,6 +89,7 @@ class CheckoutInput(BaseModel):
     shipping_address: ShippingAddress
     payment_method: str = "cash_on_delivery"
     customer_note: str = Field(default="", max_length=500)
+    super_coins_to_redeem: int = Field(default=0, ge=0, le=10000000)
 
 
 class SettingUpdate(BaseModel):
@@ -324,7 +326,9 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
         with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
             _ensure_commerce_schema(conn)
             from .operations import _ensure as ensure_operations
+            from .loyalty import _ensure as ensure_loyalty, _program as loyalty_program, _wallet as loyalty_wallet, _post as post_loyalty
             ensure_operations(conn)
+            ensure_loyalty(conn)
             products: list[dict[str, Any]] = []
             subtotal = Decimal("0")
             for variant_id, quantity in quantities.items():
