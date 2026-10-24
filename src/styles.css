@@ -113,3 +113,26 @@
 .loyalty-tier-edit label{display:grid;gap:6px;font-size:12px;font-weight:700}
 .loyalty-tier-edit input:not([type=checkbox]){width:100%;min-width:0;padding:10px;border:1px solid var(--border-color,rgba(120,100,150,.22));border-radius:9px;background:var(--input-bg,transparent);color:inherit}
 @media(max-width:640px){.loyalty-tier-edit{grid-template-columns:1fr}}
+
+
+/* Persistent workspace themes: shared tokens keep admin sections visually consistent. */
+.admin-shell{--admin-bg:#f8f9fc;--admin-surface:#fff;--admin-surface-soft:#f7f4ff;--admin-text:#20243a;--admin-muted:#85899c;--admin-border:#e9eaf1;--admin-accent:#6428d9;--admin-accent-soft:#f0eaff;--admin-input:#fff;background:var(--admin-bg);color:var(--admin-text)}
+.admin-shell .sidebar,.admin-shell .admin-topbar,.admin-shell .panel,.admin-shell .metric-card,.admin-shell .module-tile,.admin-shell .view-store,.admin-shell .date-filter,.admin-shell .outline-action{background:var(--admin-surface);color:var(--admin-text);border-color:var(--admin-border)}
+.admin-shell .side-brand,.admin-shell .side-link,.admin-shell .module-tile{color:var(--admin-text)}
+.admin-shell .side-link{color:var(--admin-muted)}
+.admin-shell .side-link.active,.admin-shell .module-tile-icon{background:var(--admin-accent-soft);color:var(--admin-accent)}
+.admin-shell .workspace-pill,.admin-shell .setup-notice{background:var(--admin-surface-soft);border-color:var(--admin-border);color:var(--admin-text)}
+.admin-shell .admin-topbar,.admin-shell .sidebar,.admin-shell .panel,.admin-shell .metric-card,.admin-shell .module-tile,.admin-shell .user-summary,.admin-shell .user-table th,.admin-shell .user-table td,.admin-shell .loyalty-history,.admin-shell .loyalty-wallet-summary>div{border-color:var(--admin-border)}
+.admin-shell .welcome-row h1,.admin-shell .module-page-heading h1,.admin-shell .panel-heading h2,.admin-shell .metric-card>b,.admin-shell .module-tile b,.admin-shell .user-summary b,.admin-shell .readiness-card>div>b{color:var(--admin-text)}
+.admin-shell .welcome-row p,.admin-shell .module-page-heading p,.admin-shell .panel-heading p,.admin-shell .metric-card>span,.admin-shell .metric-card>small,.admin-shell .module-tile small,.admin-shell .breadcrumb,.admin-shell .capability-row p,.admin-shell .readiness-card p{color:var(--admin-muted)}
+.admin-shell input,.admin-shell select,.admin-shell textarea{background:var(--admin-input);color:var(--admin-text);border-color:var(--admin-border)}
+.admin-shell .admin-theme-control{display:flex;align-items:center;gap:7px;font-size:10px;color:var(--admin-muted);white-space:nowrap}
+.admin-shell .admin-theme-control select{max-width:125px;border:1px solid var(--admin-border);border-radius:8px;padding:8px;background:var(--admin-surface);color:var(--admin-text);font-size:10px;cursor:pointer}
+.admin-shell[data-admin-theme="light"]{--admin-bg:#fff;--admin-surface:#fff;--admin-surface-soft:#f7f8fb;--admin-text:#20243a;--admin-muted:#6f7488;--admin-border:#e4e7ef;--admin-accent:#6428d9;--admin-accent-soft:#f0eaff;--admin-input:#fff}
+.admin-shell[data-admin-theme="dark"]{--admin-bg:#11111a;--admin-surface:#1b1b28;--admin-surface-soft:#252236;--admin-text:#f1eff8;--admin-muted:#b0adc2;--admin-border:#373448;--admin-accent:#b59aff;--admin-accent-soft:#30264a;--admin-input:#222131;color-scheme:dark}
+.admin-shell[data-admin-theme="dark"] .status-badge,.admin-shell[data-admin-theme="dark"] .capability-status{background:#392f22;color:#ffd28a}
+.admin-shell[data-admin-theme="dark"] .setup-notice{background:#252236}
+.admin-shell[data-admin-theme="nordic"]{--admin-bg:#eef3f5;--admin-surface:#fbfdfe;--admin-surface-soft:#e6eff2;--admin-text:#243743;--admin-muted:#607782;--admin-border:#d3e0e5;--admin-accent:#286f83;--admin-accent-soft:#dcecf0;--admin-input:#fff}
+.admin-shell[data-admin-theme="aurora"]{--admin-bg:#f5f1fb;--admin-surface:#fff;--admin-surface-soft:#eee8fb;--admin-text:#30233f;--admin-muted:#7a6a8b;--admin-border:#e2d8f0;--admin-accent:#8051c7;--admin-accent-soft:#eee5fb;--admin-input:#fff}
+.admin-shell[data-admin-theme="dark"] .user-form label,.admin-shell[data-admin-theme="dark"] .user-mode button{color:var(--admin-text);background:var(--admin-surface);border-color:var(--admin-border)}
+@media(max-width:760px){.admin-shell .admin-theme-control{margin-left:auto}.admin-shell .admin-theme-control span{display:none}.admin-shell .admin-theme-control select{max-width:112px}.admin-shell .top-actions{flex-wrap:wrap}}
