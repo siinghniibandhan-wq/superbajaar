@@ -726,7 +726,7 @@ def payroll_run(body:PayrollInput,authorization:str|None=Header(default=None))->
                         WHEN a.status='half_day' THEN 0.5 ELSE 0 END),0) AS days
                         FROM sb_attendance a WHERE a.employee_id=%s AND a.work_date BETWEEN %s AND %s
                         AND NOT EXISTS (SELECT 1 FROM sb_leave_requests l WHERE l.employee_id=a.employee_id
-                            AND l.status='approved' AND l.paid=FALSE AND a.work_date BETWEEN l.start_date AND l.end_date)""",
+                            AND l.status='approved' AND a.work_date BETWEEN l.start_date AND l.end_date)""",
                         (employee["id"],body.period_start,body.period_end)).fetchone()
                     unpaid_days += Decimal(str(attendance_row["days"] or 0))
                     absence_deduction=(gross/Decimal("30")*unpaid_days).quantize(Decimal("0.01"))
