@@ -9,6 +9,10 @@ CREATE TABLE IF NOT EXISTS product_variant_price_history (
 CREATE INDEX IF NOT EXISTS idx_variant_price_history_recent
   ON product_variant_price_history(variant_id, recorded_at DESC);
 
+-- Start history at migration time for existing variants; older prices cannot be reconstructed.
+INSERT INTO product_variant_price_history(variant_id, selling_price)
+SELECT id, selling_price FROM product_variants WHERE selling_price IS NOT NULL;
+
 -- Capture a snapshot when an existing variant's selling price is inserted or changed.
 CREATE OR REPLACE FUNCTION record_product_variant_selling_price()
 RETURNS trigger LANGUAGE plpgsql AS $$
