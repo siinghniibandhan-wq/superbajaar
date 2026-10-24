@@ -55,6 +55,10 @@ def _ensure(conn: Any) -> None:
         id BIGSERIAL PRIMARY KEY, purchase_id BIGINT NOT NULL UNIQUE REFERENCES sb_purchase_orders(id),
         amount NUMERIC(14,2) NOT NULL CHECK(amount>0), payment_account TEXT NOT NULL CHECK(payment_account IN ('bank','cash')),
         reference TEXT, paid_by BIGINT, paid_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS sb_purchase_receipts (
+        id BIGSERIAL PRIMARY KEY, purchase_id BIGINT NOT NULL REFERENCES sb_purchase_orders(id),
+        received_value NUMERIC(14,2) NOT NULL CHECK(received_value>=0), received_by BIGINT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
     conn.execute("""CREATE TABLE IF NOT EXISTS sb_pos_sales (
         id BIGSERIAL PRIMARY KEY, receipt_number TEXT NOT NULL UNIQUE, customer_id BIGINT REFERENCES sb_customers(id),
         status TEXT NOT NULL DEFAULT 'completed', subtotal NUMERIC(14,2) NOT NULL, tax_total NUMERIC(14,2) NOT NULL DEFAULT 0,
@@ -178,6 +182,15 @@ class PurchaseInput(BaseModel):
     order_date: date = Field(default_factory=date.today)
     note: str = Field(default="", max_length=1000)
     lines: list[PurchaseLineInput] = Field(min_length=1, max_length=200)
+
+class PurchaseReceiptLineInput(BaseModel):
+    line_id: int = Field(gt=0)
+    quantity: Decimal = Field(gt=0, le=1000000000)
+
+
+class PurchaseReceiptInput(BaseModel):
+    lines: list[PurchaseReceiptLineInput] = Field(min_length=1, max_length=200)
+
 
 class POSLineInput(BaseModel):
     variant_id: int = Field(gt=0)
@@ -406,7 +419,10 @@ def purchases(authorization: str | None = Header(default=None),limit:int=Query(1
     except Exception as exc: raise HTTPException(status_code=503,detail="Purchase orders unavailable") from exc
 
 @router.post("/purchases/{purchase_id}/receive")
-def receive_purchase(purchase_id:int,authorization:str|None=Header(default=None))->dict[str,Any]:
+def receive_purchase(
+    purchase_id:int, body:PurchaseReceiptInput|None=None,
+    authorization:str|None=Header(default=None)
+)->dict[str,Any]:
     user=_admin(authorization)
     try:
         with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
@@ -415,19 +431,49 @@ def receive_purchase(purchase_id:int,authorization:str|None=Header(default=None)
                 po=conn.execute("SELECT * FROM sb_purchase_orders WHERE id=%s FOR UPDATE",(purchase_id,)).fetchone()
                 if not po: raise HTTPException(status_code=404,detail="Purchase order not found")
                 if po["status"] in ("received","cancelled"): raise HTTPException(status_code=409,detail="Purchase order is already closed")
-                lines=conn.execute("SELECT * FROM sb_purchase_lines WHERE purchase_id=%s",(purchase_id,)).fetchall()
-                for line in lines:
-                    remaining=Decimal(str(line["quantity"]))-Decimal(str(line["received_qty"]))
-                    if remaining<=0: continue
+                lines=conn.execute("SELECT * FROM sb_purchase_lines WHERE purchase_id=%s ORDER BY id FOR UPDATE",(purchase_id,)).fetchall()
+                if not lines: raise HTTPException(status_code=409,detail="Purchase order has no lines to receive")
+                remaining_by_id={int(line["id"]):Decimal(str(line["quantity"]))-Decimal(str(line["received_qty"])) for line in lines}
+                if body is None:
+                    requested={line_id:qty for line_id,qty in remaining_by_id.items() if qty>0}
+                else:
+                    requested={}
+                    for item in body.lines:
+                        if item.line_id in requested:
+                            raise HTTPException(status_code=422,detail="A purchase line can appear only once per receipt.")
+                        if item.line_id not in remaining_by_id:
+                            raise HTTPException(status_code=422,detail=f"Purchase line {item.line_id} does not belong to this purchase order.")
+                        if item.quantity>remaining_by_id[item.line_id]:
+                            raise HTTPException(status_code=422,detail=f"Receipt quantity exceeds the outstanding quantity for line {item.line_id}.")
+                        requested[item.line_id]=item.quantity
+                if not requested or any(qty<=0 for qty in requested.values()):
+                    raise HTTPException(status_code=422,detail="Enter at least one positive receipt quantity.")
+                received_value=Decimal("0")
+                received_lines=[]
+                by_id={int(line["id"]):line for line in lines}
+                for line_id,qty in requested.items():
+                    line=by_id[line_id]
+                    received_value+=(qty*Decimal(str(line["unit_cost"]))).quantize(Decimal("0.01"))
                     conn.execute("""INSERT INTO sb_stock(variant_id,warehouse,quantity) VALUES(%s,'Main',%s)
-                        ON CONFLICT(variant_id,warehouse) DO UPDATE SET quantity=sb_stock.quantity+EXCLUDED.quantity,updated_at=now()""",(line["variant_id"],remaining))
+                        ON CONFLICT(variant_id,warehouse) DO UPDATE SET quantity=sb_stock.quantity+EXCLUDED.quantity,updated_at=now()""",
+                        (line["variant_id"],qty))
                     conn.execute("""INSERT INTO sb_stock_movements(variant_id,warehouse,movement_type,quantity,reference_type,reference_id,created_by)
-                        VALUES(%s,'Main','purchase_receipt',%s,'purchase',%s,%s)""",(line["variant_id"],remaining,purchase_id,user["id"]))
-                    conn.execute("UPDATE sb_purchase_lines SET received_qty=quantity WHERE id=%s",(line["id"],))
-                conn.execute("UPDATE sb_purchase_orders SET status='received' WHERE id=%s",(purchase_id,))
-                journal_id=_post_journal(conn,date.today(),f"PO-{purchase_id}",f"Goods received for purchase order {purchase_id}","purchase",purchase_id,
-                    [("inventory",Decimal(str(po["total"])),Decimal("0")),("accounts_payable",Decimal("0"),Decimal(str(po["total"])))],user["id"])
-                return {"purchase_id":purchase_id,"status":"received","journal_id":journal_id,"message":"Received quantities posted to inventory and supplier payable accounting."}
+                        VALUES(%s,'Main','purchase_receipt',%s,'purchase',%s,%s)""",
+                        (line["variant_id"],qty,purchase_id,user["id"]))
+                    conn.execute("UPDATE sb_purchase_lines SET received_qty=received_qty+%s WHERE id=%s",(qty,line_id))
+                    received_lines.append({"line_id":line_id,"variant_id":int(line["variant_id"]),"received_quantity":qty})
+                updated=conn.execute("""SELECT COUNT(*) FILTER(WHERE received_qty<quantity) AS outstanding
+                    FROM sb_purchase_lines WHERE purchase_id=%s""",(purchase_id,)).fetchone()
+                status="part_received" if int(updated["outstanding"])>0 else "received"
+                conn.execute("UPDATE sb_purchase_orders SET status=%s WHERE id=%s",(status,purchase_id))
+                receipt=conn.execute("""INSERT INTO sb_purchase_receipts(purchase_id,received_value,received_by)
+                    VALUES(%s,%s,%s) RETURNING id""",(purchase_id,received_value,user["id"])).fetchone()
+                journal_id=_post_journal(conn,date.today(),f"PO-{purchase_id}-GR-{receipt['id']}",
+                    f"Goods receipt {receipt['id']} for purchase order {purchase_id}","purchase_receipt",int(receipt["id"]),
+                    [("inventory",received_value,Decimal("0")),("accounts_payable",Decimal("0"),received_value)],user["id"])
+                return {"purchase_id":purchase_id,"receipt_id":receipt["id"],"status":status,
+                    "received_value":received_value,"lines":received_lines,"journal_id":journal_id,
+                    "message":"Received quantities posted to inventory and accounting."}
     except HTTPException: raise
     except Exception as exc: raise HTTPException(status_code=503,detail="Purchase receipt could not be posted") from exc
 
