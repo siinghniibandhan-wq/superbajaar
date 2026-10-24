@@ -472,3 +472,7 @@ app.include_router(accounting_router)
 # Shared operational APIs: customers, vendors, inventory, POS, purchasing, logistics and payroll.
 from .operations import router as operations_router
 app.include_router(operations_router)
+
+
+from .loyalty import router as loyalty_router
+app.include_router(loyalty_router)
