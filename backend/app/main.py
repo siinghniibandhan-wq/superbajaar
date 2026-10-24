@@ -25,15 +25,23 @@ app.add_middleware(
     allow_origins=origins,
     allow_origin_regex=r"https://.*\.app\.github\.dev",
     allow_credentials=False,
-    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "OPTIONS"],
     allow_headers=["Accept", "Content-Type", "Authorization", "X-Review-Moderation-Token"],
 )
 
 
 def database_url() -> str:
+    # Prefer the deployment environment, then AWS SSM Parameter Store on EC2.
+    # The instance role must be allowed to read /superbajaar/DATABASE_URL.
     value = os.getenv("DATABASE_URL", "").strip()
     if not value:
-        raise HTTPException(status_code=503, detail="Catalogue database is not configured")
+        try:
+            from .auth import _setting
+            value = _setting("DATABASE_URL")
+        except Exception:
+            value = ""
+    if not value:
+        raise HTTPException(status_code=503, detail="Database connection is not configured in the backend environment or AWS Parameter Store")
     return value
 
 
@@ -324,3 +332,8 @@ def get_variant_price_history(variant_id: int, days: int = Query(default=30, ge=
 # Authentication and role-based user administration are isolated from catalogue routes.
 from .auth import router as auth_router
 app.include_router(auth_router)
+
+
+# Authenticated checkout, order management, and persisted store settings.
+from .commerce import router as commerce_router
+app.include_router(commerce_router)

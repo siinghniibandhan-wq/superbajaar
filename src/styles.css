@@ -68,3 +68,15 @@
 
 /* User accounts and role administration */
 .user-management{margin-top:22px}.user-auth{max-width:560px;padding:18px 0}.user-mode{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px}.user-mode button{border:1px solid #e8e3f1;background:#fff;border-radius:9px;padding:10px 13px;font-size:12px;color:#5e536d}.user-mode button.selected{background:#f0e7ff;border-color:#d8c4ff;color:#6428d9;font-weight:800}.user-form{display:grid;gap:14px}.user-form label{display:grid;gap:7px;font-size:12px;font-weight:700;color:#544961}.user-form input,.user-tools input,.user-actions select{min-width:0;border:1px solid #e4dfeb;background:#fff;border-radius:9px;padding:11px 12px;color:#2b2039;outline-color:#9b70e8}.user-form input{cursor:text}.user-form .primary-cta{justify-content:center;cursor:pointer}.user-form button:disabled{opacity:.6;cursor:wait}.user-form small{font-size:11px;line-height:1.6;color:#7e758a}.user-summary{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:15px;border:1px solid #eee8f5;border-radius:12px;background:#fdfbff}.user-summary>div{display:grid;gap:4px}.user-summary small,.user-summary span{font-size:11px;color:#7e758a}.user-summary b{font-size:15px}.user-tools{display:flex;gap:10px;margin:17px 0}.user-tools input{flex:1;cursor:text}.user-table-wrap{overflow:auto;width:100%}.user-table{width:100%;border-collapse:collapse;font-size:12px}.user-table th,.user-table td{text-align:left;padding:13px 10px;border-bottom:1px solid #eeeaf4;white-space:nowrap}.user-table th{font-size:10px;letter-spacing:.6px;text-transform:uppercase;color:#8c829a}.user-table td small{display:block;color:#8c829a;margin-top:4px}.user-actions{display:flex;gap:6px}.user-actions select{font-size:11px;padding:7px;cursor:pointer}.audit-details{margin-top:22px}.audit-details summary{cursor:pointer;font-weight:800;font-size:12px;padding:12px 0}.user-management .inline-notice{margin:12px 0}@media(max-width:650px){.user-tools{flex-direction:column}.user-summary{align-items:flex-start}.user-actions{flex-direction:column}.user-mode button{flex:1}}
+
+
+/* Operational readiness cards reuse the storefront/admin theme tokens. */
+.api-readiness-panel{margin-bottom:24px}
+.readiness-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.readiness-card{min-width:0;border:1px solid var(--line);border-radius:14px;padding:14px;background:transparent}
+.readiness-card>div{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.readiness-card>div>b{color:var(--ink);font-size:13px}
+.readiness-card .status-badge{max-width:100%;white-space:normal;overflow-wrap:anywhere}
+.readiness-card p{margin:10px 0 0;color:var(--muted);font-size:12px;line-height:1.55}
+@media(max-width:1100px){.readiness-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.readiness-grid{grid-template-columns:1fr}.api-readiness-panel .panel-heading{align-items:flex-start;gap:12px}}
