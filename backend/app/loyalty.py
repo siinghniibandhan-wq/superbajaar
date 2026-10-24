@@ -117,7 +117,7 @@ def _post(conn: Any, user_id: int, kind: str, coins: int, description: str, *,
             wallet=conn.execute("SELECT * FROM sb_loyalty_wallets WHERE user_id=%s",(user_id,)).fetchone()
             return {"transaction":old,"wallet":wallet,"duplicate":True}
     signed=coins if kind in ("earn","welcome","referral","admin_adjustment") and not description.startswith("DEBIT:") else -coins
-    if signed<0 and kind!="expiry":
+    if kind!="expiry":
         _expire_due(conn,user_id)
     wallet=_wallet(conn,user_id)
     if signed<0 and wallet["balance"]<coins:
