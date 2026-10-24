@@ -507,11 +507,46 @@ def update_shipment(shipment_id:int,body:ShipmentUpdate,authorization:str|None=H
     try:
         with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
             _ensure(conn)
-            row=conn.execute("""UPDATE sb_shipments SET status=%s,note=COALESCE(NULLIF(%s,''),note),
-                delivered_at=CASE WHEN %s='delivered' THEN now() ELSE delivered_at END WHERE id=%s RETURNING *""",
-                (body.status,body.note,body.status,shipment_id)).fetchone()
-            if not row: raise HTTPException(status_code=404,detail="Shipment not found")
-            return {"shipment":row}
+            with conn.transaction():
+                shipment=conn.execute("SELECT * FROM sb_shipments WHERE id=%s FOR UPDATE",(shipment_id,)).fetchone()
+                if not shipment: raise HTTPException(status_code=404,detail="Shipment not found")
+                row=conn.execute("""UPDATE sb_shipments SET status=%s,note=COALESCE(NULLIF(%s,''),note),
+                    delivered_at=CASE WHEN %s='delivered' THEN now() ELSE delivered_at END WHERE id=%s RETURNING *""",
+                    (body.status,body.note,body.status,shipment_id)).fetchone()
+                journal_id=None
+                if shipment["order_type"]=="website" and conn.execute("SELECT to_regclass('public.store_orders') AS name").fetchone()["name"]:
+                    order=conn.execute("SELECT * FROM store_orders WHERE id=%s FOR UPDATE",(shipment["order_id"],)).fetchone()
+                    mapped={"packed":"packed","in_transit":"shipped","out_for_delivery":"shipped","delivered":"delivered","cancelled":"cancelled"}
+                    target=mapped.get(body.status)
+                    if order and target and order["status"] not in ("delivered","cancelled"):
+                        if target=="cancelled":
+                            order_lines=conn.execute("SELECT variant_id,quantity FROM store_order_items WHERE order_id=%s",(order["id"],)).fetchall()
+                            for line in order_lines:
+                                reserved=conn.execute("""SELECT id FROM sb_stock_movements WHERE variant_id=%s AND reference_type='website_order'
+                                    AND reference_id=%s AND movement_type='website_sale' LIMIT 1""",(line["variant_id"],order["id"])).fetchone()
+                                stock=conn.execute("SELECT quantity FROM sb_stock WHERE variant_id=%s AND warehouse='Main' FOR UPDATE",(line["variant_id"],)).fetchone()
+                                if reserved and stock:
+                                    conn.execute("UPDATE sb_stock SET quantity=quantity+%s,updated_at=now() WHERE variant_id=%s AND warehouse='Main'",(line["quantity"],line["variant_id"]))
+                                    conn.execute("""INSERT INTO sb_stock_movements(variant_id,warehouse,movement_type,quantity,reference_type,reference_id,created_by)
+                                        VALUES(%s,'Main','return_in',%s,'website_order_cancel',%s,%s)""",(line["variant_id"],line["quantity"],order["id"],user["id"]))
+                        conn.execute("UPDATE store_orders SET status=%s,updated_at=now() WHERE id=%s",(target,order["id"]))
+                        if target=="delivered":
+                            from .commerce import _order_detail
+                            from .accounting import _ensure as ensure_accounting
+                            ensure_accounting(conn)
+                            subtotal=Decimal(str(order["subtotal"])); total=Decimal(str(order["total"])); shipping=Decimal(str(order["shipping_fee"]))
+                            journal_lines=[("accounts_receivable",total,Decimal("0")),("sales",Decimal("0"),subtotal)]
+                            if shipping: journal_lines.append(("other_income",Decimal("0"),shipping))
+                            cost_rows=conn.execute("""SELECT oi.variant_id,oi.quantity,
+                                COALESCE(SUM(CASE WHEN po.id IS NOT NULL THEN pl.unit_cost*pl.received_qty ELSE 0 END)/
+                                NULLIF(SUM(CASE WHEN po.id IS NOT NULL THEN pl.received_qty ELSE 0 END),0),0) AS avg_cost
+                                FROM store_order_items oi LEFT JOIN sb_purchase_lines pl ON pl.variant_id=oi.variant_id
+                                LEFT JOIN sb_purchase_orders po ON po.id=pl.purchase_id AND po.status='received'
+                                WHERE oi.order_id=%s GROUP BY oi.variant_id,oi.quantity""",(order["id"],)).fetchall()
+                            cogs=sum((Decimal(str(x["avg_cost"] or 0))*Decimal(str(x["quantity"])) for x in cost_rows),Decimal("0")).quantize(Decimal("0.01"))
+                            if cogs: journal_lines.extend([("cost_of_goods_sold",cogs,Decimal("0")),("inventory",Decimal("0"),cogs)])
+                            journal_id=_post_journal(conn,date.today(),order["order_number"],"Website sale "+order["order_number"],"website",order["id"],journal_lines,user["id"])
+                return {"shipment":row,"linked_order_status":target if shipment["order_type"]=="website" else None,"journal_id":journal_id}
     except HTTPException: raise
     except Exception as exc: raise HTTPException(status_code=503,detail="Shipment could not be updated") from exc
 
