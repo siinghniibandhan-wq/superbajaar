@@ -113,6 +113,8 @@ def _validated_delivery_setting(value: dict[str, Any]) -> dict[str, Any]:
     pins = list(dict.fromkeys(pin.strip() for pin in pins))
     if value["enabled"] and not pins:
         raise HTTPException(status_code=422, detail="Add verified serviceable pincodes before enabling delivery.")
+    if value["enabled"] and "shipping_fee" not in value:
+        raise HTTPException(status_code=422, detail="Set an explicit shipping_fee before enabling delivery.")
 
     def amount(field: str, default: Any = None) -> float | None:
         raw = value.get(field, default)
