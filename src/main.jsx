@@ -21,7 +21,15 @@ function App() {
       const payload = await response.json();
       const rows = Array.isArray(payload) ? payload : (payload.items || payload.products || []);
       setProducts(rows);
-      const names = [...new Set(rows.map((p) => p.category).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+      let names = [...new Set(rows.map((p) => p.category).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+      try {
+        const categoryResponse = await fetch(`${API_BASE}/api/categories`, { headers: { Accept: 'application/json' } });
+        if (categoryResponse.ok) {
+          const categoryPayload = await categoryResponse.json();
+          const savedNames = (categoryPayload.items || []).map((item) => item.name).filter(Boolean);
+          if (savedNames.length) names = [...new Set(savedNames)].sort((a, b) => a.localeCompare(b));
+        }
+      } catch { /* Product categories remain a fallback if the category endpoint is unavailable. */ }
       setCategories(['All', ...names]);
     } catch (e) {
       setError('We could not load the live catalogue. Please try again shortly.');
@@ -45,7 +53,7 @@ function App() {
   }), [products, category, search]);
 
   return <div className="app-shell">
-    <header className="topbar"><a className="brand" href="#top" aria-label="Super Bajaar home"><span className="brand-mark">S</span><span>Super <b>Bajaar</b><small>Your Everyday Super Store</small></span></a><a className="admin-link" href="/admin">Admin</a></header>
+    <header className="topbar"><a className="brand" href="#top" aria-label="Super Bajaar home"><span className="brand-mark">S</span><span>Super <b>Bajaar</b><small>Your Everyday Super Store</small></span></a><a className="admin-link" href="#catalogue">Shop</a></header>
     <main id="top">
       <section className="hero"><div className="hero-copy"><span className="eyebrow">EVERYDAY ESSENTIALS, MADE EASY</span><h1>Your everyday<br/><em>super store.</em></h1><p>Find what you need, all in one place.</p><a className="hero-button" href="#catalogue">Explore products <span aria-hidden="true">→</span></a></div><div className="hero-art" aria-hidden="true"><div className="art-circle circle-one"></div><div className="art-circle circle-two"></div><div className="basket">🛍️</div><span className="spark spark-one">✦</span><span className="spark spark-two">✳</span></div></section>
       <section id="catalogue" className="catalogue"><div className="section-heading"><div><span className="eyebrow">THE COLLECTION</span><h2>Shop the catalogue</h2></div><span className="count">{loading ? 'Loading…' : `${visibleProducts.length} products`}</span></div>
