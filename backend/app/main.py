@@ -335,10 +335,41 @@ def list_products(
         )""")
         params.append(pincode)
     where_sql = " AND ".join(conditions)
+    history_select = "NULL::numeric AS lowest_selling_price_30d,"
+    try:
+        with db.connection() as conn:
+            history_exists = conn.execute(
+                "SELECT to_regclass('public.product_price_history') AS table_name"
+            ).fetchone()["table_name"] is not None
+        if history_exists:
+            history_select = """(
+                SELECT MIN(ph.price) FROM product_price_history ph
+                WHERE ph.product_variant_id = v.id
+                  AND ph.price_type = 'selling'
+                  AND ph.valid_from >= now() - interval '30 days'
+            ) AS lowest_selling_price_30d,"""
+    except Exception:
+        logger.exception("Could not inspect price history table; continuing without 30-day price")
     query = f"""
         SELECT p.id AS product_id, p.product_code, p.name, p.description, p.brand,
                c.name AS category, v.id AS variant_id, v.sku, v.barcode,
                v.variant_attributes, v.mrp, v.selling_price, v.currency,
+               {history_select}
+               COALESCE(SUM(ib.quantity_on_hand - ib.quantity_reserved), 0) AS available_quantity
+        FROM products p
+        JOIN product_variants v ON v.product_id = p.id
+        LEFT JOIN product_categories c ON c.id = p.category_id
+        LEFT JOIN inventory_balances ib ON ib.product_variant_id = v.id
+        WHERE {where_sql}
+        GROUP BY p.id, c.name, v.id
+        ORDER BY p.name, v.sku
+        LIMIT %s OFFSET %s
+    """
+    query = f"""
+        SELECT p.id AS product_id, p.product_code, p.name, p.description, p.brand,
+               c.name AS category, v.id AS variant_id, v.sku, v.barcode,
+               v.variant_attributes, v.mrp, v.selling_price, v.currency,
+               {history_select}
                COALESCE(SUM(ib.quantity_on_hand - ib.quantity_reserved), 0) AS available_quantity
         FROM products p
         JOIN product_variants v ON v.product_id = p.id
@@ -357,6 +388,65 @@ def list_products(
         logger.exception("Catalogue query failed")
         raise HTTPException(status_code=503, detail="Catalogue is not ready; check database migrations")
     return {"items": json_safe(rows), "limit": limit, "offset": offset}
+
+
+class ProductReviewInput(BaseModel):
+    reviewer_name: str = Field(min_length=1, max_length=80)
+    rating: int = Field(ge=1, le=5)
+    review_text: str = Field(min_length=3, max_length=2000)
+
+
+@app.get("/api/products/{product_id}/reviews")
+def list_product_reviews(product_id: int) -> dict[str, Any]:
+    db = get_pool()
+    try:
+        with db.connection() as conn:
+            exists = conn.execute(
+                "SELECT to_regclass('public.product_reviews') AS table_name"
+            ).fetchone()["table_name"] is not None
+            if not exists:
+                return {"items": [], "message": "Reviews are not configured yet"}
+            rows = conn.execute(
+                """SELECT id, reviewer_name, rating, review_text, created_at
+                   FROM product_reviews
+                   WHERE product_id = %s AND status = 'approved'
+                   ORDER BY created_at DESC LIMIT 100""",
+                [product_id],
+            ).fetchall()
+    except Exception:
+        logger.exception("Could not load product reviews")
+        raise HTTPException(status_code=503, detail="Reviews are temporarily unavailable")
+    return {"items": json_safe(rows)}
+
+
+@app.post("/api/products/{product_id}/reviews", status_code=202)
+def submit_product_review(product_id: int, review: ProductReviewInput) -> dict[str, str]:
+    db = get_pool()
+    try:
+        with db.connection() as conn:
+            exists = conn.execute(
+                "SELECT to_regclass('public.product_reviews') AS table_name"
+            ).fetchone()["table_name"] is not None
+            if not exists:
+                raise HTTPException(status_code=503, detail="Review submission is not configured yet")
+            product = conn.execute(
+                "SELECT id FROM products WHERE id = %s AND status = 'active'",
+                [product_id],
+            ).fetchone()
+            if not product:
+                raise HTTPException(status_code=404, detail="Product not found")
+            conn.execute(
+                """INSERT INTO product_reviews
+                   (product_id, reviewer_name, rating, review_text, status)
+                   VALUES (%s, %s, %s, %s, 'pending')""",
+                [product_id, review.reviewer_name.strip(), review.rating, review.review_text.strip()],
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Could not save product review")
+        raise HTTPException(status_code=503, detail="Review submission failed")
+    return {"message": "Thank you. Your review was submitted for moderation."}
 
 
 @app.get("/api/serviceability")
