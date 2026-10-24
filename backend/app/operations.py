@@ -51,6 +51,10 @@ def _ensure(conn: Any) -> None:
         id BIGSERIAL PRIMARY KEY, purchase_id BIGINT NOT NULL REFERENCES sb_purchase_orders(id) ON DELETE CASCADE,
         variant_id BIGINT NOT NULL, quantity NUMERIC(14,3) NOT NULL CHECK(quantity>0),
         unit_cost NUMERIC(14,2) NOT NULL CHECK(unit_cost>=0), received_qty NUMERIC(14,3) NOT NULL DEFAULT 0 CHECK(received_qty>=0))""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS sb_supplier_payments (
+        id BIGSERIAL PRIMARY KEY, purchase_id BIGINT NOT NULL UNIQUE REFERENCES sb_purchase_orders(id),
+        amount NUMERIC(14,2) NOT NULL CHECK(amount>0), payment_account TEXT NOT NULL CHECK(payment_account IN ('bank','cash')),
+        reference TEXT, paid_by BIGINT, paid_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
     conn.execute("""CREATE TABLE IF NOT EXISTS sb_pos_sales (
         id BIGSERIAL PRIMARY KEY, receipt_number TEXT NOT NULL UNIQUE, customer_id BIGINT REFERENCES sb_customers(id),
         status TEXT NOT NULL DEFAULT 'completed', subtotal NUMERIC(14,2) NOT NULL, tax_total NUMERIC(14,2) NOT NULL DEFAULT 0,
@@ -663,3 +667,25 @@ def mark_payroll_paid(run_id:int,payment_account:str=Query(default="bank",patter
                 return {"run_id":run_id,"status":"paid","journal_id":journal_id,"net_pay":net,"payment_account":payment_account}
     except HTTPException: raise
     except Exception as exc: raise HTTPException(status_code=503,detail="Payroll payment posting failed") from exc
+
+@router.post("/purchases/{purchase_id}/pay")
+def pay_supplier_purchase(purchase_id:int,payment_account:str=Query(default="bank",pattern="^(bank|cash)$"),reference:str=Query(default="",max_length=120),authorization:str|None=Header(default=None))->dict[str,Any]:
+    user=_admin(authorization)
+    try:
+        with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
+            _ensure(conn)
+            with conn.transaction():
+                po=conn.execute("SELECT * FROM sb_purchase_orders WHERE id=%s FOR UPDATE",(purchase_id,)).fetchone()
+                if not po: raise HTTPException(status_code=404,detail="Purchase order not found")
+                if po["status"]!="received": raise HTTPException(status_code=409,detail="Only received purchase orders can be paid")
+                if conn.execute("SELECT id FROM sb_supplier_payments WHERE purchase_id=%s",(purchase_id,)).fetchone():
+                    raise HTTPException(status_code=409,detail="This purchase order is already marked paid")
+                amount=Decimal(str(po["total"]))
+                if amount<=0: raise HTTPException(status_code=422,detail="Purchase total must be greater than zero")
+                journal_id=_post_journal(conn,date.today(),f"PO-PAY-{purchase_id}",f"Supplier payment for purchase order {purchase_id}","supplier_payment",purchase_id,
+                    [("accounts_payable",amount,Decimal("0")),(payment_account,Decimal("0"),amount)],user["id"])
+                payment=conn.execute("""INSERT INTO sb_supplier_payments(purchase_id,amount,payment_account,reference,paid_by)
+                    VALUES(%s,%s,%s,%s,%s) RETURNING *""",(purchase_id,amount,payment_account,reference.strip() or None,user["id"])).fetchone()
+                return {"payment":payment,"journal_id":journal_id,"message":"Supplier payment recorded and accounting updated."}
+    except HTTPException: raise
+    except Exception as exc: raise HTTPException(status_code=503,detail="Supplier payment could not be recorded") from exc
