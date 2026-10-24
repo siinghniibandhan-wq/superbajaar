@@ -273,3 +273,26 @@ def profit_loss(start_date: date = Query(...), end_date: date = Query(...), auth
         raise
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Profit & Loss report is temporarily unavailable") from exc
+
+@router.get("/gst-summary")
+def gst_summary(start_date: date = Query(...), end_date: date = Query(...), authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _admin(authorization)
+    if end_date < start_date:
+        raise HTTPException(status_code=422, detail="End date must be on or after start date")
+    try:
+        with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
+            _ensure(conn)
+            row=conn.execute("""SELECT
+                COALESCE(SUM(CASE WHEN a.detail_type='output_gst' THEN l.credit-l.debit ELSE 0 END),0) AS output_gst,
+                COALESCE(SUM(CASE WHEN a.detail_type='input_gst' THEN l.debit-l.credit ELSE 0 END),0) AS input_gst
+                FROM sb_journal_lines l JOIN sb_journals j ON j.id=l.journal_id
+                JOIN sb_accounts a ON a.id=l.account_id
+                WHERE j.status='posted' AND j.entry_date BETWEEN %s AND %s
+                AND a.detail_type IN ('output_gst','input_gst')""",(start_date,end_date)).fetchone()
+            output_tax=Decimal(str(row["output_gst"])); input_tax=Decimal(str(row["input_gst"]))
+            return {"start_date":start_date,"end_date":end_date,"output_gst":output_tax,"eligible_input_gst_recorded":input_tax,
+                    "net_gst_payable_before_adjustments":output_tax-input_tax,
+                    "note":"This ledger summary is not a filed GST return. Eligibility, place of supply, HSN/SAC and return reconciliation require verification."}
+    except HTTPException: raise
+    except Exception as exc: raise HTTPException(status_code=503,detail="GST summary unavailable") from exc
+
