@@ -6,6 +6,7 @@ import secrets
 import time
 from functools import lru_cache
 from typing import Any
+from urllib.request import Request, urlopen
 
 import psycopg
 from fastapi import APIRouter, Header, HTTPException
@@ -20,8 +21,24 @@ def _read_ssm_parameter(name: str) -> str:
     """Read a deployment secret from Parameter Store using the EC2 instance role."""
     import boto3
 
-    region = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
-    client = boto3.client("ssm", region_name=region) if region else boto3.client("ssm")
+    region = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or boto3.Session().region_name
+    if not region:
+        # EC2 does not always export its region to the application environment.
+        token_request = Request(
+            "http://169.254.169.254/latest/api/token",
+            data=b"",
+            headers={"X-aws-ec2-metadata-token-ttl-seconds": "60"},
+            method="PUT",
+        )
+        with urlopen(token_request, timeout=2) as response:
+            metadata_token = response.read().decode()
+        document_request = Request(
+            "http://169.254.169.254/latest/dynamic/instance-identity/document",
+            headers={"X-aws-ec2-metadata-token": metadata_token},
+        )
+        with urlopen(document_request, timeout=2) as response:
+            region = json.loads(response.read().decode())["region"]
+    client = boto3.client("ssm", region_name=region)
     path = f"/superbajaar/{name}"
     return client.get_parameter(Name=path, WithDecryption=True)["Parameter"]["Value"]
 
