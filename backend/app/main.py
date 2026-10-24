@@ -11,7 +11,7 @@ import logging
 import os
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from psycopg_pool import ConnectionPool
@@ -46,6 +46,19 @@ class AdminProductInput(BaseModel):
     currency: Literal["INR", "USD"] = "INR"
     active: bool = True
     variant_attributes: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("selling_price", "mrp")
+    @classmethod
+    def validate_money_precision(cls, value: Decimal | None) -> Decimal | None:
+        if value is not None and max(0, -value.as_tuple().exponent) > 2:
+            raise ValueError("Prices must have no more than two decimal places")
+        return value
+
+    @model_validator(mode="after")
+    def validate_mrp_not_below_selling_price(self):
+        if self.mrp is not None and self.mrp < self.selling_price:
+            raise ValueError("MRP must be greater than or equal to the selling price")
+        return self
 
 
 def _b64(value: bytes) -> str:
