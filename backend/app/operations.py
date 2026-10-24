@@ -74,6 +74,18 @@ def _ensure(conn: Any) -> None:
         id BIGSERIAL PRIMARY KEY, period_start DATE NOT NULL, period_end DATE NOT NULL,
         status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','approved','paid')),
         created_by BIGINT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), UNIQUE(period_start,period_end))""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS sb_attendance (
+        id BIGSERIAL PRIMARY KEY, employee_id BIGINT NOT NULL REFERENCES sb_employees(id), work_date DATE NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('present','absent','half_day','leave','holiday','weekly_off')),
+        hours_worked NUMERIC(5,2) NOT NULL DEFAULT 0 CHECK(hours_worked>=0 AND hours_worked<=24),
+        note TEXT, created_by BIGINT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), UNIQUE(employee_id,work_date))""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS sb_leave_requests (
+        id BIGSERIAL PRIMARY KEY, employee_id BIGINT NOT NULL REFERENCES sb_employees(id),
+        start_date DATE NOT NULL, end_date DATE NOT NULL, leave_type TEXT NOT NULL,
+        days NUMERIC(5,2) NOT NULL CHECK(days>0), paid BOOLEAN NOT NULL DEFAULT TRUE,
+        reason TEXT, status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),
+        reviewed_by BIGINT, reviewed_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        CHECK(end_date>=start_date))""")
     conn.execute("""CREATE TABLE IF NOT EXISTS sb_payroll_lines (
         id BIGSERIAL PRIMARY KEY, run_id BIGINT NOT NULL REFERENCES sb_payroll_runs(id) ON DELETE CASCADE,
         employee_id BIGINT NOT NULL REFERENCES sb_employees(id), gross NUMERIC(14,2) NOT NULL,
@@ -194,6 +206,82 @@ class EmployeeInput(BaseModel):
     designation: str = Field(default="", max_length=100)
     joining_date: date | None = None
     monthly_gross: Decimal = Field(default=Decimal("0"), ge=0)
+
+
+class AttendanceInput(BaseModel):
+    employee_id: int = Field(gt=0)
+    work_date: date
+    status: str = Field(pattern="^(present|absent|half_day|leave|holiday|weekly_off)$")
+    hours_worked: Decimal = Field(default=Decimal("0"), ge=0, le=24)
+    note: str = Field(default="", max_length=500)
+
+class LeaveInput(BaseModel):
+    employee_id: int = Field(gt=0)
+    start_date: date
+    end_date: date
+    leave_type: str = Field(min_length=1, max_length=60)
+    days: Decimal = Field(gt=0, le=366)
+    paid: bool = True
+    reason: str = Field(default="", max_length=1000)
+
+@router.get("/attendance")
+def list_attendance(authorization: str | None = Header(default=None), start_date: date | None = None, end_date: date | None = None) -> dict[str, Any]:
+    _admin(authorization)
+    try:
+        with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
+            _ensure(conn)
+            return {"items":conn.execute("""SELECT a.*,e.employee_code,e.full_name FROM sb_attendance a JOIN sb_employees e ON e.id=a.employee_id
+                WHERE (%s::date IS NULL OR a.work_date >= %s) AND (%s::date IS NULL OR a.work_date <= %s)
+                ORDER BY a.work_date DESC,e.full_name LIMIT 1000""",(start_date,start_date,end_date,end_date)).fetchall()}
+    except Exception as exc: raise HTTPException(status_code=503,detail="Attendance records unavailable") from exc
+
+@router.post("/attendance",status_code=201)
+def save_attendance(body:AttendanceInput,authorization:str|None=Header(default=None))->dict[str,Any]:
+    user=_admin(authorization)
+    try:
+        with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
+            _ensure(conn)
+            row=conn.execute("""INSERT INTO sb_attendance(employee_id,work_date,status,hours_worked,note,created_by)
+                VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT(employee_id,work_date) DO UPDATE SET status=EXCLUDED.status,
+                hours_worked=EXCLUDED.hours_worked,note=EXCLUDED.note,created_by=EXCLUDED.created_by
+                RETURNING *""",(body.employee_id,body.work_date,body.status,body.hours_worked,body.note.strip() or None,user["id"])).fetchone()
+            return {"attendance":row}
+    except Exception as exc: raise HTTPException(status_code=503,detail="Attendance could not be saved") from exc
+
+@router.get("/leave")
+def list_leave(authorization:str|None=Header(default=None))->dict[str,Any]:
+    _admin(authorization)
+    try:
+        with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
+            _ensure(conn)
+            return {"items":conn.execute("""SELECT l.*,e.employee_code,e.full_name FROM sb_leave_requests l JOIN sb_employees e ON e.id=l.employee_id
+                ORDER BY l.created_at DESC LIMIT 1000""").fetchall()}
+    except Exception as exc: raise HTTPException(status_code=503,detail="Leave requests unavailable") from exc
+
+@router.post("/leave",status_code=201)
+def create_leave(body:LeaveInput,authorization:str|None=Header(default=None))->dict[str,Any]:
+    _admin(authorization)
+    if body.end_date<body.start_date: raise HTTPException(status_code=422,detail="Leave end date must not precede start date")
+    try:
+        with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
+            _ensure(conn)
+            row=conn.execute("""INSERT INTO sb_leave_requests(employee_id,start_date,end_date,leave_type,days,paid,reason)
+                VALUES(%s,%s,%s,%s,%s,%s,%s) RETURNING *""",(body.employee_id,body.start_date,body.end_date,body.leave_type.strip(),body.days,body.paid,body.reason.strip() or None)).fetchone()
+            return {"leave":row}
+    except Exception as exc: raise HTTPException(status_code=503,detail="Leave request could not be saved") from exc
+
+@router.patch("/leave/{leave_id}")
+def review_leave(leave_id:int,status:str=Query(...,pattern="^(approved|rejected)$"),authorization:str|None=Header(default=None))->dict[str,Any]:
+    user=_admin(authorization)
+    try:
+        with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
+            _ensure(conn)
+            row=conn.execute("""UPDATE sb_leave_requests SET status=%s,reviewed_by=%s,reviewed_at=now()
+                WHERE id=%s AND status='pending' RETURNING *""",(status,user["id"],leave_id)).fetchone()
+            if not row: raise HTTPException(status_code=404,detail="Pending leave request not found")
+            return {"leave":row}
+    except HTTPException: raise
+    except Exception as exc: raise HTTPException(status_code=503,detail="Leave request could not be reviewed") from exc
 
 class PayrollInput(BaseModel):
     period_start: date
