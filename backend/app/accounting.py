@@ -18,7 +18,7 @@ router = APIRouter(prefix="/api/accounting", tags=["accounting"])
 
 ACCOUNT_TYPES = {
     "asset": ["cash", "bank", "accounts_receivable", "inventory", "input_gst", "fixed_asset", "deposit", "other_asset"],
-    "liability": ["accounts_payable", "output_gst", "tds_payable", "loan", "accrual", "other_liability"],
+    "liability": ["accounts_payable", "output_gst", "tds_payable", "payroll_deductions_payable", "loan", "accrual", "other_liability"],
     "equity": ["capital", "reserves", "retained_earnings"],
     "income": ["sales", "service_income", "other_income", "sales_returns", "discounts"],
     "expense": ["purchases", "cost_of_goods_sold", "freight", "salary", "rent", "utilities", "marketing", "depreciation", "bank_charges", "tax_expense", "other_expense"],
