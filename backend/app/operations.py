@@ -514,6 +514,7 @@ def update_shipment(shipment_id:int,body:ShipmentUpdate,authorization:str|None=H
                     delivered_at=CASE WHEN %s='delivered' THEN now() ELSE delivered_at END WHERE id=%s RETURNING *""",
                     (body.status,body.note,body.status,shipment_id)).fetchone()
                 journal_id=None
+                target=None
                 if shipment["order_type"]=="website" and conn.execute("SELECT to_regclass('public.store_orders') AS name").fetchone()["name"]:
                     order=conn.execute("SELECT * FROM store_orders WHERE id=%s FOR UPDATE",(shipment["order_id"],)).fetchone()
                     mapped={"packed":"packed","in_transit":"shipped","out_for_delivery":"shipped","delivered":"delivered","cancelled":"cancelled"}
@@ -531,7 +532,6 @@ def update_shipment(shipment_id:int,body:ShipmentUpdate,authorization:str|None=H
                                         VALUES(%s,'Main','return_in',%s,'website_order_cancel',%s,%s)""",(line["variant_id"],line["quantity"],order["id"],user["id"]))
                         conn.execute("UPDATE store_orders SET status=%s,updated_at=now() WHERE id=%s",(target,order["id"]))
                         if target=="delivered":
-                            from .commerce import _order_detail
                             from .accounting import _ensure as ensure_accounting
                             ensure_accounting(conn)
                             subtotal=Decimal(str(order["subtotal"])); total=Decimal(str(order["total"])); shipping=Decimal(str(order["shipping_fee"]))
