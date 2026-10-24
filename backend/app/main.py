@@ -462,3 +462,8 @@ app.include_router(auth_router)
 # Authenticated checkout, order management, and persisted store settings.
 from .commerce import router as commerce_router
 app.include_router(commerce_router)
+
+
+# Accounting foundation: chart of accounts, GST setup, journals and P&L.
+from .accounting import router as accounting_router
+app.include_router(accounting_router)
