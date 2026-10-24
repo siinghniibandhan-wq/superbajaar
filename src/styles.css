@@ -289,3 +289,37 @@ footer{background:#211331;color:#fff}
 .brand-mark svg{display:block;width:46px;height:46px;overflow:visible}
 .footer-brand .brand-mark{background:transparent!important}
 @media(max-width:420px){.brand-mark svg{width:41px;height:41px}}
+
+
+/* Separate catalogue and full product detail pages */
+.product-page{width:min(1280px,100%);margin:0 auto;padding:28px clamp(18px,5.5vw,82px) 64px;min-height:55vh}
+.product-detail-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);gap:clamp(24px,4vw,54px);align-items:start}
+.product-detail-gallery{position:sticky;top:18px}
+.product-main-image{display:grid;place-items:center;aspect-ratio:1/1;width:100%;overflow:hidden;border:1px solid var(--line);border-radius:22px;background:linear-gradient(145deg,#f8f3ff,#fff9f1)}
+.product-main-image img{width:100%;height:100%;object-fit:contain;padding:12px}
+.product-main-image .image-monogram{width:120px;height:120px;font-size:42px}
+.product-gallery-note{padding:10px 3px;color:var(--muted);font-size:10px}
+.product-detail-info{min-width:0}
+.product-back-link{margin:0 0 20px;padding:0;border:0;background:transparent;color:var(--accent);font-size:11px;font-weight:800;cursor:pointer}
+.product-detail-info h1{margin:5px 0 12px;font:800 clamp(25px,3vw,36px)/1.2 Manrope;letter-spacing:-.04em;color:var(--text)}
+.product-detail-brand{color:var(--muted);font-size:12px}.product-detail-brand strong{color:var(--text)}
+.product-detail-price{display:flex;align-items:center;gap:12px;margin:18px 0 5px}.product-detail-price strong{font:800 28px Manrope;color:var(--text)}.product-detail-price del{color:var(--muted);font-size:13px}
+.product-detail-stock{margin:8px 0 18px;color:var(--success);font-size:11px;font-weight:700}
+.product-variant-select{display:flex;flex-direction:column;gap:8px;margin:18px 0;color:var(--text);font-size:11px;font-weight:800}
+.product-variant-select select{width:100%;padding:13px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--text);font:500 12px 'DM Sans',sans-serif}
+.product-attributes,.product-description{margin-top:24px;padding:19px;border:1px solid var(--line);border-radius:16px;background:var(--surface)}
+.product-attributes h2,.product-description h2{margin:0 0 14px;font:800 15px Manrope;color:var(--text)}
+.product-attribute-row{display:flex;justify-content:space-between;gap:18px;padding:11px 0;border-top:1px solid var(--line);font-size:11px}.product-attribute-row span{color:var(--muted)}.product-attribute-row strong{text-align:right;color:var(--text)}
+.product-quantity-control{display:flex;justify-content:space-between;align-items:center;gap:16px;margin:20px 0;font-size:12px;font-weight:800}
+.product-quantity-control>div{display:flex;align-items:center;gap:15px;padding:5px;border:1px solid var(--line);border-radius:12px}
+.product-quantity-control button{width:32px;height:32px;border:0;border-radius:9px;background:var(--soft);color:var(--accent);font-size:18px;font-weight:800;cursor:pointer}
+.product-quantity-control strong{min-width:16px;text-align:center}
+.product-add-button{min-height:46px;font-size:13px}
+.product-description>p{margin:0 0 15px;color:var(--muted);font-size:12px;line-height:1.8}
+.product-detail-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.product-detail-facts>div{display:flex;flex-direction:column;gap:5px;padding:11px;border-radius:10px;background:var(--page);min-width:0}
+.product-detail-facts span{color:var(--muted);font-size:9px}.product-detail-facts strong{font-size:11px;overflow-wrap:anywhere}
+.product-image{aspect-ratio:1/1;height:auto;min-height:0;overflow:hidden}
+.product-image img{width:100%;height:100%;object-fit:contain;padding:12px}
+@media(max-width:760px){.product-page{padding:20px 18px 44px}.product-detail-layout{grid-template-columns:1fr;gap:18px}.product-detail-gallery{position:static}.product-main-image{max-height:440px}.product-main-image img{padding:8px}.product-detail-info h1{font-size:27px}.product-detail-price strong{font-size:25px}.product-description,.product-attributes{padding:15px}}
+@media(min-width:761px){.product-main-image{max-height:620px}}
