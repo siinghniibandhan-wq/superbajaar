@@ -289,17 +289,3 @@ def adjust_wallet(body: AdjustmentInput, authorization: str | None = Header(defa
 @router.post("/redeem")
 def redeem_coins(coins: int = Query(gt=0, le=10000000), authorization: str | None = Header(default=None)) -> dict[str, Any]:
     raise HTTPException(status_code=409, detail="Redeem Super Coins during checkout so the discount is applied to your order.")
-    user=_current(authorization)
-    try:
-        with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
-            _ensure(conn)
-            with conn.transaction():
-                program=_program(conn)
-                if not program["enabled"]: raise HTTPException(status_code=409,detail="Loyalty programme is currently disabled")
-                wallet=_wallet(conn,int(user["id"]))
-                if coins<int(program["min_redeem_coins"]): raise HTTPException(status_code=422,detail=f"Minimum redemption is {program['min_redeem_coins']} coins")
-                value=(Decimal(coins)*Decimal(str(program["redemption_value"]))).quantize(Decimal("0.01"))
-                result=_post(conn,int(user["id"]),"redeem",coins,f"Coins redeemed for {value} store credit",key=f"redeem:{user['id']}:{__import__('secrets').token_hex(12)}")
-                return {**result,"store_credit":value,"message":"Coins redeemed. Store credit is recorded in your loyalty wallet."}
-    except HTTPException: raise
-    except Exception as exc: raise HTTPException(status_code=503,detail="Coin redemption failed") from exc
