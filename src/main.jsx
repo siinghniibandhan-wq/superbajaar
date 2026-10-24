@@ -282,4 +282,86 @@ function App() {
   </div>;
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+function AdminPanel() {
+  const [token, setToken] = useState(() => { try { return sessionStorage.getItem('sb-admin-token') || ''; } catch { return ''; } });
+  const [username, setUsername] = useState('admin');
+  const [password, setPassword] = useState('');
+  const [items, setItems] = useState([]);
+  const [tab, setTab] = useState('add');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const [form, setForm] = useState({name:'',product_code:'',sku:'',brand:'',category:'Grocery & Staples',description:'',selling_price:'',mrp:'',currency:'INR',active:true});
+  const field = (key, value) => setForm(previous => ({...previous,[key]:value}));
+  async function login(event) {
+    event.preventDefault(); setBusy(true); setMessage('');
+    try {
+      const response = await fetch(endpoint('/admin/login'), {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})});
+      const data = await response.json().catch(()=>({}));
+      if(!response.ok) throw new Error(data.detail || 'Admin sign-in failed');
+      setToken(data.access_token); try { sessionStorage.setItem('sb-admin-token',data.access_token); } catch {} setPassword('');
+      setMessage('Signed in successfully'); await loadAdminProducts(data.access_token);
+    } catch(error) { setMessage(error.message); }
+    finally { setBusy(false); }
+  }
+  async function loadAdminProducts(access=token) {
+    try {
+      const response = await fetch(endpoint('/admin/products'),{headers:{Authorization:'Bearer '+access,Accept:'application/json'}});
+      const data = await response.json().catch(()=>({}));
+      if(!response.ok) {
+        if(response.status === 401) {
+          setToken('');
+          setItems([]);
+          try { sessionStorage.removeItem('sb-admin-token'); } catch {}
+          throw new Error('Your admin session has expired. Please sign in again.');
+        }
+        throw new Error(data.detail || 'Could not load products');
+      }
+      setItems(data.items || []);
+    } catch(error) { setMessage(error.message); }
+  }
+  async function saveProduct(event) {
+    event.preventDefault(); setBusy(true); setMessage('');
+    try {
+      const payload = {...form,selling_price:Number(form.selling_price),mrp:form.mrp===''?null:Number(form.mrp)};
+      const response = await fetch(endpoint('/admin/products'),{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify(payload)});
+      const data = await response.json().catch(()=>({}));
+      if(!response.ok) throw new Error(data.detail || 'Could not save product');
+      setMessage('Product saved successfully. Active products are eligible for storefront display. No stock was added.');
+      setForm({name:'',product_code:'',sku:'',brand:'',category:'Grocery & Staples',description:'',selling_price:'',mrp:'',currency:'INR',active:true});
+      await loadAdminProducts();
+    } catch(error) { setMessage(error.message); }
+    finally { setBusy(false); }
+  }
+  function signOut(){setToken('');setItems([]);try { sessionStorage.removeItem('sb-admin-token'); } catch {} setMessage('Signed out');}
+  useEffect(() => {
+    if (token) loadAdminProducts(token);
+  }, []);
+  return <div className="admin-shell">
+    <header className="admin-top"><a className="brand" href="/"><span className="brand-mark">S</span><span className="brand-word">super<span>bajaar</span><small>Product management</small></span></a><span className="admin-badge">ADMIN CONSOLE</span>{token && <button className="header-link" onClick={signOut}>Sign out</button>}</header>
+    {!token ? <main className="admin-login-wrap"><form className="admin-login" onSubmit={login}><p className="eyebrow">RESTRICTED ACCESS</p><h1>Admin sign in</h1><p>Only authorised staff can manage the catalogue.</p><label>Admin ID<input autoComplete="username" value={username} onChange={e=>setUsername(e.target.value)} required /></label><label>Password<input type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required /></label><button className="add-cart-button" disabled={busy}>{busy?'Signing in…':'Sign in securely'}</button>{message&&<p className="admin-message" role="status">{message}</p>}</form></main> : <main className="admin-main">
+      <div className="admin-heading"><div><p className="eyebrow">SUPER BAJAAR OPERATIONS</p><h1>Admin dashboard</h1><p>Central workspace for product, inventory, purchasing, sales, finance, logistics and people operations.</p></div><div className="admin-count"><b>{items.length}</b><span>catalogue records</span></div></div><section className="admin-module-grid" aria-label="Admin modules">{[{icon:"▦",name:"Products",desc:"Product master, SKU, variants and pricing",status:"Available",active:true},{icon:"▤",name:"Inventory",desc:"Warehouses, stock ledger and adjustments",status:"Next phase"},{icon:"🛒",name:"Sales",desc:"Orders, fulfilment, invoices and returns",status:"Next phase"},{icon:"📥",name:"Purchase",desc:"Suppliers, purchase orders and GRN",status:"Next phase"},{icon:"⇢",name:"Logistics",desc:"Dispatch, tracking and delivery exceptions",status:"Next phase"},{icon:"₹",name:"Accounting",desc:"Ledger, receivables, payables and GST",status:"Next phase"},{icon:"♙",name:"Employees",desc:"Employee records, departments and roles",status:"Next phase"},{icon:"◷",name:"Attendance",desc:"Shifts, check-in/out and leave",status:"Next phase"},{icon:"▥",name:"Payroll",desc:"Salary runs, deductions and payslips",status:"Next phase"},{icon:"♧",name:"Customers & Suppliers",desc:"Profiles, contacts and transaction history",status:"Next phase"},{icon:"▧",name:"Reports",desc:"Sales, inventory, purchasing and finance",status:"Next phase"},{icon:"⚙",name:"Settings & Access",desc:"Users, permissions, taxes and numbering",status:"Next phase"}].map(module=><article key={module.name} className={"admin-module-card"+(module.active?" module-active":"")}><span className="admin-module-icon">{module.icon}</span><div><h2>{module.name}</h2><p>{module.desc}</p><span className="admin-module-status">{module.status}</span></div></article>)}</section>
+      <div className="admin-tabs"><button className={tab==='add'?'active':''} onClick={()=>setTab('add')}>＋ Add product</button><button className={tab==='list'?'active':''} onClick={()=>{setTab('list');loadAdminProducts();}}>Product list ({items.length})</button></div>
+      {message&&<p className="admin-message" role="status">{message}</p>}
+      {tab==='add' ? <form className="admin-product-form" onSubmit={saveProduct}><div className="admin-form-heading"><h2>Product information</h2><p>Required fields are marked with *.</p></div>
+        <div className="admin-form-grid">
+          <label>Product name *<input value={form.name} onChange={e=>field('name',e.target.value)} maxLength={200} required /></label>
+          <label>Product code *<input value={form.product_code} onChange={e=>field('product_code',e.target.value)} maxLength={80} required /></label>
+          <label>SKU / variant code *<input value={form.sku} onChange={e=>field('sku',e.target.value)} maxLength={100} required /></label>
+          <label>Brand<input value={form.brand} onChange={e=>field('brand',e.target.value)} maxLength={150} /></label>
+          <label>Category *<input value={form.category} onChange={e=>field('category',e.target.value)} maxLength={100} required /></label>
+          <label>Selling price (₹) *<input type="number" min="0" step="0.01" value={form.selling_price} onChange={e=>field('selling_price',e.target.value)} required /></label>
+          <label>MRP (optional) ₹<input type="number" min="0" step="0.01" value={form.mrp} onChange={e=>field('mrp',e.target.value)} /></label>
+          <label>Currency<select value={form.currency} onChange={e=>field('currency',e.target.value)}><option>INR</option><option>USD</option></select></label>
+          <label className="admin-full">Detailed description<textarea rows="5" value={form.description} onChange={e=>field('description',e.target.value)} maxLength={5000} placeholder="Product details, ingredients/material, size, usage, care instructions, etc." /></label>
+        </div>
+        <div className="admin-publish-options"><label className="admin-check"><input type="checkbox" checked={form.active} onChange={e=>field('active',e.target.checked)} /> Product active</label><p>Active products are eligible for storefront display. Saving a product does not add stock; inventory will be managed through receiving and stock-movement workflows.</p></div>
+        <div className="admin-form-actions"><button type="button" className="secondary-button" onClick={()=>setForm({name:'',product_code:'',sku:'',brand:'',category:'Grocery & Staples',description:'',selling_price:'',mrp:'',currency:'INR',active:true})}>Clear form</button><button className="add-cart-button" disabled={busy}>{busy?'Saving…':'Save product'}</button></div>
+      </form> : <section className="admin-product-list"><div className="admin-form-heading"><h2>All products</h2><button className="secondary-button" onClick={()=>loadAdminProducts()}>Refresh list</button></div>{items.length===0?<p>No product records returned.</p>:<div className="admin-table-wrap"><table><thead><tr><th>Product</th><th>SKU</th><th>Category</th><th>Selling price</th><th>Product status</th><th>Variant status</th><th>Visibility</th></tr></thead><tbody>{items.map(item=><tr key={item.variant_id}><td><b>{item.name}</b><small>{item.product_code}</small></td><td>{item.sku}</td><td>{item.category||'—'}</td><td>{money(item.selling_price,item.currency)}</td><td>{item.product_status}</td><td>{item.variant_status}</td><td>{item.product_status==='active'&&item.variant_status==='active'?'Storefront eligible':'Not eligible'}</td></tr>)}</tbody></table></div>}</section>}
+    </main>}
+  </div>;
+}
+
+
+function Root() { return window.location.pathname.startsWith('/admin') ? <AdminPanel /> : <App />; }
+
+createRoot(document.getElementById('root')).render(<Root />);
