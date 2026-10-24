@@ -498,7 +498,7 @@ def update_admin_order(
                     if shipping:
                         lines.append(("other_income",Decimal("0"),shipping))
                     cost_rows=conn.execute("""SELECT oi.variant_id,oi.quantity,
-                            COALESCE(SUM(pl.unit_cost*pl.received_qty)/NULLIF(SUM(pl.received_qty),0),0) AS avg_cost
+                            COALESCE(SUM(CASE WHEN po.id IS NOT NULL THEN pl.unit_cost*pl.received_qty ELSE 0 END)/NULLIF(SUM(CASE WHEN po.id IS NOT NULL THEN pl.received_qty ELSE 0 END),0),0) AS avg_cost
                         FROM store_order_items oi LEFT JOIN sb_purchase_lines pl ON pl.variant_id=oi.variant_id
                         LEFT JOIN sb_purchase_orders po ON po.id=pl.purchase_id AND po.status='received'
                         WHERE oi.order_id=%s GROUP BY oi.variant_id,oi.quantity""",(order_id,)).fetchall()
