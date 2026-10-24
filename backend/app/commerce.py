@@ -541,7 +541,7 @@ def update_admin_order(
                         lines.extend([("cost_of_goods_sold",cogs,Decimal("0")),("inventory",Decimal("0"),cogs)])
                     journal_id=_post_journal(conn,date.today(),previous["order_number"],"Website sale "+previous["order_number"],"website",order_id,lines,actor["id"])
                     from .loyalty import award_order_coins
-                    award_order_coins(conn,int(previous["user_id"]),order_id,subtotal,total)
+                    award_order_coins(conn,int(previous["user_id"]),order_id,subtotal-discount,total)
                 return {"order": _order_detail(conn, row["id"]), "updated_by": actor["id"], "journal_id":journal_id}
     except HTTPException:
         raise
