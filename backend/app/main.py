@@ -233,6 +233,65 @@ def admin_create_product(product: AdminProductInput, authorization: str | None =
     return {"product_id": created["id"], "variant_id": variant["id"], "message": "Product saved to the catalogue database"}
 
 
+@app.put("/api/admin/products/{product_id}/variants/{variant_id}")
+def admin_update_product(
+    product_id: int,
+    variant_id: int,
+    product: AdminProductInput,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    require_admin(authorization)
+    if product_id < 1 or variant_id < 1:
+        raise HTTPException(status_code=422, detail="Product and variant IDs must be positive")
+    if not product.name.strip() or not product.product_code.strip() or not product.sku.strip() or not product.category.strip():
+        raise HTTPException(status_code=422, detail="Product name, product code, SKU, and category cannot be blank")
+    db = get_pool()
+    slug = re.sub(r"[^a-z0-9]+", "-", product.category.strip().lower()).strip("-") or "general"
+    status = "active" if product.active else "inactive"
+    try:
+        with db.connection() as conn:
+            with conn.transaction():
+                existing = conn.execute(
+                    "SELECT id FROM product_variants WHERE id = %s AND product_id = %s",
+                    [variant_id, product_id],
+                ).fetchone()
+                if existing is None:
+                    raise HTTPException(status_code=404, detail="Product variant not found")
+                category = conn.execute(
+                    """INSERT INTO product_categories (category_code, name, status)
+                       VALUES (%s, %s, 'active')
+                       ON CONFLICT (category_code) DO UPDATE SET name = product_categories.name
+                       RETURNING id""",
+                    [slug[:80], product.category.strip()],
+                ).fetchone()
+                conn.execute(
+                    """UPDATE products
+                       SET product_code = %s, name = %s, description = %s, brand = %s,
+                           category_id = %s, website_published = %s, status = %s, updated_at = now()
+                       WHERE id = %s""",
+                    [product.product_code.strip(), product.name.strip(), product.description.strip(),
+                     product.brand.strip() or None, category["id"], product.active, status, product_id],
+                )
+                conn.execute(
+                    """UPDATE product_variants
+                       SET sku = %s, variant_attributes = %s, mrp = %s, selling_price = %s,
+                           currency = %s, status = %s
+                       WHERE id = %s AND product_id = %s""",
+                    [product.sku.strip(), json.dumps(product.variant_attributes), product.mrp,
+                     product.selling_price, product.currency, status, variant_id, product_id],
+                )
+    except HTTPException:
+        raise
+    except UniqueViolation as exc:
+        constraint = getattr(getattr(exc, "diag", None), "constraint_name", "")
+        field = "SKU" if "sku" in constraint else "product code" if "product" in constraint else "category"
+        raise HTTPException(status_code=409, detail=f"A record with this {field} already exists") from exc
+    except Exception:
+        logger.exception("Admin product update failed")
+        raise HTTPException(status_code=503, detail="Product could not be updated; check database availability and schema") from None
+    return {"product_id": product_id, "variant_id": variant_id, "message": "Product updated successfully"}
+
+
 @app.get("/api/products")
 def list_products(
     search: str = Query(default="", max_length=120),
