@@ -170,6 +170,7 @@ class RegisterInput(BaseModel):
     email: str = Field(min_length=5, max_length=254)
     full_name: str = Field(min_length=1, max_length=120)
     password: str = Field(min_length=10, max_length=200)
+    referral_code: str = Field(default='', max_length=30)
 
 
 class LoginInput(BaseModel):
@@ -211,6 +212,15 @@ def register(body: RegisterInput) -> dict[str, Any]:
             welcome=int(loyalty_program_config["welcome_coins"]) if loyalty_program_config["enabled"] else 0
             if welcome>0:
                 post_loyalty(conn,int(row["id"]),"welcome",welcome,"Welcome to Super Bajaar loyalty",key=f"user:{row['id']}:welcome")
+            referral_code=body.referral_code.strip().upper()
+            referral_reward=int(loyalty_program_config["referral_coins"]) if loyalty_program_config["enabled"] else 0
+            if referral_code:
+                referrer=conn.execute("SELECT user_id FROM sb_loyalty_wallets WHERE referral_code=%s",(referral_code,)).fetchone()
+                if not referrer or int(referrer["user_id"])==int(row["id"]):
+                    raise HTTPException(status_code=422,detail="Referral code is invalid")
+                if referral_reward>0:
+                    post_loyalty(conn,int(referrer["user_id"]),"referral",referral_reward,"Referral reward for a new member",key=f"referral:{row['id']}:referrer")
+                    post_loyalty(conn,int(row["id"]),"referral",referral_reward,"Welcome referral reward",key=f"referral:{row['id']}:new-member")
             return {"user": row, "access_token": _token(row["id"]), "token_type": "bearer"}
     except psycopg.errors.UniqueViolation:
         raise HTTPException(status_code=409, detail="An account with this email already exists")
