@@ -127,7 +127,7 @@ def create_account(body: AccountInput, authorization: str | None = Header(defaul
     if body.account_type not in ACCOUNT_TYPES or body.detail_type not in ACCOUNT_TYPES[body.account_type]:
         raise HTTPException(status_code=422, detail="Detail type does not belong to the selected account type")
     try:
-        with _db() as conn:
+        with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
             _ensure(conn)
             row = conn.execute(
                 """INSERT INTO sb_accounts(code,name,account_type,detail_type,parent_id)
@@ -147,7 +147,7 @@ def create_account(body: AccountInput, authorization: str | None = Header(defaul
 def list_gst_rates(authorization: str | None = Header(default=None)) -> dict[str, Any]:
     _admin(authorization)
     try:
-        with _db() as conn:
+        with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
             _ensure(conn)
             return {"items": conn.execute("SELECT id,label,rate,classification,is_active FROM sb_gst_rates ORDER BY rate,label").fetchall()}
     except Exception as exc:
@@ -157,7 +157,7 @@ def list_gst_rates(authorization: str | None = Header(default=None)) -> dict[str
 def create_gst_rate(label: str, rate: Decimal = Query(ge=0, le=100), classification: str = Query(pattern="^(taxable|nil_rated|exempt|non_gst)$"), authorization: str | None = Header(default=None)) -> dict[str, Any]:
     _admin(authorization)
     try:
-        with _db() as conn:
+        with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
             _ensure(conn)
             row = conn.execute(
                 """INSERT INTO sb_gst_rates(label,rate,classification) VALUES (%s,%s,%s)
@@ -178,7 +178,7 @@ def create_journal(body: JournalInput, authorization: str | None = Header(defaul
     if any((line.debit == 0 and line.credit == 0) or (line.debit > 0 and line.credit > 0) for line in body.lines):
         raise HTTPException(status_code=422, detail="Each journal line must contain either a debit or a credit")
     try:
-        with _db() as conn:
+        with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
             _ensure(conn)
             journal = conn.execute(
                 """INSERT INTO sb_journals(entry_date,reference,description,source_module,created_by)
@@ -230,7 +230,7 @@ def profit_loss(start_date: date = Query(...), end_date: date = Query(...), auth
     if end_date < start_date:
         raise HTTPException(status_code=422, detail="End date must be on or after start date")
     try:
-        with _db() as conn:
+        with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
             _ensure(conn)
             rows = conn.execute(
                 """SELECT a.id,a.code,a.name,a.account_type,a.detail_type,
