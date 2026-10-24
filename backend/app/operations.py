@@ -355,7 +355,9 @@ def pos_sale(body:POSInput,authorization:str|None=Header(default=None))->dict[st
                     product=conn.execute("""SELECT selling_price FROM product_variants WHERE id=%s""",(line.variant_id,)).fetchone()
                     if not product: raise HTTPException(status_code=404,detail=f"Product variant {line.variant_id} not found")
                     price=Decimal(str(product["selling_price"])) if line.unit_price is None else line.unit_price
-                    base=price*line.quantity; tax=(base*line.tax_rate/Decimal("100")).quantize(Decimal("0.01"))
+                    tax_mapping=conn.execute("SELECT gst_rate,classification FROM sb_product_tax WHERE variant_id=%s",(line.variant_id,)).fetchone()
+                    applied_rate=Decimal(str(tax_mapping["gst_rate"])) if tax_mapping and tax_mapping["classification"]=="taxable" else (Decimal("0") if tax_mapping else line.tax_rate)
+                    base=price*line.quantity; tax=(base*applied_rate/Decimal("100")).quantize(Decimal("0.01"))
                     cost_row=conn.execute("""SELECT COALESCE(SUM(pl.unit_cost*pl.received_qty)/NULLIF(SUM(pl.received_qty),0),0) AS avg_cost
                         FROM sb_purchase_lines pl JOIN sb_purchase_orders po ON po.id=pl.purchase_id
                         WHERE pl.variant_id=%s AND po.status='received'""",(line.variant_id,)).fetchone()
