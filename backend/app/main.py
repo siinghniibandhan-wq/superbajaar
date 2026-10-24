@@ -188,7 +188,7 @@ def admin_create_product(product: AdminProductInput, authorization: str | None =
                 category = conn.execute(
                     """INSERT INTO product_categories (category_code, name, status)
                        VALUES (%s, %s, 'active')
-                       ON CONFLICT (category_code) DO UPDATE SET name = EXCLUDED.name
+                       ON CONFLICT (category_code) DO UPDATE SET name = product_categories.name
                        RETURNING id""",
                     [slug[:80], product.category.strip()],
                 ).fetchone()
