@@ -306,7 +306,7 @@ def pos_sale(body:POSInput,authorization:str|None=Header(default=None))->dict[st
             _ensure(conn)
             with conn.transaction():
                 if body.customer_id and not conn.execute("SELECT id FROM sb_customers WHERE id=%s",(body.customer_id,)).fetchone(): raise HTTPException(status_code=404,detail="Customer not found")
-                subtotal=Decimal("0"); tax_total=Decimal("0"); resolved=[]
+                subtotal=Decimal("0"); tax_total=Decimal("0"); cogs_total=Decimal("0"); resolved=[]
                 for line in body.lines:
                     stock=conn.execute("SELECT quantity FROM sb_stock WHERE variant_id=%s AND warehouse='Main' FOR UPDATE",(line.variant_id,)).fetchone()
                     available=Decimal(str(stock["quantity"])) if stock else Decimal("0")
@@ -315,6 +315,11 @@ def pos_sale(body:POSInput,authorization:str|None=Header(default=None))->dict[st
                     if not product: raise HTTPException(status_code=404,detail=f"Product variant {line.variant_id} not found")
                     price=Decimal(str(product["selling_price"])) if line.unit_price is None else line.unit_price
                     base=price*line.quantity; tax=(base*line.tax_rate/Decimal("100")).quantize(Decimal("0.01"))
+                    cost_row=conn.execute("""SELECT COALESCE(SUM(pl.unit_cost*pl.received_qty)/NULLIF(SUM(pl.received_qty),0),0) AS avg_cost
+                        FROM sb_purchase_lines pl JOIN sb_purchase_orders po ON po.id=pl.purchase_id
+                        WHERE pl.variant_id=%s AND po.status='received'""",(line.variant_id,)).fetchone()
+                    avg_cost=Decimal(str(cost_row["avg_cost"] or 0))
+                    cogs_total+=(avg_cost*line.quantity).quantize(Decimal("0.01"))
                     subtotal+=base; tax_total+=tax; resolved.append((line,price,base+tax))
                 total=subtotal+tax_total
                 receipt="POS-"+__import__("secrets").token_hex(6).upper()
@@ -329,6 +334,8 @@ def pos_sale(body:POSInput,authorization:str|None=Header(default=None))->dict[st
                 journal_lines=[("cash",total,Decimal("0")),("sales",Decimal("0"),subtotal)]
                 if tax_total:
                     journal_lines.append(("output_gst",Decimal("0"),tax_total))
+                if cogs_total:
+                    journal_lines.extend([("cost_of_goods_sold",cogs_total,Decimal("0")),("inventory",Decimal("0"),cogs_total)])
                 journal_id=_post_journal(conn,date.today(),receipt,"POS sale "+receipt,"pos",sale["id"],journal_lines,user["id"])
                 return {"sale":sale,"receipt_number":receipt,"journal_id":journal_id,"message":"POS sale saved, inventory deducted and accounting journal posted atomically."}
     except HTTPException: raise
