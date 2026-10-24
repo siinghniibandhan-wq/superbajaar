@@ -507,7 +507,7 @@ def shipments(authorization:str|None=Header(default=None),limit:int=Query(100,ge
 
 @router.patch("/shipments/{shipment_id}")
 def update_shipment(shipment_id:int,body:ShipmentUpdate,authorization:str|None=Header(default=None))->dict[str,Any]:
-    _admin(authorization)
+    user=_admin(authorization)
     try:
         with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
             _ensure(conn)
@@ -539,7 +539,8 @@ def update_shipment(shipment_id:int,body:ShipmentUpdate,authorization:str|None=H
                             from .accounting import _ensure as ensure_accounting
                             ensure_accounting(conn)
                             subtotal=Decimal(str(order["subtotal"])); total=Decimal(str(order["total"])); shipping=Decimal(str(order["shipping_fee"]))
-                            journal_lines=[("accounts_receivable",total,Decimal("0")),("sales",Decimal("0"),subtotal)]
+                            discount=Decimal(str(order.get("loyalty_discount") or 0))
+                            journal_lines=[("accounts_receivable",total,Decimal("0")),("sales",Decimal("0"),subtotal-discount)]
                             if shipping: journal_lines.append(("other_income",Decimal("0"),shipping))
                             cost_rows=conn.execute("""SELECT oi.variant_id,oi.quantity,
                                 COALESCE(SUM(CASE WHEN po.id IS NOT NULL THEN pl.unit_cost*pl.received_qty ELSE 0 END)/
@@ -550,6 +551,8 @@ def update_shipment(shipment_id:int,body:ShipmentUpdate,authorization:str|None=H
                             cogs=sum((Decimal(str(x["avg_cost"] or 0))*Decimal(str(x["quantity"])) for x in cost_rows),Decimal("0")).quantize(Decimal("0.01"))
                             if cogs: journal_lines.extend([("cost_of_goods_sold",cogs,Decimal("0")),("inventory",Decimal("0"),cogs)])
                             journal_id=_post_journal(conn,date.today(),order["order_number"],"Website sale "+order["order_number"],"website",order["id"],journal_lines,user["id"])
+                            from .loyalty import award_order_coins
+                            award_order_coins(conn,int(order["user_id"]),int(order["id"]),subtotal,total)
                 return {"shipment":row,"linked_order_status":target if shipment["order_type"]=="website" else None,"journal_id":journal_id}
     except HTTPException: raise
     except Exception as exc: raise HTTPException(status_code=503,detail="Shipment could not be updated") from exc
