@@ -37,7 +37,7 @@ function Store({goAdmin}) {
  const count=cart.reduce((n,x)=>n+x.qty,0),subtotal=cart.reduce((sum,item)=>{const p=item.product||products.find(x=>keyOf(x)===item.key)||{};return sum+Number(p.selling_price??p.price??0)*item.qty},0);
  function keyOf(p){return p.variant_id||p.id||p.product_id||p.sku||p.name}
  function notify(s){setToast(s);setTimeout(()=>setToast(''),2600)}
- function productSlug(p){const slug=String(p.name||'product').toLowerCase().normalize('NFKD').replace(/[\\u0300-\\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'product';return slug+'-'+p.variant_id}
+ function productSlug(p){const slug=String(p.name||'product').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'product';return slug+'-'+p.variant_id}
  function openProduct(p){const id=p.variant_id;if(!id){setSelectedProduct(p);setPage('product-detail');return}history.pushState({},'',`/product/${productSlug(p)}`);setSelectedProduct(p);setPage('product-detail');setMobileMenu(false);window.scrollTo({top:0,behavior:'smooth'})}
  function add(p){const key=keyOf(p);setCart(old=>{const found=old.find(x=>x.key===key);return found?old.map(x=>x.key===key?{...x,qty:x.qty+1,product:p}:x):[...old,{key,qty:1,product:p}]});notify('Added to your cart')}
  function go(p){if(page==='product-detail'&&p!=='product-detail')history.pushState({},'', '/');setPage(p);setMobileMenu(false);setCartOpen(false);window.scrollTo({top:0,behavior:'smooth'})}
