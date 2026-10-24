@@ -418,6 +418,26 @@ def purchases(authorization: str | None = Header(default=None),limit:int=Query(1
             return {"items":conn.execute("""SELECT p.*,v.name AS vendor_name FROM sb_purchase_orders p JOIN sb_vendors v ON v.id=p.vendor_id ORDER BY p.id DESC LIMIT %s""",(limit,)).fetchall()}
     except Exception as exc: raise HTTPException(status_code=503,detail="Purchase orders unavailable") from exc
 
+@router.get("/purchases/{purchase_id}")
+def purchase_detail(purchase_id:int,authorization:str|None=Header(default=None))->dict[str,Any]:
+    _admin(authorization)
+    try:
+        with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
+            _ensure(conn)
+            purchase=conn.execute("""SELECT p.*,v.name AS vendor_name FROM sb_purchase_orders p
+                JOIN sb_vendors v ON v.id=p.vendor_id WHERE p.id=%s""",(purchase_id,)).fetchone()
+            if not purchase: raise HTTPException(status_code=404,detail="Purchase order not found")
+            lines=conn.execute("""SELECT id,purchase_id,variant_id,quantity,received_qty,
+                quantity-received_qty AS outstanding_quantity,unit_cost,
+                (quantity-received_qty)*unit_cost AS outstanding_value
+                FROM sb_purchase_lines WHERE purchase_id=%s ORDER BY id""",(purchase_id,)).fetchall()
+            receipts=conn.execute("""SELECT id,purchase_id,received_value,received_by,created_at
+                FROM sb_purchase_receipts WHERE purchase_id=%s ORDER BY id DESC""",(purchase_id,)).fetchall()
+            return {"purchase":purchase,"lines":lines,"receipts":receipts}
+    except HTTPException: raise
+    except Exception as exc: raise HTTPException(status_code=503,detail="Purchase order details unavailable") from exc
+
+
 @router.post("/purchases/{purchase_id}/receive")
 def receive_purchase(
     purchase_id:int, body:PurchaseReceiptInput|None=None,
@@ -468,9 +488,11 @@ def receive_purchase(
                 conn.execute("UPDATE sb_purchase_orders SET status=%s WHERE id=%s",(status,purchase_id))
                 receipt=conn.execute("""INSERT INTO sb_purchase_receipts(purchase_id,received_value,received_by)
                     VALUES(%s,%s,%s) RETURNING id""",(purchase_id,received_value,user["id"])).fetchone()
-                journal_id=_post_journal(conn,date.today(),f"PO-{purchase_id}-GR-{receipt['id']}",
-                    f"Goods receipt {receipt['id']} for purchase order {purchase_id}","purchase_receipt",int(receipt["id"]),
-                    [("inventory",received_value,Decimal("0")),("accounts_payable",Decimal("0"),received_value)],user["id"])
+                journal_id=None
+                if received_value>0:
+                    journal_id=_post_journal(conn,date.today(),f"PO-{purchase_id}-GR-{receipt['id']}",
+                        f"Goods receipt {receipt['id']} for purchase order {purchase_id}","purchase_receipt",int(receipt["id"]),
+                        [("inventory",received_value,Decimal("0")),("accounts_payable",Decimal("0"),received_value)],user["id"])
                 return {"purchase_id":purchase_id,"receipt_id":receipt["id"],"status":status,
                     "received_value":received_value,"lines":received_lines,"journal_id":journal_id,
                     "message":"Received quantities posted to inventory and accounting."}
