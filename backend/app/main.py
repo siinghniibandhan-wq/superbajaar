@@ -298,3 +298,24 @@ def list_categories() -> dict[str, Any]:
     except psycopg.Error as exc:
         logger.exception("Category database query failed")
         raise HTTPException(status_code=503, detail="Categories are temporarily unavailable") from exc
+
+
+@app.get("/api/products/variants/{variant_id}/price-history")
+def get_variant_price_history(variant_id: int, days: int = Query(default=30, ge=1, le=90)) -> dict[str, Any]:
+    """Return recorded selling-price snapshots for one variant; never fabricate missing history."""
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            table = conn.execute("SELECT to_regclass('public.product_variant_price_history') AS table_name").fetchone()["table_name"]
+            if not table:
+                return {"available": False, "items": [], "message": "Price history is building; historical snapshots are not available yet."}
+            rows = conn.execute(
+                """SELECT selling_price, recorded_at FROM product_variant_price_history
+                   WHERE variant_id = %s AND recorded_at >= now() - (%s * interval '1 day')
+                   ORDER BY recorded_at ASC LIMIT 1000""", (variant_id, days)
+            ).fetchall()
+            return {"available": len(rows) > 0, "days": days, "items": rows}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        logger.exception("Could not load variant price history")
+        raise HTTPException(status_code=503, detail="Price history is temporarily unavailable") from exc
