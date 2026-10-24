@@ -238,6 +238,7 @@ def adjust_wallet(body: AdjustmentInput, authorization: str | None = Header(defa
 
 @router.post("/redeem")
 def redeem_coins(coins: int = Query(gt=0, le=10000000), authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    raise HTTPException(status_code=409, detail="Redeem Super Coins during checkout so the discount is applied to your order.")
     user=_current(authorization)
     try:
         with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
