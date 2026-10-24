@@ -497,7 +497,15 @@ def update_admin_order(
                     lines=[("accounts_receivable",total,Decimal("0")),("sales",Decimal("0"),subtotal)]
                     if shipping:
                         lines.append(("other_income",Decimal("0"),shipping))
-                    journal_id=_post_journal(conn,date.today(),previous["order_number"],"Website sale "+previous["order_number],"website",order_id,lines,actor["id"])
+                    cost_rows=conn.execute("""SELECT oi.variant_id,oi.quantity,
+                            COALESCE(SUM(pl.unit_cost*pl.received_qty)/NULLIF(SUM(pl.received_qty),0),0) AS avg_cost
+                        FROM store_order_items oi LEFT JOIN sb_purchase_lines pl ON pl.variant_id=oi.variant_id
+                        LEFT JOIN sb_purchase_orders po ON po.id=pl.purchase_id AND po.status='received'
+                        WHERE oi.order_id=%s GROUP BY oi.variant_id,oi.quantity""",(order_id,)).fetchall()
+                    cogs=sum((Decimal(str(x["avg_cost"] or 0))*Decimal(str(x["quantity"])) for x in cost_rows),Decimal("0")).quantize(Decimal("0.01"))
+                    if cogs:
+                        lines.extend([("cost_of_goods_sold",cogs,Decimal("0")),("inventory",Decimal("0"),cogs)])
+                    journal_id=_post_journal(conn,date.today(),previous["order_number"],"Website sale "+previous["order_number"],"website",order_id,lines,actor["id"])
                 return {"order": _order_detail(conn, row["id"]), "updated_by": actor["id"], "journal_id":journal_id}
     except HTTPException:
         raise
