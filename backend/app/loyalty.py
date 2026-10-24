@@ -33,7 +33,9 @@ def _ensure(conn: Any) -> None:
         user_id BIGINT PRIMARY KEY REFERENCES app_users(id) ON DELETE CASCADE,
         balance BIGINT NOT NULL DEFAULT 0 CHECK(balance>=0), lifetime_earned BIGINT NOT NULL DEFAULT 0 CHECK(lifetime_earned>=0),
         lifetime_redeemed BIGINT NOT NULL DEFAULT 0 CHECK(lifetime_redeemed>=0), tier TEXT NOT NULL DEFAULT 'Member',
-        card_number TEXT NOT NULL UNIQUE, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
+        card_number TEXT NOT NULL UNIQUE, referral_code TEXT UNIQUE, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
+    conn.execute("ALTER TABLE sb_loyalty_wallets ADD COLUMN IF NOT EXISTS referral_code TEXT UNIQUE")
+    conn.execute("UPDATE sb_loyalty_wallets SET referral_code='SBREF-'||substr(card_number,4) WHERE referral_code IS NULL")
     conn.execute("""CREATE TABLE IF NOT EXISTS sb_loyalty_transactions (
         id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
         kind TEXT NOT NULL CHECK(kind IN ('earn','redeem','welcome','referral','admin_adjustment','expiry','refund')),
@@ -60,12 +62,9 @@ def _wallet(conn: Any, user_id: int) -> dict[str, Any]:
     if row:
         return row
     card="SB-"+__import__("secrets").token_hex(6).upper()
-    try:
-        return conn.execute("""INSERT INTO sb_loyalty_wallets(user_id,card_number) VALUES(%s,%s)
-            ON CONFLICT(user_id) DO UPDATE SET user_id=EXCLUDED.user_id RETURNING *""",(user_id,card)).fetchone()
-    except psycopg.errors.UniqueViolation:
-        card="SB-"+__import__("secrets").token_hex(8).upper()
-        return conn.execute("INSERT INTO sb_loyalty_wallets(user_id,card_number) VALUES(%s,%s) RETURNING *",(user_id,card)).fetchone()
+    referral="SBREF-"+__import__("secrets").token_hex(5).upper()
+    return conn.execute("""INSERT INTO sb_loyalty_wallets(user_id,card_number,referral_code) VALUES(%s,%s,%s)
+        ON CONFLICT(user_id) DO UPDATE SET user_id=EXCLUDED.user_id RETURNING *""",(user_id,card,referral)).fetchone()
 
 
 def _tier(conn: Any, lifetime: int) -> dict[str, Any]:
