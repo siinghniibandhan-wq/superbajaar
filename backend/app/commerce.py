@@ -525,7 +525,8 @@ def update_admin_order(
                     subtotal=Decimal(str(previous["subtotal"]))
                     total=Decimal(str(previous["total"]))
                     shipping=Decimal(str(previous["shipping_fee"]))
-                    lines=[("accounts_receivable",total,Decimal("0")),("sales",Decimal("0"),subtotal)]
+                    discount=Decimal(str(previous.get("loyalty_discount") or 0))
+                    lines=[("accounts_receivable",total,Decimal("0")),("sales",Decimal("0"),subtotal-discount)]
                     if shipping:
                         lines.append(("other_income",Decimal("0"),shipping))
                     cost_rows=conn.execute("""SELECT oi.variant_id,oi.quantity,
