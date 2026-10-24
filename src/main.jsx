@@ -94,9 +94,7 @@ function ReviewModeration() {
 
 function StoreSettingsManager(){
  const [token]=useState(()=>localStorage.getItem('sb_admin_token')||'');
- const [items,setItems]=useState([]),[selected,setSelected]=useState('brand'),[draft,setDraft]=useState('{
-  
-}'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
+ const [items,setItems]=useState([]),[selected,setSelected]=useState('brand'),[draft,setDraft]=useState('{}'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  async function load(){if(!token){setError('Sign in through User management & access first.');return}setBusy(true);setError('');try{const r=await fetch(API_PATH('/admin/store-settings'),{headers:{Authorization:'Bearer '+token}});const j=await r.json().catch(()=>({}));if(!r.ok)throw Error(j.detail||'Could not load store settings');const rows=j.items||[];setItems(rows);const found=rows.find(x=>x.setting_key===selected);setDraft(JSON.stringify(found?.setting_value||{},null,2))}catch(e){setError(e.message||'Settings service unavailable')}finally{setBusy(false)}}
  useEffect(()=>{load()},[]);
  useEffect(()=>{const found=items.find(x=>x.setting_key===selected);setDraft(JSON.stringify(found?.setting_value||{},null,2))},[selected,items]);
