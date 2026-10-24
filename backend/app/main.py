@@ -76,6 +76,9 @@ def list_products(
             brand_select = "p.brand AS brand" if "brand" in product_columns else "NULL::text AS brand"
             description_select = "p.description AS description" if "description" in product_columns else "NULL::text AS description"
             currency_select = "v.currency AS currency" if "currency" in variant_columns else "'INR'::text AS currency"
+            product_status_select = "p.status AS status" if "status" in product_columns else "'active'::text AS status"
+            variant_status_select = "v.status AS variant_status" if "status" in variant_columns else "'active'::text AS variant_status"
+            category_id_select = "p.category_id AS category_id" if "category_id" in product_columns else "NULL::bigint AS category_id"
             category_join = "LEFT JOIN product_categories c ON c.id = p.category_id" if "category_id" in product_columns else "LEFT JOIN product_categories c ON FALSE"
             where = [product_status, variant_status]
             params: list[Any] = []
@@ -91,6 +94,7 @@ def list_products(
                 params.append(category.strip())
             params.extend([limit, offset])
             query = f"""SELECT p.id AS product_id, p.name, {description_select}, {brand_select},
+                              {category_id_select}, {product_status_select}, {variant_status_select},
                               c.name AS category, v.id AS variant_id,
                               {('v.sku' if 'sku' in variant_columns else 'NULL::text AS sku')},
                               {('v.mrp' if 'mrp' in variant_columns else 'NULL::numeric AS mrp')},
