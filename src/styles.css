@@ -224,3 +224,11 @@ footer{background:#211331;color:#fff}
 .cart-total strong{font:800 20px Manrope}
 .cart-note{color:var(--muted);font-size:10px;line-height:1.7;margin:14px 0}
 @media(max-width:480px){.cart-modal{padding:20px}.cart-item{grid-template-columns:minmax(0,1fr) auto;gap:8px}.remove-item{grid-column:1/-1;justify-self:start;padding:4px 0}}
+
+/* Homepage merchandising and separate full-catalogue navigation */
+.main-nav{display:flex;align-items:center;gap:5px;flex-shrink:0}
+.main-nav button{border:1px solid transparent;border-radius:10px;padding:10px 12px;background:transparent;color:var(--muted);font-size:11px;font-weight:700;white-space:nowrap}
+.main-nav button:hover,.main-nav button.active{border-color:var(--line);background:var(--soft);color:var(--accent)}
+.discovery-empty{margin:0;padding:16px;border:1px dashed var(--line);border-radius:12px;color:var(--muted);font-size:11px;line-height:1.7}
+.primary-link[type=button]{font-family:inherit;cursor:pointer}
+@media(max-width:760px){.main-nav{order:3;width:100%;justify-content:center}.header-actions{margin-left:auto}.main-nav button{flex:1}}
