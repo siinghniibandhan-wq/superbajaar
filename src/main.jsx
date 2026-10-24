@@ -52,7 +52,9 @@ function variantLabel(variant) {
 
 function App() {
   const [theme] = useState('soft');
-  const [activePage, setActivePage] = useState('home');
+  const routeFromPath = () => { const path = window.location.pathname; if (path.startsWith('/product/')) return 'product'; if (path === '/shop' || path === '/catalogue') return 'shop'; return 'home'; };
+  const [activePage, setActivePage] = useState(routeFromPath);
+  const [routeProductId, setRouteProductId] = useState(() => window.location.pathname.startsWith('/product/') ? decodeURIComponent(window.location.pathname.split('/')[2] || '') : '');
   const [query, setQuery] = useState('');
   const [pincode, setPincode] = useState('');
   const [products, setProducts] = useState([]);
@@ -65,6 +67,7 @@ function App() {
   const [detail, setDetail] = useState(null);
   const [cart, setCart] = useState(() => { try { return JSON.parse(localStorage.getItem('sb-cart') || '[]'); } catch { return []; } });
   const [cartOpen, setCartOpen] = useState(false);
+  const [productQty, setProductQty] = useState(1);
   const [recentlyViewed, setRecentlyViewed] = useState(() => { try { return JSON.parse(localStorage.getItem('sb-recently-viewed') || '[]'); } catch { return []; } });
   const [brandFilter, setBrandFilter] = useState('');
 
@@ -118,6 +121,9 @@ function App() {
   }
 
   useEffect(() => { if (API_BASE) loadProducts('', ''); }, []);
+  useEffect(() => { const onPopState = () => { const path = window.location.pathname; setActivePage(path.startsWith('/product/') ? 'product' : (path === '/shop' || path === '/catalogue') ? 'shop' : 'home'); setRouteProductId(path.startsWith('/product/') ? decodeURIComponent(path.split('/')[2] || '') : ''); setDetail(null); window.scrollTo(0, 0); }; window.addEventListener('popstate', onPopState); return () => window.removeEventListener('popstate', onPopState); }, []);
+  function navigate(path, page, productId = '') { window.history.pushState({}, '', path); setActivePage(page); setRouteProductId(String(productId)); setDetail(null); window.scrollTo({ top: 0, behavior: 'auto' }); }
+  function goShop(search = '') { setQuery(search); setSelectedCategory('All'); setBrandFilter(''); navigate('/shop', 'shop'); loadProducts(search, pincode); }
   useEffect(() => { try { localStorage.setItem('sb-cart', JSON.stringify(cart)); } catch {} }, [cart]);
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const cartTotal = cart.reduce((sum, item) => sum + Number(item.price || 0) * item.quantity, 0);
@@ -129,7 +135,7 @@ function App() {
   }
   function changeCartQuantity(key, delta) { setCart(previous => previous.map(item => item.key === key ? { ...item, quantity: item.quantity + delta } : item).filter(item => item.quantity > 0)); }
   useEffect(() => { try { localStorage.setItem('sb-recently-viewed', JSON.stringify(recentlyViewed.slice(0, 12))); } catch {} }, [recentlyViewed]);
-  function openProduct(product) { setDetail(product); setRecentlyViewed(previous => [product.id, ...previous.filter(id => String(id) !== String(product.id))].slice(0, 12)); }
+  function openProduct(product) { setProductQty(1); setRecentlyViewed(previous => [product.id, ...previous.filter(id => String(id) !== String(product.id))].slice(0, 12)); navigate('/product/' + encodeURIComponent(product.id), 'product', product.id); }
   const recentlyViewedProducts = recentlyViewed.map(id => products.find(product => String(product.id) === String(id))).filter(Boolean);
   const bestsellerProducts = products.filter(product => product.isBestseller);
   const newArrivalProducts = products.filter(product => product.isNewArrival);
@@ -162,15 +168,19 @@ function App() {
   }
 
   const selectedVariant = product => product.variants.find(v => String(v.id) === String(selectedVariants[product.id])) || product.variants[0];
+  const routeProduct = products.find(product => String(product.id) === String(routeProductId)) || null;
+  const variantAttributes = variant => { const attrs = variant?.attributes; if (attrs && typeof attrs === 'object') return Object.entries(attrs).filter(([, value]) => value != null && String(value).trim()).map(([key, value]) => ({ key, value })); if (typeof attrs === 'string' && attrs.trim()) return attrs.split(/[;,|]/).map(part => { const [key, ...rest] = part.split(/[:=]/); return { key: rest.length ? key.trim() : 'Option', value: (rest.length ? rest.join(':') : key).trim() }; }).filter(item => item.value); return []; };
+  const currentVariant = routeProduct ? selectedVariant(routeProduct) : null;
+  const variantImage = currentVariant?.imageUrl || routeProduct?.variants.find(v => v.imageUrl)?.imageUrl || ''; 
 
   return <div className="app" data-theme={theme}>
     <div className="announcement"><span className="announcement-dot" /> Everyday essentials, all in one place <span className="announcement-note">Your Everyday Super Store</span></div>
     <header className="header">
-      <a className="brand" href="#home" aria-label="Super Bajaar home" onClick={e => { e.preventDefault(); setActivePage('home'); window.scrollTo({top:0,behavior:'smooth'}); }}>
+      <a className="brand" href="#home" aria-label="Super Bajaar home" onClick={e => { e.preventDefault(); navigate('/', 'home'); }}>
         <span className="brand-mark" aria-hidden="true"><svg viewBox="0 0 48 48" focusable="false" aria-hidden="true"><defs><linearGradient id="sbBagGradient" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#5420d4"/><stop offset="55%" stopColor="#8129db"/><stop offset="100%" stopColor="#ff8739"/></linearGradient></defs><path d="M18 15V12a6 6 0 0 1 12 0v4" fill="none" stroke="#7fc4ff" strokeWidth="3.6" strokeLinecap="round"/><rect x="7" y="15" width="34" height="29" rx="7" fill="url(#sbBagGradient)"/><path d="M14 22c.7 6.2 4.7 10 10 10s9.3-3.8 10-10" fill="none" stroke="#fff" strokeWidth="3.2" strokeLinecap="round"/></svg></span>
         <span className="brand-word">Super <span>Bajaar</span><small>Your Everyday Super Store</small></span>
       </a>
-      <form className="search" role="search" onSubmit={e => { e.preventDefault(); setActivePage('shop'); loadProducts(query, pincode); }}>
+      <form className="search" role="search" onSubmit={e => { e.preventDefault(); goShop(query); }}>
         <span className="search-icon" aria-hidden="true">⌕</span>
         <input aria-label="Search products" placeholder="Search products, brands or SKU" value={query} onChange={e => setQuery(e.target.value)} />
         {query && <button className="clear-search" type="button" aria-label="Clear search" onClick={() => setQuery('')}>×</button>}
@@ -197,6 +207,7 @@ function App() {
           <button type="button" className="category-image-card" key={category.name} onClick={() => {
             setActivePage('shop');
             const match = categories.find(existing => category.terms.some(term => existing.toLowerCase().includes(term)));
+            navigate('/shop', 'shop');
             if (match) {
               setSelectedCategory(match);
               setQuery('');
@@ -216,13 +227,13 @@ function App() {
       </div>
     </nav>
 
-    <main>
-      <section className="hero">
+    {activePage !== 'product' && <main>
+      {activePage === 'home' && <section className="hero">
         <div className="hero-copy">
           <div className="hero-kicker"><span>THE EVERYDAY EDIT</span><i /></div>
           <h1>Good finds.<br /><span>Better everyday.</span></h1>
           <p>Discover your everyday favourites with a simpler, brighter shopping experience. Prices and availability come from the live catalogue.</p>
-          <button type="button" className="primary-link" onClick={() => { setActivePage('shop'); document.getElementById('catalogue')?.scrollIntoView({behavior:'smooth'}); }}>Explore the catalogue <span aria-hidden="true">↗</span></button>
+          <button type="button" className="primary-link" onClick={() => goShop('')}>Explore the catalogue <span aria-hidden="true">↗</span></button>
           <div className="hero-proof"><span>✦ Thoughtful essentials</span><span>✓ Real catalogue data</span></div>
         </div>
         <div className="hero-art" aria-hidden="true">
@@ -231,9 +242,9 @@ function App() {
           <div className="floating-note"><span>YOUR DAY,</span><b>made easier.</b><small>Everyday shopping, simplified.</small></div>
           <div className="sparkle sparkle-one">✦</div><div className="sparkle sparkle-two">✳</div>
         </div>
-      </section>
+      </section>}
 
-      <section className="service-card" aria-labelledby="service-title">
+      {activePage === 'home' && <section className="service-card" aria-labelledby="service-title">
         <div className="service-icon" aria-hidden="true">⌖</div>
         <div className="service-copy"><h2 id="service-title">Shopping in your area?</h2><p>Check delivery availability for your PIN code.</p></div>
         <form onSubmit={checkServiceability} className="service-form">
@@ -241,10 +252,10 @@ function App() {
           <input inputMode="numeric" autoComplete="postal-code" aria-label="6-digit PIN code" maxLength={6} placeholder="Enter 6-digit PIN" value={pincode} onChange={e => setPincode(e.target.value.replace(/\D/g, ''))} />
           <button type="submit">Check availability</button>
         </form>
-      </section>
+      </section>}
       {notice && <div className="notice" role="status"><span>ⓘ</span><p>{notice}</p><button aria-label="Dismiss message" onClick={() => setNotice('')}>×</button></div>}
 
-      <section id="catalogue" className="catalogue">
+      <section id="catalogue" className="catalogue" style={{display: activePage === 'product' ? 'none' : undefined}}>
         <div className="section-heading">
           <div><p className="eyebrow">{activePage === 'home' ? 'PICKED FOR EVERYDAY' : 'THE FULL COLLECTION'}</p><h2>{activePage === 'home' ? 'Discover your favourites' : 'Shop all products'}<span>.</span></h2><p>{activePage === 'home' ? 'Bestsellers, new arrivals and products you recently viewed.' : 'Browse the complete live catalogue and choose the variant that suits you.'}</p></div>
           <div className="heading-tools">
@@ -338,11 +349,11 @@ function App() {
             const variant = selectedVariant(product);
             return <article className="product-card" key={product.id}>
               <button className="product-image" onClick={() => openProduct(product)} aria-label={`View details for ${product.name}`}>
-                <span className="image-monogram">SB<span>✦</span></span><span className="image-caption">{product.category}</span>
+                {variant.imageUrl ? <img src={variant.imageUrl} alt={product.name} loading="lazy" /> : <span className="image-monogram">SB<span>✦</span></span>}<span className="image-caption">{product.category}</span>
               </button>
               <div className="product-info">
                 <div className="product-meta"><span>{product.brand || product.category}</span>{variant.stock > 0 && <span className="stock-badge">In stock</span>}</div>
-                <button className="product-title" onClick={() => setDetail(product)}>{product.name}</button>
+                <button className="product-title" onClick={() => openProduct(product)}>{product.name}</button>
                 {product.variants.length > 1 && <label className="variant-select">Choose option
                   <select aria-label={`Choose variant for ${product.name}`} value={String(variant.id)} onChange={e => setSelectedVariants(prev => ({ ...prev, [product.id]: e.target.value }))}>
                     {product.variants.map(v => <option key={v.id} value={String(v.id)}>{variantLabel(v)}</option>)}
@@ -350,7 +361,7 @@ function App() {
                 </label>}
                 <div className="product-price"><strong>{money(variant.price, variant.currency)}</strong>{variant.mrp != null && Number(variant.mrp) > Number(variant.price) && <del>{money(variant.mrp, variant.currency)}</del>}</div>{variant.lowest30 != null && <div className="price-history">Lowest selling price · 30 days: <b>{money(variant.lowest30, variant.currency)}</b></div>}
                 <div className="product-stock">{variant.stock > 0 ? `${variant.stock} available` : 'Availability not confirmed'}</div>
-                <button className="add-cart-button" onClick={() => addToCart(product, variant)}>＋ Add to bag</button><button className="details-button" onClick={() => setDetail(product)}>View details <span>↗</span></button>
+                <button className="add-cart-button" onClick={() => addToCart(product, variant)}>＋ Add to bag</button><button className="details-button" onClick={() => openProduct(product)}>View details <span>↗</span></button>
               </div>
             </article>;
           })}
@@ -358,17 +369,17 @@ function App() {
         {activePage === 'shop' && products.length > 0 && <p className="catalogue-footnote">Showing real catalogue records only. Price and availability are subject to backend confirmation.</p>}
       </section>
 
-      <section className="promise-grid" aria-label="Shopping principles">
+      {activePage === 'home' && <section className="promise-grid" aria-label="Shopping principles">
         <div><span className="promise-icon">✦</span><div><b>Everyday essentials</b><p>A considered catalogue for the things you need.</p></div></div>
         <div><span className="promise-icon">⌖</span><div><b>Local availability</b><p>Delivery checks rely on actual service-area data.</p></div></div>
         <div><span className="promise-icon">✓</span><div><b>Clear product details</b><p>Prices and stock are sourced from the backend.</p></div></div>
-      </section>
-    </main>
+      </section>}
+    </main>}
 
     <footer className="site-footer">
       <div className="footer-main">
         <div className="footer-brand-column">
-          <a className="brand footer-brand" href="#home" aria-label="Super Bajaar home" onClick={e => { e.preventDefault(); setActivePage('home'); window.scrollTo({top:0,behavior:'smooth'}); }}>
+          <a className="brand footer-brand" href="#home" aria-label="Super Bajaar home" onClick={e => { e.preventDefault(); navigate('/', 'home'); }}>
             <span className="brand-mark" aria-hidden="true"><svg viewBox="0 0 48 48" focusable="false" aria-hidden="true"><defs><linearGradient id="sbBagGradient" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#5420d4"/><stop offset="55%" stopColor="#8129db"/><stop offset="100%" stopColor="#ff8739"/></linearGradient></defs><path d="M18 15V12a6 6 0 0 1 12 0v4" fill="none" stroke="#7fc4ff" strokeWidth="3.6" strokeLinecap="round"/><rect x="7" y="15" width="34" height="29" rx="7" fill="url(#sbBagGradient)"/><path d="M14 22c.7 6.2 4.7 10 10 10s9.3-3.8 10-10" fill="none" stroke="#fff" strokeWidth="3.2" strokeLinecap="round"/></svg></span>
             <span className="brand-word">Super <span>Bajaar</span><small>Your Everyday Super Store</small></span>
           </a>
@@ -377,7 +388,7 @@ function App() {
         <div className="footer-links">
           <div><h3>Shop</h3>
             <button onClick={() => { setActivePage('home'); window.scrollTo({top:0,behavior:'smooth'}); }}>Home</button>
-            <button onClick={() => { setActivePage('shop'); loadProducts('', pincode); window.scrollTo({top:0,behavior:'smooth'}); }}>Shop all products</button>
+            <button onClick={() => { goShop(''); }}>Shop all products</button>
             <button onClick={() => { setCartOpen(true); window.scrollTo({top:0,behavior:'smooth'}); }}>Shopping bag ({cartCount})</button>
           </div>
           <div><h3>Customer help</h3>
@@ -392,19 +403,37 @@ function App() {
       <div className="footer-bottom"><span>© {new Date().getFullYear()} Super Bajaar. All rights reserved.</span><span>Your Everyday Super Store</span><span>Made for everyday living <b>✦</b></span></div>
     </footer>
 
-    {detail && <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setDetail(null); }}>
-      <section className="detail-modal" role="dialog" aria-modal="true" aria-labelledby="detail-title">
-        <button className="modal-close" aria-label="Close product details" onClick={() => setDetail(null)}>×</button>
-        <div className="detail-art"><span className="image-monogram">SB<span>✦</span></span></div>
-        <div className="detail-copy"><p className="eyebrow">{detail.category}</p><h2 id="detail-title">{detail.name}</h2>{detail.brand && <p className="detail-brand">{detail.brand}</p>}
-          <p className="detail-description">{detail.description || 'Product details will be shown here when provided by the live catalogue.'}</p>
-          {detail.variants.length > 1 && <label className="variant-select">Choose option<select value={String(selectedVariant(detail).id)} onChange={e => setSelectedVariants(prev => ({ ...prev, [detail.id]: e.target.value }))}>{detail.variants.map(v => <option key={v.id} value={String(v.id)}>{variantLabel(v)}</option>)}</select></label>}
-          <div className="detail-price">{money(selectedVariant(detail).price, selectedVariant(detail).currency)}</div><p className="detail-sku">SKU: {selectedVariant(detail).sku || 'Not provided'} · Stock: {selectedVariant(detail).stock > 0 ? selectedVariant(detail).stock : 'Not confirmed'}</p>
-          <div className="detail-notice">Cart and checkout will be enabled when the corresponding backend APIs are available.</div>
-          <button className="primary-link button-link" onClick={() => { setDetail(null); setActivePage('shop'); }}>Continue shopping <span>↗</span></button>
-        </div>
-      </section>
-    </div>}
+    {activePage === 'product' && (
+      <main className="product-page">
+        {!routeProduct ? <section className="catalogue-state"><h2>Product not found</h2><p>This product is not in the current catalogue results.</p><button className="primary-link button-link" onClick={() => goShop('')}>Back to shop <span>↗</span></button></section> : (() => {
+          const product = routeProduct; const variant = currentVariant; const attributes = variantAttributes(variant);
+          const optionGroups = attributes.reduce((groups, attr) => { const key = attr.key.toLowerCase(); if (!groups[key]) groups[key] = { label: attr.key, options: [] }; if (!groups[key].options.some(v => String(v.value) === String(attr.value))) groups[key].options.push({ value: attr.value, variantId: variant.id }); return groups; }, {});
+          return <div className="product-detail-layout">
+            <div className="product-detail-gallery">
+              <div className="product-main-image">{variantImage ? <img src={variantImage} alt={product.name} /> : <div className="image-monogram">SB<span>✦</span></div>}</div>
+              <div className="product-gallery-note">{variantImage ? 'Product image' : 'Product image not supplied by catalogue'}</div>
+            </div>
+            <section className="product-detail-info">
+              <button className="product-back-link" onClick={() => goShop('')}>← Back to shop</button>
+              <p className="eyebrow">{product.category}</p><h1>{product.name}</h1>
+              {product.brand && <p className="product-detail-brand">Brand: <strong>{product.brand}</strong></p>}
+              <div className="product-detail-price"><strong>{money(variant?.price, variant?.currency)}</strong>{variant?.mrp != null && Number(variant.mrp)>Number(variant.price) && <del>{money(variant.mrp,variant.currency)}</del>}</div>
+              {variant?.lowest30 != null && <p className="price-history">Lowest selling price · 30 days: <b>{money(variant.lowest30,variant.currency)}</b></p>}
+              <p className="product-detail-stock">{variant?.stock > 0 ? 'In stock · ' + variant.stock + ' available' : 'Availability not confirmed'}</p>
+              {product.variants.length > 1 && <label className="product-variant-select">Choose variant
+                <select aria-label="Choose product variant" value={String(variant.id)} onChange={e => setSelectedVariants(prev => ({...prev,[product.id]:e.target.value}))}>
+                  {product.variants.map(v => <option key={v.id} value={String(v.id)}>{variantLabel(v)}</option>)}
+                </select>
+              </label>}
+              {attributes.length > 0 && <div className="product-attributes"><h2>Product options</h2>{attributes.map((attr,i)=><div className="product-attribute-row" key={attr.key+'-'+i}><span>{attr.key}</span><strong>{attr.value}</strong></div>)}</div>}
+              <div className="product-quantity-control"><span>Quantity</span><div><button type="button" onClick={() => setProductQty(q=>Math.max(1,q-1))} aria-label="Decrease quantity">−</button><strong>{productQty}</strong><button type="button" onClick={() => setProductQty(q=>Math.min(99,q+1))} aria-label="Increase quantity">＋</button></div></div>
+              <button className="add-cart-button product-add-button" onClick={() => { for(let i=0;i<productQty;i++) addToCart(product,variant); }}>＋ Add to bag</button>
+              <section className="product-description"><h2>Product details</h2><p>{product.description || 'Detailed product information has not been provided in the live catalogue yet.'}</p><div className="product-detail-facts"><div><span>Category</span><strong>{product.category || 'Not provided'}</strong></div><div><span>SKU</span><strong>{variant?.sku || 'Not provided'}</strong></div><div><span>Brand</span><strong>{product.brand || 'Not provided'}</strong></div>{attributes.map((attr,i)=><div key={attr.key+'-fact-'+i}><span>{attr.key}</span><strong>{attr.value}</strong></div>)}</div></section>
+            </section>
+          </div>;
+        })()}
+      </main>
+    )}
     {cartOpen && <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setCartOpen(false); }}>
       <section className="cart-modal" role="dialog" aria-modal="true" aria-labelledby="cart-title">
         <button className="modal-close" aria-label="Close bag" onClick={() => setCartOpen(false)}>×</button>
