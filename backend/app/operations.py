@@ -379,12 +379,18 @@ def stock_movement(body: StockInput, authorization: str | None = Header(default=
             with conn.transaction():
                 if not conn.execute("SELECT id FROM product_variants WHERE id=%s",(body.variant_id,)).fetchone():
                     raise HTTPException(status_code=404,detail="Product variant not found")
+                # Ensure a row exists before locking it. SELECT ... FOR UPDATE does not
+                # lock a missing row, so concurrent first movements could otherwise
+                # both read zero and overwrite each other's stock balance.
+                conn.execute("""INSERT INTO sb_stock(variant_id,warehouse,quantity)
+                    VALUES(%s,%s,0) ON CONFLICT(variant_id,warehouse) DO NOTHING""",
+                    (body.variant_id,body.warehouse))
                 current=conn.execute("SELECT quantity FROM sb_stock WHERE variant_id=%s AND warehouse=%s FOR UPDATE",(body.variant_id,body.warehouse)).fetchone()
-                old=Decimal(str(current["quantity"])) if current else Decimal("0")
+                old=Decimal(str(current["quantity"]))
                 delta=body.quantity if body.movement_type in {"opening","adjustment_in","return_in","transfer_in"} else -body.quantity
                 if old+delta<0: raise HTTPException(status_code=422,detail="Insufficient stock for this movement")
-                conn.execute("""INSERT INTO sb_stock(variant_id,warehouse,quantity) VALUES(%s,%s,%s)
-                    ON CONFLICT(variant_id,warehouse) DO UPDATE SET quantity=EXCLUDED.quantity,updated_at=now()""",(body.variant_id,body.warehouse,old+delta))
+                conn.execute("""UPDATE sb_stock SET quantity=%s,updated_at=now()
+                    WHERE variant_id=%s AND warehouse=%s""",(old+delta,body.variant_id,body.warehouse))
                 row=conn.execute("""INSERT INTO sb_stock_movements(variant_id,warehouse,movement_type,quantity,note,created_by)
                     VALUES(%s,%s,%s,%s,%s,%s) RETURNING *""",(body.variant_id,body.warehouse,body.movement_type,body.quantity,body.note.strip() or None,user["id"])).fetchone()
                 return {"movement":row,"balance":old+delta}
