@@ -489,7 +489,7 @@ def pos_sale(body:POSInput,authorization:str|None=Header(default=None))->dict[st
                             if program["expiry_days"] is not None:
                                 expiry=conn.execute("SELECT now() + (%s * interval '1 day') AS value",(program["expiry_days"],)).fetchone()["value"]
                             loyalty_award=post_loyalty(conn,int(body.customer_id),"earn",coins,"Super Coins earned for POS receipt "+receipt,order_id=int(sale["id"]),key="pos:"+str(sale["id"])+":earn",expires_at=expiry)
-                return {"sale":sale,"receipt_number":receipt,"journal_id":journal_id,"message":"POS sale saved, inventory deducted and accounting journal posted atomically."}
+                return {"sale":sale,"receipt_number":receipt,"journal_id":journal_id,"loyalty_award":loyalty_award,"message":"POS sale saved, inventory deducted and accounting journal posted atomically."}
     except HTTPException: raise
     except Exception as exc: raise HTTPException(status_code=503,detail="POS sale could not be completed") from exc
 
