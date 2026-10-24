@@ -42,6 +42,16 @@ def _ensure(conn: Any) -> None:
         coins BIGINT NOT NULL CHECK(coins>0), balance_after BIGINT NOT NULL CHECK(balance_after>=0),
         order_id BIGINT, description TEXT NOT NULL, expires_at TIMESTAMPTZ,
         idempotency_key TEXT UNIQUE, created_by BIGINT, created_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS sb_loyalty_lots (
+        id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+        source_transaction_id BIGINT UNIQUE REFERENCES sb_loyalty_transactions(id) ON DELETE CASCADE,
+        original_coins BIGINT NOT NULL CHECK(original_coins>0), remaining_coins BIGINT NOT NULL CHECK(remaining_coins>=0),
+        expires_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS sb_loyalty_lots_legacy_user_uq ON sb_loyalty_lots(user_id) WHERE source_transaction_id IS NULL")
+    conn.execute("""INSERT INTO sb_loyalty_lots(user_id,source_transaction_id,original_coins,remaining_coins)
+        SELECT w.user_id,NULL,w.balance,w.balance FROM sb_loyalty_wallets w
+        WHERE w.balance>0 AND NOT EXISTS(SELECT 1 FROM sb_loyalty_lots l WHERE l.user_id=w.user_id)
+        ON CONFLICT DO NOTHING""")
     conn.execute("""CREATE TABLE IF NOT EXISTS sb_loyalty_tiers (
         id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL UNIQUE, min_lifetime_earned BIGINT NOT NULL DEFAULT 0 CHECK(min_lifetime_earned>=0),
         earn_multiplier NUMERIC(6,3) NOT NULL DEFAULT 1 CHECK(earn_multiplier>=0), benefits JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -73,6 +83,30 @@ def _tier(conn: Any, lifetime: int) -> dict[str, Any]:
     return row or {"name":"Member","earn_multiplier":Decimal("1"),"benefits":[]}
 
 
+
+def _expire_due(conn: Any, user_id: int) -> int:
+    lots=conn.execute("""SELECT id,remaining_coins FROM sb_loyalty_lots
+        WHERE user_id=%s AND expires_at IS NOT NULL AND expires_at<=now() AND remaining_coins>0
+        ORDER BY expires_at,id FOR UPDATE""",(user_id,)).fetchall()
+    if not lots:
+        return 0
+    wallet=conn.execute("SELECT balance FROM sb_loyalty_wallets WHERE user_id=%s FOR UPDATE",(user_id,)).fetchone()
+    if not wallet:
+        return 0
+    balance=int(wallet["balance"])
+    expired_total=0
+    for lot in lots:
+        amount=int(lot["remaining_coins"])
+        balance=max(0,balance-amount)
+        expired_total+=amount
+        conn.execute("UPDATE sb_loyalty_lots SET remaining_coins=0 WHERE id=%s",(lot["id"],))
+        conn.execute("""INSERT INTO sb_loyalty_transactions(user_id,kind,coins,balance_after,description,idempotency_key)
+            VALUES(%s,'expiry',%s,%s,'Expired Super Coins',%s) ON CONFLICT(idempotency_key) DO NOTHING""",
+            (user_id,amount,balance,"expiry:lot:"+str(lot["id"])))
+    conn.execute("UPDATE sb_loyalty_wallets SET balance=%s,updated_at=now() WHERE user_id=%s",(balance,user_id))
+    return expired_total
+
+
 def _post(conn: Any, user_id: int, kind: str, coins: int, description: str, *,
           order_id: int | None = None, key: str | None = None, expires_at: Any = None, created_by: int | None = None) -> dict[str, Any]:
     if coins <= 0:
@@ -82,8 +116,10 @@ def _post(conn: Any, user_id: int, kind: str, coins: int, description: str, *,
         if old:
             wallet=conn.execute("SELECT * FROM sb_loyalty_wallets WHERE user_id=%s",(user_id,)).fetchone()
             return {"transaction":old,"wallet":wallet,"duplicate":True}
-    wallet=_wallet(conn,user_id)
     signed=coins if kind in ("earn","welcome","referral","admin_adjustment") and not description.startswith("DEBIT:") else -coins
+    if signed<0 and kind!="expiry":
+        _expire_due(conn,user_id)
+    wallet=_wallet(conn,user_id)
     if signed<0 and wallet["balance"]<coins:
         raise HTTPException(status_code=422,detail="Not enough Super Coins in your wallet")
     new_balance=int(wallet["balance"])+signed
@@ -95,6 +131,18 @@ def _post(conn: Any, user_id: int, kind: str, coins: int, description: str, *,
     tx=conn.execute("""INSERT INTO sb_loyalty_transactions(user_id,kind,coins,balance_after,order_id,description,expires_at,idempotency_key,created_by)
         VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
         (user_id,kind,coins,new_balance,order_id,description.replace("DEBIT:","",1),expires_at,key,created_by)).fetchone()
+    if signed>0:
+        conn.execute("""INSERT INTO sb_loyalty_lots(user_id,source_transaction_id,original_coins,remaining_coins,expires_at)
+            VALUES(%s,%s,%s,%s,%s) ON CONFLICT(source_transaction_id) DO NOTHING""",(user_id,tx["id"],coins,coins,expires_at))
+    else:
+        remaining=coins
+        lots=conn.execute("""SELECT id,remaining_coins FROM sb_loyalty_lots WHERE user_id=%s AND remaining_coins>0
+            ORDER BY expires_at ASC NULLS LAST,created_at,id FOR UPDATE""",(user_id,)).fetchall()
+        for lot in lots:
+            if remaining<=0: break
+            used=min(remaining,int(lot["remaining_coins"]))
+            conn.execute("UPDATE sb_loyalty_lots SET remaining_coins=remaining_coins-%s WHERE id=%s",(used,lot["id"]))
+            remaining-=used
     return {"transaction":tx,"wallet":conn.execute("SELECT * FROM sb_loyalty_wallets WHERE user_id=%s",(user_id,)).fetchone(),"duplicate":False}
 
 
@@ -159,6 +207,7 @@ def my_wallet(authorization: str | None = Header(default=None)) -> dict[str, Any
         with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
             _ensure(conn)
             with conn.transaction():
+                _expire_due(conn,int(user["id"]))
                 wallet=_wallet(conn,int(user["id"]))
                 program=_program(conn)
                 tier=_tier(conn,int(wallet["lifetime_earned"]))
