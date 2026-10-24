@@ -569,7 +569,7 @@ def update_shipment(shipment_id:int,body:ShipmentUpdate,authorization:str|None=H
                             if cogs: journal_lines.extend([("cost_of_goods_sold",cogs,Decimal("0")),("inventory",Decimal("0"),cogs)])
                             journal_id=_post_journal(conn,date.today(),order["order_number"],"Website sale "+order["order_number"],"website",order["id"],journal_lines,user["id"])
                             from .loyalty import award_order_coins
-                            award_order_coins(conn,int(order["user_id"]),int(order["id"]),subtotal,total)
+                            award_order_coins(conn,int(order["user_id"]),int(order["id"]),subtotal-discount,total)
                 return {"shipment":row,"linked_order_status":target if shipment["order_type"]=="website" else None,"journal_id":journal_id}
     except HTTPException: raise
     except Exception as exc: raise HTTPException(status_code=503,detail="Shipment could not be updated") from exc
