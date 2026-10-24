@@ -221,6 +221,49 @@ function App() {
   }
 
   useEffect(() => { if (API_BASE) loadProducts('', ''); }, []);
+
+  // Keep the live storefront in sync with products published by the admin/Odoo-connected
+  // catalogue. Refresh every two minutes and when a visitor returns to the tab.
+  useEffect(() => {
+    if (!API_BASE) return undefined;
+    let inFlight = false;
+    const refreshPublishedProducts = async () => {
+      if (inFlight || document.visibilityState === 'hidden') return;
+      inFlight = true;
+      try {
+        const response = await fetch(endpoint('/products?limit=100'), {
+          headers: { Accept: 'application/json' },
+          cache: 'no-store'
+        });
+        if (!response.ok) return;
+        const payload = await response.json();
+        const next = normaliseProducts(payload);
+        setProducts(next);
+        setSelectedVariants(previous => {
+          const updated = { ...previous };
+          for (const product of next) {
+            const current = updated[product.id];
+            const stillExists = product.variants.some(variant => String(variant.id) === String(current));
+            if ((!current || !stillExists) && product.variants[0]) updated[product.id] = String(product.variants[0].id);
+          }
+          return updated;
+        });
+        setApiState('connected');
+      } catch {
+        // Preserve the last successful catalogue during temporary network failures.
+      } finally {
+        inFlight = false;
+      }
+    };
+    const timer = window.setInterval(refreshPublishedProducts, 120000);
+    document.addEventListener('visibilitychange', refreshPublishedProducts);
+    window.addEventListener('focus', refreshPublishedProducts);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refreshPublishedProducts);
+      window.removeEventListener('focus', refreshPublishedProducts);
+    };
+  }, []);
   useEffect(() => { const onPopState = () => { const path = window.location.pathname; setActivePage(path.startsWith('/product/') ? 'product' : (path === '/shop' || path === '/catalogue') ? 'shop' : 'home'); setRouteProductId(path.startsWith('/product/') ? decodeURIComponent(path.split('/')[2] || '') : ''); setDetail(null); window.scrollTo(0, 0); }; window.addEventListener('popstate', onPopState); return () => window.removeEventListener('popstate', onPopState); }, []);
   function navigate(path, page, productId = '') { window.history.pushState({}, '', path); setActivePage(page); setRouteProductId(String(productId)); setDetail(null); window.scrollTo({ top: 0, behavior: 'auto' }); }
   function goShop(search = '') { setQuery(search); setSelectedCategory('All'); setBrandFilter(''); navigate('/shop', 'shop'); loadProducts(search, pincode); }
