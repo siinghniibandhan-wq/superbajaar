@@ -471,6 +471,18 @@ class ProductReviewInput(BaseModel):
     rating: int = Field(ge=1, le=5)
     review_text: str = Field(min_length=3, max_length=2000)
 
+    @field_validator("reviewer_name", "review_text")
+    @classmethod
+    def strip_review_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("This field cannot be blank")
+        return value
+
+
+class ProductReviewModeration(BaseModel):
+    status: Literal["approved", "rejected"]
+
 
 @app.get("/api/products/{product_id}/reviews")
 def list_product_reviews(product_id: int) -> dict[str, Any]:
@@ -523,6 +535,53 @@ def submit_product_review(product_id: int, review: ProductReviewInput) -> dict[s
         logger.exception("Could not save product review")
         raise HTTPException(status_code=503, detail="Review submission failed")
     return {"message": "Thank you. Your review was submitted for moderation."}
+
+
+@app.get("/api/admin/reviews")
+def admin_list_reviews(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    require_admin(authorization)
+    db = get_pool()
+    try:
+        with db.connection() as conn:
+            exists = conn.execute("SELECT to_regclass('public.product_reviews') AS table_name").fetchone()["table_name"] is not None
+            if not exists:
+                return {"items": [], "message": "Review schema is not installed yet"}
+            rows = conn.execute(
+                """SELECT pr.id, pr.product_id, p.name AS product_name, pr.reviewer_name,
+                          pr.rating, pr.review_text, pr.status, pr.created_at
+                   FROM product_reviews pr JOIN products p ON p.id = pr.product_id
+                   ORDER BY CASE pr.status WHEN 'pending' THEN 0 ELSE 1 END, pr.created_at DESC
+                   LIMIT 500"""
+            ).fetchall()
+    except Exception:
+        logger.exception("Admin review list failed")
+        raise HTTPException(status_code=503, detail="Reviews are temporarily unavailable")
+    return {"items": json_safe(rows)}
+
+
+@app.patch("/api/admin/reviews/{review_id}")
+def admin_moderate_review(
+    review_id: int,
+    moderation: ProductReviewModeration,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    require_admin(authorization)
+    db = get_pool()
+    try:
+        with db.connection() as conn:
+            with conn.transaction():
+                row = conn.execute(
+                    "UPDATE product_reviews SET status = %s, moderated_at = now() WHERE id = %s RETURNING id, status",
+                    [moderation.status, review_id],
+                ).fetchone()
+                if row is None:
+                    raise HTTPException(status_code=404, detail="Review not found")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Review moderation failed")
+        raise HTTPException(status_code=503, detail="Could not update review status")
+    return {"review_id": row["id"], "status": row["status"], "message": "Review status updated"}
 
 
 @app.get("/api/serviceability")
