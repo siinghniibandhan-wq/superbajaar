@@ -149,7 +149,7 @@ def review_needs_moderation(text: str) -> bool:
     words = tuple(word.strip().casefold() for word in configured.split(",") if word.strip()) if configured else DEFAULT_REVIEW_FLAG_WORDS
     lowered = text.casefold()
     import re
-    return any(re.search(r"(?<!\\w)" + re.escape(word) + r"(?!\\w)", lowered) for word in words)
+    return any(re.search(r"(?<!\w)" + re.escape(word) + r"(?!\w)", lowered) for word in words)
 
 
 class ProductReviewInput(BaseModel):
