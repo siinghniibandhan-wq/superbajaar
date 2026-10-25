@@ -36,7 +36,7 @@ def _ensure_commerce_schema(conn: Any) -> None:
             source_channel TEXT NOT NULL DEFAULT 'website' CHECK (source_channel IN ('website','pos')),
             user_id BIGINT NOT NULL REFERENCES app_users(id),
             status TEXT NOT NULL DEFAULT 'placed'
-                CHECK (status IN ('placed','confirmed','processing','packed','shipped','delivered','cancelled')),
+                CHECK (status IN ('placed','confirmed','processing','packed','picked','in_transit','out_for_delivery','shipped','delivered','cancelled')),
             payment_method TEXT NOT NULL CHECK (payment_method IN ('cash_on_delivery')),
             payment_status TEXT NOT NULL DEFAULT 'pending'
                 CHECK (payment_status IN ('pending','paid','failed','refunded')),
@@ -50,6 +50,9 @@ def _ensure_commerce_schema(conn: Any) -> None:
             updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
         )
     """)
+    conn.execute("ALTER TABLE store_orders DROP CONSTRAINT IF EXISTS store_orders_status_check")
+    conn.execute("""ALTER TABLE store_orders ADD CONSTRAINT store_orders_status_check
+        CHECK (status IN ('placed','confirmed','processing','packed','picked','in_transit','out_for_delivery','shipped','delivered','cancelled'))""")
     conn.execute("ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS invoice_number TEXT")
     conn.execute("ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS source_channel TEXT NOT NULL DEFAULT 'website'")
     conn.execute("UPDATE store_orders SET invoice_number = 'INV-' || order_number WHERE invoice_number IS NULL")
@@ -423,7 +426,7 @@ def list_my_orders(authorization: str | None = Header(default=None)) -> dict[str
 def list_admin_orders(
     authorization: str | None = Header(default=None),
     search: str = Query(default="", max_length=100),
-    status: str = Query(default="", pattern=r"^(|placed|confirmed|processing|packed|shipped|delivered|cancelled)$"),
+    status: str = Query(default="", pattern=r"^(|placed|confirmed|processing|packed|picked|in_transit|out_for_delivery|shipped|delivered|cancelled)$"),
 ) -> dict[str, Any]:
     _require(authorization, {"super_admin", "admin", "staff"})
     try:
@@ -458,7 +461,7 @@ def update_admin_order(
     authorization: str | None = Header(default=None)
 ) -> dict[str, Any]:
     actor = _require(authorization, {"super_admin", "admin"})
-    allowed = {"confirmed", "processing", "packed", "shipped", "delivered", "cancelled"}
+    allowed = {"confirmed", "processing", "packed", "picked", "in_transit", "out_for_delivery", "shipped", "delivered", "cancelled"}
     if body.status not in allowed:
         raise HTTPException(status_code=422, detail="Invalid order status transition.")
     try:
@@ -467,6 +470,18 @@ def update_admin_order(
             previous = conn.execute("SELECT id,invoice_number,status FROM store_orders WHERE id=%s FOR UPDATE", (order_id,)).fetchone()
             if not previous or previous["status"] in {"cancelled", "delivered"}:
                 raise HTTPException(status_code=404, detail="Order not found or already closed.")
+            transitions = {
+                "placed": {"confirmed", "cancelled"},
+                "confirmed": {"processing", "cancelled"},
+                "processing": {"packed", "cancelled"},
+                "packed": {"picked", "cancelled"},
+                "picked": {"in_transit"},
+                "in_transit": {"out_for_delivery", "shipped"},
+                "shipped": {"out_for_delivery", "delivered"},
+                "out_for_delivery": {"delivered"},
+            }
+            if body.status not in transitions.get(previous["status"], set()):
+                raise HTTPException(status_code=409, detail=f"Cannot move order from {previous['status']} to {body.status}; use reverse logistics after dispatch.")
             row = conn.execute("UPDATE store_orders SET status=%s,updated_at=now() WHERE id=%s RETURNING id", (body.status, order_id)).fetchone()
             conn.execute("""INSERT INTO document_events
                 (document_type,document_id,reference,event_type,from_status,to_status,actor_id)
