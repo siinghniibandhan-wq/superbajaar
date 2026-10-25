@@ -485,8 +485,9 @@ def update_catalogue_product(
             if not product_columns or not variant_columns:
                 raise HTTPException(status_code=503, detail="The existing catalogue schema is unavailable.")
             product_values = {"name": body.name.strip(), "brand": body.brand.strip(),
-                              "description": body.description.strip(), "category_id": body.category_id,
-                              "status": body.status}
+                              "description": body.description.strip(), "specifications": Jsonb(body.specifications),
+                              "manufacturer_details": Jsonb(body.manufacturer_details), "seller_details": Jsonb(body.seller_details),
+                              "category_id": body.category_id, "status": body.status}
             product_values = {k: v for k, v in product_values.items() if k in product_columns}
             if not product_values:
                 raise HTTPException(status_code=503, detail="The product schema has no editable fields.")
