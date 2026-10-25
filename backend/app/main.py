@@ -535,7 +535,10 @@ class ProductWriteInput(BaseModel):
     seller_details: list[dict[str, str]] = Field(default_factory=list, max_length=100)
     category_id: int | None = Field(default=None, gt=0)
     sku: str = Field(default="", max_length=120)
-    image_url: str = Field(default="", max_length=2000)
+    # Image data URLs for 4 MB uploads are much longer than ordinary HTTP URLs.
+    image_url: str = Field(default="", max_length=6000000)
+    # When editing a product row, target the selected variant instead of silently changing the first one.
+    variant_id: int | None = Field(default=None, gt=0)
     status: str = Field(default="active", pattern="^(active|inactive|draft)$")
 
 
@@ -641,14 +644,23 @@ def update_catalogue_product(
                               "sku": body.sku.strip() or None, "image_url": body.image_url.strip() or None,
                               "status": body.status}
             variant_values = {k: v for k, v in variant_values.items() if k in variant_columns and v is not None}
-            variant = conn.execute(
-                "SELECT id FROM product_variants WHERE product_id=%s ORDER BY id LIMIT 1", (product_id,)
-            ).fetchone()
+            if body.variant_id is not None:
+                variant = conn.execute(
+                    "SELECT id FROM product_variants WHERE id=%s AND product_id=%s",
+                    (body.variant_id, product_id),
+                ).fetchone()
+                if not variant:
+                    raise HTTPException(status_code=404, detail="Selected variant does not belong to this product.")
+            else:
+                # Backward compatibility for older clients that only send product_id.
+                variant = conn.execute(
+                    "SELECT id FROM product_variants WHERE product_id=%s ORDER BY id LIMIT 1", (product_id,)
+                ).fetchone()
             if variant and variant_values:
                 assignments = ", ".join(f"{k}=%s" for k in variant_values)
                 variant = conn.execute(
-                    f"UPDATE product_variants SET {assignments} WHERE id=%s RETURNING *",
-                    [*variant_values.values(), variant["id"]]
+                    f"UPDATE product_variants SET {assignments} WHERE id=%s AND product_id=%s RETURNING *",
+                    [*variant_values.values(), variant["id"], product_id]
                 ).fetchone()
             else:
                 raise HTTPException(status_code=404, detail="No variant exists for this product.")
