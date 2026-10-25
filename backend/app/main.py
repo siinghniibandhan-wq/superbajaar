@@ -783,6 +783,8 @@ class ProductWriteInput(BaseModel):
     attributes: list[dict[str, Any]] = Field(default_factory=list, max_length=12)
     variant_covers: list[str] = Field(default_factory=list, max_length=100)
     editing_variant_id: int | None = Field(default=None, gt=0)
+    shared_gallery: list[str] = Field(default_factory=list, max_length=100)
+    variant_galleries: list[list[str]] = Field(default_factory=list, max_length=100)
     category_id: int | None = Field(default=None, gt=0)
     sku: str = Field(default="", max_length=120)
     image_url: str = Field(default="", max_length=6000000)
@@ -894,6 +896,20 @@ def create_catalogue_product(
                            VALUES(%s,%s,%s) ON CONFLICT(variant_id,attribute_id) DO UPDATE SET value=EXCLUDED.value""",
                         (variant["id"], attribute_id, value),
                     )
+                shared_gallery = [str(url).strip() for url in body.shared_gallery if str(url).strip()]
+                specific_gallery = body.variant_galleries[index] if index < len(body.variant_galleries) else []
+                gallery = shared_gallery + [str(url).strip() for url in specific_gallery if str(url).strip()]
+                if gallery:
+                    if not conn.execute("SELECT to_regclass('public.product_variant_images') AS t").fetchone()["t"]:
+                        raise HTTPException(status_code=503, detail="Existing variant image table is unavailable.")
+                    for image_index, image_url in enumerate(gallery, start=1):
+                        if not image_url.startswith(("https://", "http://", "data:image/")) or (image_url.startswith("data:image/") and ";base64," not in image_url):
+                            raise HTTPException(status_code=422, detail="Gallery images must be HTTP(S) URLs or valid image data URLs.")
+                        conn.execute(
+                            """INSERT INTO product_variant_images(variant_id,image_url,alt_text,sort_order)
+                               VALUES(%s,%s,%s,%s)""",
+                            (variant["id"], image_url, body.name.strip(), image_index),
+                        )
                 variants.append(variant)
             if normalized_attributes and conn.execute("SELECT to_regclass('public.product_attribute_assignments') AS t").fetchone()["t"]:
                 for attribute_id, _attribute_name, _values in normalized_attributes:
