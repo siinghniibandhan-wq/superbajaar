@@ -64,16 +64,22 @@ def attach_catalogue_media_and_attributes(conn: psycopg.Connection, rows: list[d
         if not variant_id:
             continue
         if attributes_available:
-            row["attributes"] = conn.execute(
+            saved_attributes = conn.execute(
                 """SELECT a.name AS attribute_name, v.value AS attribute_value, a.display_type
                    FROM variant_attribute_values v JOIN catalog_attributes a ON a.id=v.attribute_id
                    WHERE v.variant_id=%s ORDER BY a.name""", (variant_id,)
             ).fetchall()
+            # Preserve attributes already selected from the variant table when
+            # the optional attribute-value table has no rows for this variant.
+            if saved_attributes:
+                row["attributes"] = saved_attributes
         if images_available:
-            row["gallery_images"] = conn.execute(
+            saved_images = conn.execute(
                 """SELECT id, image_url, alt_text, sort_order FROM product_variant_images
                    WHERE variant_id=%s ORDER BY sort_order, id""", (variant_id,)
             ).fetchall()
+            if saved_images:
+                row["gallery_images"] = saved_images
     return rows
 
 
