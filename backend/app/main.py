@@ -423,6 +423,7 @@ def list_products(
             seller_select = "p.seller_details AS seller_details" if "seller_details" in product_columns else "'[]'::jsonb AS seller_details"
             tax_category_select = "p.tax_category AS tax_category" if "tax_category" in product_columns else "''::text AS tax_category"
             gst_rate_select = "p.gst_rate AS gst_rate" if "gst_rate" in product_columns else "NULL::numeric AS gst_rate"
+            tax_inclusive_select = "p.tax_inclusive AS tax_inclusive" if "tax_inclusive" in product_columns else "TRUE AS tax_inclusive"
             sale_badge_select = "p.sale_badge AS sale_badge" if "sale_badge" in product_columns else "''::text AS sale_badge"
             sale_badge_active_select = "p.sale_badge_active AS sale_badge_active" if "sale_badge_active" in product_columns else "FALSE AS sale_badge_active"
             currency_select = "v.currency AS currency" if "currency" in variant_columns else "'INR'::text AS currency"
@@ -490,7 +491,7 @@ def list_products(
                               {('v.sku' if 'sku' in variant_columns else 'NULL::text AS sku')},
                               {('v.mrp' if 'mrp' in variant_columns else 'NULL::numeric AS mrp')},
                               {('v.selling_price' if 'selling_price' in variant_columns else 'NULL::numeric AS selling_price')},
-                              {currency_select}, {image_select}, {specification_select}, {manufacturer_select}, {seller_select}, {tax_category_select}, {gst_rate_select}, {sale_badge_select}, {sale_badge_active_select}, {review_select}{attribute_select}
+                              {currency_select}, {image_select}, {specification_select}, {manufacturer_select}, {seller_select}, {tax_category_select}, {gst_rate_select}, {tax_inclusive_select}, {sale_badge_select}, {sale_badge_active_select}, {review_select}{attribute_select}
                        FROM products p
                        JOIN product_variants v ON v.product_id = p.id
                        {category_join}
@@ -534,6 +535,7 @@ def get_product_by_variant(variant_id: int) -> dict[str, Any]:
             seller_select = "p.seller_details AS seller_details" if "seller_details" in product_columns else "'[]'::jsonb AS seller_details"
             tax_category_select = "p.tax_category AS tax_category" if "tax_category" in product_columns else "''::text AS tax_category"
             gst_rate_select = "p.gst_rate AS gst_rate" if "gst_rate" in product_columns else "NULL::numeric AS gst_rate"
+            tax_inclusive_select = "p.tax_inclusive AS tax_inclusive" if "tax_inclusive" in product_columns else "TRUE AS tax_inclusive"
             sale_badge_select = "p.sale_badge AS sale_badge" if "sale_badge" in product_columns else "''::text AS sale_badge"
             sale_badge_active_select = "p.sale_badge_active AS sale_badge_active" if "sale_badge_active" in product_columns else "FALSE AS sale_badge_active"
             currency_select = "v.currency AS currency" if "currency" in variant_columns else "'INR'::text AS currency"
@@ -551,7 +553,7 @@ def get_product_by_variant(variant_id: int) -> dict[str, Any]:
             attribute_select = (", " + attribute_select) if attribute_select else ""
             row = conn.execute(f"""SELECT p.id AS product_id, p.name, {description_select}, {brand_select},
                 {specification_select}, {manufacturer_select}, {seller_select},
-                {tax_category_select}, {gst_rate_select}, {sale_badge_select}, {sale_badge_active_select},
+                {tax_category_select}, {gst_rate_select}, {tax_inclusive_select}, {sale_badge_select}, {sale_badge_active_select},
                 c.name AS category, v.id AS variant_id, {sku_select}, {mrp_select},
                 {price_select}, {currency_select}, {image_select}{attribute_select}
                 FROM products p JOIN product_variants v ON v.product_id = p.id
@@ -563,7 +565,7 @@ def get_product_by_variant(variant_id: int) -> dict[str, Any]:
             # attribute even when a customer opens a product URL directly.
             sibling_variants = conn.execute(f"""SELECT p.id AS product_id, p.name, {description_select}, {brand_select},
                 {specification_select}, {manufacturer_select}, {seller_select},
-                {tax_category_select}, {gst_rate_select}, {sale_badge_select}, {sale_badge_active_select},
+                {tax_category_select}, {gst_rate_select}, {tax_inclusive_select}, {sale_badge_select}, {sale_badge_active_select},
                 c.name AS category, v.id AS variant_id, {sku_select}, {mrp_select},
                 {price_select}, {currency_select}, {image_select}{attribute_select}
                 FROM products p JOIN product_variants v ON v.product_id = p.id
