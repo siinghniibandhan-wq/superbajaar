@@ -143,6 +143,7 @@ class InvoiceInput(BaseModel):
     customer_name: str = ""
     items: list[dict[str, Any]] = Field(min_length=1)
     tax_total: Decimal = Decimal("0")
+    warehouse_id: int | None = None
 
 class PaymentInput(BaseModel):
     amount: Decimal = Field(gt=0)
@@ -419,16 +420,32 @@ def create_invoice(body: InvoiceInput, authorization: str | None = Header(defaul
     for item in body.items:
         qty=Decimal(str(item.get("quantity",0))); price=Decimal(str(item.get("unit_price",0)))
         if qty<=0 or price<0: raise HTTPException(422,"Invoice quantities must be positive and prices non-negative.")
+        if body.source_channel=="pos" and (not item.get("variant_id") or qty != qty.to_integral_value()):
+            raise HTTPException(422,"POS inventory lines require a variant_id and whole-unit quantity.")
         subtotal+=(qty*price)
     tax=body.tax_total
     if tax<0: raise HTTPException(422,"Tax cannot be negative.")
     total=(subtotal+tax).quantize(Decimal("0.01")); ref=_ref("INV")
     with psycopg.connect(_db(), row_factory=dict_row) as c:
         _schema(c)
+        if body.source_channel=="pos":
+            if body.warehouse_id is None: raise HTTPException(422,"Select a warehouse for POS stock deduction.")
+            if not c.execute("SELECT id FROM sb_warehouses WHERE id=%s AND active",(body.warehouse_id,)).fetchone():
+                raise HTTPException(404,"Active POS warehouse not found.")
+            for line in body.items:
+                vid=int(line["variant_id"]); qty=int(line["quantity"])
+                if not c.execute("SELECT id FROM product_variants WHERE id=%s",(vid,)).fetchone():
+                    raise HTTPException(404,f"Variant {vid} not found.")
+                balance=c.execute("SELECT COALESCE(SUM(quantity_delta),0) qty FROM sb_inventory_ledger WHERE warehouse_id=%s AND variant_id=%s FOR UPDATE",(body.warehouse_id,vid)).fetchone()["qty"]
+                if balance<qty: raise HTTPException(409,f"Insufficient stock for variant {vid} at selected warehouse.")
         row=c.execute("""INSERT INTO sb_invoices(reference,source_channel,customer_name,status,subtotal,tax_total,total,items,created_by)
           VALUES(%s,%s,%s,'issued',%s,%s,%s,%s::jsonb,%s) RETURNING *""",
           (ref,body.source_channel,body.customer_name,subtotal,tax,total,json.dumps(body.items),actor["id"])).fetchone()
-        _event(c,ref,"invoice_issued",actor["id"],new="issued",details={"channel":body.source_channel})
+        if body.source_channel=="pos":
+            for line in body.items:
+                c.execute("""INSERT INTO sb_inventory_ledger(warehouse_id,variant_id,quantity_delta,movement_type,reference,note,actor_id)
+                  VALUES(%s,%s,%s,'sale',%s,'POS invoice sale',%s)""",(body.warehouse_id,int(line["variant_id"]),-int(line["quantity"]),ref,actor["id"]))
+        _event(c,ref,"invoice_issued",actor["id"],new="issued",details={"channel":body.source_channel,"warehouse_id":body.warehouse_id})
         # One balanced sales posting per invoice; subsequent payments do not repost revenue.
         lines=[{"account_code":"1100","debit":str(total),"credit":"0"},{"account_code":"4000","debit":"0","credit":str(subtotal)}]
         if tax: lines.append({"account_code":"2100","debit":"0","credit":str(tax)})
