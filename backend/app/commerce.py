@@ -422,6 +422,20 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
                     conn.execute("UPDATE sb_stock SET quantity=quantity-%s,updated_at=now() WHERE variant_id=%s AND warehouse='Main'",(product["quantity"],product["variant_id"]))
                     conn.execute("""INSERT INTO sb_stock_movements(variant_id,warehouse,movement_type,quantity,reference_type,reference_id)
                         VALUES(%s,'Main','website_sale',%s,'website_order',%s)""",(product["variant_id"],product["quantity"],row["id"]))
+            from .invoices import create_invoice
+            invoice_lines=[{"description":p["name"],"variant_id":p["variant_id"],"quantity":p["quantity"],
+                "unit_price":p["unit_price"],"line_subtotal":p["line_total"],"line_tax":0,"line_total":p["line_total"]}
+                for p in products]
+            product_total=sum((Decimal(str(p["line_total"])) for p in products),Decimal("0"))
+            adjustment=Decimal(str(total))-product_total
+            if adjustment:
+                invoice_lines.append({"description":"Shipping / discount adjustment","quantity":1,"unit_price":adjustment,
+                    "line_subtotal":adjustment,"line_tax":0,"line_total":adjustment})
+            address=body.shipping_address.model_dump()
+            create_invoice(conn,source_type="website",source_id=int(row["id"]),
+                customer_name=str(address.get("full_name") or user.get("full_name") or "Website customer"),
+                customer_email=user.get("email"),customer_phone=address.get("phone"),
+                subtotal=total,tax_total=Decimal("0"),total=total,lines=invoice_lines)
             return {"order": _order_detail(conn, row["id"]),
                     "message": "Order placed. Tracked inventory is deducted atomically; payment is due on delivery."}
     except HTTPException:
