@@ -402,6 +402,9 @@ class ProductWriteInput(BaseModel):
     mrp: float | None = Field(default=None, gt=0, le=9999999999)
     brand: str = Field(default="", max_length=160)
     description: str = Field(default="", max_length=4000)
+    specifications: list[dict[str, str]] = Field(default_factory=list, max_length=100)
+    manufacturer_details: list[dict[str, str]] = Field(default_factory=list, max_length=100)
+    seller_details: list[dict[str, str]] = Field(default_factory=list, max_length=100)
     category_id: int | None = Field(default=None, gt=0)
     sku: str = Field(default="", max_length=120)
     image_url: str = Field(default="", max_length=2000)
@@ -452,8 +455,9 @@ def create_catalogue_product(
             if not product_columns or not variant_columns:
                 raise HTTPException(status_code=503, detail="The existing catalogue schema is unavailable.")
             product_values = {"name": body.name.strip(), "brand": body.brand.strip(),
-                              "description": body.description.strip(), "category_id": body.category_id,
-                              "status": body.status}
+                              "description": body.description.strip(), "specifications": Jsonb(body.specifications),
+                              "manufacturer_details": Jsonb(body.manufacturer_details), "seller_details": Jsonb(body.seller_details),
+                              "category_id": body.category_id, "status": body.status}
             product = _catalogue_insert(conn, "products", product_values)
             variant_values = {"product_id": product["id"], "selling_price": body.selling_price,
                               "mrp": body.mrp, "sku": body.sku.strip() or None,
