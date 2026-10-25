@@ -699,6 +699,8 @@ def list_invoices(authorization: str | None = Header(default=None)):
     _require(authorization, {"super_admin","admin","staff"})
     with psycopg.connect(_db(), row_factory=dict_row) as c:
         _schema(c)
+        from .commerce import _ensure_commerce_schema
+        _ensure_commerce_schema(c)
         items=c.execute("""SELECT id,reference,source_channel,source_id,customer_name,status,subtotal,discount_total,tax_total,total,paid_total,items,created_at,'operational_invoice' AS record_type
           FROM sb_invoices
           UNION ALL
@@ -818,6 +820,8 @@ def create_return(body: ReturnInput, authorization: str | None = Header(default=
     ref=_ref("RET")
     with psycopg.connect(_db(), row_factory=dict_row) as c:
         _schema(c)
+        from .commerce import _ensure_commerce_schema
+        _ensure_commerce_schema(c)
         invoice=c.execute("SELECT * FROM sb_invoices WHERE reference=%s",(body.invoice_reference,)).fetchone()
         website_order=c.execute("SELECT * FROM store_orders WHERE invoice_number=%s",(body.invoice_reference,)).fetchone() if not invoice else None
         if not invoice and not website_order: raise HTTPException(404,"Invoice reference not found.")
@@ -898,6 +902,8 @@ def accounting_overview(authorization: str | None = Header(default=None)):
     _require(authorization, {"super_admin","admin","staff"})
     with psycopg.connect(_db(), row_factory=dict_row) as c:
         _schema(c)
+        from .commerce import _ensure_commerce_schema
+        _ensure_commerce_schema(c)
         operational=c.execute("SELECT COUNT(*)::int count,COALESCE(SUM(total),0) total,COALESCE(SUM(paid_total),0) paid FROM sb_invoices WHERE status NOT IN ('cancelled','draft')").fetchone()
         website=c.execute("""SELECT COUNT(*)::int count,COALESCE(SUM(total),0) total,
           COALESCE(SUM(paid_total),0) paid
