@@ -35,7 +35,7 @@ def _schema(conn):
       id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, code TEXT NOT NULL UNIQUE, address TEXT NOT NULL DEFAULT '',
       pincode TEXT NOT NULL DEFAULT '', serviceable_pincodes JSONB NOT NULL DEFAULT '[]',
       locations JSONB NOT NULL DEFAULT '[]', active BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
-    """CREATE TABLE IF NOT EXISTS sb_inventory_reorder_levels(\n      id BIGSERIAL PRIMARY KEY, warehouse_id BIGINT NOT NULL REFERENCES sb_warehouses(id),\n      variant_id BIGINT NOT NULL, minimum_quantity INTEGER NOT NULL DEFAULT 0 CHECK(minimum_quantity >= 0),\n      created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n      UNIQUE(warehouse_id,variant_id))""",\n    """CREATE TABLE IF NOT EXISTS sb_inventory_ledger(
+    """CREATE TABLE IF NOT EXISTS sb_inventory_ledger(
       id BIGSERIAL PRIMARY KEY, warehouse_id BIGINT NOT NULL REFERENCES sb_warehouses(id),
       variant_id BIGINT NOT NULL, quantity_delta INTEGER NOT NULL, movement_type TEXT NOT NULL,
       reference TEXT NOT NULL, location TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', actor_id BIGINT,
