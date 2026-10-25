@@ -147,7 +147,7 @@ function Store({goAdmin}) {
   read(p.attributes);read(p.attribute_values);read(p.variant_attributes);read(p.attribute_lines);
   read(p.product_template_attribute_value_ids);read(p.product_template_variant_value_ids);
   read(p.product_variant_attributes);read(p.combination);read(p.attribute_value_ids);
-  read(p.variant_attribute_values);read(p.attribute_values_ids);
+  read(p.attributes);read(p.variant_attribute_values);read(p.attribute_values_ids);
   parseText(p.variant_label);parseText(p.option_label);parseText(p.attributes_label);
   parseText(p.attribute_values_display);parseText(p.variant_description);parseText(p.variant_name);parseText(p.variant_title);
   if(p.quantity_label)put('Qty',p.quantity_label);
