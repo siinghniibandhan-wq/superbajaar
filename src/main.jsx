@@ -76,8 +76,15 @@ function Store({goAdmin}) {
   };
   const clean=v=>{const value=human(v).trim();return /^ODOO[-_ ]?VAR[-_ ]?\d+$/i.test(value)?'':value};
   const put=(name,value)=>{
-   const key=clean(name),val=clean(value);
-   if(key&&val&&key!==val&&!/^id$/i.test(key))result[key]=val;
+   const rawName=clean(name),val=clean(value);
+   if(!rawName||!val||rawName===val)return;
+   // Only the two customer-selectable attributes configured for this catalogue:
+   // Qty/Quantity and Variant/Breed. Ignore internal Odoo fields, IDs and prices.
+   const normalized=rawName.toLowerCase().replace(/[ _-]+/g,'').trim();
+   let key='';
+   if(['qty','quantity','quantitykg','weightqty'].includes(normalized))key='Qty';
+   else if(['variant','breed','poultrybreed','breedtype'].includes(normalized))key='Variant';
+   if(key)result[key]=val;
   };
   const parseText=value=>{
    const text=clean(value);
@@ -135,10 +142,7 @@ function Store({goAdmin}) {
   parseText(p.variant_label);parseText(p.option_label);parseText(p.attributes_label);
   parseText(p.attribute_values_display);parseText(p.variant_description);parseText(p.variant_name);parseText(p.variant_title);
   if(p.quantity_label)put('Qty',p.quantity_label);
-  if(p.weight)put('Weight',p.weight);
-  if(p.pack_size)put('Pack size',p.pack_size);
-  if(p.volume)put('Volume',p.volume);
-  if(p.size)put('Size',p.size);
+  // Do not expose generic weight, size, pack, volume, system, IDs or price fields.
   return result;
  }
  function variantAttributeGroups(variants){
