@@ -412,6 +412,9 @@ def create_procurement(body: ProcurementInput, authorization: str | None = Heade
     with psycopg.connect(_db(), row_factory=dict_row) as c:
         _schema(c)
         if not c.execute("SELECT id FROM sb_vendors WHERE id=%s AND status='active'",(body.vendor_id,)).fetchone(): raise HTTPException(404,"Active vendor not found.")
+        for item in body.items:
+            if not c.execute("SELECT id FROM product_variants WHERE id=%s",(int(item["variant_id"]),)).fetchone():
+                raise HTTPException(404,f"Purchase variant {item['variant_id']} not found.")
         row=c.execute("""INSERT INTO sb_procurements(reference,vendor_id,status,items,expected_date,created_by)
           VALUES(%s,%s,'quotation_requested',%s::jsonb,%s,%s) RETURNING *""",(ref,body.vendor_id,json.dumps(body.items),body.expected_date,actor["id"])).fetchone()
         _event(c,ref,"quotation_requested",actor["id"],new="quotation_requested",details={"vendor_id":body.vendor_id})
