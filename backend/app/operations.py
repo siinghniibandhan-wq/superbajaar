@@ -35,7 +35,7 @@ def _schema(conn):
     """CREATE TABLE IF NOT EXISTS sb_inventory_ledger(
       id BIGSERIAL PRIMARY KEY, warehouse_id BIGINT NOT NULL REFERENCES sb_warehouses(id),
       variant_id BIGINT NOT NULL, quantity_delta INTEGER NOT NULL, movement_type TEXT NOT NULL,
-      reference TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', actor_id BIGINT,
+      reference TEXT NOT NULL, location TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', actor_id BIGINT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
     """CREATE TABLE IF NOT EXISTS sb_vendors(
       id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE, phone TEXT NOT NULL DEFAULT '',
@@ -87,6 +87,7 @@ def _schema(conn):
       created_at TIMESTAMPTZ NOT NULL DEFAULT now())"""
     ]
     for sql in statements: conn.execute(sql)
+    conn.execute("ALTER TABLE sb_inventory_ledger ADD COLUMN IF NOT EXISTS location TEXT NOT NULL DEFAULT ''")
     conn.execute("ALTER TABLE sb_procurements ADD COLUMN IF NOT EXISTS purchase_order_reference TEXT")
     conn.execute("ALTER TABLE sb_returns ADD COLUMN IF NOT EXISTS refund_amount NUMERIC(14,2) NOT NULL DEFAULT 0")
     conn.execute("ALTER TABLE sb_invoices ADD COLUMN IF NOT EXISTS discount_total NUMERIC(14,2) NOT NULL DEFAULT 0")
@@ -716,6 +717,7 @@ class StockMovementInput(BaseModel):
     movement_type: str = "adjustment"
     reference: str = ""
     note: str = ""
+    location: str = ""
 
 @router.get("/admin/vendors")
 def list_vendors(authorization: str | None = Header(default=None)):
@@ -771,8 +773,8 @@ def record_stock_movement(body: StockMovementInput, authorization: str | None = 
         balance=c.execute("SELECT COALESCE(SUM(quantity_delta),0) qty FROM sb_inventory_ledger WHERE warehouse_id=%s AND variant_id=%s",
           (body.warehouse_id,body.variant_id)).fetchone()["qty"]
         if balance+body.quantity_delta<0: raise HTTPException(409,"Movement would make available stock negative.")
-        row=c.execute("""INSERT INTO sb_inventory_ledger(warehouse_id,variant_id,quantity_delta,movement_type,reference,note,actor_id)
-          VALUES(%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
-          (body.warehouse_id,body.variant_id,body.quantity_delta,body.movement_type,ref,body.note,actor["id"])).fetchone()
+        row=c.execute("""INSERT INTO sb_inventory_ledger(warehouse_id,variant_id,quantity_delta,movement_type,reference,location,note,actor_id)
+          VALUES(%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+          (body.warehouse_id,body.variant_id,body.quantity_delta,body.movement_type,ref,body.location,body.note,actor["id"])).fetchone()
         _event(c,ref,"stock_movement",actor["id"],details={"warehouse_id":body.warehouse_id,"variant_id":body.variant_id,"quantity_delta":body.quantity_delta})
         return {"movement":row,"balance":balance+body.quantity_delta}
