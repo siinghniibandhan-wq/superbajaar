@@ -482,7 +482,9 @@ def create_receipt(procurement_id: int, body: ReceiptInput, authorization: str |
         _schema(c)
         p=c.execute("SELECT * FROM sb_procurements WHERE id=%s FOR UPDATE",(procurement_id,)).fetchone()
         if not p or p["status"] not in {"purchase_order","partially_received"}: raise HTTPException(409,"Only an open purchase order can receive goods.")
-        if not c.execute("SELECT id FROM sb_warehouses WHERE id=%s AND active",(body.warehouse_id,)).fetchone(): raise HTTPException(404,"Active warehouse not found.")
+        warehouse=c.execute("SELECT id,locations FROM sb_warehouses WHERE id=%s AND active",(body.warehouse_id,)).fetchone()
+        if not warehouse: raise HTTPException(404,"Active warehouse not found.")
+        allowed_locations=warehouse["locations"] if isinstance(warehouse["locations"],list) else []
         pending=c.execute("SELECT id FROM sb_receipts WHERE procurement_id=%s AND status='inspection' LIMIT 1",(procurement_id,)).fetchone()
         if pending: raise HTTPException(409,"Finish quality inspection for the pending GRN before recording another receipt.")
         expected={int(i["variant_id"]):int(i["quantity"]) for i in p["items"]}
@@ -495,7 +497,10 @@ def create_receipt(procurement_id: int, body: ReceiptInput, authorization: str |
         for line in body.items:
             vid=int(line.get("variant_id",0)); qty=int(line.get("quantity",0))
             if vid not in expected or qty<1: raise HTTPException(422,"Receipt lines must match PO variants and have positive quantities.")
-            incoming[vid]=incoming.get(vid,0)+qty
+            if vid in incoming: raise HTTPException(422,"Use one line per variant per GRN; create separate GRNs for separate bins.")
+            location=str(line.get("location","")).strip()
+            if allowed_locations and location not in allowed_locations: raise HTTPException(422,"Choose a configured warehouse bin/location for every receipt line.")
+            incoming[vid]=qty
         dispatched={}
         dispatch_rows=c.execute("SELECT items FROM sb_vendor_dispatches WHERE procurement_id=%s AND status<>'cancelled'",(procurement_id,)).fetchall()
         for dispatch in dispatch_rows:
@@ -527,9 +532,10 @@ def inspect_receipt(receipt_id: int, body: ReceiptInspectionInput, authorization
                 raise HTTPException(422,"Accepted plus rejected quantity must equal the received quantity for each variant.")
         for vid,qty in accepted.items():
             if qty:
-                c.execute("""INSERT INTO sb_inventory_ledger(warehouse_id,variant_id,quantity_delta,movement_type,reference,note,actor_id)
-                  VALUES(%s,%s,%s,'goods_receipt',%s,%s,%s)""",(r["warehouse_id"],vid,qty,r["reference"],body.note,actor["id"]))
-        final=[{"variant_id":vid,"quantity":received[vid],"accepted_quantity":accepted.get(vid,0),"rejected_quantity":rejected.get(vid,0)} for vid in received]
+                line=next(x for x in r["items"] if int(x["variant_id"])==vid)
+                c.execute("""INSERT INTO sb_inventory_ledger(warehouse_id,variant_id,quantity_delta,movement_type,reference,location,note,actor_id)
+                  VALUES(%s,%s,%s,'goods_receipt',%s,%s,%s,%s)""",(r["warehouse_id"],vid,qty,r["reference"],line.get("location",""),body.note,actor["id"]))
+        final=[{"variant_id":vid,"quantity":received[vid],"accepted_quantity":accepted.get(vid,0),"rejected_quantity":rejected.get(vid,0),"location":next((x.get("location","") for x in r["items"] if int(x["variant_id"])==vid),"")} for vid in received]
         c.execute("UPDATE sb_receipts SET status='accepted',items=%s::jsonb,note=%s WHERE id=%s",(json.dumps(final),body.note,receipt_id))
         remaining=c.execute("""SELECT p.items FROM sb_procurements p WHERE p.id=%s""",(r["procurement_id"],)).fetchone()["items"]
         all_received=c.execute("""SELECT COALESCE(SUM((x->>'accepted_quantity')::int),0) n FROM sb_receipts r,
