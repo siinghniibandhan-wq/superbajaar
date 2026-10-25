@@ -92,10 +92,12 @@ def attach_catalogue_media_and_attributes(conn: psycopg.Connection, rows: list[d
                 """SELECT id, image_url, alt_text, sort_order FROM product_variant_images
                    WHERE variant_id=%s ORDER BY sort_order, id""", (variant_id,)
             ).fetchall()
+            cover = next((im["image_url"] for im in gallery if im.get("image_url") and int(im.get("sort_order") or 0) == 0), None) or row.get("image_url")
+            if cover and not any(im.get("image_url") == cover for im in gallery):
+                gallery = [{"id": None, "image_url": cover, "alt_text": (row.get("name") or "Product") + " cover", "sort_order": 0}] + gallery
             if gallery:
                 row["gallery_images"] = gallery
-                cover = next((im["image_url"] for im in gallery if im.get("image_url") and int(im.get("sort_order") or 0) == 0), None)
-                row["image_url"] = cover or row.get("image_url") or next((im["image_url"] for im in gallery if im.get("image_url")), None)
+                row["image_url"] = cover or next((im["image_url"] for im in gallery if im.get("image_url")), None)
         # Prefer a saved variant image; if absent, use the product's saved cover image.
         if product_id and product_columns:
             candidates = [c for c in ("cover_image_url", "main_image_url", "image_url", "image", "image_1920") if c in product_columns]
