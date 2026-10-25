@@ -712,7 +712,7 @@ def create_invoice(body: InvoiceInput, authorization: str | None = Header(defaul
             if len(place_state)!=2 or not place_state.isdigit(): raise HTTPException(422,"Place of supply must be a valid two-digit Indian state code.")
             for item in body.items:
                 hsn=str(item.get("hsn_code",""))
-                rate=Decimal(str(item.get("gst_rate",tax_config["rates_json"].get(hsn,0))))
+                rate=Decimal(str(item.get("gst_rate") or tax_config["rates_json"].get(hsn,0)))
                 if rate<0 or rate>100: raise HTTPException(422,"GST rate must be between 0 and 100 percent.")
                 if rate==0: continue
                 if not seller_state: raise HTTPException(422,"Configure the seller GST state before calculating GST.")
