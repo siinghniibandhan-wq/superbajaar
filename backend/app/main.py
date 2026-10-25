@@ -104,7 +104,25 @@ def list_products(
                        ORDER BY p.name, v.id
                        LIMIT %s OFFSET %s"""
             rows = conn.execute(query, params).fetchall()
-            return {"items": rows, "limit": limit, "offset": offset}
+            # Storefront catalogue is parent-product based; variants remain selectable on detail pages.
+            grouped: dict[int, dict[str, Any]] = {}
+            for row in rows:
+                pid = int(row["product_id"])
+                if pid not in grouped:
+                    grouped[pid] = {k: row.get(k) for k in row.keys() if k != "variant_id"}
+                    grouped[pid]["variants"] = []
+                grouped[pid]["variants"].append({
+                    "variant_id": row["variant_id"], "sku": row.get("sku"), "mrp": row.get("mrp"),
+                    "selling_price": row.get("selling_price"), "currency": row.get("currency"),
+                    "image_url": row.get("image_url"), "attributes": {}
+                })
+            items = list(grouped.values())
+            for item in items:
+                if item["variants"]:
+                    # Keep the first available variant as the initial selection for backwards compatibility.
+                    first = item["variants"][0]
+                    item.update({k: first.get(k) for k in ("variant_id","sku","mrp","selling_price","currency","image_url")})
+            return {"items": items, "limit": limit, "offset": offset}
     except HTTPException:
         raise
     except psycopg.Error as exc:
@@ -140,6 +158,24 @@ def get_product_by_variant(variant_id: int) -> dict[str, Any]:
                 LIMIT 1""", (variant_id,)).fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Product not found")
+            siblings = conn.execute(f"""SELECT v.id AS variant_id,
+                {sku_select}, {mrp_select}, {price_select}, {currency_select}, {image_select}
+                FROM product_variants v WHERE v.product_id=%s AND {variant_status.replace("v.status", "v.status")}
+                ORDER BY v.id""", (row["product_id"],)).fetchall()
+            row["variants"] = siblings
+            row["attributes"] = []
+            attribute_table = conn.execute("SELECT to_regclass('public.catalog_attributes') AS t").fetchone()["t"]
+            assignment_table = conn.execute("SELECT to_regclass('public.product_attribute_assignments') AS t").fetchone()["t"]
+            value_table = conn.execute("SELECT to_regclass('public.variant_attribute_values') AS t").fetchone()["t"]
+            if attribute_table and assignment_table and value_table:
+                row["attributes"] = conn.execute("""SELECT a.id,a.name,a.values_json FROM catalog_attributes a
+                    JOIN product_attribute_assignments pa ON pa.attribute_id=a.id
+                    WHERE pa.product_id=%s ORDER BY a.name""", (row["product_id"],)).fetchall()
+                values = conn.execute("""SELECT variant_id,attribute_id,value FROM variant_attribute_values
+                    WHERE variant_id = ANY(%s)""", ([v["variant_id"] for v in siblings],)).fetchall()
+                by_variant = {int(v["variant_id"]): {} for v in siblings}
+                for v in values: by_variant[int(v["variant_id"])][str(v["attribute_id"])] = v["value"]
+                for v in row["variants"]: v["attributes"] = by_variant.get(int(v["variant_id"]), {})
             return row
     except HTTPException:
         raise
