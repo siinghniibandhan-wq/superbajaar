@@ -302,3 +302,14 @@
 
 /* Keyboard focus for clickable product surfaces. */
 .product-picture[role="button"]:focus-visible,.product-details[role="button"]:focus-visible{outline:3px solid var(--purple,#6428d9);outline-offset:-3px;border-radius:8px}
+
+/* Inventory create/edit dialogs: theme-aware, mobile-safe popup forms. */
+.admin-shell .inventory-modal-backdrop{position:fixed;inset:0;z-index:3000;display:grid;place-items:center;padding:16px;background:rgba(10,8,18,.72);backdrop-filter:blur(3px)}
+.admin-shell .inventory-form-modal{position:relative;width:min(720px,100%);max-height:calc(100dvh - 32px);overflow:auto;padding:22px;border:1px solid var(--admin-border);border-radius:18px;background:var(--admin-surface);color:var(--admin-text);box-shadow:0 24px 80px rgba(0,0,0,.4)}
+.admin-shell .inventory-product-modal{width:min(900px,100%)}
+.admin-shell .inventory-form-modal .panel-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px}
+.admin-shell .inventory-form-modal .panel-heading h3{margin:0;color:var(--admin-text)}
+.admin-shell .inventory-form-modal .user-form{margin:0}
+.admin-shell .inventory-form-modal .modal-close{background:var(--admin-bg);color:var(--admin-text);border-color:var(--admin-border)}
+.admin-shell .inventory-form-modal input,.admin-shell .inventory-form-modal select,.admin-shell .inventory-form-modal textarea{max-width:100%;box-sizing:border-box}
+@media(max-width:600px){.admin-shell .inventory-modal-backdrop{padding:10px;align-items:end}.admin-shell .inventory-form-modal{max-height:calc(100dvh - 20px);padding:16px;border-radius:18px 18px 10px 10px}.admin-shell .inventory-form-modal .checkout-form-grid{grid-template-columns:minmax(0,1fr)}.admin-shell .inventory-form-modal .moderation-controls{display:flex;flex-wrap:wrap;gap:8px}}
