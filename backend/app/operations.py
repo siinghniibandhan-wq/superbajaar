@@ -52,7 +52,7 @@ def _schema(conn):
     """CREATE TABLE IF NOT EXISTS sb_invoices(
       id BIGSERIAL PRIMARY KEY, reference TEXT NOT NULL UNIQUE, source_channel TEXT NOT NULL,
       source_id BIGINT, customer_name TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'issued',
-      subtotal NUMERIC(14,2) NOT NULL DEFAULT 0, tax_total NUMERIC(14,2) NOT NULL DEFAULT 0,
+      subtotal NUMERIC(14,2) NOT NULL DEFAULT 0, discount_total NUMERIC(14,2) NOT NULL DEFAULT 0, tax_total NUMERIC(14,2) NOT NULL DEFAULT 0,
       total NUMERIC(14,2) NOT NULL DEFAULT 0, paid_total NUMERIC(14,2) NOT NULL DEFAULT 0,
       items JSONB NOT NULL DEFAULT '[]', created_by BIGINT, created_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
     """CREATE TABLE IF NOT EXISTS sb_payments(
@@ -84,6 +84,7 @@ def _schema(conn):
     for sql in statements: conn.execute(sql)
     conn.execute("ALTER TABLE sb_procurements ADD COLUMN IF NOT EXISTS purchase_order_reference TEXT")
     conn.execute("ALTER TABLE sb_returns ADD COLUMN IF NOT EXISTS refund_amount NUMERIC(14,2) NOT NULL DEFAULT 0")
+    conn.execute("ALTER TABLE sb_invoices ADD COLUMN IF NOT EXISTS discount_total NUMERIC(14,2) NOT NULL DEFAULT 0")
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS sb_procurements_po_ref_uidx ON sb_procurements(purchase_order_reference) WHERE purchase_order_reference IS NOT NULL")
     conn.execute("CREATE INDEX IF NOT EXISTS sb_events_ref_idx ON sb_document_events(reference,created_at)")
     conn.execute("CREATE INDEX IF NOT EXISTS sb_inventory_variant_idx ON sb_inventory_ledger(variant_id,warehouse_id,created_at)")
@@ -157,6 +158,7 @@ class InvoiceInput(BaseModel):
     customer_name: str = ""
     items: list[dict[str, Any]] = Field(min_length=1)
     tax_total: Decimal = Decimal("0")
+    discount_total: Decimal = Decimal("0")
     warehouse_id: int | None = None
 
 class PaymentInput(BaseModel):
@@ -461,13 +463,13 @@ def list_invoices(authorization: str | None = Header(default=None)):
     _require(authorization, {"super_admin","admin","staff"})
     with psycopg.connect(_db(), row_factory=dict_row) as c:
         _schema(c)
-        items=c.execute("""SELECT id,reference,source_channel,source_id,customer_name,status,subtotal,tax_total,total,paid_total,items,created_at,'operational_invoice' AS record_type
+        items=c.execute("""SELECT id,reference,source_channel,source_id,customer_name,status,subtotal,discount_total,tax_total,total,paid_total,items,created_at,'operational_invoice' AS record_type
           FROM sb_invoices
           UNION ALL
           SELECT o.id,o.invoice_number AS reference,o.source_channel,o.id AS source_id,
             COALESCE(o.shipping_address->>'full_name','Website customer') AS customer_name,
             CASE WHEN o.status='cancelled' THEN 'cancelled' WHEN o.payment_status='paid' THEN 'paid' ELSE 'issued' END AS status,
-            o.subtotal,0::numeric AS tax_total,o.total,
+            o.subtotal,0::numeric AS discount_total,0::numeric AS tax_total,o.total,
             CASE WHEN o.payment_status='paid' THEN o.total ELSE 0::numeric END AS paid_total,
             COALESCE((SELECT jsonb_agg(jsonb_build_object('variant_id',i.variant_id,'product_id',i.product_id,'sku',i.sku,'name',i.product_name,'quantity',i.quantity,'unit_price',i.unit_price,'line_total',i.line_total))
               FROM store_order_items i WHERE i.order_id=o.id),'[]'::jsonb) AS items,
@@ -489,8 +491,10 @@ def create_invoice(body: InvoiceInput, authorization: str | None = Header(defaul
             raise HTTPException(422,"POS inventory lines require a variant_id and whole-unit quantity.")
         subtotal+=(qty*price)
     tax=body.tax_total
-    if tax<0: raise HTTPException(422,"Tax cannot be negative.")
-    total=(subtotal+tax).quantize(Decimal("0.01")); ref=_ref("INV")
+    discount=body.discount_total
+    if tax<0 or discount<0: raise HTTPException(422,"Tax and discount cannot be negative.")
+    if discount>subtotal: raise HTTPException(422,"Discount cannot exceed the invoice subtotal.")
+    total=(subtotal-discount+tax).quantize(Decimal("0.01")); ref=_ref("INV")
     with psycopg.connect(_db(), row_factory=dict_row) as c:
         _schema(c)
         if body.source_channel=="pos":
@@ -503,16 +507,16 @@ def create_invoice(body: InvoiceInput, authorization: str | None = Header(defaul
                     raise HTTPException(404,f"Variant {vid} not found.")
                 balance=c.execute("SELECT COALESCE(SUM(quantity_delta),0) qty FROM sb_inventory_ledger WHERE warehouse_id=%s AND variant_id=%s",(body.warehouse_id,vid)).fetchone()["qty"]
                 if balance<qty: raise HTTPException(409,f"Insufficient stock for variant {vid} at selected warehouse.")
-        row=c.execute("""INSERT INTO sb_invoices(reference,source_channel,customer_name,status,subtotal,tax_total,total,items,created_by)
-          VALUES(%s,%s,%s,'issued',%s,%s,%s,%s::jsonb,%s) RETURNING *""",
-          (ref,body.source_channel,body.customer_name,subtotal,tax,total,json.dumps(body.items),actor["id"])).fetchone()
+        row=c.execute("""INSERT INTO sb_invoices(reference,source_channel,customer_name,status,subtotal,discount_total,tax_total,total,items,created_by)
+          VALUES(%s,%s,%s,'issued',%s,%s,%s,%s,%s::jsonb,%s) RETURNING *""",
+          (ref,body.source_channel,body.customer_name,subtotal,discount,tax,total,json.dumps(body.items),actor["id"])).fetchone()
         if body.source_channel=="pos":
             for line in body.items:
                 c.execute("""INSERT INTO sb_inventory_ledger(warehouse_id,variant_id,quantity_delta,movement_type,reference,note,actor_id)
                   VALUES(%s,%s,%s,'sale',%s,'POS invoice sale',%s)""",(body.warehouse_id,int(line["variant_id"]),-int(line["quantity"]),ref,actor["id"]))
         _event(c,ref,"invoice_issued",actor["id"],new="issued",details={"channel":body.source_channel,"warehouse_id":body.warehouse_id})
         # One balanced sales posting per invoice; subsequent payments do not repost revenue.
-        lines=[{"account_code":"1100","debit":str(total),"credit":"0"},{"account_code":"4000","debit":"0","credit":str(subtotal)}]
+        lines=[{"account_code":"1100","debit":str(total),"credit":"0"},{"account_code":"4000","debit":"0","credit":str(subtotal-discount)}]
         if tax: lines.append({"account_code":"2100","debit":"0","credit":str(tax)})
         c.execute("INSERT INTO sb_journal_entries(reference,source_reference,memo,lines) VALUES(%s,%s,%s,%s::jsonb)",
           (_ref("JE"),ref,"Invoice revenue and tax",json.dumps(lines)))
