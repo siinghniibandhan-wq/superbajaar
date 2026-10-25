@@ -202,6 +202,11 @@ class GSTSettingsInput(BaseModel):
     seller_state_code: str = Field(pattern=r"^[0-9]{2}$")
     rates: dict[str, Decimal] = {}
 
+class AccountInput(BaseModel):
+    code: str = Field(min_length=1, max_length=30)
+    name: str = Field(min_length=1, max_length=120)
+    account_type: str
+
 class SupplierBillInput(BaseModel):
     vendor_invoice_number: str = Field(min_length=1, max_length=100)
     amount: Decimal = Field(ge=0)
@@ -646,6 +651,24 @@ def inspect_receipt(receipt_id: int, body: ReceiptInspectionInput, authorization
         c.execute("UPDATE sb_procurements SET status=%s,updated_at=now() WHERE id=%s",(status,r["procurement_id"]))
         _event(c,r["reference"],"quality_inspection_completed",actor["id"],"inspection","accepted",{"accepted":accepted,"rejected":rejected})
         return {"receipt_reference":r["reference"],"status":"accepted","accepted":sum(accepted.values()),"rejected":sum(rejected.values()),"purchase_status":status}
+
+
+@router.get("/admin/accounting/accounts")
+def list_accounts(authorization: str | None = Header(default=None)):
+    _require(authorization, {"super_admin","admin","staff"})
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c)
+        return {"items":c.execute("SELECT * FROM sb_accounts ORDER BY code").fetchall()}
+
+@router.post("/admin/accounting/accounts", status_code=201)
+def create_account(body: AccountInput, authorization: str | None = Header(default=None)):
+    _require(authorization, {"super_admin","admin"})
+    if body.account_type not in {"asset","liability","equity","income","expense"}:
+        raise HTTPException(422,"Account type must be asset, liability, equity, income or expense.")
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c)
+        return c.execute("INSERT INTO sb_accounts(code,name,account_type) VALUES(%s,%s,%s) RETURNING *",
+          (body.code.strip(),body.name.strip(),body.account_type)).fetchone()
 
 
 @router.get("/admin/accounting/gst-settings")
