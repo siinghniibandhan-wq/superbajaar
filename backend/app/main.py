@@ -54,32 +54,67 @@ def get_columns(conn: psycopg.Connection, table: str) -> set[str]:
 
 
 def attach_catalogue_media_and_attributes(conn: psycopg.Connection, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Attach configurable variant attributes and per-variant image galleries when their schema exists."""
+    """Attach the saved product/variant details and images to each catalogue row."""
     if not rows:
         return rows
-    attributes_available = bool(conn.execute("SELECT to_regclass('public.variant_attribute_values') AS t").fetchone()["t"]) and bool(conn.execute("SELECT to_regclass('public.catalog_attributes') AS t").fetchone()["t"])
-    images_available = bool(conn.execute("SELECT to_regclass('public.product_variant_images') AS t").fetchone()["t"])
+    tables = {
+        name: bool(conn.execute("SELECT to_regclass(%s) AS t", (f"public.{name}",)).fetchone()["t"])
+        for name in ("variant_attribute_values", "catalog_attributes", "product_variant_images")
+    }
+    product_columns = get_columns(conn, "products")
+    variant_columns = get_columns(conn, "product_variants")
     for row in rows:
-        variant_id = row.get("variant_id")
-        if not variant_id:
-            continue
-        if attributes_available:
-            saved_attributes = conn.execute(
+        variant_id, product_id = row.get("variant_id"), row.get("product_id")
+        if variant_id and tables["variant_attribute_values"] and tables["catalog_attributes"]:
+            saved = conn.execute(
                 """SELECT a.name AS attribute_name, v.value AS attribute_value, a.display_type
                    FROM variant_attribute_values v JOIN catalog_attributes a ON a.id=v.attribute_id
                    WHERE v.variant_id=%s ORDER BY a.name""", (variant_id,)
             ).fetchall()
-            # Preserve attributes already selected from the variant table when
-            # the optional attribute-value table has no rows for this variant.
-            if saved_attributes:
-                row["attributes"] = saved_attributes
-        if images_available:
-            saved_images = conn.execute(
+            if saved:
+                row["attributes"] = saved
+        if variant_id and tables["product_variant_images"]:
+            gallery = conn.execute(
                 """SELECT id, image_url, alt_text, sort_order FROM product_variant_images
                    WHERE variant_id=%s ORDER BY sort_order, id""", (variant_id,)
             ).fetchall()
-            if saved_images:
-                row["gallery_images"] = saved_images
+            if gallery:
+                row["gallery_images"] = gallery
+                row["image_url"] = next((im["image_url"] for im in gallery if im.get("image_url")), row.get("image_url"))
+        # Prefer a saved variant image; if absent, use the product's saved cover image.
+        if product_id and product_columns:
+            candidates = [c for c in ("cover_image_url", "main_image_url", "image_url", "image", "image_1920") if c in product_columns]
+            if candidates and not row.get("image_url"):
+                select = ", ".join(f'"{c}"' for c in candidates)
+                saved_product = conn.execute(f"SELECT {select} FROM products WHERE id=%s", (product_id,)).fetchone()
+                if saved_product:
+                    for col in candidates:
+                        value = saved_product.get(col)
+                        if value:
+                            row["image_url"] = value
+                            break
+            # Keep each product detail in its own field, not merged into the description.
+            for col in ("description", "specifications", "manufacturer_details", "seller_details"):
+                if col in product_columns and not row.get(col):
+                    detail = conn.execute(f'SELECT "{col}" FROM products WHERE id=%s', (product_id,)).fetchone()
+                    if detail and detail.get(col) is not None:
+                        row[col] = detail[col]
+        # Convert legacy Odoo binary image fields to browser-loadable data URLs when needed.
+        for key in ("image_url", "image", "image_1920"):
+            value = row.get(key)
+            if isinstance(value, str) and value and not value.startswith(("http://", "https://", "data:", "/")):
+                import base64
+                try:
+                    decoded = base64.b64decode(value, validate=True)
+                    if decoded:
+                        mime = "image/png"
+                        if decoded.startswith(b"\xff\xd8\xff"): mime = "image/jpeg"
+                        elif decoded.startswith(b"RIFF") and decoded[8:12] == b"WEBP": mime = "image/webp"
+                        elif decoded.startswith(b"GIF8"): mime = "image/gif"
+                        elif decoded.startswith(b"\x89PNG\r\n\x1a\n"): mime = "image/png"
+                        row["image_url"] = f"data:{mime};base64,{value}"
+                except Exception:
+                    pass
     return rows
 
 
