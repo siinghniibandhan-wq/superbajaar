@@ -65,7 +65,8 @@ function Store({goAdmin}) {
  function openProduct(p){const id=p.variant_id;if(!id){setSelectedProduct(p);setPage('product-detail');return}history.pushState({},'',`/product/${productSlug(p)}`);setSelectedProduct(p);setPage('product-detail');setMobileMenu(false);window.scrollTo({top:0,behavior:'smooth'})}
  function chooseAttribute(attributeId,value){
   if(!selectedProduct)return;
-  const current={...(selectedProduct.selectedAttributes||{}),[String(attributeId)]:value};
+  const activeVariant=(selectedProduct.variants||[]).find(v=>Number(v.variant_id)===Number(selectedProduct.variant_id));
+  const current={...(activeVariant?.attributes||{}),...(selectedProduct.selectedAttributes||{}),[String(attributeId)]:value};
   const match=(selectedProduct.variants||[]).find(v=>Object.entries(current).every(([aid,val])=>!val||String((v.attributes||{})[aid]||'')===String(val)));
   setSelectedProduct({...selectedProduct,selectedAttributes:current,...(match||{}),product_id:selectedProduct.product_id,name:selectedProduct.name,brand:selectedProduct.brand,description:selectedProduct.description,category:selectedProduct.category,attributes:selectedProduct.attributes,variants:selectedProduct.variants});
   if(match?.variant_id)history.replaceState({},'',`/product/${productSlug({...selectedProduct,...match})}`);
