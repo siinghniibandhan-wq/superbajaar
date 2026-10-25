@@ -3,6 +3,7 @@ import logging
 import re
 import hmac
 import uuid
+import itertools
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -589,6 +590,7 @@ class ProductWriteInput(BaseModel):
     specifications: list[dict[str, str]] = Field(default_factory=list, max_length=100)
     manufacturer_details: list[dict[str, str]] = Field(default_factory=list, max_length=100)
     seller_details: list[dict[str, str]] = Field(default_factory=list, max_length=100)
+    attributes: list[dict[str, Any]] = Field(default_factory=list, max_length=12)
     category_id: int | None = Field(default=None, gt=0)
     sku: str = Field(default="", max_length=120)
     image_url: str = Field(default="", max_length=6000000)
@@ -655,11 +657,52 @@ def create_catalogue_product(
                               "sale_badge": body.sale_badge.strip(), "sale_badge_active": body.sale_badge_active,
                               "cover_image_url": cover_url, "main_image_url": cover_url, "image_url": cover_url}
             product = _catalogue_insert(conn, "products", product_values)
-            variant_values = {"product_id": product["id"], "selling_price": body.selling_price,
-                              "mrp": body.mrp, "sku": body.sku.strip() or None,
-                              "image_url": body.image_url.strip() or None, "status": body.status}
-            variant = _catalogue_insert(conn, "product_variants", variant_values)
-            return {"product": product, "variant": variant}
+            normalized_attributes: list[tuple[int, str, list[str]]] = []
+            for item in body.attributes:
+                attr_name = str(item.get("name") or "").strip()
+                raw_values = item.get("values", [])
+                if not attr_name or not isinstance(raw_values, list):
+                    continue
+                values = list(dict.fromkeys(str(value).strip() for value in raw_values if str(value).strip()))
+                if not values:
+                    continue
+                if not conn.execute("SELECT to_regclass('public.catalog_attributes') AS t").fetchone()["t"]:
+                    raise HTTPException(status_code=503, detail="Existing product attribute tables are unavailable.")
+                attr = conn.execute(
+                    """INSERT INTO catalog_attributes(name, values_json)
+                       VALUES(%s, %s) ON CONFLICT(name) DO UPDATE SET values_json=EXCLUDED.values_json
+                       RETURNING id""", (attr_name, Jsonb(values))
+                ).fetchone()
+                normalized_attributes.append((attr["id"], attr_name, values))
+            combos = list(itertools.product(*(item[2] for item in normalized_attributes))) if normalized_attributes else [()]
+            if len(combos) > 100:
+                raise HTTPException(status_code=422, detail="A product can generate at most 100 variants.")
+            variants = []
+            for index, combo in enumerate(combos):
+                suffix = "-".join(re.sub(r"[^A-Za-z0-9]+", "-", value).strip("-").upper()[:18] for value in combo if value)
+                sku = body.sku.strip() or None
+                if sku and len(combos) > 1:
+                    sku = (sku[:max(1, 119-len(suffix))] + "-" + suffix)[:120]
+                variant_values = {"product_id": product["id"], "selling_price": body.selling_price,
+                                  "mrp": body.mrp, "sku": sku,
+                                  "image_url": body.image_url.strip() or None, "status": body.status}
+                variant = _catalogue_insert(conn, "product_variants", variant_values)
+                for (attribute_id, _attribute_name, _values), value in zip(normalized_attributes, combo):
+                    if not conn.execute("SELECT to_regclass('public.variant_attribute_values') AS t").fetchone()["t"]:
+                        raise HTTPException(status_code=503, detail="Existing variant attribute value table is unavailable.")
+                    conn.execute(
+                        """INSERT INTO variant_attribute_values(variant_id,attribute_id,value)
+                           VALUES(%s,%s,%s) ON CONFLICT(variant_id,attribute_id) DO UPDATE SET value=EXCLUDED.value""",
+                        (variant["id"], attribute_id, value),
+                    )
+                variants.append(variant)
+            if normalized_attributes and conn.execute("SELECT to_regclass('public.product_attribute_assignments') AS t").fetchone()["t"]:
+                for attribute_id, _attribute_name, _values in normalized_attributes:
+                    conn.execute(
+                        "INSERT INTO product_attribute_assignments(product_id,attribute_id) VALUES(%s,%s) ON CONFLICT DO NOTHING",
+                        (product["id"], attribute_id),
+                    )
+            return {"product": product, "variant": variants[0], "variants": variants}
     except HTTPException:
         raise
     except psycopg.Error as exc:
