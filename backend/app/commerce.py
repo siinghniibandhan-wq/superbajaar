@@ -52,6 +52,7 @@ def _ensure_commerce_schema(conn: Any) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS store_orders_user_created_idx ON store_orders(user_id, created_at DESC)")
     conn.execute("CREATE INDEX IF NOT EXISTS store_orders_status_created_idx ON store_orders(status, created_at DESC)")
     conn.execute("ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS loyalty_discount NUMERIC(12,2) NOT NULL DEFAULT 0")
+    conn.execute("ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS tax_total NUMERIC(12,2) NOT NULL DEFAULT 0")
     conn.execute("ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS loyalty_coins_redeemed BIGINT NOT NULL DEFAULT 0")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS store_order_items (
@@ -66,6 +67,8 @@ def _ensure_commerce_schema(conn: Any) -> None:
             line_total NUMERIC(12,2) NOT NULL CHECK (line_total >= 0)
         )
     """)
+    conn.execute("ALTER TABLE store_order_items ADD COLUMN IF NOT EXISTS tax_rate NUMERIC(5,2) NOT NULL DEFAULT 0")
+    conn.execute("ALTER TABLE store_order_items ADD COLUMN IF NOT EXISTS tax_amount NUMERIC(12,2) NOT NULL DEFAULT 0")
     conn.execute("CREATE INDEX IF NOT EXISTS store_order_items_order_idx ON store_order_items(order_id)")
 
 
@@ -196,7 +199,7 @@ def _delivery_quote(config: Any, pincode: str | None, subtotal: Decimal) -> dict
 def _order_detail(conn: Any, order_id: int) -> dict[str, Any]:
     order = conn.execute(
         """SELECT id,order_number,user_id,status,payment_method,payment_status,currency,
-                  subtotal,shipping_fee,loyalty_discount,loyalty_coins_redeemed,total,shipping_address,customer_note,created_at,updated_at
+                  subtotal,tax_total,shipping_fee,loyalty_discount,loyalty_coins_redeemed,total,shipping_address,customer_note,created_at,updated_at
            FROM store_orders WHERE id=%s""", (order_id,)
     ).fetchone()
     if not order:
@@ -332,6 +335,7 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
             ensure_loyalty(conn)
             products: list[dict[str, Any]] = []
             subtotal = Decimal("0")
+            tax_total = Decimal("0")
             for variant_id, quantity in quantities.items():
                 product_columns = {r["column_name"] for r in conn.execute(
                     "SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='products'"
@@ -356,9 +360,15 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
                 price = Decimal(str(product["selling_price"] or 0))
                 if price <= 0:
                     raise HTTPException(status_code=409, detail=f"Price is not configured for {product['name']}.")
-                line_total = (price * quantity).quantize(Decimal("0.01"))
-                subtotal += line_total
-                products.append({**product, "quantity": quantity, "unit_price": price, "line_total": line_total})
+                line_subtotal = (price * quantity).quantize(Decimal("0.01"))
+                tax_mapping = conn.execute("SELECT gst_rate,classification FROM sb_product_tax WHERE variant_id=%s",(variant_id,)).fetchone()
+                tax_rate = Decimal(str(tax_mapping["gst_rate"])) if tax_mapping and tax_mapping["classification"]=="taxable" else Decimal("0")
+                line_tax = (line_subtotal * tax_rate / Decimal("100")).quantize(Decimal("0.01"))
+                line_total = line_subtotal + line_tax
+                subtotal += line_subtotal
+                tax_total += line_tax
+                products.append({**product, "quantity": quantity, "unit_price": price, "tax_rate": tax_rate,
+                    "line_subtotal": line_subtotal, "line_tax": line_tax, "line_total": line_total})
             delivery_row = conn.execute(
                 "SELECT setting_value FROM store_settings WHERE setting_key='delivery'"
             ).fetchone()
@@ -372,7 +382,7 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
             if delivery_quote["serviceable"] is not True:
                 raise HTTPException(status_code=422, detail=delivery_quote["message"])
             shipping_fee = Decimal(str(delivery_quote["shipping_fee"]))
-            total_before_coins = subtotal + shipping_fee
+            total_before_coins = subtotal + tax_total + shipping_fee
             loyalty_discount = Decimal("0")
             coins_used = 0
             if body.super_coins_to_redeem:
@@ -396,10 +406,10 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
             order_number = "SB-" + secrets.token_hex(5).upper()
             row = conn.execute(
                 """INSERT INTO store_orders
-                   (order_number,user_id,status,payment_method,payment_status,subtotal,shipping_fee,total,loyalty_discount,loyalty_coins_redeemed,shipping_address,customer_note)
-                   VALUES (%s,%s,'placed','cash_on_delivery','pending',%s,%s,%s,%s,%s,%s::jsonb,%s)
+                   (order_number,user_id,status,payment_method,payment_status,subtotal,tax_total,shipping_fee,total,loyalty_discount,loyalty_coins_redeemed,shipping_address,customer_note)
+                   VALUES (%s,%s,'placed','cash_on_delivery','pending',%s,%s,%s,%s,%s,%s,%s::jsonb,%s)
                    RETURNING id""",
-                (order_number, user["id"], subtotal, shipping_fee, total, loyalty_discount, coins_used,
+                (order_number, user["id"], subtotal, tax_total, shipping_fee, total, loyalty_discount, coins_used,
                  json.dumps(body.shipping_address.model_dump()), body.customer_note.strip())
             ).fetchone()
             if coins_used:
@@ -408,10 +418,11 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
             for product in products:
                 conn.execute(
                     """INSERT INTO store_order_items
-                       (order_id,variant_id,product_id,sku,product_name,quantity,unit_price,line_total)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                       (order_id,variant_id,product_id,sku,product_name,quantity,unit_price,line_total,tax_rate,tax_amount)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (row["id"], product["variant_id"], product["product_id"], product["sku"],
-                     product["name"], product["quantity"], product["unit_price"], product["line_total"])
+                     product["name"], product["quantity"], product["unit_price"], product["line_total"],
+                     product["tax_rate"], product["line_tax"])
                 )
                 stock=conn.execute("SELECT quantity FROM sb_stock WHERE variant_id=%s AND warehouse='Main' FOR UPDATE",(product["variant_id"],)).fetchone()
                 # Enforce inventory only for variants explicitly tracked in the stock ledger.
@@ -424,18 +435,18 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
                         VALUES(%s,'Main','website_sale',%s,'website_order',%s)""",(product["variant_id"],product["quantity"],row["id"]))
             from .invoices import create_invoice
             invoice_lines=[{"description":p["name"],"variant_id":p["variant_id"],"quantity":p["quantity"],
-                "unit_price":p["unit_price"],"line_subtotal":p["line_total"],"line_tax":0,"line_total":p["line_total"]}
-                for p in products]
-            product_total=sum((Decimal(str(p["line_total"])) for p in products),Decimal("0"))
-            adjustment=Decimal(str(total))-product_total
+                "unit_price":p["unit_price"],"tax_rate":p["tax_rate"],"line_subtotal":p["line_subtotal"],
+                "line_tax":p["line_tax"],"line_total":p["line_total"]} for p in products]
+            adjustment=(shipping_fee-loyalty_discount).quantize(Decimal("0.01"))
             if adjustment:
                 invoice_lines.append({"description":"Shipping / discount adjustment","quantity":1,"unit_price":adjustment,
                     "line_subtotal":adjustment,"line_tax":0,"line_total":adjustment})
             address=body.shipping_address.model_dump()
+            invoice_subtotal=(subtotal+shipping_fee-loyalty_discount).quantize(Decimal("0.01"))
             create_invoice(conn,source_type="website",source_id=int(row["id"]),
                 customer_name=str(address.get("full_name") or user.get("full_name") or "Website customer"),
                 customer_email=user.get("email"),customer_phone=address.get("phone"),
-                subtotal=total,tax_total=Decimal("0"),total=total,lines=invoice_lines)
+                subtotal=invoice_subtotal,tax_total=tax_total,total=total,lines=invoice_lines)
             return {"order": _order_detail(conn, row["id"]),
                     "message": "Order placed. Tracked inventory is deducted atomically; payment is due on delivery."}
     except HTTPException:
@@ -486,7 +497,7 @@ def list_admin_orders(
                 params.append(status)
             rows = conn.execute(
                 """SELECT o.id,o.order_number,o.user_id,u.email,u.full_name,o.status,o.payment_method,
-                          o.payment_status,o.subtotal,o.shipping_fee,o.total,o.shipping_address,o.created_at,o.updated_at
+                          o.payment_status,o.subtotal,o.tax_total,o.shipping_fee,o.total,o.shipping_address,o.created_at,o.updated_at
                    FROM store_orders o JOIN app_users u ON u.id=o.user_id
                    WHERE """ + " AND ".join(where) + " ORDER BY o.created_at DESC LIMIT 200",
                 params
