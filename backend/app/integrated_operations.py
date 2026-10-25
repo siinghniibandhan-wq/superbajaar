@@ -161,6 +161,9 @@ class WarehouseInput(BaseModel):
     serviceable_pincodes: list[str] = []
     locations: list[str] = []
 
+class WarehouseLocationsInput(BaseModel):
+    locations: list[str] = Field(max_length=200)
+
 class VendorInput(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     email: str
@@ -380,6 +383,28 @@ def create_warehouse(body: WarehouseInput, authorization: str | None = Header(de
         return c.execute("""INSERT INTO sb_warehouses(name,code,address,pincode,serviceable_pincodes,locations)
           VALUES(%s,%s,%s,%s,%s::jsonb,%s::jsonb) RETURNING *""",
           (body.name.strip(),body.code.strip().upper(),body.address,body.pincode,json.dumps(list(dict.fromkeys(body.serviceable_pincodes))),json.dumps(list(dict.fromkeys(body.locations))))).fetchone()
+
+
+@router.put("/admin/warehouses/{warehouse_id}/locations")
+def update_warehouse_locations(warehouse_id: int, body: WarehouseLocationsInput, authorization: str | None = Header(default=None)):
+    _require(authorization, {"super_admin","admin"})
+    locations = list(dict.fromkeys(value.strip() for value in body.locations if value.strip()))
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c)
+        warehouse = c.execute("SELECT id,locations FROM sb_warehouses WHERE id=%s FOR UPDATE", (warehouse_id,)).fetchone()
+        if not warehouse:
+            raise HTTPException(404, "Warehouse not found.")
+        previous = warehouse["locations"] if isinstance(warehouse["locations"], list) else []
+        removed = set(previous) - set(locations)
+        if removed:
+            used = c.execute("""SELECT location, COUNT(*) AS entries FROM sb_inventory_ledger
+              WHERE warehouse_id=%s AND location = ANY(%s) GROUP BY location""",
+              (warehouse_id, list(removed))).fetchall()
+            if used:
+                raise HTTPException(409, "Cannot remove a location referenced by inventory history. Keep it configured to preserve stock traceability.")
+        return c.execute("""UPDATE sb_warehouses SET locations=%s::jsonb
+          WHERE id=%s RETURNING id,name,code,locations,active""",
+          (json.dumps(locations), warehouse_id)).fetchone()
 
 
 @router.get("/admin/warehouses/allocate")
