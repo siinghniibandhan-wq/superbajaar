@@ -108,6 +108,12 @@ class AssignAttributesInput(BaseModel):
 class VariantValuesInput(BaseModel):
     values: dict[int, str]
 
+class GenerateVariantsInput(BaseModel):
+    combinations: list[dict[str, str]] = Field(min_length=1, max_length=500)
+    sku_prefix: str = Field(min_length=1, max_length=50)
+    selling_price: Decimal = Field(gt=0)
+    mrp: Decimal | None = None
+
 class WarehouseInput(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     code: str = Field(min_length=1, max_length=40)
@@ -230,6 +236,45 @@ def set_variant_values(variant_id: int, body: VariantValuesInput, authorization:
         for aid,val in body.values.items():
             c.execute("INSERT INTO variant_attribute_values(variant_id,attribute_id,value) VALUES(%s,%s,%s)",(variant_id,aid,val))
         return {"variant_id":variant_id,"attributes":body.values}
+
+
+@router.post("/admin/catalogue/products/{product_id}/generate-variants", status_code=201)
+def generate_variants(product_id: int, body: GenerateVariantsInput, authorization: str | None = Header(default=None)):
+    actor=_require(authorization, {"super_admin","admin"})
+    if body.mrp is not None and body.mrp < body.selling_price:
+        raise HTTPException(422,"MRP cannot be lower than the selling price.")
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c)
+        if not c.execute("SELECT id FROM products WHERE id=%s",(product_id,)).fetchone():
+            raise HTTPException(404,"Parent product not found.")
+        assigned={str(r["id"]):r for r in c.execute("""SELECT a.id,a.name,a.values_json FROM catalog_attributes a
+          JOIN product_attribute_assignments p ON p.attribute_id=a.id WHERE p.product_id=%s""",(product_id,)).fetchall()}
+        if not assigned: raise HTTPException(422,"Assign product-specific attributes before generating variants.")
+        columns={r["column_name"] for r in c.execute("SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='product_variants'").fetchall()}
+        required={"product_id","selling_price"}
+        if not required.issubset(columns): raise HTTPException(503,"The current variant schema cannot create variants safely.")
+        made=[]
+        for index,combo in enumerate(body.combinations,1):
+            if set(combo)!=set(assigned):
+                raise HTTPException(422,"Every combination must specify exactly the attributes assigned to this product.")
+            for aid,value in combo.items():
+                if value not in assigned[aid]["values_json"]:
+                    raise HTTPException(422,f"Invalid value for attribute {assigned[aid]['name']}.")
+            sku=(body.sku_prefix.strip().upper()+"-"+str(index).zfill(3))
+            if "sku" in columns and c.execute("SELECT id FROM product_variants WHERE sku=%s",(sku,)).fetchone():
+                raise HTTPException(409,f"SKU {sku} already exists; choose another prefix.")
+            names=["product_id","selling_price"]; vals=[product_id,body.selling_price]
+            if "sku" in columns: names.append("sku"); vals.append(sku)
+            if "mrp" in columns and body.mrp is not None: names.append("mrp"); vals.append(body.mrp)
+            if "currency" in columns: names.append("currency"); vals.append("INR")
+            if "status" in columns: names.append("status"); vals.append("active")
+            placeholders=",".join(["%s"]*len(names))
+            variant=c.execute(f"INSERT INTO product_variants({','.join(names)}) VALUES({placeholders}) RETURNING id",vals).fetchone()
+            for aid,value in combo.items():
+                c.execute("INSERT INTO variant_attribute_values(variant_id,attribute_id,value) VALUES(%s,%s,%s)",(variant["id"],int(aid),value))
+            made.append({"variant_id":variant["id"],"sku":sku,"attributes":combo})
+        _event(c,"PRODUCT-"+str(product_id),"variants_generated",actor["id"],details={"variant_ids":[x["variant_id"] for x in made]})
+        return {"product_id":product_id,"created":len(made),"variants":made}
 
 
 @router.get("/admin/warehouses")
