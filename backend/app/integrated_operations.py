@@ -68,6 +68,9 @@ class AttributeInput(BaseModel):
     values: list[str] = Field(min_length=1, max_length=100)
     display_type: str = Field(default="text", pattern="^(text|color|image|dropdown|button)$")
 
+class AttributeDisplayTypeInput(BaseModel):
+    display_type: str = Field(pattern="^(text|color|image|dropdown|button)$")
+
 class AssignAttributesInput(BaseModel):
     attribute_ids: list[int] = Field(max_length=100)
 
@@ -297,6 +300,20 @@ def create_attribute(body: AttributeInput, authorization: str | None = Header(de
               (body.name.strip(),json.dumps(values),body.display_type)).fetchone()
         except psycopg.errors.UniqueViolation:
             raise HTTPException(409, "An attribute with this name already exists.")
+        return row
+
+
+@router.put("/admin/catalogue/attributes/{attribute_id}/display-type")
+def update_attribute_display_type(attribute_id: int, body: AttributeDisplayTypeInput, authorization: str | None = Header(default=None)):
+    _require(authorization, {"super_admin", "admin"})
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c)
+        row = c.execute(
+            "UPDATE catalog_attributes SET display_type=%s WHERE id=%s RETURNING *",
+            (body.display_type, attribute_id),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "Attribute not found.")
         return row
 
 
