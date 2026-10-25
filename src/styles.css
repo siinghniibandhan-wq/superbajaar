@@ -210,3 +210,14 @@
 .pos-desk .user-table th,.pos-desk .user-table td{border-color:rgba(167,139,250,.12)}
 @media(max-width:900px){.pos-desk .pos-layout{grid-template-columns:minmax(0,1fr)!important}.pos-desk .pos-cart{position:static;order:0}.pos-desk .pos-catalogue{min-height:0}.pos-desk .pos-product-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
 @media(max-width:560px){.pos-desk{padding:10px!important;border-radius:16px}.pos-desk .panel-heading{align-items:flex-start;flex-direction:column}.pos-desk .panel-heading>div:last-child{display:flex;flex-direction:row;flex-wrap:wrap;width:100%}.pos-desk .panel-heading>div:last-child button{flex:1}.pos-desk .panel,.pos-desk .pos-catalogue,.pos-desk .pos-cart{padding:14px!important;border-radius:16px!important}.pos-desk .pos-product-grid{gap:9px!important}.pos-desk .pos-product-card{padding:12px!important;min-height:125px!important}.pos-desk .pos-product-card strong:last-of-type{font-size:16px}.pos-desk .pos-cart-line>div:first-child{align-items:flex-start}.pos-desk .pos-cart-line>div:first-child strong{max-width:72%}.pos-desk .pos-recent-sales .panel-heading{flex-direction:row;align-items:center}.pos-desk .pos-recent-sales .panel-heading>div:last-child{width:auto}.pos-desk .pos-recent-sales .panel-heading button{width:auto}}
+
+/* Parent product cards and variant selection */
+.variant-count{display:inline-flex;align-items:center;margin-top:7px;border-radius:999px;padding:5px 9px;background:#f3ebff;color:#6428d9;font-size:10px;font-weight:800}
+.variant-picker{display:grid;gap:8px;margin:18px 0}
+.variant-picker label,.pos-variant-label{font-size:12px;font-weight:800;color:var(--admin-text,#ddd6fe)}
+.variant-picker select,.pos-variant-label select{width:100%;box-sizing:border-box;margin-top:6px;padding:12px 13px;border:1px solid #d9c8f8;border-radius:12px;background:var(--admin-surface,#fff);color:var(--admin-text,#30233d);font:inherit}
+.pos-desk .pos-variant-label{display:block;margin-top:12px;color:#c4b5fd}
+.pos-desk .pos-variant-label select{background:rgba(13,13,22,.9);color:#f5f3ff;border-color:rgba(167,139,250,.3);font-size:11px}
+.pos-desk .pos-product-card{display:block}
+.pos-desk .pos-product-card .primary-cta{margin-top:12px;width:100%}
+@media(max-width:560px){.variant-picker select{font-size:14px}}
