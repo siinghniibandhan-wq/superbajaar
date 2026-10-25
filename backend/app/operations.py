@@ -584,9 +584,25 @@ def update_return(return_id: int, body: ReturnStatusInput, authorization: str | 
         if body.status=="received_at_origin":
             if body.origin_warehouse_id is None: raise HTTPException(422,"Select the origin warehouse when the return arrives.")
             if not c.execute("SELECT id FROM sb_warehouses WHERE id=%s AND active",(body.origin_warehouse_id,)).fetchone(): raise HTTPException(404,"Active origin warehouse not found.")
-        c.execute("UPDATE sb_returns SET status=%s,items=%s::jsonb,origin_warehouse_id=COALESCE(%s,origin_warehouse_id),updated_at=now() WHERE id=%s",(body.status,json.dumps(items),body.origin_warehouse_id,return_id))
-        _event(c,r["reference"],"reverse_logistics_status",actor["id"],r["status"],body.status,{"invoice_reference":r["invoice_reference"]})
-        return {"reference":r["reference"],"invoice_reference":r["invoice_reference"],"status":body.status}
+        refund=Decimal("0.00")
+        if body.status=="refunded":
+            invoice=c.execute("SELECT * FROM sb_invoices WHERE reference=%s",(r["invoice_reference"],)).fetchone()
+            if invoice:
+                prices={int(x["variant_id"]):Decimal(str(x.get("unit_price",0))) for x in invoice["items"] if x.get("variant_id")}
+            else:
+                order=c.execute("SELECT id FROM store_orders WHERE invoice_number=%s",(r["invoice_reference"],)).fetchone()
+                prices={int(x["variant_id"]):Decimal(str(x["unit_price"])) for x in c.execute("SELECT variant_id,unit_price FROM store_order_items WHERE order_id=%s",(order["id"],)).fetchall()} if order else {}
+            refund=sum((prices.get(int(x["variant_id"]),Decimal("0"))*int(x.get("accepted_quantity",0)) for x in items),Decimal("0")).quantize(Decimal("0.01"))
+            credit_ref=_ref("CN")
+            c.execute("INSERT INTO sb_credit_notes(reference,invoice_reference,return_reference,amount,created_by) VALUES(%s,%s,%s,%s,%s)",
+              (credit_ref,r["invoice_reference"],r["reference"],refund,actor["id"]))
+            if refund>0:
+                c.execute("INSERT INTO sb_journal_entries(reference,source_reference,memo,lines) VALUES(%s,%s,%s,%s::jsonb)",
+                  (_ref("JE"),credit_ref,"Customer return credit note",json.dumps([{"account_code":"4000","debit":str(refund),"credit":"0"},{"account_code":"1100","debit":"0","credit":str(refund)}])))
+            _event(c,r["reference"],"credit_note_posted",actor["id"],r["status"],"refunded",{"credit_note_reference":credit_ref,"amount":str(refund)})
+        c.execute("UPDATE sb_returns SET status=%s,items=%s::jsonb,refund_amount=%s,origin_warehouse_id=COALESCE(%s,origin_warehouse_id),updated_at=now() WHERE id=%s",(body.status,json.dumps(items),refund,body.origin_warehouse_id,return_id))
+        _event(c,r["reference"],"reverse_logistics_status",actor["id"],r["status"],body.status,{"invoice_reference":r["invoice_reference"],"refund_amount":str(refund)})
+        return {"reference":r["reference"],"invoice_reference":r["invoice_reference"],"status":body.status,"refund_amount":str(refund)}
 
 
 @router.get("/admin/accounting/overview")
