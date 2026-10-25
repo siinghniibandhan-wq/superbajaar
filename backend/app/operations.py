@@ -73,6 +73,9 @@ def _ensure(conn: Any) -> None:
         id BIGSERIAL PRIMARY KEY, order_type TEXT NOT NULL, order_id BIGINT NOT NULL, carrier TEXT,
         tracking_number TEXT, status TEXT NOT NULL DEFAULT 'created' CHECK(status IN ('created','packed','in_transit','out_for_delivery','delivered','exception','cancelled')),
         estimated_delivery DATE, delivered_at TIMESTAMPTZ, note TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS sb_shipment_events (
+        id BIGSERIAL PRIMARY KEY, shipment_id BIGINT NOT NULL REFERENCES sb_shipments(id) ON DELETE CASCADE,
+        status TEXT NOT NULL, note TEXT, actor_user_id BIGINT, created_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
     conn.execute("""CREATE TABLE IF NOT EXISTS sb_employees (
         id BIGSERIAL PRIMARY KEY, employee_code TEXT NOT NULL UNIQUE, full_name TEXT NOT NULL, email TEXT,
         department TEXT, designation TEXT, joining_date DATE, status TEXT NOT NULL DEFAULT 'active'
@@ -630,13 +633,16 @@ def pos_sale_detail(sale_id:int,authorization:str|None=Header(default=None))->di
 
 @router.post("/shipments",status_code=201)
 def create_shipment(body:ShipmentInput,authorization:str|None=Header(default=None))->dict[str,Any]:
-    _admin(authorization)
+    user=_admin(authorization)
     try:
         with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
             _ensure(conn)
-            row=conn.execute("""INSERT INTO sb_shipments(order_type,order_id,carrier,tracking_number,estimated_delivery,note)
-                VALUES(%s,%s,%s,%s,%s,%s) RETURNING *""",(body.order_type,body.order_id,body.carrier.strip() or None,body.tracking_number.strip() or None,body.estimated_delivery,body.note.strip() or None)).fetchone()
-            return {"shipment":row}
+            with conn.transaction():
+                row=conn.execute("""INSERT INTO sb_shipments(order_type,order_id,carrier,tracking_number,estimated_delivery,note)
+                    VALUES(%s,%s,%s,%s,%s,%s) RETURNING *""",(body.order_type,body.order_id,body.carrier.strip() or None,body.tracking_number.strip() or None,body.estimated_delivery,body.note.strip() or None)).fetchone()
+                conn.execute("INSERT INTO sb_shipment_events(shipment_id,status,note,actor_user_id) VALUES(%s,%s,%s,%s)",
+                    (row["id"],row["status"],body.note.strip() or "Shipment created",user["id"]))
+                return {"shipment":row}
     except Exception as exc: raise HTTPException(status_code=503,detail="Shipment could not be created") from exc
 
 @router.get("/shipments")
@@ -645,7 +651,10 @@ def shipments(authorization:str|None=Header(default=None),limit:int=Query(100,ge
     try:
         with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
             _ensure(conn)
-            return {"items":conn.execute("SELECT * FROM sb_shipments ORDER BY id DESC LIMIT %s",(limit,)).fetchall()}
+            rows=conn.execute("SELECT * FROM sb_shipments ORDER BY id DESC LIMIT %s",(limit,)).fetchall()
+            for row in rows:
+                row["events"]=conn.execute("SELECT id,status,note,actor_user_id,created_at FROM sb_shipment_events WHERE shipment_id=%s ORDER BY id",(row["id"],)).fetchall()
+            return {"items":rows}
     except Exception as exc: raise HTTPException(status_code=503,detail="Shipments unavailable") from exc
 
 @router.patch("/shipments/{shipment_id}")
@@ -662,6 +671,9 @@ def update_shipment(shipment_id:int,body:ShipmentUpdate,authorization:str|None=H
                 row=conn.execute("""UPDATE sb_shipments SET status=%s,note=COALESCE(NULLIF(%s,''),note),
                     delivered_at=CASE WHEN %s='delivered' AND delivered_at IS NULL THEN now() ELSE delivered_at END WHERE id=%s RETURNING *""",
                     (body.status,body.note,body.status,shipment_id)).fetchone()
+                if body.status != shipment["status"] or body.note.strip():
+                    conn.execute("INSERT INTO sb_shipment_events(shipment_id,status,note,actor_user_id) VALUES(%s,%s,%s,%s)",
+                        (shipment_id,body.status,body.note.strip() or None,user["id"]))
                 journal_id=None
                 target=None
                 if shipment["order_type"]=="website" and conn.execute("SELECT to_regclass('public.store_orders') AS name").fetchone()["name"]:
