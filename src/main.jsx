@@ -198,7 +198,7 @@ function Store({goAdmin}) {
    const match=attrs.find(a=>String(a.attribute_name||'').toLowerCase()===String(name).toLowerCase());
    if(match&&['text','color','image','dropdown','button'].includes(match.display_type))return match.display_type;
   }
-  return 'button';
+  return 'text';
  }
  function selectVariantAttribute(attribute,value){
   if(!selectedProduct)return;
