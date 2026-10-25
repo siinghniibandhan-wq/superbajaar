@@ -39,11 +39,12 @@ def _ensure_commerce_schema(conn: Any) -> None:
                 CHECK (status IN ('placed','confirmed','processing','packed','picked','in_transit','out_for_delivery','shipped','delivered','cancelled')),
             payment_method TEXT NOT NULL CHECK (payment_method IN ('cash_on_delivery')),
             payment_status TEXT NOT NULL DEFAULT 'pending'
-                CHECK (payment_status IN ('pending','paid','failed','refunded')),
+                CHECK (payment_status IN ('pending','partially_paid','paid','failed','refunded')),
             currency TEXT NOT NULL DEFAULT 'INR',
             subtotal NUMERIC(12,2) NOT NULL CHECK (subtotal >= 0),
             shipping_fee NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (shipping_fee >= 0),
             total NUMERIC(12,2) NOT NULL CHECK (total >= 0),
+            paid_total NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (paid_total >= 0),
             shipping_address JSONB NOT NULL,
             customer_note TEXT NOT NULL DEFAULT '',
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -64,6 +65,23 @@ def _ensure_commerce_schema(conn: Any) -> None:
     END $""")
     conn.execute("ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS invoice_number TEXT")
     conn.execute("ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS source_channel TEXT NOT NULL DEFAULT 'website'")
+    conn.execute("ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS paid_total NUMERIC(12,2) NOT NULL DEFAULT 0")
+    conn.execute("""DO $
+    BEGIN
+      IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='store_orders'::regclass
+        AND conname='store_orders_payment_status_check' AND pg_get_constraintdef(oid) NOT LIKE '%partially_paid%') THEN
+        ALTER TABLE store_orders DROP CONSTRAINT store_orders_payment_status_check;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='store_orders'::regclass
+        AND conname='store_orders_payment_status_check') THEN
+        ALTER TABLE store_orders ADD CONSTRAINT store_orders_payment_status_check
+          CHECK (payment_status IN ('pending','partially_paid','paid','failed','refunded'));
+      END IF;
+    END $""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS store_order_payments(
+        id BIGSERIAL PRIMARY KEY, reference TEXT NOT NULL UNIQUE, order_id BIGINT NOT NULL REFERENCES store_orders(id),
+        amount NUMERIC(12,2) NOT NULL CHECK(amount>0), method TEXT NOT NULL, recorded_by BIGINT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
     conn.execute("UPDATE store_orders SET invoice_number = 'INV-' || order_number WHERE invoice_number IS NULL")
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS store_orders_invoice_number_uidx ON store_orders(invoice_number)")
     conn.execute("""CREATE TABLE IF NOT EXISTS document_events (
@@ -121,6 +139,10 @@ class SettingUpdate(BaseModel):
 
 class OrderStatusUpdate(BaseModel):
     status: str
+
+class OrderPaymentInput(BaseModel):
+    amount: Decimal = Field(gt=0)
+    method: str = "cash"
 
 
 def _validated_delivery_setting(value: dict[str, Any]) -> dict[str, Any]:
@@ -218,7 +240,7 @@ def _delivery_quote(config: Any, pincode: str | None, subtotal: Decimal) -> dict
 def _order_detail(conn: Any, order_id: int) -> dict[str, Any]:
     order = conn.execute(
         """SELECT id,order_number,invoice_number,source_channel,user_id,status,payment_method,payment_status,currency,
-                  subtotal,shipping_fee,total,shipping_address,customer_note,created_at,updated_at
+                  subtotal,shipping_fee,total,paid_total,shipping_address,customer_note,created_at,updated_at
            FROM store_orders WHERE id=%s""", (order_id,)
     ).fetchone()
     if not order:
@@ -414,6 +436,11 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
                 (order_number, "INV-" + order_number, user["id"], subtotal, shipping_fee, total,
                  json.dumps(body.shipping_address.model_dump()), body.customer_note.strip())
             ).fetchone()
+            conn.execute("""INSERT INTO sb_journal_entries(reference,source_reference,memo,lines)
+                VALUES(%s,%s,%s,%s::jsonb)""",
+                ("JE-"+secrets.token_hex(5).upper(),"INV-"+order_number,"Website sale invoice",
+                 json.dumps([{"account_code":"1100","debit":str(total),"credit":"0"},
+                              {"account_code":"4000","debit":"0","credit":str(subtotal+shipping_fee)}]))) 
             conn.execute("INSERT INTO sb_document_registry(reference,document_type,document_id) VALUES(%s,'sale_invoice',%s)",
                 ("INV-"+order_number,row["id"]))
             conn.execute("""INSERT INTO document_events
@@ -449,7 +476,7 @@ def list_my_orders(authorization: str | None = Header(default=None)) -> dict[str
             _ensure_commerce_schema(conn)
             rows = conn.execute(
                 """SELECT id,order_number,invoice_number,source_channel,status,payment_method,payment_status,currency,
-                          subtotal,shipping_fee,total,shipping_address,created_at,updated_at
+                          subtotal,shipping_fee,total,paid_total,shipping_address,created_at,updated_at
                    FROM store_orders WHERE user_id=%s ORDER BY created_at DESC LIMIT 100""",
                 (user["id"],)
             ).fetchall()
@@ -481,7 +508,7 @@ def list_admin_orders(
                 params.append(status)
             rows = conn.execute(
                 """SELECT o.id,o.order_number,o.invoice_number,o.source_channel,o.user_id,u.email,u.full_name,o.status,o.payment_method,
-                          o.payment_status,o.subtotal,o.shipping_fee,o.total,o.shipping_address,o.created_at,o.updated_at
+                          o.payment_status,o.subtotal,o.shipping_fee,o.total,o.paid_total,o.shipping_address,o.created_at,o.updated_at
                    FROM store_orders o JOIN app_users u ON u.id=o.user_id
                    WHERE """ + " AND ".join(where) + " ORDER BY o.created_at DESC LIMIT 200",
                 params
@@ -527,6 +554,10 @@ def update_admin_order(
             if body.status == "cancelled":
                 from .operations import _schema as _ensure_operations_schema
                 _ensure_operations_schema(conn)
+                conn.execute("""INSERT INTO sb_journal_entries(reference,source_reference,memo,lines)
+                    VALUES(%s,%s,%s,%s::jsonb)""",
+                    ("JE-"+secrets.token_hex(5).upper(),previous["invoice_number"],"Reverse cancelled website sale",
+                     json.dumps([{"account_code":"4000","debit":str(Decimal("0")),"credit":"0"}])))
                 reserved = conn.execute("SELECT warehouse_id,variant_id,quantity FROM store_order_items WHERE order_id=%s", (order_id,)).fetchall()
                 for item in reserved:
                     if item["warehouse_id"] is not None:
