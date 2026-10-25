@@ -225,6 +225,7 @@ class ReturnInput(BaseModel):
 class ReturnStatusInput(BaseModel):
     status: str
     origin_warehouse_id: int | None = None
+    location: str = ""
     accepted_items: list[dict[str, Any]] = []
 
 
@@ -863,6 +864,9 @@ def update_return(return_id: int, body: ReturnStatusInput, authorization: str | 
         items=list(r["items"])
         if body.status=="inspected":
             if r["origin_warehouse_id"] is None: raise HTTPException(409,"Set an origin warehouse before inspection.")
+            origin=c.execute("SELECT locations FROM sb_warehouses WHERE id=%s AND active",(r["origin_warehouse_id"],)).fetchone()
+            allowed_locations=origin["locations"] if origin and isinstance(origin["locations"],list) else []
+            if allowed_locations and body.location not in allowed_locations: raise HTTPException(422,"Choose a configured origin warehouse bin/location before inspection.")
             accepted={int(x.get("variant_id",0)):int(x.get("quantity",0)) for x in body.accepted_items}
             returned={int(x["variant_id"]):int(x["quantity"]) for x in items}
             if set(accepted)-set(returned) or any(q<0 or q>returned[vid] for vid,q in accepted.items()):
@@ -871,8 +875,8 @@ def update_return(return_id: int, body: ReturnStatusInput, authorization: str | 
                 vid=int(line["variant_id"]); good=accepted.get(vid,0)
                 line["accepted_quantity"]=good; line["rejected_quantity"]=int(line["quantity"])-good
                 if good:
-                    c.execute("""INSERT INTO sb_inventory_ledger(warehouse_id,variant_id,quantity_delta,movement_type,reference,note,actor_id)
-                      VALUES(%s,%s,%s,'return',%s,'Accepted customer return',%s)""",(r["origin_warehouse_id"],vid,good,r["reference"],actor["id"]))
+                    c.execute("""INSERT INTO sb_inventory_ledger(warehouse_id,variant_id,quantity_delta,movement_type,reference,location,note,actor_id)
+                      VALUES(%s,%s,%s,'return',%s,%s,'Accepted customer return',%s)""",(r["origin_warehouse_id"],vid,good,r["reference"],body.location,actor["id"]))
         if body.status=="received_at_origin":
             if body.origin_warehouse_id is None: raise HTTPException(422,"Select the origin warehouse when the return arrives.")
             if not c.execute("SELECT id FROM sb_warehouses WHERE id=%s AND active",(body.origin_warehouse_id,)).fetchone(): raise HTTPException(404,"Active origin warehouse not found.")
