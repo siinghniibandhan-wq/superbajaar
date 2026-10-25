@@ -774,6 +774,7 @@ class ProductWriteInput(BaseModel):
     image_url: str = Field(default="", max_length=6000000)
     tax_category: str = Field(default="", max_length=120)
     gst_rate: float | None = Field(default=None, ge=0, le=100)
+    tax_inclusive: bool = True
     sale_badge: str = Field(default="", max_length=80)
     sale_badge_active: bool = False
     status: str = Field(default="active", pattern="^(active|inactive|draft)$")
@@ -831,7 +832,7 @@ def create_catalogue_product(
                               "description": body.description.strip(), "specifications": Jsonb(body.specifications),
                               "manufacturer_details": Jsonb(body.manufacturer_details), "seller_details": Jsonb(body.seller_details),
                               "category_id": body.category_id, "status": body.status,
-                              "tax_category": body.tax_category.strip(), "gst_rate": body.gst_rate,
+                              "tax_category": body.tax_category.strip(), "gst_rate": body.gst_rate, "tax_inclusive": body.tax_inclusive,
                               "sale_badge": body.sale_badge.strip(), "sale_badge_active": body.sale_badge_active,
                               "cover_image_url": cover_url, "main_image_url": cover_url, "image_url": cover_url}
             product = _catalogue_insert(conn, "products", product_values)
@@ -915,7 +916,7 @@ def update_catalogue_product(
                               "description": body.description.strip(), "specifications": Jsonb(body.specifications),
                               "manufacturer_details": Jsonb(body.manufacturer_details), "seller_details": Jsonb(body.seller_details),
                               "category_id": body.category_id, "status": body.status,
-                              "tax_category": body.tax_category.strip(), "gst_rate": body.gst_rate,
+                              "tax_category": body.tax_category.strip(), "gst_rate": body.gst_rate, "tax_inclusive": body.tax_inclusive,
                               "sale_badge": body.sale_badge.strip(), "sale_badge_active": body.sale_badge_active,
                               "cover_image_url": cover_url, "main_image_url": cover_url, "image_url": cover_url}
             product_values = {k: v for k, v in product_values.items() if k in product_columns}
