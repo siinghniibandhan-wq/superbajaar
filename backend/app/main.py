@@ -237,6 +237,17 @@ def set_product_availability(product_id: int, body: ProductAvailabilityRuleInput
                     (pin, pin, Jsonb([pin])),
                 ).fetchone():
                     raise HTTPException(status_code=422, detail=f"PIN code {pin} is not in an active region or warehouse service area.")
+                if region_ids and not conn.execute(
+                    "SELECT 1 FROM sb_region_pincodes WHERE region_id = ANY(%s) AND pincode=%s AND active=TRUE LIMIT 1",
+                    (region_ids, pin),
+                ).fetchone():
+                    raise HTTPException(status_code=422, detail=f"PIN code {pin} is outside the selected region(s).")
+            if region_ids and warehouse_ids:
+                if conn.execute(
+                    "SELECT 1 FROM sb_warehouses WHERE id = ANY(%s) AND (region_id IS NULL OR NOT (region_id = ANY(%s))) LIMIT 1",
+                    (warehouse_ids, region_ids),
+                ).fetchone():
+                    raise HTTPException(status_code=422, detail="Every selected warehouse must belong to one of the selected regions.")
             conn.execute(
                 "DELETE FROM sb_product_availability_rules WHERE product_id=%s AND variant_id IS NOT DISTINCT FROM %s",
                 (product_id, body.variant_id),
