@@ -782,6 +782,7 @@ class ProductWriteInput(BaseModel):
     seller_details: list[dict[str, str]] = Field(default_factory=list, max_length=100)
     attributes: list[dict[str, Any]] = Field(default_factory=list, max_length=12)
     variant_covers: list[str] = Field(default_factory=list, max_length=100)
+    variant_prices: list[dict[str, Any]] = Field(default_factory=list, max_length=100)
     editing_variant_id: int | None = Field(default=None, gt=0)
     shared_gallery: list[str] = Field(default_factory=list, max_length=100)
     variant_galleries: list[list[str]] = Field(default_factory=list, max_length=100)
@@ -880,12 +881,21 @@ def create_catalogue_product(
                     sku = (sku[:max(1, 119-len(suffix))] + "-" + suffix)[:120]
                 requested_cover = body.variant_covers[index].strip() if index < len(body.variant_covers) else ""
                 variant_cover = requested_cover or body.image_url.strip() or None
+                price_spec = body.variant_prices[index] if index < len(body.variant_prices) else {}
+                try:
+                    variant_price = float(price_spec.get("selling_price") or body.selling_price)
+                    mrp_raw = price_spec.get("mrp", body.mrp)
+                    variant_mrp = float(mrp_raw) if mrp_raw not in (None, "") else None
+                except (TypeError, ValueError):
+                    raise HTTPException(status_code=422, detail="Variant prices must be valid numbers.")
+                if variant_price <= 0 or (variant_mrp is not None and variant_mrp <= 0):
+                    raise HTTPException(status_code=422, detail="Variant selling price and MRP must be positive.")
                 if variant_cover and not variant_cover.startswith(("https://", "http://", "data:image/")):
                     raise HTTPException(status_code=422, detail="Variant cover must be an HTTP(S) URL or image upload.")
                 if variant_cover and variant_cover.startswith("data:image/") and ";base64," not in variant_cover:
                     raise HTTPException(status_code=422, detail="Variant cover upload must be a valid image data URL.")
-                variant_values = {"product_id": product["id"], "selling_price": body.selling_price,
-                                  "mrp": body.mrp, "sku": sku,
+                variant_values = {"product_id": product["id"], "selling_price": variant_price,
+                                  "mrp": variant_mrp, "sku": sku,
                                   "image_url": variant_cover, "status": body.status}
                 variant = _catalogue_insert(conn, "product_variants", variant_values)
                 for (attribute_id, _attribute_name, _values), value in zip(normalized_attributes, combo):
