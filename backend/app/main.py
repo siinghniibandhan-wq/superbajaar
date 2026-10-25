@@ -363,6 +363,39 @@ def moderate_product_review(
 
 
 
+class VariantImageInput(BaseModel):
+    image_url: str = Field(min_length=1, max_length=5500000)
+    alt_text: str = Field(default="", max_length=240)
+    sort_order: int = Field(default=0, ge=0, le=10000)
+
+
+@app.post("/api/admin/products/{product_id}/variants/{variant_id}/images", status_code=201)
+def add_variant_image(product_id: int, variant_id: int, body: VariantImageInput, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _admin_catalogue_user(authorization)
+    image_url = body.image_url.strip()
+    if not (image_url.startswith("https://") or image_url.startswith("http://") or image_url.startswith("data:image/")):
+        raise HTTPException(status_code=422, detail="Use an HTTP(S) image URL or a valid image upload.")
+    if image_url.startswith("data:image/") and ";base64," not in image_url:
+        raise HTTPException(status_code=422, detail="Uploaded images must be encoded as an image data URL.")
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            if not conn.execute("SELECT id FROM product_variants WHERE id=%s AND product_id=%s", (variant_id, product_id)).fetchone():
+                raise HTTPException(status_code=404, detail="Product variant not found.")
+            if not conn.execute("SELECT to_regclass('public.product_variant_images') AS t").fetchone()["t"]:
+                raise HTTPException(status_code=503, detail="Apply the dynamic catalogue schema migration first.")
+            row = conn.execute(
+                """INSERT INTO product_variant_images(variant_id,image_url,alt_text,sort_order)
+                   VALUES(%s,%s,%s,%s) RETURNING id,variant_id,image_url,alt_text,sort_order,created_at""",
+                (variant_id, image_url, body.alt_text.strip(), body.sort_order)
+            ).fetchone()
+            return {"image": row}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        logger.exception("Variant image save failed")
+        raise HTTPException(status_code=503, detail="Variant image could not be saved.") from exc
+
+
 class ProductWriteInput(BaseModel):
     name: str = Field(min_length=1, max_length=240)
     selling_price: float = Field(gt=0, le=9999999999)
