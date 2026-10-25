@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
-const API = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+const API = (import.meta.env.VITE_API_BASE_URL || 'https://superappkart.duckdns.org/api').replace(/\/$/, '');
 const API_PATH = path => API.endsWith('/api') ? API + path : API + '/api' + path;
 async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
  const controller = new AbortController();
