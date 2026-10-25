@@ -108,7 +108,7 @@ def _schema(conn):
     conn.execute("CREATE INDEX IF NOT EXISTS sb_events_ref_idx ON sb_document_events(reference,created_at)")
     conn.execute("CREATE INDEX IF NOT EXISTS sb_inventory_variant_idx ON sb_inventory_ledger(variant_id,warehouse_id,created_at)")
     conn.execute("""INSERT INTO sb_accounts(code,name,account_type) VALUES
-      ('1000','Cash and bank','asset'),('1100','Accounts receivable','asset'),
+      ('1000','Cash and bank','asset'),('1100','Accounts receivable','asset'),('1200','GST input credit','asset'),
       ('2000','Accounts payable','liability'),('2100','GST payable','liability'),
       ('2110','CGST payable','liability'),('2120','SGST payable','liability'),('2130','IGST payable','liability'),('3000','Retained earnings','equity'),('4000','Sales revenue','income'),('5000','Cost of goods sold','expense')
       ON CONFLICT(code) DO NOTHING""")
@@ -399,7 +399,8 @@ def vendor_dashboard(authorization: str | None = Header(default=None)):
         receipts=c.execute("""SELECT r.* FROM sb_receipts r JOIN sb_procurements p ON p.id=r.procurement_id
           WHERE p.vendor_id=%s ORDER BY r.created_at DESC LIMIT 200""",(vendor["id"],)).fetchall()
         dispatches=c.execute("SELECT * FROM sb_vendor_dispatches WHERE vendor_id=%s ORDER BY created_at DESC LIMIT 200",(vendor["id"],)).fetchall()
-        return {"vendor":{"id":vendor["id"],"name":vendor["name"]},"procurements":quotes,"receipts":receipts,"dispatches":dispatches}
+        bills=c.execute("SELECT * FROM sb_supplier_bills WHERE vendor_id=%s ORDER BY created_at DESC LIMIT 200",(vendor["id"],)).fetchall()
+        return {"vendor":{"id":vendor["id"],"name":vendor["name"]},"procurements":quotes,"receipts":receipts,"dispatches":dispatches,"bills":bills}
 
 
 @router.post("/admin/procurements", status_code=201)
@@ -485,7 +486,7 @@ def update_supplier_bill(bill_id: int, status: str = Query(pattern="^(approved|r
         if status=="approved":
             total=Decimal(str(b["amount"]))+Decimal(str(b["tax_total"]))
             lines=[{"account_code":"5000","debit":str(b["amount"]),"credit":"0"},{"account_code":"2000","debit":"0","credit":str(total)}]
-            if b["tax_total"]: lines.append({"account_code":"2100","debit":str(b["tax_total"]),"credit":"0"})
+            if b["tax_total"]: lines.append({"account_code":"1200","debit":str(b["tax_total"]),"credit":"0"})
             c.execute("INSERT INTO sb_journal_entries(reference,source_reference,memo,lines) VALUES(%s,%s,%s,%s::jsonb)",
               (_ref("JE"),b["reference"],"Approved supplier bill",json.dumps(lines)))
         _event(c,b["reference"],"supplier_bill_reviewed",actor["id"],b["status"],status)
@@ -862,7 +863,7 @@ def accounting_overview(authorization: str | None = Header(default=None)):
           "credit_notes":credit_total,
           "net_sales":gross_sales-credit_total,
           "receivables":c.execute("SELECT COALESCE(SUM(total-paid_total),0) amount FROM sb_invoices WHERE status IN ('issued','partially_paid','overdue')").fetchone()["amount"] + c.execute("SELECT COALESCE(SUM(CASE WHEN payment_status='paid' THEN 0 ELSE total END),0) amount FROM store_orders WHERE status NOT IN ('cancelled')").fetchone()["amount"],
-          "payables":0,
+          "payables":c.execute("SELECT COALESCE(SUM(amount+tax_total-paid_total),0) amount FROM sb_supplier_bills WHERE status IN ('approved','partially_paid')").fetchone()["amount"],
           "cash_collected":c.execute("SELECT COALESCE(SUM(amount),0) amount FROM sb_payments WHERE status='posted'").fetchone()["amount"] + c.execute("SELECT COALESCE(SUM(CASE WHEN payment_status='paid' THEN total ELSE 0 END),0) amount FROM store_orders").fetchone()["amount"],
           "journal_entries":c.execute("SELECT COUNT(*)::int count FROM sb_journal_entries WHERE posted").fetchone()["count"],
           "accounts":c.execute("SELECT * FROM sb_accounts WHERE active ORDER BY code").fetchall()
