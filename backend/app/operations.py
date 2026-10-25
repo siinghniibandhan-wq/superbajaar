@@ -356,7 +356,8 @@ def vendor_dashboard(authorization: str | None = Header(default=None)):
         quotes=c.execute("SELECT * FROM sb_procurements WHERE vendor_id=%s ORDER BY created_at DESC LIMIT 200",(vendor["id"],)).fetchall()
         receipts=c.execute("""SELECT r.* FROM sb_receipts r JOIN sb_procurements p ON p.id=r.procurement_id
           WHERE p.vendor_id=%s ORDER BY r.created_at DESC LIMIT 200""",(vendor["id"],)).fetchall()
-        return {"vendor":{"id":vendor["id"],"name":vendor["name"]},"procurements":quotes,"receipts":receipts}
+        dispatches=c.execute("SELECT * FROM sb_vendor_dispatches WHERE vendor_id=%s ORDER BY created_at DESC LIMIT 200",(vendor["id"],)).fetchall()
+        return {"vendor":{"id":vendor["id"],"name":vendor["name"]},"procurements":quotes,"receipts":receipts,"dispatches":dispatches}
 
 
 @router.post("/admin/procurements", status_code=201)
@@ -402,6 +403,45 @@ def convert_to_po(procurement_id: int, authorization: str | None = Header(defaul
         c.execute("UPDATE sb_procurements SET purchase_order_reference=%s,status='purchase_order',updated_at=now() WHERE id=%s",(ref,procurement_id))
         _event(c,p["reference"],"purchase_order_created",actor["id"],p["status"],"purchase_order",{"quotation_reference":p["reference"],"purchase_order_reference":ref})
         return {"id":procurement_id,"reference":p["reference"],"purchase_order_reference":ref,"status":"purchase_order","vendor_id":p["vendor_id"],"items":p["items"]}
+
+
+@router.post("/vendor/procurements/{procurement_id}/dispatches", status_code=201)
+def vendor_dispatch(procurement_id: int, body: VendorDispatchInput, authorization: str | None = Header(default=None)):
+    user=_current(authorization)
+    if not body.items: raise HTTPException(422,"Dispatch at least one purchase order line.")
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c)
+        p=c.execute("""SELECT p.*,v.id AS verified_vendor_id FROM sb_procurements p JOIN sb_vendors v ON v.id=p.vendor_id
+          WHERE p.id=%s AND lower(v.email)=lower(%s) AND v.status='active' FOR UPDATE""",(procurement_id,user["email"])).fetchone()
+        if not p: raise HTTPException(404,"Purchase order not found for this supplier.")
+        if p["status"] not in {"purchase_order","partially_received"}: raise HTTPException(409,"Only an open purchase order can be dispatched.")
+        expected={int(x["variant_id"]):int(x["quantity"]) for x in p["items"]}
+        dispatched={}
+        for prev in c.execute("SELECT items FROM sb_vendor_dispatches WHERE procurement_id=%s AND status<>'cancelled'",(procurement_id,)).fetchall():
+            for line in prev["items"]:
+                vid=int(line["variant_id"]); dispatched[vid]=dispatched.get(vid,0)+int(line["quantity"])
+        incoming={}
+        for line in body.items:
+            vid=int(line.get("variant_id",0)); qty=int(line.get("quantity",0))
+            if vid not in expected or qty<1: raise HTTPException(422,"Dispatch lines must match PO variants and positive quantities.")
+            incoming[vid]=incoming.get(vid,0)+qty
+        for vid,qty in incoming.items():
+            if dispatched.get(vid,0)+qty>expected[vid]: raise HTTPException(422,"Dispatch quantity exceeds the outstanding PO quantity.")
+        ref=_ref("DSP")
+        row=c.execute("""INSERT INTO sb_vendor_dispatches(reference,procurement_id,vendor_id,items,carrier,tracking_reference)
+          VALUES(%s,%s,%s,%s::jsonb,%s,%s) RETURNING *""",(ref,procurement_id,p["vendor_id"],json.dumps(body.items),body.carrier,body.tracking_reference)).fetchone()
+        _event(c,p["reference"],"vendor_dispatched",user["id"],p["status"],"purchase_order",{"dispatch_reference":ref,"items":body.items})
+        return row
+
+
+@router.get("/admin/dispatches")
+def list_dispatches(authorization: str | None = Header(default=None)):
+    _require(authorization, {"super_admin","admin","staff"})
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c)
+        return {"items":c.execute("""SELECT d.*,v.name vendor_name,p.reference quotation_reference,p.purchase_order_reference
+          FROM sb_vendor_dispatches d JOIN sb_vendors v ON v.id=d.vendor_id
+          JOIN sb_procurements p ON p.id=d.procurement_id ORDER BY d.created_at DESC LIMIT 500""").fetchall()}
 
 
 @router.post("/admin/procurements/{procurement_id}/receipts", status_code=201)
