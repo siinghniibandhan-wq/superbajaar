@@ -986,12 +986,15 @@ def update_catalogue_product(
             ).fetchone()
             if not product:
                 raise HTTPException(status_code=404, detail="Product not found.")
-            if body.hsn_code.strip() and conn.execute("SELECT to_regclass('public.catalog_product_tax') AS t").fetchone()["t"]:
-                conn.execute(
-                    """INSERT INTO catalog_product_tax(product_id,hsn_code) VALUES(%s,%s)
-                       ON CONFLICT(product_id) DO UPDATE SET hsn_code=EXCLUDED.hsn_code,updated_at=now()""",
-                    (product_id, body.hsn_code.strip()),
-                )
+            if conn.execute("SELECT to_regclass('public.catalog_product_tax') AS t").fetchone()["t"]:
+                if body.hsn_code.strip():
+                    conn.execute(
+                        """INSERT INTO catalog_product_tax(product_id,hsn_code) VALUES(%s,%s)
+                           ON CONFLICT(product_id) DO UPDATE SET hsn_code=EXCLUDED.hsn_code,updated_at=now()""",
+                        (product_id, body.hsn_code.strip()),
+                    )
+                else:
+                    conn.execute("DELETE FROM catalog_product_tax WHERE product_id=%s", (product_id,))
             variant_values = {"selling_price": body.selling_price, "mrp": body.mrp,
                               "sku": body.sku.strip() or None, "image_url": body.image_url.strip() or None,
                               "status": body.status}
