@@ -334,6 +334,8 @@ def get_variant_price_history(variant_id: int, days: int = Query(default=30, ge=
 # initialized router if imports are ever refactored to introduce a dependency cycle.
 from .auth import router as auth_router
 from .commerce import router as commerce_router
+from .operations import router as operations_router
 
 app.include_router(auth_router)
 app.include_router(commerce_router)
+app.include_router(operations_router)
