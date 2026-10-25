@@ -78,6 +78,13 @@ def list_products(
             currency_select = "v.currency AS currency" if "currency" in variant_columns else "'INR'::text AS currency"
             product_status_select = "p.status AS status" if "status" in product_columns else "'active'::text AS status"
             variant_status_select = "v.status AS variant_status" if "status" in variant_columns else "'active'::text AS variant_status"
+            # Preserve available human-readable variant attributes without assuming a fixed schema.
+            attribute_columns = ("variant_type_name", "variant_type", "variant_value", "variant_short",
+                                 "attribute_name", "attribute_value", "attributes", "attribute_values",
+                                 "variant_attributes", "variant_label", "variant_name", "variant_description",
+                                 "product_template_attribute_value_ids", "product_template_variant_value_ids")
+            attribute_select = ", ".join(f"v.{column} AS {column}" for column in attribute_columns if column in variant_columns)
+            attribute_select = (", " + attribute_select) if attribute_select else ""
             category_id_select = "p.category_id AS category_id" if "category_id" in product_columns else "NULL::bigint AS category_id"
             category_join = "LEFT JOIN product_categories c ON c.id = p.category_id" if "category_id" in product_columns else "LEFT JOIN product_categories c ON FALSE"
             where = [product_status, variant_status]
@@ -99,7 +106,7 @@ def list_products(
                               {('v.sku' if 'sku' in variant_columns else 'NULL::text AS sku')},
                               {('v.mrp' if 'mrp' in variant_columns else 'NULL::numeric AS mrp')},
                               {('v.selling_price' if 'selling_price' in variant_columns else 'NULL::numeric AS selling_price')},
-                              {currency_select}, {image_select}
+                              {currency_select}, {image_select}{attribute_select}
                        FROM products p
                        JOIN product_variants v ON v.product_id = p.id
                        {category_join}
@@ -135,9 +142,15 @@ def get_product_by_variant(variant_id: int) -> dict[str, Any]:
             sku_select = "v.sku AS sku" if "sku" in variant_columns else "NULL::text AS sku"
             mrp_select = "v.mrp AS mrp" if "mrp" in variant_columns else "NULL::numeric AS mrp"
             price_select = "v.selling_price AS selling_price" if "selling_price" in variant_columns else "NULL::numeric AS selling_price"
+            attribute_columns = ("variant_type_name", "variant_type", "variant_value", "variant_short",
+                                 "attribute_name", "attribute_value", "attributes", "attribute_values",
+                                 "variant_attributes", "variant_label", "variant_name", "variant_description",
+                                 "product_template_attribute_value_ids", "product_template_variant_value_ids")
+            attribute_select = ", ".join(f"v.{column} AS {column}" for column in attribute_columns if column in variant_columns)
+            attribute_select = (", " + attribute_select) if attribute_select else ""
             row = conn.execute(f"""SELECT p.id AS product_id, p.name, {description_select}, {brand_select},
                 c.name AS category, v.id AS variant_id, {sku_select}, {mrp_select},
-                {price_select}, {currency_select}, {image_select}
+                {price_select}, {currency_select}, {image_select}{attribute_select}
                 FROM products p JOIN product_variants v ON v.product_id = p.id
                 {category_join} WHERE v.id = %s AND {product_status} AND {variant_status}
                 LIMIT 1""", (variant_id,)).fetchone()
