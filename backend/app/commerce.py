@@ -552,12 +552,15 @@ def update_admin_order(
                 raise HTTPException(status_code=409, detail=f"Cannot move order from {previous['status']} to {body.status}; use reverse logistics after dispatch.")
             row = conn.execute("UPDATE store_orders SET status=%s,updated_at=now() WHERE id=%s RETURNING id", (body.status, order_id)).fetchone()
             if body.status == "cancelled":
+                if Decimal(str(previous["paid_total"] or 0)) > 0:
+                    raise HTTPException(status_code=409, detail="An order with recorded payments must use the refund workflow instead of direct cancellation.")
                 from .operations import _schema as _ensure_operations_schema
                 _ensure_operations_schema(conn)
                 conn.execute("""INSERT INTO sb_journal_entries(reference,source_reference,memo,lines)
                     VALUES(%s,%s,%s,%s::jsonb)""",
                     ("JE-"+secrets.token_hex(5).upper(),previous["invoice_number"],"Reverse cancelled website sale",
-                     json.dumps([{"account_code":"4000","debit":str(Decimal("0")),"credit":"0"}])))
+                     json.dumps([{"account_code":"4000","debit":str(Decimal(str(previous["subtotal"]+previous["shipping_fee"]))),"credit":"0"},
+                                  {"account_code":"1100","debit":"0","credit":str(previous["total"])}])))
                 reserved = conn.execute("SELECT warehouse_id,variant_id,quantity FROM store_order_items WHERE order_id=%s", (order_id,)).fetchall()
                 for item in reserved:
                     if item["warehouse_id"] is not None:
