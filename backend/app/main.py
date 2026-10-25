@@ -480,3 +480,9 @@ app.include_router(invoices_router)
 
 from .loyalty import router as loyalty_router
 app.include_router(loyalty_router)
+
+
+# Advanced configurable catalogue, procurement, warehouse, returns and vendor portal APIs.
+# Kept in a separate router so existing production operations endpoints remain intact.
+from .integrated_operations import router as integrated_operations_router
+app.include_router(integrated_operations_router)
