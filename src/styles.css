@@ -242,7 +242,7 @@
  .products-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
  .product-tile{border-radius:10px}
  .product-picture{height:clamp(88px,25vw,145px)}
- .product-picture img{padding:0;object-fit:cover}
+ .product-picture img{padding:6px;object-fit:contain}
  .product-tag{display:none}
  .product-details{padding:8px}
  .product-brand{display:none}
@@ -299,3 +299,6 @@
 .inventory-stock-levels .status-badge{white-space:nowrap}
 .inventory-stock-levels .moderation-controls input{min-width:min(100%,280px)}
 @media(max-width:600px){.inventory-stock-levels .metric-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.inventory-stock-levels .metric-card{padding:10px}.inventory-stock-levels .metric-card span{font-size:11px}.inventory-stock-levels .metric-card b{font-size:18px}}
+
+/* Keyboard focus for clickable product surfaces. */
+.product-picture[role="button"]:focus-visible,.product-details[role="button"]:focus-visible{outline:3px solid var(--purple,#6428d9);outline-offset:-3px;border-radius:8px}
