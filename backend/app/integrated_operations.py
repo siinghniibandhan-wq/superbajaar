@@ -90,7 +90,6 @@ class WarehouseInput(BaseModel):
     pincode: str = ""
     serviceable_pincodes: list[str] = []
     locations: list[str] = []
-    region_id: int | None = Field(default=None, gt=0)
 
 class WarehouseLocationsInput(BaseModel):
     locations: list[str] = Field(max_length=200)
@@ -428,11 +427,9 @@ def create_warehouse(body: WarehouseInput, authorization: str | None = Header(de
     if any(len(p)!=6 or not p.isdigit() for p in body.serviceable_pincodes): raise HTTPException(422,"Serviceable PINs must contain six digits.")
     with psycopg.connect(_db(), row_factory=dict_row) as c:
         _schema(c)
-        if body.region_id and not c.execute("SELECT id FROM sb_regions WHERE id=%s AND active=TRUE",(body.region_id,)).fetchone():
-            raise HTTPException(422,"Selected delivery region is not active.")
-        return c.execute("""INSERT INTO sb_warehouses(name,code,address,pincode,serviceable_pincodes,locations,region_id)
-          VALUES(%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s) RETURNING *""",
-          (body.name.strip(),body.code.strip().upper(),body.address,body.pincode,json.dumps(list(dict.fromkeys(body.serviceable_pincodes))),json.dumps(list(dict.fromkeys(body.locations))),body.region_id)).fetchone()
+        return c.execute("""INSERT INTO sb_warehouses(name,code,address,pincode,serviceable_pincodes,locations)
+          VALUES(%s,%s,%s,%s,%s::jsonb,%s::jsonb) RETURNING *""",
+          (body.name.strip(),body.code.strip().upper(),body.address,body.pincode,json.dumps(list(dict.fromkeys(body.serviceable_pincodes))),json.dumps(list(dict.fromkeys(body.locations))))).fetchone()
 
 
 @router.put("/admin/warehouses/{warehouse_id}/locations")
