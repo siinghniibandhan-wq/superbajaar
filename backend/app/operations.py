@@ -63,6 +63,12 @@ def _schema(conn):
       subtotal NUMERIC(14,2) NOT NULL DEFAULT 0, discount_total NUMERIC(14,2) NOT NULL DEFAULT 0, tax_total NUMERIC(14,2) NOT NULL DEFAULT 0,
       total NUMERIC(14,2) NOT NULL DEFAULT 0, paid_total NUMERIC(14,2) NOT NULL DEFAULT 0,
       items JSONB NOT NULL DEFAULT '[]', created_by BIGINT, created_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
+    """CREATE TABLE IF NOT EXISTS sb_supplier_bills(
+      id BIGSERIAL PRIMARY KEY, reference TEXT NOT NULL UNIQUE, vendor_id BIGINT NOT NULL REFERENCES sb_vendors(id),
+      procurement_id BIGINT REFERENCES sb_procurements(id), vendor_invoice_number TEXT NOT NULL,
+      amount NUMERIC(14,2) NOT NULL CHECK(amount>=0), tax_total NUMERIC(14,2) NOT NULL DEFAULT 0,
+      paid_total NUMERIC(14,2) NOT NULL DEFAULT 0, due_date DATE, status TEXT NOT NULL DEFAULT 'submitted',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(), UNIQUE(vendor_id,vendor_invoice_number))""",
     """CREATE TABLE IF NOT EXISTS sb_payments(
       id BIGSERIAL PRIMARY KEY, reference TEXT NOT NULL UNIQUE, invoice_id BIGINT NOT NULL REFERENCES sb_invoices(id),
       amount NUMERIC(14,2) NOT NULL CHECK(amount>0), method TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'posted',
@@ -187,6 +193,12 @@ class GSTSettingsInput(BaseModel):
     seller_gstin: str = ""
     seller_state_code: str = Field(pattern=r"^[0-9]{2}$")
     rates: dict[str, Decimal] = {}
+
+class SupplierBillInput(BaseModel):
+    vendor_invoice_number: str = Field(min_length=1, max_length=100)
+    amount: Decimal = Field(ge=0)
+    tax_total: Decimal = Field(default=Decimal("0"), ge=0)
+    due_date: str | None = None
 
 class PaymentInput(BaseModel):
     amount: Decimal = Field(gt=0)
@@ -433,6 +445,69 @@ def convert_to_po(procurement_id: int, authorization: str | None = Header(defaul
         c.execute("UPDATE sb_procurements SET purchase_order_reference=%s,status='purchase_order',updated_at=now() WHERE id=%s",(ref,procurement_id))
         _event(c,p["reference"],"purchase_order_created",actor["id"],p["status"],"purchase_order",{"quotation_reference":p["reference"],"purchase_order_reference":ref})
         return {"id":procurement_id,"reference":p["reference"],"purchase_order_reference":ref,"status":"purchase_order","vendor_id":p["vendor_id"],"items":p["items"]}
+
+
+@router.post("/vendor/procurements/{procurement_id}/bills", status_code=201)
+def vendor_submit_bill(procurement_id: int, body: SupplierBillInput, authorization: str | None = Header(default=None)):
+    user=_current(authorization)
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c)
+        p=c.execute("""SELECT p.*,v.id vendor_id FROM sb_procurements p JOIN sb_vendors v ON v.id=p.vendor_id
+          WHERE p.id=%s AND lower(v.email)=lower(%s) AND v.status='active'""",(procurement_id,user["email"])).fetchone()
+        if not p: raise HTTPException(404,"Purchase order not found for this supplier.")
+        if p["status"] not in {"purchase_order","partially_received","received"}: raise HTTPException(409,"Bills can only be submitted against an issued purchase order.")
+        if body.amount<0 or body.tax_total<0: raise HTTPException(422,"Bill amounts cannot be negative.")
+        ref=_ref("BILL")
+        row=c.execute("""INSERT INTO sb_supplier_bills(reference,vendor_id,procurement_id,vendor_invoice_number,amount,tax_total,due_date)
+          VALUES(%s,%s,%s,%s,%s,%s,%s) RETURNING *""",(ref,p["vendor_id"],procurement_id,body.vendor_invoice_number,body.amount,body.tax_total,body.due_date)).fetchone()
+        _event(c,p["reference"],"supplier_bill_submitted",user["id"],new="submitted",details={"bill_reference":ref})
+        return row
+
+
+@router.get("/admin/supplier-bills")
+def list_supplier_bills(authorization: str | None = Header(default=None)):
+    _require(authorization, {"super_admin","admin","staff"})
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c)
+        return {"items":c.execute("""SELECT b.*,v.name vendor_name,p.reference quotation_reference,p.purchase_order_reference
+          FROM sb_supplier_bills b JOIN sb_vendors v ON v.id=b.vendor_id
+          LEFT JOIN sb_procurements p ON p.id=b.procurement_id ORDER BY b.created_at DESC LIMIT 500""").fetchall()}
+
+
+@router.patch("/admin/supplier-bills/{bill_id}")
+def update_supplier_bill(bill_id: int, status: str = Query(pattern="^(approved|rejected)$"), authorization: str | None = Header(default=None)):
+    actor=_require(authorization, {"super_admin","admin"})
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c)
+        b=c.execute("SELECT * FROM sb_supplier_bills WHERE id=%s FOR UPDATE",(bill_id,)).fetchone()
+        if not b or b["status"]!="submitted": raise HTTPException(409,"Only a submitted bill can be approved or rejected.")
+        c.execute("UPDATE sb_supplier_bills SET status=%s WHERE id=%s",(status,bill_id))
+        if status=="approved":
+            total=Decimal(str(b["amount"]))+Decimal(str(b["tax_total"]))
+            lines=[{"account_code":"5000","debit":str(b["amount"]),"credit":"0"},{"account_code":"2000","debit":"0","credit":str(total)}]
+            if b["tax_total"]: lines.append({"account_code":"2100","debit":str(b["tax_total"]),"credit":"0"})
+            c.execute("INSERT INTO sb_journal_entries(reference,source_reference,memo,lines) VALUES(%s,%s,%s,%s::jsonb)",
+              (_ref("JE"),b["reference"],"Approved supplier bill",json.dumps(lines)))
+        _event(c,b["reference"],"supplier_bill_reviewed",actor["id"],b["status"],status)
+        return {"reference":b["reference"],"status":status}
+
+
+@router.post("/admin/supplier-bills/{bill_id}/payments", status_code=201)
+def pay_supplier_bill(bill_id: int, body: PaymentInput, authorization: str | None = Header(default=None)):
+    actor=_require(authorization, {"super_admin","admin"})
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c)
+        b=c.execute("SELECT * FROM sb_supplier_bills WHERE id=%s FOR UPDATE",(bill_id,)).fetchone()
+        if not b or b["status"] not in {"approved","partially_paid"}: raise HTTPException(409,"Supplier bill is not payable.")
+        total=Decimal(str(b["amount"]))+Decimal(str(b["tax_total"])); paid=Decimal(str(b["paid_total"]))+body.amount
+        if paid>total: raise HTTPException(422,"Payment exceeds the supplier bill balance.")
+        status="paid" if paid==total else "partially_paid"
+        ref=_ref("BPAY")
+        c.execute("UPDATE sb_supplier_bills SET paid_total=%s,status=%s WHERE id=%s",(paid,status,bill_id))
+        c.execute("INSERT INTO sb_journal_entries(reference,source_reference,memo,lines) VALUES(%s,%s,%s,%s::jsonb)",
+          (_ref("JE"),b["reference"],"Supplier bill payment",json.dumps([{"account_code":"2000","debit":str(body.amount),"credit":"0"},{"account_code":"1000","debit":"0","credit":str(body.amount)}])))
+        _event(c,b["reference"],"supplier_bill_payment",actor["id"],b["status"],status,{"payment_reference":ref,"amount":str(body.amount)})
+        return {"payment_reference":ref,"bill_reference":b["reference"],"status":status,"paid_total":str(paid)}
 
 
 @router.post("/vendor/procurements/{procurement_id}/dispatches", status_code=201)
