@@ -890,6 +890,8 @@ def create_catalogue_product(
                     raise HTTPException(status_code=422, detail="Variant prices must be valid numbers.")
                 if variant_price <= 0 or (variant_mrp is not None and variant_mrp <= 0):
                     raise HTTPException(status_code=422, detail="Variant selling price and MRP must be positive.")
+                if variant_mrp is not None and variant_mrp < variant_price:
+                    raise HTTPException(status_code=422, detail="Variant MRP cannot be lower than its selling price.")
                 if variant_cover and not variant_cover.startswith(("https://", "http://", "data:image/")):
                     raise HTTPException(status_code=422, detail="Variant cover must be an HTTP(S) URL or image upload.")
                 if variant_cover and variant_cover.startswith("data:image/") and ";base64," not in variant_cover:
@@ -942,6 +944,8 @@ def update_catalogue_product(
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
     _admin_catalogue_user(authorization)
+    if body.mrp is not None and body.mrp < body.selling_price:
+        raise HTTPException(status_code=422, detail="MRP cannot be lower than selling price.")
     try:
         with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
             product_columns = _catalogue_columns(conn, "products")
