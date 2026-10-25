@@ -551,6 +551,7 @@ def get_product_by_variant(variant_id: int) -> dict[str, Any]:
             attribute_select = (", " + attribute_select) if attribute_select else ""
             row = conn.execute(f"""SELECT p.id AS product_id, p.name, {description_select}, {brand_select},
                 {specification_select}, {manufacturer_select}, {seller_select},
+                {tax_category_select}, {gst_rate_select}, {sale_badge_select}, {sale_badge_active_select},
                 c.name AS category, v.id AS variant_id, {sku_select}, {mrp_select},
                 {price_select}, {currency_select}, {image_select}{attribute_select}
                 FROM products p JOIN product_variants v ON v.product_id = p.id
@@ -562,6 +563,7 @@ def get_product_by_variant(variant_id: int) -> dict[str, Any]:
             # attribute even when a customer opens a product URL directly.
             sibling_variants = conn.execute(f"""SELECT p.id AS product_id, p.name, {description_select}, {brand_select},
                 {specification_select}, {manufacturer_select}, {seller_select},
+                {tax_category_select}, {gst_rate_select}, {sale_badge_select}, {sale_badge_active_select},
                 c.name AS category, v.id AS variant_id, {sku_select}, {mrp_select},
                 {price_select}, {currency_select}, {image_select}{attribute_select}
                 FROM products p JOIN product_variants v ON v.product_id = p.id
