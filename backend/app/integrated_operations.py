@@ -351,8 +351,9 @@ def import_existing_variant_attributes(authorization: str | None = Header(defaul
 
 
 @router.get("/admin/catalogue/attributes")
-def list_attributes(authorization: str | None = Header(default=None)):
-    _require(authorization, {"super_admin","admin","staff"})
+def list_attributes():
+    # Attribute definitions are read-only catalogue display metadata.
+    # Keep this read public like product/category reads; write/import/assignment routes remain protected.
     with psycopg.connect(_db(), row_factory=dict_row) as c:
         _schema(c)
         return {"items": c.execute("SELECT * FROM catalog_attributes ORDER BY name").fetchall()}
