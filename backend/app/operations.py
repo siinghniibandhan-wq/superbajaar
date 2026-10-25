@@ -395,7 +395,20 @@ def list_invoices(authorization: str | None = Header(default=None)):
     _require(authorization, {"super_admin","admin","staff"})
     with psycopg.connect(_db(), row_factory=dict_row) as c:
         _schema(c)
-        return {"items":c.execute("SELECT * FROM sb_invoices ORDER BY created_at DESC LIMIT 500").fetchall()}
+        items=c.execute("""SELECT id,reference,source_channel,source_id,customer_name,status,subtotal,tax_total,total,paid_total,items,created_at,'operational_invoice' AS record_type
+          FROM sb_invoices
+          UNION ALL
+          SELECT o.id,o.invoice_number AS reference,o.source_channel,o.id AS source_id,
+            COALESCE(o.shipping_address->>'full_name','Website customer') AS customer_name,
+            CASE WHEN o.status='cancelled' THEN 'cancelled' WHEN o.payment_status='paid' THEN 'paid' ELSE 'issued' END AS status,
+            o.subtotal,0::numeric AS tax_total,o.total,
+            CASE WHEN o.payment_status='paid' THEN o.total ELSE 0::numeric END AS paid_total,
+            COALESCE((SELECT jsonb_agg(jsonb_build_object('variant_id',i.variant_id,'product_id',i.product_id,'sku',i.sku,'name',i.product_name,'quantity',i.quantity,'unit_price',i.unit_price,'line_total',i.line_total))
+              FROM store_order_items i WHERE i.order_id=o.id),'[]'::jsonb) AS items,
+            o.created_at,'website_order' AS record_type
+          FROM store_orders o
+          ORDER BY created_at DESC LIMIT 500""").fetchall()
+        return {"items":items}
 
 
 @router.post("/admin/invoices", status_code=201)
@@ -485,11 +498,15 @@ def accounting_overview(authorization: str | None = Header(default=None)):
     _require(authorization, {"super_admin","admin","staff"})
     with psycopg.connect(_db(), row_factory=dict_row) as c:
         _schema(c)
+        operational=c.execute("SELECT COUNT(*)::int count,COALESCE(SUM(total),0) total,COALESCE(SUM(paid_total),0) paid FROM sb_invoices WHERE status NOT IN ('cancelled','draft')").fetchone()
+        website=c.execute("""SELECT COUNT(*)::int count,COALESCE(SUM(total),0) total,
+          COALESCE(SUM(CASE WHEN payment_status='paid' THEN total ELSE 0 END),0) paid
+          FROM store_orders WHERE status NOT IN ('cancelled')""").fetchone()
         return {
-          "sales_invoices":c.execute("SELECT COUNT(*)::int count,COALESCE(SUM(total),0) total,COALESCE(SUM(paid_total),0) paid FROM sb_invoices WHERE status NOT IN ('cancelled','draft')").fetchone(),
-          "receivables":c.execute("SELECT COALESCE(SUM(total-paid_total),0) amount FROM sb_invoices WHERE status IN ('issued','partially_paid','overdue')").fetchone()["amount"],
+          "sales_invoices":{"count":operational["count"]+website["count"],"total":operational["total"]+website["total"],"paid":operational["paid"]+website["paid"]},
+          "receivables":c.execute("SELECT COALESCE(SUM(total-paid_total),0) amount FROM sb_invoices WHERE status IN ('issued','partially_paid','overdue')").fetchone()["amount"] + c.execute("SELECT COALESCE(SUM(CASE WHEN payment_status='paid' THEN 0 ELSE total END),0) amount FROM store_orders WHERE status NOT IN ('cancelled')").fetchone()["amount"],
           "payables":0,
-          "cash_collected":c.execute("SELECT COALESCE(SUM(amount),0) amount FROM sb_payments WHERE status='posted'").fetchone()["amount"],
+          "cash_collected":c.execute("SELECT COALESCE(SUM(amount),0) amount FROM sb_payments WHERE status='posted'").fetchone()["amount"] + c.execute("SELECT COALESCE(SUM(CASE WHEN payment_status='paid' THEN total ELSE 0 END),0) amount FROM store_orders").fetchone()["amount"],
           "journal_entries":c.execute("SELECT COUNT(*)::int count FROM sb_journal_entries WHERE posted").fetchone()["count"],
           "accounts":c.execute("SELECT * FROM sb_accounts WHERE active ORDER BY code").fetchall()
         }
