@@ -251,8 +251,11 @@ def generate_variants(product_id: int, body: GenerateVariantsInput, authorizatio
           JOIN product_attribute_assignments p ON p.attribute_id=a.id WHERE p.product_id=%s""",(product_id,)).fetchall()}
         if not assigned: raise HTTPException(422,"Assign product-specific attributes before generating variants.")
         columns={r["column_name"] for r in c.execute("SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='product_variants'").fetchall()}
-        required={"product_id","selling_price"}
+        required={"product_id","selling_price","sku"}
         if not required.issubset(columns): raise HTTPException(503,"The current variant schema cannot create variants safely.")
+        canonical=[tuple(sorted(combo.items())) for combo in body.combinations]
+        if len(set(canonical)) != len(canonical):
+            raise HTTPException(422,"Duplicate variant combinations are not allowed.")
         made=[]
         for index,combo in enumerate(body.combinations,1):
             if set(combo)!=set(assigned):
