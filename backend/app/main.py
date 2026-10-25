@@ -14,6 +14,14 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("superbajaar.api")
 app = FastAPI(title="Super Bajaar API", version="1.0.0")
 
+# Register routers immediately after app creation so the public API surface is
+# explicit and available to route inspection, OpenAPI, and ASGI startup.
+from .auth import router as auth_router
+from .commerce import router as commerce_router
+
+app.include_router(auth_router)
+app.include_router(commerce_router)
+
 configured_origins = [item.strip() for item in os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:5173").split(",") if item.strip()]
 # Keep the configured origins and explicitly allow the production storefront plus Codespaces previews.
 origins = list(dict.fromkeys(configured_origins + [
@@ -329,11 +337,3 @@ def get_variant_price_history(variant_id: int, days: int = Query(default=30, ge=
         raise HTTPException(status_code=503, detail="Price history is temporarily unavailable") from exc
 
 
-# Authentication and role-based user administration are isolated from catalogue routes.
-from .auth import router as auth_router
-app.include_router(auth_router)
-
-
-# Authenticated checkout, order management, and persisted store settings.
-from .commerce import router as commerce_router
-app.include_router(commerce_router)
