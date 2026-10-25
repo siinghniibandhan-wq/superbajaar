@@ -142,6 +142,11 @@
 .admin-shell .module-tab{flex:0 0 auto;border:1px solid transparent;border-radius:10px;padding:10px 14px;background:transparent;color:var(--admin-muted);font:inherit;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
 .admin-shell .module-tab:hover{background:var(--admin-surface-soft);color:var(--admin-text)}
 .admin-shell .module-tab.active{background:var(--admin-accent-soft);border-color:var(--admin-border);color:var(--admin-accent)}
+.admin-shell .module-tab-select{display:flex;align-items:center;gap:8px;flex:0 0 auto;border:1px solid var(--admin-border);border-radius:10px;padding:7px 10px;background:var(--admin-surface-soft);color:var(--admin-text);font-size:12px;font-weight:700;white-space:nowrap}
+.admin-shell .module-tab-select.active{border-color:var(--admin-accent);background:var(--admin-accent-soft);color:var(--admin-accent)}
+.admin-shell .module-tab-select select{max-width:180px;border:1px solid var(--admin-border);border-radius:7px;padding:6px 8px;background:var(--admin-surface);color:var(--admin-text);font:inherit;font-weight:600}
+@media print{body *{visibility:hidden!important}.invoice-print-view,.invoice-print-view *{visibility:visible!important}.invoice-print-view{position:absolute!important;inset:0!important;width:100%!important;border:0!important;box-shadow:none!important}.invoice-print-view button{display:none!important}}
+
 .admin-shell .module-overview-panel{padding:20px;border:1px solid var(--admin-border);border-radius:18px;background:var(--admin-surface);color:var(--admin-text)}
 .admin-shell .module-overview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:18px 0}
 .admin-shell .module-overview-card{display:grid;gap:8px;align-content:start;min-height:112px;padding:16px;border:1px solid var(--admin-border);border-radius:14px;background:var(--admin-surface-soft);min-width:0}
