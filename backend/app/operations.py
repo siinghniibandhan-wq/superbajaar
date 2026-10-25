@@ -19,6 +19,9 @@ router = APIRouter(prefix="/api", tags=["integrated-operations"])
 
 def _schema(conn):
     statements = [
+    """CREATE TABLE IF NOT EXISTS catalog_product_tax(
+      product_id BIGINT PRIMARY KEY, hsn_code TEXT NOT NULL, updated_by BIGINT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
     """CREATE TABLE IF NOT EXISTS catalog_attributes(
       id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL UNIQUE, values_json JSONB NOT NULL DEFAULT '[]',
       created_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
@@ -115,6 +118,9 @@ def _event(conn, ref, kind, actor, old=None, new=None, details=None):
       (ref,kind,old,new,actor,json.dumps(details or {})))
 
 
+class ProductTaxInput(BaseModel):
+    hsn_code: str = Field(min_length=1, max_length=20)
+
 class AttributeInput(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     values: list[str] = Field(min_length=1, max_length=100)
@@ -195,6 +201,19 @@ class ReturnStatusInput(BaseModel):
     status: str
     origin_warehouse_id: int | None = None
     accepted_items: list[dict[str, Any]] = []
+
+
+@router.put("/admin/catalogue/products/{product_id}/tax")
+def set_product_tax(product_id: int, body: ProductTaxInput, authorization: str | None = Header(default=None)):
+    actor=_require(authorization, {"super_admin","admin"})
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c)
+        if not c.execute("SELECT id FROM products WHERE id=%s",(product_id,)).fetchone():
+            raise HTTPException(404,"Product not found.")
+        return c.execute("""INSERT INTO catalog_product_tax(product_id,hsn_code,updated_by,updated_at)
+          VALUES(%s,%s,%s,now()) ON CONFLICT(product_id) DO UPDATE SET
+          hsn_code=EXCLUDED.hsn_code,updated_by=EXCLUDED.updated_by,updated_at=now() RETURNING *""",
+          (product_id,body.hsn_code.strip(),actor["id"])).fetchone()
 
 
 @router.get("/admin/catalogue/attributes")
