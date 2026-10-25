@@ -145,7 +145,7 @@ def confirm_invoice(invoice_id: int, authorization: str | None = Header(default=
                 total = Decimal(str(inv["total"]))
                 subtotal = Decimal(str(inv["subtotal"]))
                 tax = Decimal(str(inv["tax_total"]))
-                lines = [("receivables", total, Decimal("0")), ("sales", Decimal("0"), subtotal)]
+                lines = [("accounts_receivable", total, Decimal("0")), ("sales", Decimal("0"), subtotal)]
                 if tax:
                     lines.append(("output_gst", Decimal("0"), tax))
                 jid = _post_journal(conn, date.today(), inv["invoice_number"],
@@ -186,7 +186,7 @@ def receive_payment(invoice_id: int, body: PaymentInput,
                 cash_account = {"bank":"bank","upi":"bank","card":"bank","cash":"cash","other":"cash"}[body.payment_method]
                 jid = _post_journal(conn, date.today(), inv["invoice_number"] + "-PAY-" + str(payment["id"]),
                     "Receipt against " + inv["invoice_number"], "invoice_payment", int(payment["id"]),
-                    [(cash_account, body.amount, Decimal("0")), ("receivables", Decimal("0"), body.amount)],
+                    [(cash_account, body.amount, Decimal("0")), ("accounts_receivable", Decimal("0"), body.amount)],
                     int(actor["id"]))
                 conn.execute("UPDATE sb_sales_invoice_payments SET journal_id=%s WHERE id=%s", (jid,payment["id"]))
                 received = Decimal(str(inv["amount_received"])) + body.amount
