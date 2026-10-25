@@ -68,6 +68,9 @@ function Store({goAdmin}) {
  function variantLabel(p){
   const human=v=>{if(v==null)return '';if(typeof v==='string'||typeof v==='number')return String(v);if(Array.isArray(v))return v.map(human).filter(Boolean).join(', ');if(typeof v==='object'){if(Array.isArray(v.display_name))return v.display_name.join(', ');return human(v.display_name||v.value_name||v.value||v.name||v.label||v.attribute_value_name||v.attribute_name||v.attribute||v.values||v.value_ids)}return ''};
   const clean=v=>{const x=human(v).trim();return /^ODOO[-_ ]?VAR[-_ ]?\d+$/i.test(x)?'':x};
+  const attributeName=clean(p.attribute_name||p.variant_type_name||p.variant_type);
+  const attributeValue=clean(p.attribute_value||p.variant_value);
+  if(attributeName&&attributeValue&&attributeName!==attributeValue)return attributeName+': '+attributeValue;
   // Prefer structured attribute/value pairs over display_name or short variant codes.
   // Some catalogue APIs use display_name for an internal variant label, which hides
   // the human-readable attribute names even when structured attributes are available.
