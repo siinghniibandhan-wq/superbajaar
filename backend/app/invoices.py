@@ -78,10 +78,13 @@ def create_invoice(conn: Any, *, source_type: str, source_id: int, customer_name
     row = conn.execute("""INSERT INTO sb_sales_invoices
         (source_type,source_id,customer_name,customer_email,customer_phone,subtotal,tax_total,total)
         VALUES(%s,%s,%s,%s,%s,%s,%s,%s)
-        ON CONFLICT(source_type,source_id) DO UPDATE SET source_id=EXCLUDED.source_id
-        RETURNING *""",
+        ON CONFLICT(source_type,source_id) DO NOTHING RETURNING *""",
         (source_type, source_id, customer_name or "Customer", customer_email, customer_phone,
          subtotal or 0, tax_total or 0, total or 0)).fetchone()
+    if row is None:
+        # Concurrent retries return the existing invoice and never duplicate its lines.
+        return conn.execute("SELECT * FROM sb_sales_invoices WHERE source_type=%s AND source_id=%s",
+                            (source_type, source_id)).fetchone()
     if row["invoice_number"] is None:
         number = f"SB-INV-{int(row['id']):08d}"
         row = conn.execute("UPDATE sb_sales_invoices SET invoice_number=%s WHERE id=%s RETURNING *",
