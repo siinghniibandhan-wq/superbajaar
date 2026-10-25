@@ -466,8 +466,14 @@ def create_receipt(procurement_id: int, body: ReceiptInput, authorization: str |
             vid=int(line.get("variant_id",0)); qty=int(line.get("quantity",0))
             if vid not in expected or qty<1: raise HTTPException(422,"Receipt lines must match PO variants and have positive quantities.")
             incoming[vid]=incoming.get(vid,0)+qty
+        dispatched={}
+        dispatch_rows=c.execute("SELECT items FROM sb_vendor_dispatches WHERE procurement_id=%s AND status<>'cancelled'",(procurement_id,)).fetchall()
+        for dispatch in dispatch_rows:
+            for line in dispatch["items"]:
+                vid=int(line["variant_id"]); dispatched[vid]=dispatched.get(vid,0)+int(line["quantity"])
         for vid,qty in incoming.items():
             if qty+received.get(vid,0)>expected[vid]: raise HTTPException(422,"Receipt quantities must not exceed outstanding PO quantities.")
+            if qty+received.get(vid,0)>dispatched.get(vid,0): raise HTTPException(409,"Goods receipt cannot exceed quantities dispatched by the vendor.")
         row=c.execute("""INSERT INTO sb_receipts(reference,procurement_id,warehouse_id,status,items,note,received_by)
           VALUES(%s,%s,%s,'inspection',%s::jsonb,%s,%s) RETURNING *""",(ref,procurement_id,body.warehouse_id,json.dumps(body.items),body.note,actor["id"])).fetchone()
         _event(c,ref,"goods_received_for_inspection",actor["id"],new="inspection",details={"po_reference":p["reference"]})
