@@ -236,6 +236,8 @@ def operations_readiness(authorization: str | None = Header(default=None)) -> di
     try:
         with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
             _ensure_commerce_schema(conn)
+            from .operations import _schema as _ensure_operations_schema
+            _ensure_operations_schema(conn)
             table_rows = conn.execute(
                 """SELECT table_name FROM information_schema.tables
                    WHERE table_schema=current_schema() AND table_type='BASE TABLE'"""
@@ -251,10 +253,11 @@ def operations_readiness(authorization: str | None = Header(default=None)) -> di
 
             def module_status(required_tables: set[str]) -> dict[str, Any]:
                 found = sorted(tables.intersection(required_tables))
+                integrated = required_tables.issubset(tables)
                 return {
-                    "status": "schema_detected_review_required" if found else "blocked_missing_schema",
+                    "status": "connected" if integrated else ("schema_detected_review_required" if found else "blocked_missing_schema"),
                     "tables_detected": found,
-                    "integrated": False,
+                    "integrated": integrated,
                 }
 
             catalogue_ok = (
@@ -274,10 +277,10 @@ def operations_readiness(authorization: str | None = Header(default=None)) -> di
             return {
                 "catalogue": {"status": "connected" if catalogue_ok else "blocked_schema_mismatch", "integrated": catalogue_ok},
                 "inventory": {
-                    "status": "schema_detected_review_required" if stock_columns else "blocked_missing_schema",
-                    "integrated": False,
+                    "status": "connected" if {"sb_inventory_ledger","sb_warehouses"}.issubset(tables) else "blocked_missing_schema",
+                    "integrated": {"sb_inventory_ledger","sb_warehouses"}.issubset(tables),
                     "stock_columns_detected": stock_columns,
-                    "message": "No stock mutation or reservation is enabled until an explicit stock schema and concurrency rules are verified.",
+                    "message": "Warehouse stock ledger, reservations and movement history are enabled." if {"sb_inventory_ledger","sb_warehouses"}.issubset(tables) else "Configure warehouse stock ledger.",
                 },
                 "delivery": {
                     "status": "configured" if delivery["configured"] else "needs_configuration",
@@ -291,9 +294,9 @@ def operations_readiness(authorization: str | None = Header(default=None)) -> di
                     "provider_configured": False,
                     "message": "Online payments remain deferred; no gateway credentials or payment flow are enabled.",
                 },
-                "purchasing": module_status({"suppliers", "purchase_orders", "goods_receipts"}),
-                "accounting": module_status({"chart_of_accounts", "journal_entries", "ledger_entries", "supplier_bills"}),
-                "logistics": module_status({"shipments", "delivery_jobs", "routes", "drivers", "hubs"}),
+                "purchasing": module_status({"sb_vendors", "sb_procurements", "sb_receipts", "sb_supplier_bills"}),
+                "accounting": module_status({"sb_accounts", "sb_journal_entries", "sb_supplier_bills", "sb_invoices"}),
+                "logistics": module_status({"store_orders", "sb_returns", "sb_vendor_dispatches", "sb_warehouses"}),
                 "people": module_status({"employees", "attendance", "payroll_runs", "shifts"}),
             }
     except HTTPException:
