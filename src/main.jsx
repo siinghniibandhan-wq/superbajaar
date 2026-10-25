@@ -135,13 +135,33 @@ function Dashboard({goStore}) {
 
 
 function OperationsWorkspace({active}){
- const [data,setData]=useState({}),[message,setMessage]=useState(''),[busy,setBusy]=useState(false);
+ const [data,setData]=useState({}),[message,setMessage]=useState(''),[busy,setBusy]=useState(false),[posCart,setPosCart]=useState([]),[posSearch,setPosSearch]=useState(''),[posSelections,setPosSelections]=useState({}),[posDiscount,setPosDiscount]=useState('0'),[posTax,setPosTax]=useState('0'),[posHeld,setPosHeld]=useState([]),[posInvoice,setPosInvoice]=useState(null),[posPaymentMethod,setPosPaymentMethod]=useState('cash');
  const [name,setName]=useState(''),[values,setValues]=useState(''),[code,setCode]=useState(''),[email,setEmail]=useState(''),[phone,setPhone]=useState(''),[address,setAddress]=useState(''),[pincode,setPincode]=useState(''),[pins,setPins]=useState(''),[locations,setLocations]=useState(''),[vendorId,setVendorId]=useState(''),[items,setItems]=useState('[{"variant_id":1,"quantity":1,"unit_price":0}]'),[acceptedItems,setAcceptedItems]=useState('[{"variant_id":1,"quantity":1}]'),[rejectedItems,setRejectedItems]=useState('[]'),[warehouseId,setWarehouseId]=useState(''),[variantId,setVariantId]=useState(''),[stockDelta,setStockDelta]=useState(''),[productId,setProductId]=useState(''),[attributeIds,setAttributeIds]=useState(''),[combinations,setCombinations]=useState('[{"1":"Red","2":"M"}]'),[skuPrefix,setSkuPrefix]=useState('SKU'),[basePrice,setBasePrice]=useState(''),[mrp,setMrp]=useState(''),[procurementId,setProcurementId]=useState(''),[receiptId,setReceiptId]=useState(''),[invoiceRef,setInvoiceRef]=useState(''),[amount,setAmount]=useState(''),[reason,setReason]=useState('');
  const token=()=>localStorage.getItem('sb_admin_token')||'';
  async function api(path,options={}){const r=await fetch(API_PATH(path),{...options,headers:{'Content-Type':'application/json',Authorization:'Bearer '+token(),...(options.headers||{})}});const j=await r.json().catch(()=>({}));if(!r.ok)throw Error(j.detail||'Operation failed');return j}
- async function load(){setBusy(true);setMessage('');try{const paths=active==='products'?['/admin/catalogue/attributes','/admin/warehouses']:active==='purchases'?['/admin/vendors','/admin/procurements','/admin/receipts','/admin/warehouses']:active==='accounting'?['/admin/invoices','/admin/accounting/overview','/admin/accounting/journals']:active==='logistics'?['/admin/returns','/admin/warehouses']:active==='orders'?['/admin/orders','/admin/invoices','/admin/accounting/overview','/admin/returns']:['/admin/invoices'];const keys=paths.map(p=>p.split('/').pop());const result=await Promise.all(paths.map(p=>api(p)));setData(Object.fromEntries(keys.map((k,i)=>[k,result[i]])))}catch(e){setMessage(e.message)}finally{setBusy(false)}}
+ async function load(){setBusy(true);setMessage('');try{const paths=active==='products'?['/admin/catalogue/attributes','/admin/warehouses']:active==='purchases'?['/admin/vendors','/admin/procurements','/admin/receipts','/admin/warehouses']:active==='accounting'?['/admin/invoices','/admin/accounting/overview','/admin/accounting/journals','/products?limit=100']:active==='logistics'?['/admin/returns','/admin/warehouses']:active==='orders'?['/admin/orders','/admin/invoices','/admin/accounting/overview','/admin/returns']:['/admin/invoices'];const keys=paths.map(p=>p.split('/').pop());const result=await Promise.all(paths.map(p=>api(p)));setData(Object.fromEntries(keys.map((k,i)=>[k,result[i]])))}catch(e){setMessage(e.message)}finally{setBusy(false)}}
  useEffect(()=>{load()},[active]);
  async function send(path,body,method='POST'){setBusy(true);setMessage('');try{const j=await api(path,{method,body:JSON.stringify(body)});setMessage('Saved successfully. Reference: '+(j.reference||j.invoice_reference||j.movement?.reference||j.name||j.id||'record'));await load()}catch(e){setMessage(e.message)}finally{setBusy(false)}}
+ async function addPosProduct(product){
+  const variants=product.variants||[];
+  const variant=variants.find(v=>Number(v.variant_id)===Number(posSelections[product.product_id]))||variants[0]||product;
+  if(!variant.variant_id){setMessage('This product has no purchasable variant.');return}
+  setPosCart(old=>{const found=old.find(x=>Number(x.variant_id)===Number(variant.variant_id));return found?old.map(x=>Number(x.variant_id)===Number(variant.variant_id)?{...x,quantity:x.quantity+1}:x):[...old,{variant_id:variant.variant_id,product_id:product.product_id,name:product.name,sku:variant.sku,quantity:1,unit_price:Number(variant.selling_price||0),image_url:variant.image_url||product.image_url}]});
+ }
+ async function completePosSale(){
+  if(!posCart.length){setMessage('Add products to the POS cart first.');return}
+  if(!warehouseId){setMessage('Select the selling warehouse before checkout.');return}
+  setBusy(true);setMessage('');
+  try{const lines=posCart.map(x=>({variant_id:x.variant_id,product_id:x.product_id,name:x.name,sku:x.sku,quantity:x.quantity,unit_price:x.unit_price}));
+   const j=await api('/admin/invoices',{method:'POST',body:JSON.stringify({source_channel:'pos',customer_name:name,warehouse_id:Number(warehouseId),items:lines,discount_total:Number(posDiscount||0),tax_total:Number(posTax||0)})});
+   setPosInvoice(j);setMessage('Sale posted. Invoice reference: '+j.reference);setPosCart([]);await load();
+  }catch(e){setMessage(e.message)}finally{setBusy(false)}
+ }
+ async function payPosInvoice(){
+  if(!posInvoice?.id)return;
+  setBusy(true);setMessage('');
+  try{const j=await api('/admin/invoices/'+posInvoice.id+'/payments',{method:'POST',body:JSON.stringify({amount:Number(posInvoice.total),method:posPaymentMethod})});setMessage('Payment recorded: '+j.payment_reference);await load()}catch(e){setMessage(e.message)}finally{setBusy(false)}
+ }
  async function changeReturn(id,status){let accepted=[];try{accepted=JSON.parse(acceptedItems)}catch{}await send('/admin/returns/'+id,{status,origin_warehouse_id:warehouseId?Number(warehouseId):null,accepted_items:accepted},'PATCH')}
  function returnsList(rows){return <section style={panel}><h3>Returns and reverse logistics ({rows?.length||0})</h3>{(rows||[]).map(r=><div key={r.id} style={{padding:'12px 0',borderBottom:'1px solid var(--border,#eee)',display:'grid',gridTemplateColumns:'minmax(130px,1fr) minmax(140px,1fr)',gap:10,alignItems:'center'}}><span><b>{r.reference}</b><small style={{display:'block',opacity:.7}}>Invoice: {r.invoice_reference} · {r.reason||'Return requested'}</small></span><select style={field} value={r.status} disabled={busy||['refunded','cancelled'].includes(r.status)} onChange={e=>changeReturn(r.id,e.target.value)}>{['requested','pickup_scheduled','picked_up','in_transit','received_at_origin','inspected','refunded','cancelled'].map(s=><option key={s} value={s}>{s.replaceAll('_',' ')}</option>)}</select></div>)}</section>}
  const field={padding:'10px 12px',border:'1px solid var(--border,#ddd)',borderRadius:10,minWidth:0,width:'100%',background:'var(--surface,#fff)',color:'var(--text,#222)'};
