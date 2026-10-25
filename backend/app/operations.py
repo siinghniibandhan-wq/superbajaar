@@ -696,8 +696,10 @@ def update_shipment(shipment_id:int,body:ShipmentUpdate,authorization:str|None=H
                             from .accounting import _ensure as ensure_accounting
                             ensure_accounting(conn)
                             subtotal=Decimal(str(order["subtotal"])); total=Decimal(str(order["total"])); shipping=Decimal(str(order["shipping_fee"]))
+                            tax_total=Decimal(str(order.get("tax_total") or 0))
                             discount=Decimal(str(order.get("loyalty_discount") or 0))
                             journal_lines=[("accounts_receivable",total,Decimal("0")),("sales",Decimal("0"),subtotal-discount)]
+                            if tax_total: journal_lines.append(("output_gst",Decimal("0"),tax_total))
                             if shipping: journal_lines.append(("other_income",Decimal("0"),shipping))
                             cost_rows=conn.execute("""SELECT oi.variant_id,oi.quantity,
                                 COALESCE(SUM(CASE WHEN po.id IS NOT NULL THEN pl.unit_cost*pl.received_qty ELSE 0 END)/
