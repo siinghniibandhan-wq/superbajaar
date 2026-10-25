@@ -12,6 +12,7 @@ import psycopg
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 from psycopg.rows import dict_row
+from .schema_guard import tolerate_missing_ddl_permission
 
 router = APIRouter(prefix="/api/auth", tags=["authentication"])
 
@@ -124,6 +125,7 @@ def _require(authorization: str | None, roles: set[str]) -> dict[str, Any]:
     return user
 
 
+@tolerate_missing_ddl_permission
 def _ensure_user_schema(conn: Any) -> None:
     """Create only the isolated Super Bajaar account tables when first needed.
 
