@@ -103,6 +103,7 @@ def _schema(conn):
       created_at TIMESTAMPTZ NOT NULL DEFAULT now())"""
     ]
     for sql in statements: conn.execute(sql)
+    conn.execute("ALTER TABLE catalog_attributes ADD COLUMN IF NOT EXISTS display_type TEXT NOT NULL DEFAULT 'text' CHECK (display_type IN ('text','color','image','dropdown','button'))")
     conn.execute("ALTER TABLE sb_inventory_ledger ADD COLUMN IF NOT EXISTS location TEXT NOT NULL DEFAULT ''")
     conn.execute("ALTER TABLE sb_procurements ADD COLUMN IF NOT EXISTS purchase_order_reference TEXT")
     conn.execute("ALTER TABLE sb_returns ADD COLUMN IF NOT EXISTS refund_amount NUMERIC(14,2) NOT NULL DEFAULT 0")
@@ -138,6 +139,7 @@ class ProductTaxInput(BaseModel):
 class AttributeInput(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     values: list[str] = Field(min_length=1, max_length=100)
+    display_type: str = Field(default="text", pattern="^(text|color|image|dropdown|button)$")
 
 class AssignAttributesInput(BaseModel):
     attribute_ids: list[int] = Field(max_length=100)
@@ -258,8 +260,8 @@ def create_attribute(body: AttributeInput, authorization: str | None = Header(de
     with psycopg.connect(_db(), row_factory=dict_row) as c:
         _schema(c)
         try:
-            row = c.execute("INSERT INTO catalog_attributes(name,values_json) VALUES(%s,%s::jsonb) RETURNING *",
-              (body.name.strip(),json.dumps(values))).fetchone()
+            row = c.execute("INSERT INTO catalog_attributes(name,values_json,display_type) VALUES(%s,%s::jsonb,%s) RETURNING *",
+              (body.name.strip(),json.dumps(values),body.display_type)).fetchone()
         except psycopg.errors.UniqueViolation:
             raise HTTPException(409, "An attribute with this name already exists.")
         return row

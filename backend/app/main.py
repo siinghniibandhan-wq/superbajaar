@@ -9,6 +9,7 @@ import psycopg
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("superbajaar.api")
@@ -50,6 +51,30 @@ def get_columns(conn: psycopg.Connection, table: str) -> set[str]:
     return {row["column_name"] for row in rows}
 
 
+def attach_catalogue_media_and_attributes(conn: psycopg.Connection, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Attach configurable variant attributes and per-variant image galleries when their schema exists."""
+    if not rows:
+        return rows
+    attributes_available = bool(conn.execute("SELECT to_regclass('public.variant_attribute_values') AS t").fetchone()["t"]) and bool(conn.execute("SELECT to_regclass('public.catalog_attributes') AS t").fetchone()["t"])
+    images_available = bool(conn.execute("SELECT to_regclass('public.product_variant_images') AS t").fetchone()["t"])
+    for row in rows:
+        variant_id = row.get("variant_id")
+        if not variant_id:
+            continue
+        if attributes_available:
+            row["attributes"] = conn.execute(
+                """SELECT a.name AS attribute_name, v.value AS attribute_value, a.display_type
+                   FROM variant_attribute_values v JOIN catalog_attributes a ON a.id=v.attribute_id
+                   WHERE v.variant_id=%s ORDER BY a.name""", (variant_id,)
+            ).fetchall()
+        if images_available:
+            row["gallery_images"] = conn.execute(
+                """SELECT id, image_url, alt_text, sort_order FROM product_variant_images
+                   WHERE variant_id=%s ORDER BY sort_order, id""", (variant_id,)
+            ).fetchall()
+    return rows
+
+
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -75,6 +100,9 @@ def list_products(
             image_select = "v.image_url AS image_url" if "image_url" in variant_columns else "NULL::text AS image_url"
             brand_select = "p.brand AS brand" if "brand" in product_columns else "NULL::text AS brand"
             description_select = "p.description AS description" if "description" in product_columns else "NULL::text AS description"
+            specification_select = "p.specifications AS specifications" if "specifications" in product_columns else "'[]'::jsonb AS specifications"
+            manufacturer_select = "p.manufacturer_details AS manufacturer_details" if "manufacturer_details" in product_columns else "'[]'::jsonb AS manufacturer_details"
+            seller_select = "p.seller_details AS seller_details" if "seller_details" in product_columns else "'[]'::jsonb AS seller_details"
             currency_select = "v.currency AS currency" if "currency" in variant_columns else "'INR'::text AS currency"
             product_status_select = "p.status AS status" if "status" in product_columns else "'active'::text AS status"
             variant_status_select = "v.status AS variant_status" if "status" in variant_columns else "'active'::text AS variant_status"
@@ -89,6 +117,12 @@ def list_products(
             attribute_select = (", " + attribute_select) if attribute_select else ""
             category_id_select = "p.category_id AS category_id" if "category_id" in product_columns else "NULL::bigint AS category_id"
             category_join = "LEFT JOIN product_categories c ON c.id = p.category_id" if "category_id" in product_columns else "LEFT JOIN product_categories c ON FALSE"
+            category_parent_join = "LEFT JOIN product_categories cp ON cp.id = c.parent_id" if "parent_id" in category_columns else ""
+            category_path_select = "COALESCE(cp.name || ' › ' || c.name, c.name) AS category_path" if "parent_id" in category_columns else "c.name AS category_path"
+            reviews_table = conn.execute("SELECT to_regclass('public.product_reviews') AS table_name").fetchone()["table_name"]
+            review_select = ("""COALESCE((SELECT AVG(r.rating)::numeric(3,2) FROM product_reviews r WHERE r.product_id=p.id AND r.status='approved'),0) AS average_rating,
+                                COALESCE((SELECT COUNT(*)::int FROM product_reviews r WHERE r.product_id=p.id AND r.status='approved'),0) AS review_count"""
+                             if reviews_table else "0::numeric AS average_rating, 0::int AS review_count")
             where = [product_status, variant_status]
             params: list[Any] = []
             if search.strip():
@@ -104,18 +138,20 @@ def list_products(
             params.extend([limit, offset])
             query = f"""SELECT p.id AS product_id, p.name, {description_select}, {brand_select},
                               {category_id_select}, {product_status_select}, {variant_status_select},
-                              c.name AS category, v.id AS variant_id,
+                              c.name AS category, {category_path_select}, v.id AS variant_id,
                               {('v.sku' if 'sku' in variant_columns else 'NULL::text AS sku')},
                               {('v.mrp' if 'mrp' in variant_columns else 'NULL::numeric AS mrp')},
                               {('v.selling_price' if 'selling_price' in variant_columns else 'NULL::numeric AS selling_price')},
-                              {currency_select}, {image_select}{attribute_select}
+                              {currency_select}, {image_select}, {review_select}{attribute_select}
                        FROM products p
                        JOIN product_variants v ON v.product_id = p.id
                        {category_join}
+                       {category_parent_join}
                        WHERE {' AND '.join(where)}
                        ORDER BY p.name, v.id
                        LIMIT %s OFFSET %s"""
             rows = conn.execute(query, params).fetchall()
+            rows = attach_catalogue_media_and_attributes(conn, rows)
             return {"items": rows, "limit": limit, "offset": offset}
     except HTTPException:
         raise
@@ -139,6 +175,9 @@ def get_product_by_variant(variant_id: int) -> dict[str, Any]:
             image_select = "v.image_url AS image_url" if "image_url" in variant_columns else "NULL::text AS image_url"
             brand_select = "p.brand AS brand" if "brand" in product_columns else "NULL::text AS brand"
             description_select = "p.description AS description" if "description" in product_columns else "NULL::text AS description"
+            specification_select = "p.specifications AS specifications" if "specifications" in product_columns else "'[]'::jsonb AS specifications"
+            manufacturer_select = "p.manufacturer_details AS manufacturer_details" if "manufacturer_details" in product_columns else "'[]'::jsonb AS manufacturer_details"
+            seller_select = "p.seller_details AS seller_details" if "seller_details" in product_columns else "'[]'::jsonb AS seller_details"
             currency_select = "v.currency AS currency" if "currency" in variant_columns else "'INR'::text AS currency"
             category_join = "LEFT JOIN product_categories c ON c.id = p.category_id" if "category_id" in product_columns else "LEFT JOIN product_categories c ON FALSE"
             sku_select = "v.sku AS sku" if "sku" in variant_columns else "NULL::text AS sku"
@@ -153,6 +192,7 @@ def get_product_by_variant(variant_id: int) -> dict[str, Any]:
             attribute_select = ", ".join(f"v.{column} AS {column}" for column in attribute_columns if column in variant_columns)
             attribute_select = (", " + attribute_select) if attribute_select else ""
             row = conn.execute(f"""SELECT p.id AS product_id, p.name, {description_select}, {brand_select},
+                {specification_select}, {manufacturer_select}, {seller_select},
                 c.name AS category, v.id AS variant_id, {sku_select}, {mrp_select},
                 {price_select}, {currency_select}, {image_select}{attribute_select}
                 FROM products p JOIN product_variants v ON v.product_id = p.id
@@ -163,11 +203,14 @@ def get_product_by_variant(variant_id: int) -> dict[str, Any]:
             # Include sibling variants so the storefront can render one selector per
             # attribute even when a customer opens a product URL directly.
             sibling_variants = conn.execute(f"""SELECT p.id AS product_id, p.name, {description_select}, {brand_select},
+                {specification_select}, {manufacturer_select}, {seller_select},
                 c.name AS category, v.id AS variant_id, {sku_select}, {mrp_select},
                 {price_select}, {currency_select}, {image_select}{attribute_select}
                 FROM products p JOIN product_variants v ON v.product_id = p.id
                 {category_join} WHERE p.id = %s AND {product_status} AND {variant_status}
                 ORDER BY v.id""", (row["product_id"],)).fetchall()
+            sibling_variants = attach_catalogue_media_and_attributes(conn, sibling_variants)
+            row = attach_catalogue_media_and_attributes(conn, [row])[0]
             return {**row, "_variants": sibling_variants}
     except HTTPException:
         raise
@@ -321,12 +364,48 @@ def moderate_product_review(
 
 
 
+class VariantImageInput(BaseModel):
+    image_url: str = Field(min_length=1, max_length=6000000)
+    alt_text: str = Field(default="", max_length=240)
+    sort_order: int = Field(default=0, ge=0, le=10000)
+
+
+@app.post("/api/admin/products/{product_id}/variants/{variant_id}/images", status_code=201)
+def add_variant_image(product_id: int, variant_id: int, body: VariantImageInput, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _admin_catalogue_user(authorization)
+    image_url = body.image_url.strip()
+    if not (image_url.startswith("https://") or image_url.startswith("http://") or image_url.startswith("data:image/")):
+        raise HTTPException(status_code=422, detail="Use an HTTP(S) image URL or a valid image upload.")
+    if image_url.startswith("data:image/") and ";base64," not in image_url:
+        raise HTTPException(status_code=422, detail="Uploaded images must be encoded as an image data URL.")
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            if not conn.execute("SELECT id FROM product_variants WHERE id=%s AND product_id=%s", (variant_id, product_id)).fetchone():
+                raise HTTPException(status_code=404, detail="Product variant not found.")
+            if not conn.execute("SELECT to_regclass('public.product_variant_images') AS t").fetchone()["t"]:
+                raise HTTPException(status_code=503, detail="Apply the dynamic catalogue schema migration first.")
+            row = conn.execute(
+                """INSERT INTO product_variant_images(variant_id,image_url,alt_text,sort_order)
+                   VALUES(%s,%s,%s,%s) RETURNING id,variant_id,image_url,alt_text,sort_order,created_at""",
+                (variant_id, image_url, body.alt_text.strip(), body.sort_order)
+            ).fetchone()
+            return {"image": row}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        logger.exception("Variant image save failed")
+        raise HTTPException(status_code=503, detail="Variant image could not be saved.") from exc
+
+
 class ProductWriteInput(BaseModel):
     name: str = Field(min_length=1, max_length=240)
     selling_price: float = Field(gt=0, le=9999999999)
     mrp: float | None = Field(default=None, gt=0, le=9999999999)
     brand: str = Field(default="", max_length=160)
     description: str = Field(default="", max_length=4000)
+    specifications: list[dict[str, str]] = Field(default_factory=list, max_length=100)
+    manufacturer_details: list[dict[str, str]] = Field(default_factory=list, max_length=100)
+    seller_details: list[dict[str, str]] = Field(default_factory=list, max_length=100)
     category_id: int | None = Field(default=None, gt=0)
     sku: str = Field(default="", max_length=120)
     image_url: str = Field(default="", max_length=2000)
@@ -377,8 +456,9 @@ def create_catalogue_product(
             if not product_columns or not variant_columns:
                 raise HTTPException(status_code=503, detail="The existing catalogue schema is unavailable.")
             product_values = {"name": body.name.strip(), "brand": body.brand.strip(),
-                              "description": body.description.strip(), "category_id": body.category_id,
-                              "status": body.status}
+                              "description": body.description.strip(), "specifications": Jsonb(body.specifications),
+                              "manufacturer_details": Jsonb(body.manufacturer_details), "seller_details": Jsonb(body.seller_details),
+                              "category_id": body.category_id, "status": body.status}
             product = _catalogue_insert(conn, "products", product_values)
             variant_values = {"product_id": product["id"], "selling_price": body.selling_price,
                               "mrp": body.mrp, "sku": body.sku.strip() or None,
@@ -406,8 +486,9 @@ def update_catalogue_product(
             if not product_columns or not variant_columns:
                 raise HTTPException(status_code=503, detail="The existing catalogue schema is unavailable.")
             product_values = {"name": body.name.strip(), "brand": body.brand.strip(),
-                              "description": body.description.strip(), "category_id": body.category_id,
-                              "status": body.status}
+                              "description": body.description.strip(), "specifications": Jsonb(body.specifications),
+                              "manufacturer_details": Jsonb(body.manufacturer_details), "seller_details": Jsonb(body.seller_details),
+                              "category_id": body.category_id, "status": body.status}
             product_values = {k: v for k, v in product_values.items() if k in product_columns}
             if not product_values:
                 raise HTTPException(status_code=503, detail="The product schema has no editable fields.")
@@ -441,6 +522,62 @@ def update_catalogue_product(
         raise HTTPException(status_code=503, detail="Product could not be updated.") from exc
 
 
+class CategoryWriteInput(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    parent_id: int | None = Field(default=None, gt=0)
+    status: str = Field(default="active", pattern="^(active|inactive)$")
+
+
+@app.post("/api/admin/categories", status_code=201)
+def create_catalogue_category(body: CategoryWriteInput, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _admin_catalogue_user(authorization)
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            columns = _catalogue_columns(conn, "product_categories")
+            if not columns:
+                raise HTTPException(status_code=503, detail="The existing category table is unavailable.")
+            if body.parent_id is not None:
+                parent = conn.execute("SELECT id FROM product_categories WHERE id=%s", (body.parent_id,)).fetchone()
+                if not parent:
+                    raise HTTPException(status_code=422, detail="Selected parent category does not exist.")
+            values = {"name": body.name.strip(), "parent_id": body.parent_id, "status": body.status}
+            return {"category": _catalogue_insert(conn, "product_categories", values)}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        logger.exception("Category creation failed")
+        raise HTTPException(status_code=503, detail="Category could not be saved.") from exc
+
+
+@app.put("/api/admin/categories/{category_id}")
+def update_catalogue_category(category_id: int, body: CategoryWriteInput, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _admin_catalogue_user(authorization)
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            columns = _catalogue_columns(conn, "product_categories")
+            if not columns:
+                raise HTTPException(status_code=503, detail="The existing category table is unavailable.")
+            existing = conn.execute("SELECT id FROM product_categories WHERE id=%s", (category_id,)).fetchone()
+            if not existing:
+                raise HTTPException(status_code=404, detail="Category not found.")
+            if body.parent_id == category_id:
+                raise HTTPException(status_code=422, detail="A category cannot be its own parent.")
+            if body.parent_id is not None and not conn.execute("SELECT id FROM product_categories WHERE id=%s", (body.parent_id,)).fetchone():
+                raise HTTPException(status_code=422, detail="Selected parent category does not exist.")
+            if "parent_id" not in columns and body.parent_id is not None:
+                raise HTTPException(status_code=503, detail="Apply the dynamic catalogue schema migration before using parent categories.")
+            values = {"name": body.name.strip(), "parent_id": body.parent_id, "status": body.status}
+            values = {key: value for key, value in values.items() if key in columns}
+            assignments = ", ".join(f"{key}=%s" for key in values)
+            row = conn.execute(f"UPDATE product_categories SET {assignments} WHERE id=%s RETURNING *", [*values.values(), category_id]).fetchone()
+            return {"category": row}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        logger.exception("Category update failed")
+        raise HTTPException(status_code=503, detail="Category could not be updated.") from exc
+
+
 @app.get("/api/categories")
 def list_categories() -> dict[str, Any]:
     try:
@@ -448,8 +585,13 @@ def list_categories() -> dict[str, Any]:
             columns = get_columns(conn, "product_categories")
             if not columns:
                 raise HTTPException(status_code=503, detail="The existing category table is not available")
-            status_filter = "WHERE status = 'active'" if "status" in columns else ""
-            rows = conn.execute(f"SELECT id, name FROM product_categories {status_filter} ORDER BY name").fetchall()
+            status_filter = "WHERE c.status = 'active'" if "status" in columns else ""
+            parent_select = "c.parent_id AS parent_id, parent.name AS parent_name" if "parent_id" in columns else "NULL::bigint AS parent_id, NULL::text AS parent_name"
+            rows = conn.execute(f"""SELECT c.id, c.name, {parent_select}
+                FROM product_categories c
+                LEFT JOIN product_categories parent ON parent.id = c.parent_id
+                {status_filter}
+                ORDER BY COALESCE(parent.name, c.name), c.parent_id NULLS FIRST, c.name""").fetchall()
             return {"items": rows}
     except HTTPException:
         raise
