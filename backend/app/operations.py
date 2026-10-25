@@ -587,6 +587,32 @@ def create_invoice(body: InvoiceInput, authorization: str | None = Header(defaul
     total=(subtotal-discount+tax).quantize(Decimal("0.01")); ref=_ref("INV")
     with psycopg.connect(_db(), row_factory=dict_row) as c:
         _schema(c)
+        gst_split={"cgst":Decimal("0"),"sgst":Decimal("0"),"igst":Decimal("0")}
+        tax_config=c.execute("SELECT seller_state_code,rates_json FROM sb_tax_config WHERE id=1").fetchone()
+        if tax==0 and tax_config and body.place_of_supply_state_code:
+            seller_state=str(tax_config["seller_state_code"])
+            place_state=str(body.place_of_supply_state_code)
+            if len(place_state)!=2 or not place_state.isdigit(): raise HTTPException(422,"Place of supply must be a valid two-digit Indian state code.")
+            for item in body.items:
+                hsn=str(item.get("hsn_code",""))
+                rate=Decimal(str(item.get("gst_rate",tax_config["rates_json"].get(hsn,0))))
+                if rate<0 or rate>100: raise HTTPException(422,"GST rate must be between 0 and 100 percent.")
+                if rate==0: continue
+                if not seller_state: raise HTTPException(422,"Configure the seller GST state before calculating GST.")
+                gross=Decimal(str(item["quantity"]))*Decimal(str(item["unit_price"]))
+                line_discount=(discount*gross/subtotal) if subtotal else Decimal("0")
+                taxable=max(Decimal("0"),gross-line_discount)
+                line_tax=(taxable*rate/Decimal("100")).quantize(Decimal("0.01"))
+                if seller_state==place_state:
+                    cgst=(line_tax/2).quantize(Decimal("0.01")); sgst=line_tax-cgst
+                    gst_split["cgst"]+=cgst; gst_split["sgst"]+=sgst
+                    item["gst_breakdown"]={"rate":str(rate),"taxable_value":str(taxable),"cgst":str(cgst),"sgst":str(sgst),"igst":"0.00"}
+                else:
+                    gst_split["igst"]+=line_tax
+                    item["gst_breakdown"]={"rate":str(rate),"taxable_value":str(taxable),"cgst":"0.00","sgst":"0.00","igst":str(line_tax)}
+            computed=sum(gst_split.values(),Decimal("0"))
+            if computed>0: tax=computed
+        total=(subtotal-discount+tax).quantize(Decimal("0.01"))
         if body.source_channel=="pos":
             if body.warehouse_id is None: raise HTTPException(422,"Select a warehouse for POS stock deduction.")
             if not c.execute("SELECT id FROM sb_warehouses WHERE id=%s AND active FOR UPDATE",(body.warehouse_id,)).fetchone():
@@ -607,7 +633,11 @@ def create_invoice(body: InvoiceInput, authorization: str | None = Header(defaul
         _event(c,ref,"invoice_issued",actor["id"],new="issued",details={"channel":body.source_channel,"warehouse_id":body.warehouse_id})
         # One balanced sales posting per invoice; subsequent payments do not repost revenue.
         lines=[{"account_code":"1100","debit":str(total),"credit":"0"},{"account_code":"4000","debit":"0","credit":str(subtotal-discount)}]
-        if tax: lines.append({"account_code":"2100","debit":"0","credit":str(tax)})
+        if gst_split["cgst"] or gst_split["sgst"] or gst_split["igst"]:
+            if gst_split["cgst"]: lines.append({"account_code":"2110","debit":"0","credit":str(gst_split["cgst"])})
+            if gst_split["sgst"]: lines.append({"account_code":"2120","debit":"0","credit":str(gst_split["sgst"])})
+            if gst_split["igst"]: lines.append({"account_code":"2130","debit":"0","credit":str(gst_split["igst"])})
+        elif tax: lines.append({"account_code":"2100","debit":"0","credit":str(tax)})
         c.execute("INSERT INTO sb_journal_entries(reference,source_reference,memo,lines) VALUES(%s,%s,%s,%s::jsonb)",
           (_ref("JE"),ref,"Invoice revenue and tax",json.dumps(lines)))
         return row
