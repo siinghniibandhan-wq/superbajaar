@@ -77,8 +77,10 @@ def list_products(
             brand_select = "p.brand AS brand" if "brand" in product_columns else "NULL::text AS brand"
             description_select = "p.description AS description" if "description" in product_columns else "NULL::text AS description"
             currency_select = "v.currency AS currency" if "currency" in variant_columns else "'INR'::text AS currency"
-            hsn_select = "v.hsn_code AS hsn_code" if "hsn_code" in variant_columns else ("p.hsn_code AS hsn_code" if "hsn_code" in product_columns else "NULL::text AS hsn_code")
+            tax_table = conn.execute("SELECT to_regclass('public.catalog_product_tax') AS t").fetchone()["t"]
+            hsn_select = "pt.hsn_code AS hsn_code" if tax_table else ("v.hsn_code AS hsn_code" if "hsn_code" in variant_columns else ("p.hsn_code AS hsn_code" if "hsn_code" in product_columns else "NULL::text AS hsn_code"))
             gst_rate_select = "v.gst_rate AS gst_rate" if "gst_rate" in variant_columns else ("p.gst_rate AS gst_rate" if "gst_rate" in product_columns else "NULL::numeric AS gst_rate")
+            tax_join = "LEFT JOIN catalog_product_tax pt ON pt.product_id=p.id" if tax_table else ""
             category_join = "LEFT JOIN product_categories c ON c.id = p.category_id" if "category_id" in product_columns else "LEFT JOIN product_categories c ON FALSE"
             where = [product_status, variant_status]
             params: list[Any] = []
@@ -102,6 +104,7 @@ def list_products(
                        FROM products p
                        JOIN product_variants v ON v.product_id = p.id
                        {category_join}
+                       {tax_join}
                        WHERE {' AND '.join(where)}
                        ORDER BY p.name, v.id
                        LIMIT %s OFFSET %s"""
@@ -148,8 +151,10 @@ def get_product_by_variant(variant_id: int) -> dict[str, Any]:
             brand_select = "p.brand AS brand" if "brand" in product_columns else "NULL::text AS brand"
             description_select = "p.description AS description" if "description" in product_columns else "NULL::text AS description"
             currency_select = "v.currency AS currency" if "currency" in variant_columns else "'INR'::text AS currency"
-            hsn_select = "v.hsn_code AS hsn_code" if "hsn_code" in variant_columns else ("p.hsn_code AS hsn_code" if "hsn_code" in product_columns else "NULL::text AS hsn_code")
+            tax_table = conn.execute("SELECT to_regclass('public.catalog_product_tax') AS t").fetchone()["t"]
+            hsn_select = "pt.hsn_code AS hsn_code" if tax_table else ("v.hsn_code AS hsn_code" if "hsn_code" in variant_columns else ("p.hsn_code AS hsn_code" if "hsn_code" in product_columns else "NULL::text AS hsn_code"))
             gst_rate_select = "v.gst_rate AS gst_rate" if "gst_rate" in variant_columns else ("p.gst_rate AS gst_rate" if "gst_rate" in product_columns else "NULL::numeric AS gst_rate")
+            tax_join = "LEFT JOIN catalog_product_tax pt ON pt.product_id=p.id" if tax_table else ""
             category_join = "LEFT JOIN product_categories c ON c.id = p.category_id" if "category_id" in product_columns else "LEFT JOIN product_categories c ON FALSE"
             sku_select = "v.sku AS sku" if "sku" in variant_columns else "NULL::text AS sku"
             mrp_select = "v.mrp AS mrp" if "mrp" in variant_columns else "NULL::numeric AS mrp"
@@ -158,7 +163,7 @@ def get_product_by_variant(variant_id: int) -> dict[str, Any]:
                 c.name AS category, v.id AS variant_id, {sku_select}, {mrp_select},
                 {price_select}, {currency_select}, {image_select}, {hsn_select}, {gst_rate_select}
                 FROM products p JOIN product_variants v ON v.product_id = p.id
-                {category_join} WHERE v.id = %s AND {product_status} AND {variant_status}
+                {category_join} {tax_join} WHERE v.id = %s AND {product_status} AND {variant_status}
                 LIMIT 1""", (variant_id,)).fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Product not found")
