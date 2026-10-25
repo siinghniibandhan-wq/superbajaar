@@ -4,6 +4,13 @@
 -- allowed to create tables, so every admin screen failed. Additive only: new empty tables.
 -- sb_vendors and sb_accounts already exist and are NOT recreated.
 
+-- Catalogue attribute definitions are referenced by the admin attribute and variant APIs.
+-- Keep this table in the numbered schema migration, not request-time DDL.
+CREATE TABLE IF NOT EXISTS catalog_attributes(
+      id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL UNIQUE, values_json JSONB NOT NULL DEFAULT '[]',
+      display_type TEXT NOT NULL DEFAULT 'text' CHECK (display_type IN ('text','color','image','dropdown','button')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+
 CREATE TABLE IF NOT EXISTS catalog_product_tax(
       product_id BIGINT PRIMARY KEY, hsn_code TEXT NOT NULL, updated_by BIGINT,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now());
@@ -93,6 +100,21 @@ CREATE TABLE IF NOT EXISTS sb_document_events(
 CREATE TABLE IF NOT EXISTS sb_document_registry(
       reference TEXT PRIMARY KEY, document_type TEXT NOT NULL, document_id BIGINT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+
+-- Older operations installs created sb_accounts with only an "active" flag.
+-- Add the columns required by the current accounting and operations APIs without dropping data.
+ALTER TABLE sb_accounts ADD COLUMN IF NOT EXISTS detail_type TEXT NOT NULL DEFAULT 'other';
+ALTER TABLE sb_accounts ADD COLUMN IF NOT EXISTS is_system BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE sb_accounts ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+DO $
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='sb_accounts' AND column_name='active'
+  ) THEN
+    UPDATE sb_accounts SET is_active = active WHERE is_active IS DISTINCT FROM active;
+  END IF;
+END $;
 
 -- The operations module expects a vendor status; existing vendors become 'active'.
 ALTER TABLE sb_vendors ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
