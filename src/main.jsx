@@ -68,10 +68,28 @@ function Store({goAdmin}) {
  function variantLabel(p){
   const human=v=>{if(v==null)return '';if(typeof v==='string'||typeof v==='number')return String(v);if(Array.isArray(v))return v.map(human).filter(Boolean).join(', ');if(typeof v==='object'){if(Array.isArray(v.display_name))return v.display_name.join(', ');return human(v.display_name||v.value_name||v.value||v.name||v.label||v.attribute_value_name||v.attribute_name||v.attribute||v.values||v.value_ids)}return ''};
   const clean=v=>{const x=human(v).trim();return /^ODOO[-_ ]?VAR[-_ ]?\d+$/i.test(x)?'':x};
-  const direct=[p.variant_label,p.variant_display_name,p.display_name,p.variant_name,p.variant_title,p.option_label,p.attributes_label,p.attribute_values_display,p.variant_description];
+  // Prefer structured attribute/value pairs over display_name or short variant codes.
+  // Some catalogue APIs use display_name for an internal variant label, which hides
+  // the human-readable attribute names even when structured attributes are available.
+  const attrFields=[p.attributes,p.attribute_values,p.variant_attributes,p.attribute_lines,p.product_template_attribute_value_ids,p.product_template_variant_value_ids,p.product_variant_attributes,p.combination,p.attribute_value_ids,p.variant_attribute_values,p.attribute_values_ids];
+  for(const field of attrFields){
+   const entries=Array.isArray(field)?field:(field&&typeof field==='object'?Object.entries(field):[]);
+   const parts=entries.map(item=>{
+    if(Array.isArray(item)){
+     if(item.length>1&&typeof item[0]==='string')return clean(item[0])+': '+clean(item[1]);
+     if(item.length>1)return clean(item[1]);
+     return clean(item[0]);
+    }
+    if(!item||typeof item!=='object')return clean(item);
+    const value=clean(item.value_name||item.attribute_value_name||item.value?.name||item.value?.display_name||item.value||item.display_value||item.display_name||item.label||item.name);
+    const attribute=clean(item.attribute_name||item.attribute?.name||item.attribute?.display_name||item.attribute?.[1]||item.attribute_id?.name||(Array.isArray(item.attribute_id)?item.attribute_id[1]:'')||item.attribute?.label);
+    if(attribute&&value&&attribute!==value)return attribute+': '+value;
+    return value||attribute;
+   }).filter(Boolean);
+   if(parts.length)return [...new Set(parts)].join(' · ');
+  }
+  const direct=[p.variant_label,p.option_label,p.attributes_label,p.attribute_values_display,p.variant_description,p.variant_name,p.variant_title,p.display_name,p.variant_display_name];
   for(const v of direct){const x=clean(v);if(x)return x}
-  const attrFields=[p.attributes,p.attribute_values,p.variant_attributes,p.attribute_lines,p.product_template_attribute_value_ids,p.product_template_variant_value_ids,p.product_variant_attributes,p.combination];
-  for(const field of attrFields){if(!Array.isArray(field))continue;const parts=field.map(item=>{if(Array.isArray(item)){if(item.length>1)return clean(item[1]);return clean(item[0])}if(!item||typeof item!=='object')return clean(item);const value=clean(item.value_name||item.value||item.display_name||item.name||item.label||item.attribute_value_name);const attribute=clean(item.attribute_name||item.attribute?.name||item.attribute?.[1]||item.attribute_id?.name||(Array.isArray(item.attribute_id)?item.attribute_id[1]:''));return value&&attribute&&value!==attribute?attribute+': '+value:value||attribute}).filter(Boolean);if(parts.length)return [...new Set(parts)].join(' · ')}
   for(const v of [p.size,p.weight,p.pack_size,p.unit,p.volume,p.quantity_label]){const x=clean(v);if(x)return x}
   const sku=clean(p.sku);if(sku&&!/^ODOO[-_ ]?VAR[-_ ]?\d+$/i.test(sku))return sku;
   return 'Select option';
