@@ -168,3 +168,45 @@
 .admin-shell .module-tab-guidance{padding:20px;margin:16px 0;background:var(--admin-surface);border:1px solid var(--admin-border);border-radius:16px;color:var(--admin-text)}
 .admin-shell .module-tab-guidance h3{margin:0 0 8px;color:var(--admin-text)}
 .admin-shell .module-tab-guidance p{color:var(--admin-muted);font-size:13px;line-height:1.6}
+
+
+/* Modern cashier POS experience */
+.pos-desk{--pos-accent:#8b5cf6;--pos-accent-strong:#6d28d9;--pos-ink:var(--text-color,#f8fafc);--pos-muted:var(--muted-text,#9ca3af);padding:clamp(12px,2vw,24px)!important;border-radius:24px;background:radial-gradient(ellipse at 5% 0%,rgba(124,58,237,.14),transparent 42%),var(--page-bg,#101018);color:var(--pos-ink)}
+.pos-desk .panel-heading{align-items:center;gap:14px;margin-bottom:18px}
+.pos-desk .panel-heading h2{font-size:clamp(24px,3vw,34px);font-weight:850;letter-spacing:-1px;margin:5px 0}
+.pos-desk .panel-heading h3{font-size:16px;font-weight:800;letter-spacing:-.25px}
+.pos-desk .panel-heading p{font-size:12px;line-height:1.6;color:var(--pos-muted);margin:5px 0 0}
+.pos-desk .overline{font-size:10px;letter-spacing:1.7px;font-weight:800;color:#a78bfa}
+.pos-desk .pos-layout{grid-template-columns:minmax(0,1.55fr) minmax(300px,.9fr)!important;gap:16px!important}
+.pos-desk .panel,.pos-desk .pos-catalogue,.pos-desk .pos-cart{background:linear-gradient(145deg,rgba(35,34,49,.96),rgba(24,23,35,.98))!important;border:1px solid rgba(167,139,250,.14)!important;border-radius:20px!important;padding:clamp(14px,2vw,22px)!important;box-shadow:0 14px 40px rgba(0,0,0,.12)}
+.pos-desk .pos-catalogue{min-height:420px}
+.pos-desk .pos-cart{position:sticky;top:16px;border-color:rgba(139,92,246,.28)!important}
+.pos-desk .pos-search-label{display:grid;gap:8px;font-size:11px;font-weight:700;color:#c4b5fd}
+.pos-desk input,.pos-desk select{box-sizing:border-box;min-width:0;width:100%;border:1px solid rgba(167,139,250,.22)!important;background:rgba(13,13,22,.85)!important;color:#f5f3ff!important;border-radius:12px!important;padding:12px 13px!important;outline:none}
+.pos-desk input:focus,.pos-desk select:focus{border-color:#a78bfa!important;box-shadow:0 0 0 3px rgba(139,92,246,.15)}
+.pos-desk label{font-size:11px;font-weight:700;color:#c4b5fd}
+.pos-desk .pos-category-row{margin:16px 0!important}
+.pos-desk .pos-category-row button{width:auto;border-radius:999px!important;padding:9px 15px!important;font-size:11px}
+.pos-desk .pos-product-grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))!important;gap:12px!important}
+.pos-desk .pos-product-card{position:relative;display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;gap:7px;min-height:142px!important;padding:16px!important;border-radius:16px!important;border:1px solid rgba(167,139,250,.16)!important;background:linear-gradient(145deg,rgba(49,42,70,.8),rgba(28,27,41,.9))!important;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}
+.pos-desk .pos-product-card:before{content:"";position:absolute;left:0;top:16px;bottom:16px;width:3px;border-radius:0 4px 4px 0;background:linear-gradient(#c4b5fd,#7c3aed);opacity:.8}
+.pos-desk .pos-product-card:hover{transform:translateY(-3px);border-color:rgba(167,139,250,.6)!important;box-shadow:0 12px 28px rgba(76,29,149,.18)}
+.pos-desk .pos-product-card strong:last-of-type{font-size:18px;color:#ddd6fe}
+.pos-desk .pos-cart-line{border-bottom:1px solid rgba(167,139,250,.14)!important}
+.pos-desk .pos-cart-line>div:first-child{align-items:center}
+.pos-desk .pos-cart-line>div:first-child strong{font-size:12px;line-height:1.5}
+.pos-desk .pos-cart-line>div:first-child button{width:32px;min-width:32px;border-radius:9px!important}
+.pos-desk .checkout-total{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid rgba(167,139,250,.14)}
+.pos-desk .checkout-total span{font-size:11px;color:#aaa3bd}
+.pos-desk .checkout-total b{font-size:13px;font-variant-numeric:tabular-nums}
+.pos-desk .checkout-total:last-of-type{border-bottom:0;padding:18px 0}
+.pos-desk .checkout-total:last-of-type b{font-size:23px;color:#ddd6fe}
+.pos-desk .primary-cta{border:0!important;border-radius:13px!important;background:linear-gradient(100deg,#7c3aed,#9333ea)!important;box-shadow:0 7px 18px rgba(124,58,237,.24);padding:13px 16px!important;font-weight:800}
+.pos-desk .outline-action{width:auto;border:1px solid rgba(167,139,250,.2)!important;border-radius:11px!important;background:rgba(255,255,255,.035)!important;color:var(--pos-ink)!important;padding:10px 13px!important;font-size:11px}
+.pos-desk .form-note{border:1px dashed rgba(167,139,250,.25);background:rgba(139,92,246,.06);border-radius:13px;padding:15px;color:#b7b0c9;font-size:11px;line-height:1.7}
+.pos-desk .review-feedback{border-radius:12px;padding:12px 14px;overflow-wrap:anywhere}
+.pos-desk .pos-recent-sales{margin-top:16px}
+.pos-desk .pos-recent-sales .panel-heading{flex-wrap:wrap}
+.pos-desk .user-table th,.pos-desk .user-table td{border-color:rgba(167,139,250,.12)}
+@media(max-width:900px){.pos-desk .pos-layout{grid-template-columns:minmax(0,1fr)!important}.pos-desk .pos-cart{position:static;order:0}.pos-desk .pos-catalogue{min-height:0}.pos-desk .pos-product-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+@media(max-width:560px){.pos-desk{padding:10px!important;border-radius:16px}.pos-desk .panel-heading{align-items:flex-start;flex-direction:column}.pos-desk .panel-heading>div:last-child{display:flex;flex-direction:row;flex-wrap:wrap;width:100%}.pos-desk .panel-heading>div:last-child button{flex:1}.pos-desk .panel,.pos-desk .pos-catalogue,.pos-desk .pos-cart{padding:14px!important;border-radius:16px!important}.pos-desk .pos-product-grid{gap:9px!important}.pos-desk .pos-product-card{padding:12px!important;min-height:125px!important}.pos-desk .pos-product-card strong:last-of-type{font-size:16px}.pos-desk .pos-cart-line>div:first-child{align-items:flex-start}.pos-desk .pos-cart-line>div:first-child strong{max-width:72%}.pos-desk .pos-recent-sales .panel-heading{flex-direction:row;align-items:center}.pos-desk .pos-recent-sales .panel-heading>div:last-child{width:auto}.pos-desk .pos-recent-sales .panel-heading button{width:auto}}
