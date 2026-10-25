@@ -578,6 +578,41 @@ def update_admin_order(
         raise HTTPException(status_code=503, detail="Could not update order status.") from exc
 
 
+@router.post("/admin/orders/{order_id}/payments", status_code=201)
+def record_website_order_payment(order_id: int, body: OrderPaymentInput, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    actor=_require(authorization, {"super_admin","admin","staff"})
+    if body.method not in {"cash","card","upi","bank_transfer","other"}:
+        raise HTTPException(status_code=422, detail="Unsupported payment method.")
+    try:
+        with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
+            _ensure_commerce_schema(conn)
+            from .operations import _schema as _ensure_operations_schema
+            _ensure_operations_schema(conn)
+            order=conn.execute("SELECT * FROM store_orders WHERE id=%s FOR UPDATE",(order_id,)).fetchone()
+            if not order or order["status"]=="cancelled": raise HTTPException(status_code=404,detail="Active order not found.")
+            outstanding=Decimal(str(order["total"]))-Decimal(str(order["paid_total"] or 0))
+            if body.amount>outstanding: raise HTTPException(status_code=422,detail="Payment exceeds the outstanding invoice amount.")
+            if body.amount<=0: raise HTTPException(status_code=422,detail="Payment must be positive.")
+            ref="PAY-"+secrets.token_hex(5).upper()
+            conn.execute("INSERT INTO store_order_payments(reference,order_id,amount,method,recorded_by) VALUES(%s,%s,%s,%s,%s)",
+              (ref,order_id,body.amount,body.method,actor["id"]))
+            paid=Decimal(str(order["paid_total"] or 0))+body.amount
+            status="paid" if paid==Decimal(str(order["total"])) else "partially_paid"
+            conn.execute("UPDATE store_orders SET paid_total=%s,payment_status=%s,updated_at=now() WHERE id=%s",(paid,status,order_id))
+            conn.execute("""INSERT INTO sb_journal_entries(reference,source_reference,memo,lines)
+              VALUES(%s,%s,%s,%s::jsonb)""",
+              ("JE-"+secrets.token_hex(5).upper(),order["invoice_number"],"Website order payment",
+               json.dumps([{"account_code":"1000","debit":str(body.amount),"credit":"0"},{"account_code":"1100","debit":"0","credit":str(body.amount)}])))
+            conn.execute("""INSERT INTO document_events(document_type,document_id,reference,event_type,from_status,to_status,actor_id,details)
+              VALUES('sale',%s,%s,'payment_recorded',%s,%s,%s,%s::jsonb)""",
+              (order_id,order["invoice_number"],order["payment_status"],status,actor["id"],json.dumps({"payment_reference":ref,"amount":str(body.amount)})))
+            return {"payment_reference":ref,"invoice_reference":order["invoice_number"],"paid_total":str(paid),"status":status}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(status_code=503,detail="Order payment could not be recorded.") from exc
+
+
 @router.get("/admin/documents/{reference}/timeline")
 def document_timeline(reference: str, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     """Return the audit timeline for a stable invoice/order reference."""
