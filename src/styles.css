@@ -234,6 +234,8 @@
 .variant-attribute-group{min-width:0;margin:0;padding:0;border:0}
 .variant-attribute-group legend{margin:0 0 8px;padding:0;color:var(--ink);font-size:12px;font-weight:800}
 .variant-radio-options{display:flex;flex-wrap:wrap;gap:8px}
+.variant-attribute-dropdown{min-width:140px;max-width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface,#fff);color:var(--ink);font:inherit}
+.variant-radio-option.variant-option-button{min-width:44px;justify-content:center;border-radius:10px;font-weight:600}
 .variant-radio-option{display:inline-flex;align-items:center;gap:6px;padding:7px 11px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--ink);font-size:12px;font-weight:500;cursor:pointer}
 .variant-radio-option input{width:14px;height:14px;margin:0;accent-color:var(--purple)}
 .variant-picker .variant-radio-option{color:var(--ink);font-weight:500}
