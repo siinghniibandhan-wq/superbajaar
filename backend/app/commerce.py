@@ -45,7 +45,6 @@ def _ensure_commerce_schema(conn: Any) -> None:
             subtotal NUMERIC(12,2) NOT NULL CHECK (subtotal >= 0),
             shipping_fee NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (shipping_fee >= 0),
             total NUMERIC(12,2) NOT NULL CHECK (total >= 0),
-            tax_total NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (tax_total >= 0),
             shipping_address JSONB NOT NULL,
             customer_note TEXT NOT NULL DEFAULT '',
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -66,21 +65,10 @@ def _ensure_commerce_schema(conn: Any) -> None:
             product_name TEXT NOT NULL,
             quantity INTEGER NOT NULL CHECK (quantity BETWEEN 1 AND 50),
             unit_price NUMERIC(12,2) NOT NULL CHECK (unit_price >= 0),
-            line_total NUMERIC(12,2) NOT NULL CHECK (line_total >= 0),
-            tax_rate NUMERIC(5,2) NOT NULL DEFAULT 0,
-            taxable_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
-            cgst_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
-            sgst_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
-            igst_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
-            tax_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
-            tax_inclusive BOOLEAN NOT NULL DEFAULT TRUE
+            line_total NUMERIC(12,2) NOT NULL CHECK (line_total >= 0)
         )
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS store_order_items_order_idx ON store_order_items(order_id)")
-    conn.execute("ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS tax_total NUMERIC(12,2) NOT NULL DEFAULT 0")
-    for column, definition in (("tax_rate","NUMERIC(5,2) NOT NULL DEFAULT 0"),("taxable_amount","NUMERIC(12,2) NOT NULL DEFAULT 0"),("cgst_amount","NUMERIC(12,2) NOT NULL DEFAULT 0"),("sgst_amount","NUMERIC(12,2) NOT NULL DEFAULT 0"),("igst_amount","NUMERIC(12,2) NOT NULL DEFAULT 0"),("tax_amount","NUMERIC(12,2) NOT NULL DEFAULT 0"),("tax_inclusive","BOOLEAN NOT NULL DEFAULT TRUE")):
-        conn.execute(f"ALTER TABLE store_order_items ADD COLUMN IF NOT EXISTS {column} {definition}")
-
 
 
 class CheckoutItem(BaseModel):
@@ -210,13 +198,13 @@ def _delivery_quote(config: Any, pincode: str | None, subtotal: Decimal) -> dict
 def _order_detail(conn: Any, order_id: int) -> dict[str, Any]:
     order = conn.execute(
         """SELECT id,order_number,user_id,status,payment_method,payment_status,currency,
-                  subtotal,shipping_fee,tax_total,loyalty_discount,loyalty_coins_redeemed,total,shipping_address,customer_note,created_at,updated_at
+                  subtotal,shipping_fee,loyalty_discount,loyalty_coins_redeemed,total,shipping_address,customer_note,created_at,updated_at
            FROM store_orders WHERE id=%s""", (order_id,)
     ).fetchone()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     order["items"] = conn.execute(
-        """SELECT variant_id,product_id,sku,product_name,quantity,unit_price,line_total,tax_rate,taxable_amount,cgst_amount,sgst_amount,igst_amount,tax_amount,tax_inclusive
+        """SELECT variant_id,product_id,sku,product_name,quantity,unit_price,line_total
            FROM store_order_items WHERE order_id=%s ORDER BY id""", (order_id,)
     ).fetchall()
     return order
@@ -327,77 +315,6 @@ def checkout_options(
         raise HTTPException(status_code=503, detail="Checkout options are temporarily unavailable.") from exc
 
 
-
-
-def _india_state_code(value: Any) -> str | None:
-    raw = str(value or "").strip().lower()
-    if not raw:
-        return None
-    if re.fullmatch(r"[0-9]{1,2}", raw):
-        return raw.zfill(2)
-    names = {
-        "jammu and kashmir":"01","jammu & kashmir":"01","himachal pradesh":"02","punjab":"03",
-        "chandigarh":"04","uttarakhand":"05","haryana":"06","delhi":"07","nct of delhi":"07",
-        "rajasthan":"08","uttar pradesh":"09","bihar":"10","sikkim":"11","arunachal pradesh":"12",
-        "nagaland":"13","manipur":"14","mizoram":"15","tripura":"16","meghalaya":"17","assam":"18",
-        "west bengal":"19","jharkhand":"20","odisha":"21","orissa":"21","chhattisgarh":"22",
-        "madhya pradesh":"23","gujarat":"24","dadra and nagar haveli and daman and diu":"26",
-        "maharashtra":"27","andhra pradesh":"37","karnataka":"29","goa":"30","lakshadweep":"31",
-        "kerala":"32","tamil nadu":"33","puducherry":"34","pondicherry":"34",
-        "andaman and nicobar islands":"35","andaman and nicobar":"35","telangana":"36","ladakh":"38",
-    }
-    return names.get(raw)
-
-
-def _catalogue_variant_available(conn: Any, product_id: int, variant_id: int, pincode: str) -> bool:
-    """Evaluate product/variant restrictions; rules within a scope are alternatives, scopes combine with AND."""
-    if not conn.execute("SELECT to_regclass('public.sb_product_availability_rules') AS t").fetchone()["t"]:
-        return True
-    rules = conn.execute(
-        """SELECT scope_type,region_id,pincode,warehouse_id
-           FROM sb_product_availability_rules
-           WHERE product_id=%s AND (variant_id IS NULL OR variant_id=%s)""",
-        (product_id, variant_id),
-    ).fetchall()
-    if not rules:
-        return True
-    by_scope: dict[str, list[dict[str, Any]]] = {}
-    for rule in rules:
-        by_scope.setdefault(rule["scope_type"], []).append(rule)
-    pin = pincode.strip()
-    if "pincode" in by_scope and not any(rule["pincode"] == pin for rule in by_scope["pincode"]):
-        return False
-    matching_region_ids: set[int] = set()
-    if conn.execute("SELECT to_regclass('public.sb_region_pincodes') AS t").fetchone()["t"]:
-        matching_region_ids = {
-            int(row["region_id"]) for row in conn.execute(
-                "SELECT region_id FROM sb_region_pincodes WHERE pincode=%s AND active=TRUE", (pin,)
-            ).fetchall()
-        }
-    if "region" in by_scope and not any(int(rule["region_id"]) in matching_region_ids for rule in by_scope["region"]):
-        return False
-    if "warehouse" in by_scope:
-        warehouse_ids = [int(rule["warehouse_id"]) for rule in by_scope["warehouse"]]
-        warehouses = conn.execute(
-            """SELECT id,region_id,pincode,serviceable_pincodes
-               FROM sb_warehouses WHERE active=TRUE AND id = ANY(%s)""", (warehouse_ids,)
-        ).fetchall()
-        def serves(row: dict[str, Any]) -> bool:
-            serviceable = row.get("serviceable_pincodes") or []
-            if isinstance(serviceable, str):
-                try:
-                    import json
-                    serviceable = json.loads(serviceable)
-                except Exception:
-                    serviceable = []
-            pin_match = str(row.get("pincode") or "") == pin or (isinstance(serviceable, list) and pin in [str(x) for x in serviceable])
-            region_match = "region" not in by_scope or (row.get("region_id") is not None and int(row["region_id"]) in {int(r["region_id"]) for r in by_scope["region"]})
-            return pin_match and region_match
-        if not any(serves(row) for row in warehouses):
-            return False
-    return True
-
-
 @router.post("/checkout", status_code=201)
 def create_order(body: CheckoutInput, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     user = _current(authorization)
@@ -417,8 +334,6 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
             ensure_loyalty(conn)
             products: list[dict[str, Any]] = []
             subtotal = Decimal("0")
-            taxable_subtotal = Decimal("0")
-            tax_total = Decimal("0")
             for variant_id, quantity in quantities.items():
                 product_columns = {r["column_name"] for r in conn.execute(
                     "SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='products'"
@@ -431,59 +346,21 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
                 active_product = " AND p.status='active'" if "status" in product_columns else ""
                 active_variant = " AND v.status='active'" if "status" in variant_columns else ""
                 sku_select = "v.sku" if "sku" in variant_columns else "NULL::text"
-                tax_rate_select = "p.gst_rate" if "gst_rate" in product_columns else "NULL::numeric"
-                tax_inclusive_select = "p.tax_inclusive" if "tax_inclusive" in product_columns else "TRUE"
                 product = conn.execute(
                     f"""SELECT p.id AS product_id,p.name,v.id AS variant_id,
-                               v.selling_price,{sku_select} AS sku,{tax_rate_select} AS gst_rate,{tax_inclusive_select} AS tax_inclusive
+                               v.selling_price,{sku_select} AS sku
                         FROM products p JOIN product_variants v ON v.product_id=p.id
                         WHERE v.id=%s{active_product}{active_variant}
                         FOR SHARE OF p,v""", (variant_id,)
                 ).fetchone()
                 if not product:
                     raise HTTPException(status_code=409, detail=f"Product variant {variant_id} is no longer available.")
-                if not _catalogue_variant_available(conn, int(product["product_id"]), int(product["variant_id"]), body.shipping_address.pincode):
-                    raise HTTPException(status_code=422, detail=f"{product['name']} is not available for delivery to PIN code {body.shipping_address.pincode}.")
                 price = Decimal(str(product["selling_price"] or 0))
                 if price <= 0:
                     raise HTTPException(status_code=409, detail=f"Price is not configured for {product['name']}.")
-                rate = Decimal(str(product.get("gst_rate") or 0))
-                if rate < 0 or rate > 100:
-                    raise HTTPException(status_code=503, detail=f"GST rate is invalid for {product['name']}.")
-                inclusive = bool(product.get("tax_inclusive", True))
-                if rate > 0 and not inclusive:
-                    taxable_unit = price
-                    gross_unit = price * (Decimal("1") + rate / Decimal("100"))
-                elif rate > 0:
-                    gross_unit = price
-                    taxable_unit = price / (Decimal("1") + rate / Decimal("100"))
-                else:
-                    gross_unit = price
-                    taxable_unit = price
-                line_total = (gross_unit * quantity).quantize(Decimal("0.01"))
-                taxable_amount = (taxable_unit * quantity).quantize(Decimal("0.01"))
-                tax_amount = (line_total - taxable_amount).quantize(Decimal("0.01"))
-                cgst_amount = Decimal("0")
-                sgst_amount = Decimal("0")
-                igst_amount = Decimal("0")
-                if tax_amount > 0:
-                    seller_row = conn.execute("SELECT seller_state_code FROM sb_tax_config WHERE id=1").fetchone() if conn.execute("SELECT to_regclass('public.sb_tax_config') AS t").fetchone()["t"] else None
-                    seller_code = _india_state_code(seller_row.get("seller_state_code") if seller_row else None)
-                    buyer_code = _india_state_code(body.shipping_address.state)
-                    if not seller_code or not buyer_code:
-                        raise HTTPException(status_code=422, detail="Configure the seller GST state code and enter a recognised delivery state before placing a GST-taxed order.")
-                    if seller_code == buyer_code:
-                        cgst_amount = (tax_amount / Decimal("2")).quantize(Decimal("0.01"))
-                        sgst_amount = tax_amount - cgst_amount
-                    else:
-                        igst_amount = tax_amount
+                line_total = (price * quantity).quantize(Decimal("0.01"))
                 subtotal += line_total
-                taxable_subtotal += taxable_amount
-                tax_total += tax_amount
-                products.append({**product, "quantity": quantity, "unit_price": price, "line_total": line_total,
-                                 "tax_rate": rate, "taxable_amount": taxable_amount, "tax_amount": tax_amount,
-                                 "cgst_amount": cgst_amount, "sgst_amount": sgst_amount, "igst_amount": igst_amount,
-                                 "tax_inclusive": inclusive})
+                products.append({**product, "quantity": quantity, "unit_price": price, "line_total": line_total})
             delivery_row = conn.execute(
                 "SELECT setting_value FROM store_settings WHERE setting_key='delivery'"
             ).fetchone()
@@ -521,10 +398,10 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
             order_number = "SB-" + secrets.token_hex(5).upper()
             row = conn.execute(
                 """INSERT INTO store_orders
-                   (order_number,user_id,status,payment_method,payment_status,subtotal,shipping_fee,total,tax_total,loyalty_discount,loyalty_coins_redeemed,shipping_address,customer_note)
-                   VALUES (%s,%s,'placed','cash_on_delivery','pending',%s,%s,%s,%s,%s,%s,%s::jsonb,%s)
+                   (order_number,user_id,status,payment_method,payment_status,subtotal,shipping_fee,total,loyalty_discount,loyalty_coins_redeemed,shipping_address,customer_note)
+                   VALUES (%s,%s,'placed','cash_on_delivery','pending',%s,%s,%s,%s,%s,%s::jsonb,%s)
                    RETURNING id""",
-                (order_number, user["id"], subtotal, shipping_fee, total, tax_total, loyalty_discount, coins_used,
+                (order_number, user["id"], subtotal, shipping_fee, total, loyalty_discount, coins_used,
                  json.dumps(body.shipping_address.model_dump()), body.customer_note.strip())
             ).fetchone()
             if coins_used:
@@ -533,12 +410,10 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
             for product in products:
                 conn.execute(
                     """INSERT INTO store_order_items
-                       (order_id,variant_id,product_id,sku,product_name,quantity,unit_price,line_total,tax_rate,taxable_amount,cgst_amount,sgst_amount,igst_amount,tax_amount,tax_inclusive)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                       (order_id,variant_id,product_id,sku,product_name,quantity,unit_price,line_total)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (row["id"], product["variant_id"], product["product_id"], product["sku"],
-                     product["name"], product["quantity"], product["unit_price"], product["line_total"],
-                     product["tax_rate"], product["taxable_amount"], product["cgst_amount"], product["sgst_amount"],
-                     product["igst_amount"], product["tax_amount"], product["tax_inclusive"])
+                     product["name"], product["quantity"], product["unit_price"], product["line_total"])
                 )
                 stock=conn.execute("SELECT quantity FROM sb_stock WHERE variant_id=%s AND warehouse='Main' FOR UPDATE",(product["variant_id"],)).fetchone()
                 # Enforce inventory only for variants explicitly tracked in the stock ledger.
@@ -551,20 +426,18 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
                         VALUES(%s,'Main','website_sale',%s,'website_order',%s)""",(product["variant_id"],product["quantity"],row["id"]))
             from .invoices import create_invoice
             invoice_lines=[{"description":p["name"],"variant_id":p["variant_id"],"quantity":p["quantity"],
-                "unit_price":p["unit_price"],"tax_rate":p["tax_rate"],"line_subtotal":p["taxable_amount"],
-                "line_tax":p["tax_amount"],"line_total":p["line_total"]}
+                "unit_price":p["unit_price"],"line_subtotal":p["line_total"],"line_tax":0,"line_total":p["line_total"]}
                 for p in products]
             product_total=sum((Decimal(str(p["line_total"])) for p in products),Decimal("0"))
-            adjustment=Decimal(str(shipping_fee))-Decimal(str(loyalty_discount))
+            adjustment=Decimal(str(total))-product_total
             if adjustment:
                 invoice_lines.append({"description":"Shipping / discount adjustment","quantity":1,"unit_price":adjustment,
                     "line_subtotal":adjustment,"line_tax":0,"line_total":adjustment})
-            invoice_subtotal = taxable_subtotal + adjustment
             address=body.shipping_address.model_dump()
             create_invoice(conn,source_type="website",source_id=int(row["id"]),
                 customer_name=str(address.get("full_name") or user.get("full_name") or "Website customer"),
                 customer_email=user.get("email"),customer_phone=address.get("phone"),
-                subtotal=invoice_subtotal,tax_total=tax_total,total=total,lines=invoice_lines)
+                subtotal=total,tax_total=Decimal("0"),total=total,lines=invoice_lines)
             return {"order": _order_detail(conn, row["id"]),
                     "message": "Order placed. Tracked inventory is deducted atomically; payment is due on delivery."}
     except HTTPException:
@@ -583,13 +456,13 @@ def list_my_orders(authorization: str | None = Header(default=None)) -> dict[str
             _ensure_commerce_schema(conn)
             rows = conn.execute(
                 """SELECT id,order_number,status,payment_method,payment_status,currency,
-                          subtotal,shipping_fee,tax_total,loyalty_discount,loyalty_coins_redeemed,total,shipping_address,created_at,updated_at
+                          subtotal,shipping_fee,loyalty_discount,loyalty_coins_redeemed,total,shipping_address,created_at,updated_at
                    FROM store_orders WHERE user_id=%s ORDER BY created_at DESC LIMIT 100""",
                 (user["id"],)
             ).fetchall()
             for row in rows:
                 row["items"] = conn.execute(
-                    """SELECT variant_id,product_id,sku,product_name,quantity,unit_price,line_total,tax_rate,taxable_amount,cgst_amount,sgst_amount,igst_amount,tax_amount,tax_inclusive
+                    """SELECT variant_id,product_id,sku,product_name,quantity,unit_price,line_total
                        FROM store_order_items WHERE order_id=%s ORDER BY id""", (row["id"],)
                 ).fetchall()
             return {"items": rows}
@@ -622,7 +495,7 @@ def list_admin_orders(
             ).fetchall()
             for row in rows:
                 row["items"] = conn.execute(
-                    """SELECT variant_id,product_id,sku,product_name,quantity,unit_price,line_total,tax_rate,taxable_amount,cgst_amount,sgst_amount,igst_amount,tax_amount,tax_inclusive
+                    """SELECT variant_id,product_id,sku,product_name,quantity,unit_price,line_total
                        FROM store_order_items WHERE order_id=%s ORDER BY id""", (row["id"],)
                 ).fetchall()
             return {"items": rows}
