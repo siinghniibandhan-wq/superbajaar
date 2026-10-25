@@ -79,10 +79,12 @@ def list_products(
             product_status_select = "p.status AS status" if "status" in product_columns else "'active'::text AS status"
             variant_status_select = "v.status AS variant_status" if "status" in variant_columns else "'active'::text AS variant_status"
             # Preserve available human-readable variant attributes without assuming a fixed schema.
-            attribute_columns = ("variant_type_name", "variant_type", "variant_value", "variant_short",
+            attribute_columns = ("variant_type_name", "variant_type", "variant_value", "variant_type_value", "variant_short",
                                  "attribute_name", "attribute_value", "attributes", "attribute_values",
                                  "variant_attributes", "variant_label", "variant_name", "variant_description",
-                                 "product_template_attribute_value_ids", "product_template_variant_value_ids")
+                                 "attribute_value_ids", "variant_attribute_values", "attribute_values_ids",
+                                 "product_template_attribute_value_ids", "product_template_variant_value_ids",
+                                 "quantity_label", "weight", "pack_size", "unit", "volume", "size")
             attribute_select = ", ".join(f"v.{column} AS {column}" for column in attribute_columns if column in variant_columns)
             attribute_select = (", " + attribute_select) if attribute_select else ""
             category_id_select = "p.category_id AS category_id" if "category_id" in product_columns else "NULL::bigint AS category_id"
@@ -142,10 +144,12 @@ def get_product_by_variant(variant_id: int) -> dict[str, Any]:
             sku_select = "v.sku AS sku" if "sku" in variant_columns else "NULL::text AS sku"
             mrp_select = "v.mrp AS mrp" if "mrp" in variant_columns else "NULL::numeric AS mrp"
             price_select = "v.selling_price AS selling_price" if "selling_price" in variant_columns else "NULL::numeric AS selling_price"
-            attribute_columns = ("variant_type_name", "variant_type", "variant_value", "variant_short",
+            attribute_columns = ("variant_type_name", "variant_type", "variant_value", "variant_type_value", "variant_short",
                                  "attribute_name", "attribute_value", "attributes", "attribute_values",
                                  "variant_attributes", "variant_label", "variant_name", "variant_description",
-                                 "product_template_attribute_value_ids", "product_template_variant_value_ids")
+                                 "attribute_value_ids", "variant_attribute_values", "attribute_values_ids",
+                                 "product_template_attribute_value_ids", "product_template_variant_value_ids",
+                                 "quantity_label", "weight", "pack_size", "unit", "volume", "size")
             attribute_select = ", ".join(f"v.{column} AS {column}" for column in attribute_columns if column in variant_columns)
             attribute_select = (", " + attribute_select) if attribute_select else ""
             row = conn.execute(f"""SELECT p.id AS product_id, p.name, {description_select}, {brand_select},
