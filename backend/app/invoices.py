@@ -115,9 +115,10 @@ def list_invoices(status: str = Query(default="", pattern="^(|pending_confirmati
         with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
             _ensure(conn)
             rows = conn.execute("""SELECT * FROM sb_sales_invoices
-                WHERE (%s='' OR status=%s) AND (%s='' OR payment_status=%s)
+                WHERE (%s='' OR status=%s)
+                  AND (%s='' OR (%s='unpaid' AND payment_status IN ('unpaid','partial')) OR payment_status=%s)
                 ORDER BY created_at DESC,id DESC LIMIT 500""",
-                (status,status,payment_status,payment_status)).fetchall()
+                (status,status,payment_status,payment_status,payment_status)).fetchall()
             for row in rows:
                 row["lines"] = conn.execute("SELECT * FROM sb_sales_invoice_lines WHERE invoice_id=%s ORDER BY id",
                                             (row["id"],)).fetchall()
