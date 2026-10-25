@@ -355,6 +355,7 @@ def operational_readiness(authorization: str | None = Header(default=None)) -> d
 def list_products(
     search: str = Query(default="", max_length=120),
     category: str = Query(default="", max_length=80),
+    pincode: str = Query(default="", max_length=6),
     limit: int = Query(default=24, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
@@ -412,6 +413,32 @@ def list_products(
             if category.strip():
                 where.append("c.name = %s")
                 params.append(category.strip())
+            if pincode.strip():
+                clean_pin = pincode.strip()
+                if not re.fullmatch(r"[0-9]{6}", clean_pin):
+                    raise HTTPException(status_code=422, detail="PIN code must contain exactly six digits.")
+                availability_exists = conn.execute("SELECT to_regclass('public.sb_product_availability_rules') AS t").fetchone()["t"]
+                if availability_exists:
+                    where.append("""(
+                      NOT EXISTS (SELECT 1 FROM sb_product_availability_rules ar
+                                  WHERE ar.product_id=p.id AND (ar.variant_id IS NULL OR ar.variant_id=v.id))
+                      OR (
+                        (NOT EXISTS (SELECT 1 FROM sb_product_availability_rules ar WHERE ar.product_id=p.id AND (ar.variant_id IS NULL OR ar.variant_id=v.id) AND ar.scope_type='region')
+                         OR EXISTS (SELECT 1 FROM sb_product_availability_rules ar JOIN sb_region_pincodes rp ON rp.region_id=ar.region_id
+                                    WHERE ar.product_id=p.id AND (ar.variant_id IS NULL OR ar.variant_id=v.id) AND ar.scope_type='region' AND rp.pincode=%s AND rp.active=TRUE))
+                        AND
+                        (NOT EXISTS (SELECT 1 FROM sb_product_availability_rules ar WHERE ar.product_id=p.id AND (ar.variant_id IS NULL OR ar.variant_id=v.id) AND ar.scope_type='pincode')
+                         OR EXISTS (SELECT 1 FROM sb_product_availability_rules ar
+                                    WHERE ar.product_id=p.id AND (ar.variant_id IS NULL OR ar.variant_id=v.id) AND ar.scope_type='pincode' AND ar.pincode=%s))
+                        AND
+                        (NOT EXISTS (SELECT 1 FROM sb_product_availability_rules ar WHERE ar.product_id=p.id AND (ar.variant_id IS NULL OR ar.variant_id=v.id) AND ar.scope_type='warehouse')
+                         OR EXISTS (SELECT 1 FROM sb_product_availability_rules ar JOIN sb_warehouses w ON w.id=ar.warehouse_id
+                                    WHERE ar.product_id=p.id AND (ar.variant_id IS NULL OR ar.variant_id=v.id) AND ar.scope_type='warehouse' AND w.active=TRUE
+                                      AND (w.pincode=%s OR w.serviceable_pincodes @> %s::jsonb)
+                                      AND (w.region_id IS NULL OR NOT EXISTS (SELECT 1 FROM sb_product_availability_rules rr WHERE rr.product_id=p.id AND (rr.variant_id IS NULL OR rr.variant_id=v.id) AND rr.scope_type='region') OR EXISTS (SELECT 1 FROM sb_product_availability_rules rr JOIN sb_region_pincodes rrp ON rrp.region_id=rr.region_id WHERE rr.product_id=p.id AND (rr.variant_id IS NULL OR rr.variant_id=v.id) AND rr.scope_type='region' AND rr.region_id=w.region_id AND rrp.pincode=%s AND rrp.active=TRUE)))
+                      )
+                    )""")
+                    params.extend([clean_pin, clean_pin, clean_pin, Jsonb([clean_pin]), clean_pin])
             params.extend([limit, offset])
             query = f"""SELECT p.id AS product_id, p.name, {description_select}, {brand_select},
                               {category_id_select}, {product_status_select}, {variant_status_select},
