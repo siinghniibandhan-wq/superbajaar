@@ -35,7 +35,7 @@ def _schema(conn):
       id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, code TEXT NOT NULL UNIQUE, address TEXT NOT NULL DEFAULT '',
       pincode TEXT NOT NULL DEFAULT '', serviceable_pincodes JSONB NOT NULL DEFAULT '[]',
       locations JSONB NOT NULL DEFAULT '[]', active BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
-    """CREATE TABLE IF NOT EXISTS sb_inventory_ledger(
+    """CREATE TABLE IF NOT EXISTS sb_inventory_reorder_levels(\n      id BIGSERIAL PRIMARY KEY, warehouse_id BIGINT NOT NULL REFERENCES sb_warehouses(id),\n      variant_id BIGINT NOT NULL, minimum_quantity INTEGER NOT NULL DEFAULT 0 CHECK(minimum_quantity >= 0),\n      created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n      UNIQUE(warehouse_id,variant_id))""",\n    """CREATE TABLE IF NOT EXISTS sb_inventory_ledger(
       id BIGSERIAL PRIMARY KEY, warehouse_id BIGINT NOT NULL REFERENCES sb_warehouses(id),
       variant_id BIGINT NOT NULL, quantity_delta INTEGER NOT NULL, movement_type TEXT NOT NULL,
       reference TEXT NOT NULL, location TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', actor_id BIGINT,
@@ -1031,3 +1031,43 @@ def record_stock_movement(body: StockMovementInput, authorization: str | None = 
           (body.warehouse_id,body.variant_id,body.quantity_delta,body.movement_type,ref,body.location,body.note,actor["id"])).fetchone()
         _event(c,ref,"stock_movement",actor["id"],details={"warehouse_id":body.warehouse_id,"variant_id":body.variant_id,"quantity_delta":body.quantity_delta})
         return {"movement":row,"balance":balance+body.quantity_delta}
+
+
+class ReorderLevelInput(BaseModel):
+    warehouse_id: int = Field(gt=0)
+    variant_id: int = Field(gt=0)
+    minimum_quantity: int = Field(ge=0)
+
+
+@router.get("/admin/inventory/stock-levels")
+def list_stock_levels(authorization: str | None = Header(default=None)):
+    _require(authorization, {"super_admin", "admin", "staff"})
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c)
+        return {"items": c.execute("""SELECT v.id AS variant_id, v.sku, v.selling_price,
+            p.name, p.brand, w.id AS warehouse_id, w.name AS warehouse_name,
+            COALESCE(SUM(l.quantity_delta),0)::int AS quantity,
+            COALESCE(r.minimum_quantity,0)::int AS minimum_quantity
+          FROM product_variants v
+          JOIN products p ON p.id=v.product_id
+          CROSS JOIN sb_warehouses w
+          LEFT JOIN sb_inventory_ledger l ON l.variant_id=v.id AND l.warehouse_id=w.id
+          LEFT JOIN sb_inventory_reorder_levels r ON r.variant_id=v.id AND r.warehouse_id=w.id
+          WHERE w.active AND COALESCE(v.status,'active')='active'
+          GROUP BY v.id,v.sku,v.selling_price,p.name,p.brand,w.id,w.name,r.minimum_quantity
+          ORDER BY p.name,v.id,w.name""").fetchall()}
+
+
+@router.put("/admin/inventory/reorder-level")
+def save_reorder_level(body: ReorderLevelInput, authorization: str | None = Header(default=None)):
+    _require(authorization, {"super_admin", "admin"})
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c)
+        if not c.execute("SELECT id FROM product_variants WHERE id=%s", (body.variant_id,)).fetchone():
+            raise HTTPException(404, "Product variant not found.")
+        if not c.execute("SELECT id FROM sb_warehouses WHERE id=%s AND active", (body.warehouse_id,)).fetchone():
+            raise HTTPException(404, "Active warehouse not found.")
+        return {"item": c.execute("""INSERT INTO sb_inventory_reorder_levels(warehouse_id,variant_id,minimum_quantity)
+          VALUES(%s,%s,%s) ON CONFLICT(warehouse_id,variant_id) DO UPDATE
+          SET minimum_quantity=EXCLUDED.minimum_quantity,updated_at=now() RETURNING *""",
+          (body.warehouse_id,body.variant_id,body.minimum_quantity)).fetchone()}
