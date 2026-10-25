@@ -116,6 +116,8 @@ def list_products(
             attribute_select = (", " + attribute_select) if attribute_select else ""
             category_id_select = "p.category_id AS category_id" if "category_id" in product_columns else "NULL::bigint AS category_id"
             category_join = "LEFT JOIN product_categories c ON c.id = p.category_id" if "category_id" in product_columns else "LEFT JOIN product_categories c ON FALSE"
+            category_parent_join = "LEFT JOIN product_categories cp ON cp.id = c.parent_id" if "parent_id" in category_columns else ""
+            category_path_select = "COALESCE(cp.name || ' › ' || c.name, c.name) AS category_path" if "parent_id" in category_columns else "c.name AS category_path"
             reviews_table = conn.execute("SELECT to_regclass('public.product_reviews') AS table_name").fetchone()["table_name"]
             review_select = ("""COALESCE((SELECT AVG(r.rating)::numeric(3,2) FROM product_reviews r WHERE r.product_id=p.id AND r.status='approved'),0) AS average_rating,
                                 COALESCE((SELECT COUNT(*)::int FROM product_reviews r WHERE r.product_id=p.id AND r.status='approved'),0) AS review_count"""
@@ -135,7 +137,7 @@ def list_products(
             params.extend([limit, offset])
             query = f"""SELECT p.id AS product_id, p.name, {description_select}, {brand_select},
                               {category_id_select}, {product_status_select}, {variant_status_select},
-                              c.name AS category, v.id AS variant_id,
+                              c.name AS category, {category_path_select}, v.id AS variant_id,
                               {('v.sku' if 'sku' in variant_columns else 'NULL::text AS sku')},
                               {('v.mrp' if 'mrp' in variant_columns else 'NULL::numeric AS mrp')},
                               {('v.selling_price' if 'selling_price' in variant_columns else 'NULL::numeric AS selling_price')},
@@ -143,6 +145,7 @@ def list_products(
                        FROM products p
                        JOIN product_variants v ON v.product_id = p.id
                        {category_join}
+                       {category_parent_join}
                        WHERE {' AND '.join(where)}
                        ORDER BY p.name, v.id
                        LIMIT %s OFFSET %s"""
