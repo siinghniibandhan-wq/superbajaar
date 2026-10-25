@@ -107,7 +107,7 @@ function Store({goAdmin}) {
      }
      if(typeof item==='string'||typeof item==='number'){parseText(item);return}
      if(!item||typeof item!=='object')return;
-     const attribute=item.attribute_name||item.attribute?.name||item.attribute?.display_name||item.attribute_id?.name||(Array.isArray(item.attribute_id)?item.attribute_id[1]:'')||item.attribute?.label;
+     const attribute=item.attribute_name||item.attribute?.name||item.attribute?.display_name||(typeof item.attribute==='string'?item.attribute:'')||item.attribute_id?.name||(Array.isArray(item.attribute_id)?item.attribute_id[1]:'')||item.attribute?.label||(item.value!=null&&item.name?item.name:'');
      const value=item.attribute_value_name||item.value_name||item.value?.name||item.value?.display_name||item.value||item.display_value||item.display_name||item.label||item.name;
      if(attribute&&value)put(attribute,value);
      else if(item.name)parseText(item.name);
@@ -116,7 +116,7 @@ function Store({goAdmin}) {
     return;
    }
    if(typeof field==='object'){
-    const attribute=field.attribute_name||field.attribute?.name||field.attribute?.display_name||field.attribute_id?.name||(Array.isArray(field.attribute_id)?field.attribute_id[1]:'');
+    const attribute=field.attribute_name||field.attribute?.name||field.attribute?.display_name||(typeof field.attribute==='string'?field.attribute:'')||field.attribute_id?.name||(Array.isArray(field.attribute_id)?field.attribute_id[1]:'')||(field.value!=null&&field.name?field.name:'');
     const value=field.attribute_value_name||field.value_name||field.value?.name||field.value?.display_name||field.value||field.display_value||field.display_name||field.label;
     if(attribute&&value){put(attribute,value);return}
     Object.entries(field).forEach(([key,val])=>{if(!['id','create_date','write_date'].includes(key)&&val!=null){if(typeof val==='object')read(val);else put(key,val)}});
