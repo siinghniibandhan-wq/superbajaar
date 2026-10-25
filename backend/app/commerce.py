@@ -80,6 +80,7 @@ def _ensure_commerce_schema(conn: Any) -> None:
             order_id BIGINT NOT NULL REFERENCES store_orders(id) ON DELETE CASCADE,
             variant_id BIGINT NOT NULL,
             product_id BIGINT NOT NULL,
+            warehouse_id BIGINT,
             sku TEXT,
             product_name TEXT NOT NULL,
             quantity INTEGER NOT NULL CHECK (quantity BETWEEN 1 AND 50),
@@ -87,6 +88,7 @@ def _ensure_commerce_schema(conn: Any) -> None:
             line_total NUMERIC(12,2) NOT NULL CHECK (line_total >= 0)
         )
     """)
+    conn.execute("ALTER TABLE store_order_items ADD COLUMN IF NOT EXISTS warehouse_id BIGINT")
     conn.execute("CREATE INDEX IF NOT EXISTS store_order_items_order_idx ON store_order_items(order_id)")
 
 
@@ -222,7 +224,7 @@ def _order_detail(conn: Any, order_id: int) -> dict[str, Any]:
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     order["items"] = conn.execute(
-        """SELECT variant_id,product_id,sku,product_name,quantity,unit_price,line_total
+        """SELECT variant_id,product_id,warehouse_id,sku,product_name,quantity,unit_price,line_total
            FROM store_order_items WHERE order_id=%s ORDER BY id""", (order_id,)
     ).fetchall()
     return order
@@ -335,6 +337,8 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
     try:
         with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
             _ensure_commerce_schema(conn)
+            from .operations import _schema as _ensure_operations_schema
+            _ensure_operations_schema(conn)
             products: list[dict[str, Any]] = []
             subtotal = Decimal("0")
             for variant_id, quantity in quantities.items():
@@ -376,6 +380,26 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
                 raise HTTPException(status_code=503, detail=delivery_quote["message"])
             if delivery_quote["serviceable"] is not True:
                 raise HTTPException(status_code=422, detail=delivery_quote["message"])
+            # Lock candidate warehouses and reserve stock atomically with order creation.
+            candidates = conn.execute("""SELECT id,pincode,serviceable_pincodes FROM sb_warehouses
+                WHERE active AND (pincode=%s OR serviceable_pincodes ? %s)
+                ORDER BY CASE WHEN pincode=%s THEN 0 ELSE 1 END,id FOR UPDATE""",
+                (body.shipping_address.pincode,body.shipping_address.pincode,body.shipping_address.pincode)).fetchall()
+            warehouse_id = None
+            for candidate in candidates:
+                enough = True
+                for product in products:
+                    balance = conn.execute("""SELECT COALESCE(SUM(quantity_delta),0) qty FROM sb_inventory_ledger
+                        WHERE warehouse_id=%s AND variant_id=%s""",
+                        (candidate["id"],product["variant_id"])).fetchone()["qty"]
+                    if balance < product["quantity"]:
+                        enough = False
+                        break
+                if enough:
+                    warehouse_id = candidate["id"]
+                    break
+            if warehouse_id is None:
+                raise HTTPException(status_code=409, detail="No serviceable warehouse has enough stock for every item in this order.")
             shipping_fee = Decimal(str(delivery_quote["shipping_fee"]))
             total = subtotal + shipping_fee
             order_number = "SB-" + secrets.token_hex(5).upper()
@@ -394,11 +418,14 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
             for product in products:
                 conn.execute(
                     """INSERT INTO store_order_items
-                       (order_id,variant_id,product_id,sku,product_name,quantity,unit_price,line_total)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
-                    (row["id"], product["variant_id"], product["product_id"], product["sku"],
+                       (order_id,variant_id,product_id,warehouse_id,sku,product_name,quantity,unit_price,line_total)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (row["id"], product["variant_id"], product["product_id"], warehouse_id, product["sku"],
                      product["name"], product["quantity"], product["unit_price"], product["line_total"])
                 )
+                conn.execute("""INSERT INTO sb_inventory_ledger(warehouse_id,variant_id,quantity_delta,movement_type,reference,note,actor_id)
+                    VALUES(%s,%s,%s,'reservation',%s,'Website order stock reservation',%s)""",
+                    (warehouse_id,product["variant_id"],-product["quantity"],"INV-"+order_number,user["id"]))
             return {"order": _order_detail(conn, row["id"]),
                     "message": "Order placed. Payment is due on delivery."}
     except HTTPException:
@@ -423,7 +450,7 @@ def list_my_orders(authorization: str | None = Header(default=None)) -> dict[str
             ).fetchall()
             for row in rows:
                 row["items"] = conn.execute(
-                    """SELECT variant_id,product_id,sku,product_name,quantity,unit_price,line_total
+                    """SELECT variant_id,product_id,warehouse_id,sku,product_name,quantity,unit_price,line_total
                        FROM store_order_items WHERE order_id=%s ORDER BY id""", (row["id"],)
                 ).fetchall()
             return {"items": rows}
