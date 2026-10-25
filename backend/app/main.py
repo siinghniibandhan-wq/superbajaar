@@ -718,6 +718,7 @@ class ProductWriteInput(BaseModel):
     seller_details: list[dict[str, str]] = Field(default_factory=list, max_length=100)
     attributes: list[dict[str, Any]] = Field(default_factory=list, max_length=12)
     variant_covers: list[str] = Field(default_factory=list, max_length=100)
+    editing_variant_id: int | None = Field(default=None, gt=0)
     category_id: int | None = Field(default=None, gt=0)
     sku: str = Field(default="", max_length=120)
     image_url: str = Field(default="", max_length=6000000)
@@ -882,9 +883,17 @@ def update_catalogue_product(
                               "status": body.status}
             variant_values = {k: v for k, v in variant_values.items() if k in variant_columns and v is not None}
             variant = conn.execute(
-                "SELECT id FROM product_variants WHERE product_id=%s ORDER BY id LIMIT 1", (product_id,)
+                "SELECT id FROM product_variants WHERE product_id=%s AND (%s IS NULL OR id=%s) ORDER BY id LIMIT 1",
+                (product_id, body.editing_variant_id, body.editing_variant_id)
             ).fetchone()
+            if body.editing_variant_id and not variant:
+                raise HTTPException(status_code=422, detail="Selected variant does not belong to this product.")
             if variant and variant_values:
+                requested_cover = body.variant_covers[0].strip() if body.variant_covers else ""
+                if requested_cover:
+                    if not requested_cover.startswith(("https://", "http://", "data:image/")) or (requested_cover.startswith("data:image/") and ";base64," not in requested_cover):
+                        raise HTTPException(status_code=422, detail="Variant cover must be an HTTP(S) URL or valid image data URL.")
+                    variant_values["image_url"] = requested_cover
                 assignments = ", ".join(f"{k}=%s" for k in variant_values)
                 variant = conn.execute(
                     f"UPDATE product_variants SET {assignments} WHERE id=%s RETURNING *",
