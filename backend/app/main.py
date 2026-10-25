@@ -77,6 +77,7 @@ def list_products(
             brand_select = "p.brand AS brand" if "brand" in product_columns else "NULL::text AS brand"
             description_select = "p.description AS description" if "description" in product_columns else "NULL::text AS description"
             currency_select = "v.currency AS currency" if "currency" in variant_columns else "'INR'::text AS currency"
+            barcode_select = "v.barcode AS barcode" if "barcode" in variant_columns else "NULL::text AS barcode"
             tax_table = conn.execute("SELECT to_regclass('public.catalog_product_tax') AS t").fetchone()["t"]
             hsn_select = "pt.hsn_code AS hsn_code" if tax_table else ("v.hsn_code AS hsn_code" if "hsn_code" in variant_columns else ("p.hsn_code AS hsn_code" if "hsn_code" in product_columns else "NULL::text AS hsn_code"))
             gst_rate_select = "v.gst_rate AS gst_rate" if "gst_rate" in variant_columns else ("p.gst_rate AS gst_rate" if "gst_rate" in product_columns else "NULL::numeric AS gst_rate")
@@ -99,7 +100,7 @@ def list_products(
                               {('v.sku' if 'sku' in variant_columns else 'NULL::text AS sku')},
                               {('v.mrp' if 'mrp' in variant_columns else 'NULL::numeric AS mrp')},
                               {('v.selling_price' if 'selling_price' in variant_columns else 'NULL::numeric AS selling_price')},
-                              {currency_select}, {image_select}, {hsn_select}, {gst_rate_select}
+                              {currency_select}, {image_select}, {hsn_select}, {gst_rate_select}, {barcode_select}
                        FROM products p
                        JOIN product_variants v ON v.product_id = p.id
                        {category_join}
@@ -117,7 +118,7 @@ def list_products(
                 grouped[pid]["variants"].append({
                     "variant_id": row["variant_id"], "sku": row.get("sku"), "mrp": row.get("mrp"),
                     "selling_price": row.get("selling_price"), "currency": row.get("currency"),
-                    "image_url": row.get("image_url"), "hsn_code": row.get("hsn_code"), "gst_rate": row.get("gst_rate"), "attributes": {}
+                    "image_url": row.get("image_url"), "hsn_code": row.get("hsn_code"), "gst_rate": row.get("gst_rate"), "barcode": row.get("barcode"), "attributes": {}
                 })
             items = list(grouped.values())[offset:offset + limit]
             for item in items:
