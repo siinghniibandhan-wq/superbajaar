@@ -142,15 +142,22 @@ def confirm_invoice(invoice_id: int, authorization: str | None = Header(default=
                     return {"invoice": inv, "message": "Already confirmed; no duplicate bill was created."}
                 if inv["status"] == "void":
                     raise HTTPException(status_code=409, detail="Voided invoice cannot be confirmed")
-                total = Decimal(str(inv["total"]))
-                subtotal = Decimal(str(inv["subtotal"]))
-                tax = Decimal(str(inv["tax_total"]))
-                lines = [("accounts_receivable", total, Decimal("0")), ("sales", Decimal("0"), subtotal)]
-                if tax:
-                    lines.append(("output_gst", Decimal("0"), tax))
-                jid = _post_journal(conn, date.today(), inv["invoice_number"],
-                    "Sales invoice confirmed: " + inv["invoice_number"], "sales_invoice",
-                    int(inv["id"]), lines, int(actor["id"]))
+                if inv["source_type"] == "pos":
+                    # POS already posts its tender, revenue and GST journal at checkout.
+                    # Confirmation changes the invoice workflow only; never duplicate that journal.
+                    posted = conn.execute("SELECT id FROM sb_journals WHERE source_module='pos' AND source_id=%s ORDER BY id DESC LIMIT 1",
+                                          (str(inv["source_id"]),)).fetchone()
+                    jid = posted["id"] if posted else None
+                else:
+                    total = Decimal(str(inv["total"]))
+                    subtotal = Decimal(str(inv["subtotal"]))
+                    tax = Decimal(str(inv["tax_total"]))
+                    lines = [("accounts_receivable", total, Decimal("0")), ("sales", Decimal("0"), subtotal)]
+                    if tax:
+                        lines.append(("output_gst", Decimal("0"), tax))
+                    jid = _post_journal(conn, date.today(), inv["invoice_number"],
+                        "Sales invoice confirmed: " + inv["invoice_number"], "sales_invoice",
+                        int(inv["id"]), lines, int(actor["id"]))
                 updated = conn.execute("""UPDATE sb_sales_invoices SET status='bill_created',
                     confirmed_at=now(),journal_id=%s WHERE id=%s RETURNING *""", (jid, invoice_id)).fetchone()
                 return {"invoice": updated, "message": "Invoice confirmed and bill posted to Accounting."}
