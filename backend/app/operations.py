@@ -44,6 +44,11 @@ def _schema(conn):
       id BIGSERIAL PRIMARY KEY, reference TEXT NOT NULL UNIQUE, purchase_order_reference TEXT UNIQUE, vendor_id BIGINT NOT NULL REFERENCES sb_vendors(id),
       status TEXT NOT NULL DEFAULT 'draft', items JSONB NOT NULL DEFAULT '[]', expected_date DATE,
       created_by BIGINT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
+    """CREATE TABLE IF NOT EXISTS sb_vendor_dispatches(
+      id BIGSERIAL PRIMARY KEY, reference TEXT NOT NULL UNIQUE, procurement_id BIGINT NOT NULL REFERENCES sb_procurements(id),
+      vendor_id BIGINT NOT NULL REFERENCES sb_vendors(id), items JSONB NOT NULL, carrier TEXT NOT NULL DEFAULT '',
+      tracking_reference TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'dispatched',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
     """CREATE TABLE IF NOT EXISTS sb_receipts(
       id BIGSERIAL PRIMARY KEY, reference TEXT NOT NULL UNIQUE, procurement_id BIGINT NOT NULL REFERENCES sb_procurements(id),
       warehouse_id BIGINT NOT NULL REFERENCES sb_warehouses(id), status TEXT NOT NULL DEFAULT 'inspection',
@@ -147,6 +152,11 @@ class ReceiptInput(BaseModel):
     warehouse_id: int
     items: list[dict[str, Any]] = Field(min_length=1)
     note: str = ""
+
+class VendorDispatchInput(BaseModel):
+    items: list[dict[str, Any]] = Field(min_length=1)
+    carrier: str = ""
+    tracking_reference: str = ""
 
 class ReceiptInspectionInput(BaseModel):
     accepted_items: list[dict[str, Any]] = Field(min_length=1)
