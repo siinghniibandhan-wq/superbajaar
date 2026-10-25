@@ -473,9 +473,9 @@ def list_admin_orders(
     try:
         with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
             _ensure_commerce_schema(conn)
-            where = ["(o.order_number ILIKE %s OR u.email ILIKE %s OR u.full_name ILIKE %s)"]
+            where = ["(o.order_number ILIKE %s OR o.invoice_number ILIKE %s OR u.email ILIKE %s OR u.full_name ILIKE %s)"]
             pattern = f"%{search.strip()}%"
-            params: list[Any] = [pattern, pattern, pattern]
+            params: list[Any] = [pattern, pattern, pattern, pattern]
             if status:
                 where.append("o.status=%s")
                 params.append(status)
