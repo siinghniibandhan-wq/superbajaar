@@ -717,6 +717,7 @@ class ProductWriteInput(BaseModel):
     manufacturer_details: list[dict[str, str]] = Field(default_factory=list, max_length=100)
     seller_details: list[dict[str, str]] = Field(default_factory=list, max_length=100)
     attributes: list[dict[str, Any]] = Field(default_factory=list, max_length=12)
+    variant_covers: list[str] = Field(default_factory=list, max_length=100)
     category_id: int | None = Field(default=None, gt=0)
     sku: str = Field(default="", max_length=120)
     image_url: str = Field(default="", max_length=6000000)
@@ -809,9 +810,15 @@ def create_catalogue_product(
                 sku = body.sku.strip() or None
                 if sku and len(combos) > 1:
                     sku = (sku[:max(1, 119-len(suffix))] + "-" + suffix)[:120]
+                requested_cover = body.variant_covers[index].strip() if index < len(body.variant_covers) else ""
+                variant_cover = requested_cover or body.image_url.strip() or None
+                if variant_cover and not variant_cover.startswith(("https://", "http://", "data:image/")):
+                    raise HTTPException(status_code=422, detail="Variant cover must be an HTTP(S) URL or image upload.")
+                if variant_cover and variant_cover.startswith("data:image/") and ";base64," not in variant_cover:
+                    raise HTTPException(status_code=422, detail="Variant cover upload must be a valid image data URL.")
                 variant_values = {"product_id": product["id"], "selling_price": body.selling_price,
                                   "mrp": body.mrp, "sku": sku,
-                                  "image_url": body.image_url.strip() or None, "status": body.status}
+                                  "image_url": variant_cover, "status": body.status}
                 variant = _catalogue_insert(conn, "product_variants", variant_values)
                 for (attribute_id, _attribute_name, _values), value in zip(normalized_attributes, combo):
                     if not conn.execute("SELECT to_regclass('public.variant_attribute_values') AS t").fetchone()["t"]:
