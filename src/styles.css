@@ -290,3 +290,12 @@
 .catalogue-pagination button:disabled{opacity:.4;cursor:not-allowed}
 .catalogue-empty{padding:22px;text-align:center;color:var(--text-secondary,#999)}
 @media(max-width:600px){.catalogue-toolbar{align-items:stretch}.catalogue-page-size{flex-direction:row;align-items:center;justify-content:space-between}.catalogue-pagination{align-items:stretch}.catalogue-pagination>div{width:100%}.catalogue-pagination button{flex:1}}
+
+
+/* Clear, responsive inventory stock-level view */
+.inventory-stock-levels .metric-grid{margin:16px 0}
+.inventory-stock-levels .user-table{min-width:780px}
+.inventory-stock-levels .user-table td small{display:block;opacity:.72;margin-top:3px}
+.inventory-stock-levels .status-badge{white-space:nowrap}
+.inventory-stock-levels .moderation-controls input{min-width:min(100%,280px)}
+@media(max-width:600px){.inventory-stock-levels .metric-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.inventory-stock-levels .metric-card{padding:10px}.inventory-stock-levels .metric-card span{font-size:11px}.inventory-stock-levels .metric-card b{font-size:18px}}
