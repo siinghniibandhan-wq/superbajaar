@@ -627,7 +627,8 @@ def update_catalogue_product(
                               "manufacturer_details": Jsonb(body.manufacturer_details), "seller_details": Jsonb(body.seller_details),
                               "category_id": body.category_id, "status": body.status,
                               "cover_image_url": cover_url, "main_image_url": cover_url, "image_url": cover_url}
-            product_values = {k: v for k, v in product_values.items() if k in product_columns}
+            product_values = {k: v for k, v in product_values.items()
+                              if k in product_columns and (v is not None or k not in {"cover_image_url", "main_image_url", "image_url"})}
             if not product_values:
                 raise HTTPException(status_code=503, detail="The product schema has no editable fields.")
             assignments = ", ".join(f"{k}=%s" for k in product_values)
