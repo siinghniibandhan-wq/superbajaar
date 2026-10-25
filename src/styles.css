@@ -242,7 +242,8 @@
  .products-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
  .product-tile{border-radius:10px}
  .product-picture{height:clamp(88px,25vw,145px)}
- .product-picture img{padding:6px;object-fit:contain}
+ .product-picture img{padding:0;object-fit:cover}
+ .product-tag{display:none}
  .product-details{padding:8px}
  .product-brand{display:none}
  .product-details h3{font-size:10px;line-height:1.35;margin:2px 0 6px;min-height:27px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
