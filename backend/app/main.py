@@ -1,6 +1,7 @@
 import os
 import logging
 import hmac
+import uuid
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -455,7 +456,8 @@ def create_catalogue_product(
             variant_columns = _catalogue_columns(conn, "product_variants")
             if not product_columns or not variant_columns:
                 raise HTTPException(status_code=503, detail="The existing catalogue schema is unavailable.")
-            product_values = {"name": body.name.strip(), "brand": body.brand.strip(),
+            product_values = {"product_code": "SB-" + uuid.uuid4().hex[:12].upper(),
+                              "name": body.name.strip(), "brand": body.brand.strip(),
                               "description": body.description.strip(), "specifications": Jsonb(body.specifications),
                               "manufacturer_details": Jsonb(body.manufacturer_details), "seller_details": Jsonb(body.seller_details),
                               "category_id": body.category_id, "status": body.status}
