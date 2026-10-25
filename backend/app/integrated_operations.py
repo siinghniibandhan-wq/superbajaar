@@ -247,6 +247,109 @@ def set_product_tax(product_id: int, body: ProductTaxInput, authorization: str |
           (product_id,body.hsn_code.strip(),actor["id"])).fetchone()
 
 
+def _flatten_existing_variant_attributes(value: Any) -> dict[str, str]:
+    """Extract readable attribute/value pairs from existing catalogue JSON without importing metadata."""
+    result: dict[str, str] = {}
+    ignored = {"_source", "source", "id", "sku", "barcode", "product_id", "variant_id", "display_type"}
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+        except (TypeError, ValueError):
+            return result
+        if isinstance(decoded, (dict, list)):
+            return _flatten_existing_variant_attributes(decoded)
+        return result
+    if isinstance(value, list):
+        for item in value:
+            if isinstance(item, dict):
+                name = item.get("attribute_name") or item.get("name") or item.get("label")
+                val = item.get("attribute_value") or item.get("value_name") or item.get("value") or item.get("display_value")
+                if name and val is not None and str(name).strip().lower() not in ignored and not str(name).startswith("_"):
+                    result[str(name).strip()] = str(val).strip()
+                else:
+                    result.update(_flatten_existing_variant_attributes(item))
+        return result
+    if isinstance(value, dict):
+        for key, val in value.items():
+            if str(key).strip().lower() in ignored or str(key).startswith("_") or val is None:
+                continue
+            if isinstance(val, (str, int, float, bool)):
+                normalized = str(key).strip()
+                if normalized and normalized.lower() not in ignored:
+                    result[normalized] = str(val).strip()
+            elif isinstance(val, (dict, list)):
+                result.update(_flatten_existing_variant_attributes(val))
+    return result
+
+
+@router.post("/admin/catalogue/attributes/import-existing")
+def import_existing_variant_attributes(authorization: str | None = Header(default=None)):
+    """Import attribute definitions and values already present in catalogue variant records."""
+    _require(authorization, {"super_admin", "admin"})
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c)
+        columns = {row["column_name"] for row in c.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='product_variants'"
+        ).fetchall()}
+        candidates = [name for name in (
+            "attributes", "attribute_values", "variant_attributes", "variant_attribute_values",
+            "variant_short", "variant_name", "variant_label", "variant_description",
+            "variant_type_name", "variant_value", "variant_type_value", "quantity_label",
+            "weight", "pack_size", "size", "volume", "unit"
+        ) if name in columns]
+        if not candidates:
+            return {"imported_attributes": 0, "assigned_products": 0, "variants_updated": 0}
+        select_columns = ", ".join(f'"{name}"' for name in candidates)
+        variants = c.execute(
+            f"SELECT id, product_id, {select_columns} FROM product_variants ORDER BY id"
+        ).fetchall()
+        definitions: dict[str, set[str]] = {}
+        by_variant: dict[int, dict[str, str]] = {}
+        for variant in variants:
+            found: dict[str, str] = {}
+            for field in candidates:
+                field_value = variant.get(field)
+                if field in {"variant_value", "variant_type_value", "quantity_label", "weight", "pack_size", "size", "volume", "unit"} and isinstance(field_value, (str, int, float)):
+                    field_name = {
+                        "variant_value": variant.get("variant_type_name") or "Variant",
+                        "variant_type_value": variant.get("variant_type_name") or "Variant",
+                        "quantity_label": "Quantity", "weight": "Weight", "pack_size": "Pack size",
+                        "size": "Size", "volume": "Volume", "unit": "Unit"
+                    }.get(field, field.replace("_", " ").title())
+                    found[str(field_name)] = str(field_value).strip()
+                else:
+                    found.update(_flatten_existing_variant_attributes(field_value))
+            found = {k: v for k, v in found.items() if k and v and k.lower() not in {"brand", "sku", "id"} and not k.startswith("_")}
+            if found:
+                by_variant[int(variant["id"])] = found
+                for name, value in found.items():
+                    definitions.setdefault(name, set()).add(value)
+        attr_ids: dict[str, int] = {}
+        for name, values in definitions.items():
+            existing = c.execute("SELECT id, values_json FROM catalog_attributes WHERE lower(name)=lower(%s)", (name,)).fetchone()
+            merged_values = sorted(set((existing or {}).get("values_json") or []) | values)
+            if existing:
+                row = c.execute("UPDATE catalog_attributes SET values_json=%s::jsonb WHERE id=%s RETURNING id",
+                                (json.dumps(merged_values), existing["id"])).fetchone()
+            else:
+                row = c.execute("INSERT INTO catalog_attributes(name,values_json) VALUES(%s,%s::jsonb) RETURNING id",
+                                (name, json.dumps(merged_values))).fetchone()
+            attr_ids[name] = int(row["id"])
+        products_assigned: set[int] = set()
+        for variant_id, found in by_variant.items():
+            variant = next(v for v in variants if int(v["id"]) == variant_id)
+            product_id = int(variant["product_id"])
+            for name, value in found.items():
+                aid = attr_ids[name]
+                c.execute("INSERT INTO product_attribute_assignments(product_id,attribute_id) VALUES(%s,%s) ON CONFLICT DO NOTHING",
+                          (product_id, aid))
+                c.execute("""INSERT INTO variant_attribute_values(variant_id,attribute_id,value) VALUES(%s,%s,%s)
+                  ON CONFLICT(variant_id,attribute_id) DO UPDATE SET value=EXCLUDED.value""", (variant_id, aid, value))
+            products_assigned.add(product_id)
+        return {"imported_attributes": len(attr_ids), "assigned_products": len(products_assigned),
+                "variants_updated": len(by_variant), "attributes": sorted(attr_ids)}
+
+
 @router.get("/admin/catalogue/attributes")
 def list_attributes(authorization: str | None = Header(default=None)):
     _require(authorization, {"super_admin","admin","staff"})
