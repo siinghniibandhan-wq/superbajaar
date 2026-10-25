@@ -445,6 +445,62 @@ def update_catalogue_product(
         raise HTTPException(status_code=503, detail="Product could not be updated.") from exc
 
 
+class CategoryWriteInput(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    parent_id: int | None = Field(default=None, gt=0)
+    status: str = Field(default="active", pattern="^(active|inactive)$")
+
+
+@app.post("/api/admin/categories", status_code=201)
+def create_catalogue_category(body: CategoryWriteInput, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _admin_catalogue_user(authorization)
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            columns = _catalogue_columns(conn, "product_categories")
+            if not columns:
+                raise HTTPException(status_code=503, detail="The existing category table is unavailable.")
+            if body.parent_id is not None:
+                parent = conn.execute("SELECT id FROM product_categories WHERE id=%s", (body.parent_id,)).fetchone()
+                if not parent:
+                    raise HTTPException(status_code=422, detail="Selected parent category does not exist.")
+            values = {"name": body.name.strip(), "parent_id": body.parent_id, "status": body.status}
+            return {"category": _catalogue_insert(conn, "product_categories", values)}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        logger.exception("Category creation failed")
+        raise HTTPException(status_code=503, detail="Category could not be saved.") from exc
+
+
+@app.put("/api/admin/categories/{category_id}")
+def update_catalogue_category(category_id: int, body: CategoryWriteInput, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _admin_catalogue_user(authorization)
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            columns = _catalogue_columns(conn, "product_categories")
+            if not columns:
+                raise HTTPException(status_code=503, detail="The existing category table is unavailable.")
+            existing = conn.execute("SELECT id FROM product_categories WHERE id=%s", (category_id,)).fetchone()
+            if not existing:
+                raise HTTPException(status_code=404, detail="Category not found.")
+            if body.parent_id == category_id:
+                raise HTTPException(status_code=422, detail="A category cannot be its own parent.")
+            if body.parent_id is not None and not conn.execute("SELECT id FROM product_categories WHERE id=%s", (body.parent_id,)).fetchone():
+                raise HTTPException(status_code=422, detail="Selected parent category does not exist.")
+            if "parent_id" not in columns and body.parent_id is not None:
+                raise HTTPException(status_code=503, detail="Apply the dynamic catalogue schema migration before using parent categories.")
+            values = {"name": body.name.strip(), "parent_id": body.parent_id, "status": body.status}
+            values = {key: value for key, value in values.items() if key in columns}
+            assignments = ", ".join(f"{key}=%s" for key in values)
+            row = conn.execute(f"UPDATE product_categories SET {assignments} WHERE id=%s RETURNING *", [*values.values(), category_id]).fetchone()
+            return {"category": row}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        logger.exception("Category update failed")
+        raise HTTPException(status_code=503, detail="Category could not be updated.") from exc
+
+
 @app.get("/api/categories")
 def list_categories() -> dict[str, Any]:
     try:
