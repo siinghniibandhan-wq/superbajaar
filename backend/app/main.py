@@ -50,6 +50,30 @@ def get_columns(conn: psycopg.Connection, table: str) -> set[str]:
     return {row["column_name"] for row in rows}
 
 
+def attach_catalogue_media_and_attributes(conn: psycopg.Connection, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Attach configurable variant attributes and per-variant image galleries when their schema exists."""
+    if not rows:
+        return rows
+    attributes_available = bool(conn.execute("SELECT to_regclass('public.variant_attribute_values') AS t").fetchone()["t"]) and bool(conn.execute("SELECT to_regclass('public.catalog_attributes') AS t").fetchone()["t"])
+    images_available = bool(conn.execute("SELECT to_regclass('public.product_variant_images') AS t").fetchone()["t"])
+    for row in rows:
+        variant_id = row.get("variant_id")
+        if not variant_id:
+            continue
+        if attributes_available:
+            row["attributes"] = conn.execute(
+                """SELECT a.name AS attribute_name, v.value AS attribute_value, a.display_type
+                   FROM variant_attribute_values v JOIN catalog_attributes a ON a.id=v.attribute_id
+                   WHERE v.variant_id=%s ORDER BY a.name""", (variant_id,)
+            ).fetchall()
+        if images_available:
+            row["gallery_images"] = conn.execute(
+                """SELECT id, image_url, alt_text, sort_order FROM product_variant_images
+                   WHERE variant_id=%s ORDER BY sort_order, id""", (variant_id,)
+            ).fetchall()
+    return rows
+
+
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -123,6 +147,7 @@ def list_products(
                        ORDER BY p.name, v.id
                        LIMIT %s OFFSET %s"""
             rows = conn.execute(query, params).fetchall()
+            rows = attach_catalogue_media_and_attributes(conn, rows)
             return {"items": rows, "limit": limit, "offset": offset}
     except HTTPException:
         raise
@@ -180,6 +205,8 @@ def get_product_by_variant(variant_id: int) -> dict[str, Any]:
                 FROM products p JOIN product_variants v ON v.product_id = p.id
                 {category_join} WHERE p.id = %s AND {product_status} AND {variant_status}
                 ORDER BY v.id""", (row["product_id"],)).fetchall()
+            sibling_variants = attach_catalogue_media_and_attributes(conn, sibling_variants)
+            row = attach_catalogue_media_and_attributes(conn, [row])[0]
             return {**row, "_variants": sibling_variants}
     except HTTPException:
         raise
