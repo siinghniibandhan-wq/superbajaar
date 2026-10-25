@@ -74,6 +74,10 @@ def _schema(conn):
       id BIGSERIAL PRIMARY KEY, reference TEXT NOT NULL UNIQUE, invoice_reference TEXT NOT NULL,
       return_reference TEXT NOT NULL UNIQUE, amount NUMERIC(14,2) NOT NULL CHECK(amount>=0),
       status TEXT NOT NULL DEFAULT 'posted', created_by BIGINT, created_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
+    """CREATE TABLE IF NOT EXISTS sb_tax_config(
+      id SMALLINT PRIMARY KEY CHECK(id=1), seller_gstin TEXT NOT NULL DEFAULT '',
+      seller_state_code TEXT NOT NULL DEFAULT '', rates_json JSONB NOT NULL DEFAULT '{}',
+      updated_by BIGINT, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
     """CREATE TABLE IF NOT EXISTS sb_accounts(
       id BIGSERIAL PRIMARY KEY, code TEXT NOT NULL UNIQUE, name TEXT NOT NULL, account_type TEXT NOT NULL,
       active BOOLEAN NOT NULL DEFAULT TRUE)""",
@@ -97,7 +101,7 @@ def _schema(conn):
     conn.execute("""INSERT INTO sb_accounts(code,name,account_type) VALUES
       ('1000','Cash and bank','asset'),('1100','Accounts receivable','asset'),
       ('2000','Accounts payable','liability'),('2100','GST payable','liability'),
-      ('4000','Sales revenue','income'),('5000','Cost of goods sold','expense')
+      ('2110','CGST payable','liability'),('2120','SGST payable','liability'),('2130','IGST payable','liability'),('4000','Sales revenue','income'),('5000','Cost of goods sold','expense')
       ON CONFLICT(code) DO NOTHING""")
 
 
@@ -169,8 +173,14 @@ class InvoiceInput(BaseModel):
     customer_name: str = ""
     items: list[dict[str, Any]] = Field(min_length=1)
     tax_total: Decimal = Decimal("0")
+    place_of_supply_state_code: str | None = None
     discount_total: Decimal = Decimal("0")
     warehouse_id: int | None = None
+
+class GSTSettingsInput(BaseModel):
+    seller_gstin: str = ""
+    seller_state_code: str = Field(pattern=r"^[0-9]{2}$")
+    rates: dict[str, Decimal] = {}
 
 class PaymentInput(BaseModel):
     amount: Decimal = Field(gt=0)
@@ -514,6 +524,29 @@ def inspect_receipt(receipt_id: int, body: ReceiptInspectionInput, authorization
         _event(c,r["reference"],"quality_inspection_completed",actor["id"],"inspection","accepted",{"accepted":accepted,"rejected":rejected})
         return {"receipt_reference":r["reference"],"status":"accepted","accepted":sum(accepted.values()),"rejected":sum(rejected.values()),"purchase_status":status}
 
+
+@router.get("/admin/accounting/gst-settings")
+def get_gst_settings(authorization: str | None = Header(default=None)):
+    _require(authorization, {"super_admin","admin","staff"})
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c)
+        row=c.execute("SELECT seller_gstin,seller_state_code,rates_json,updated_at FROM sb_tax_config WHERE id=1").fetchone()
+        return {"configured":bool(row),"settings":row}
+
+@router.put("/admin/accounting/gst-settings")
+def update_gst_settings(body: GSTSettingsInput, authorization: str | None = Header(default=None)):
+    actor=_require(authorization, {"super_admin","admin"})
+    if any(rate<0 or rate>Decimal("100") for rate in body.rates.values()):
+        raise HTTPException(422,"GST rates must be between 0 and 100 percent.")
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c)
+        row=c.execute("""INSERT INTO sb_tax_config(id,seller_gstin,seller_state_code,rates_json,updated_by,updated_at)
+          VALUES(1,%s,%s,%s::jsonb,%s,now()) ON CONFLICT(id) DO UPDATE SET
+          seller_gstin=EXCLUDED.seller_gstin,seller_state_code=EXCLUDED.seller_state_code,
+          rates_json=EXCLUDED.rates_json,updated_by=EXCLUDED.updated_by,updated_at=now()
+          RETURNING seller_gstin,seller_state_code,rates_json,updated_at""",
+          (body.seller_gstin.strip(),body.seller_state_code,json.dumps({k:str(v) for k,v in body.rates.items()}),actor["id"])).fetchone()
+        return {"configured":True,"settings":row}
 
 @router.get("/admin/invoices")
 def list_invoices(authorization: str | None = Header(default=None)):
