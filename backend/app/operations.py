@@ -503,3 +503,72 @@ def document_timeline(reference: str, authorization: str | None = Header(default
         events=c.execute("SELECT * FROM sb_document_events WHERE reference=%s ORDER BY created_at,id",(reference,)).fetchall()
         events += c.execute("SELECT * FROM document_events WHERE reference=%s ORDER BY created_at,id",(reference,)).fetchall() if c.execute("SELECT to_regclass('document_events') x").fetchone()["x"] else []
         return {"reference":reference,"events":events}
+
+
+class StockMovementInput(BaseModel):
+    warehouse_id: int
+    variant_id: int
+    quantity_delta: int
+    movement_type: str = "adjustment"
+    reference: str = ""
+    note: str = ""
+
+@router.get("/admin/vendors")
+def list_vendors(authorization: str | None = Header(default=None)):
+    _require(authorization, {"super_admin","admin","staff"})
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c)
+        return {"items":c.execute("SELECT id,name,email,phone,status,created_at FROM sb_vendors ORDER BY name").fetchall()}
+
+@router.get("/admin/procurements")
+def list_procurements(authorization: str | None = Header(default=None)):
+    _require(authorization, {"super_admin","admin","staff"})
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c)
+        return {"items":c.execute("""SELECT p.*,v.name vendor_name,v.email vendor_email FROM sb_procurements p
+          JOIN sb_vendors v ON v.id=p.vendor_id ORDER BY p.created_at DESC LIMIT 500""").fetchall()}
+
+@router.get("/admin/receipts")
+def list_receipts(authorization: str | None = Header(default=None)):
+    _require(authorization, {"super_admin","admin","staff"})
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c)
+        return {"items":c.execute("""SELECT r.*,p.reference purchase_reference,w.name warehouse_name
+          FROM sb_receipts r JOIN sb_procurements p ON p.id=r.procurement_id
+          JOIN sb_warehouses w ON w.id=r.warehouse_id ORDER BY r.created_at DESC LIMIT 500""").fetchall()}
+
+@router.get("/admin/returns")
+def list_returns(authorization: str | None = Header(default=None)):
+    _require(authorization, {"super_admin","admin","staff"})
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c)
+        return {"items":c.execute("SELECT * FROM sb_returns ORDER BY created_at DESC LIMIT 500").fetchall()}
+
+@router.get("/admin/accounting/journals")
+def list_journals(authorization: str | None = Header(default=None)):
+    _require(authorization, {"super_admin","admin","staff"})
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c)
+        return {"items":c.execute("SELECT * FROM sb_journal_entries ORDER BY created_at DESC LIMIT 500").fetchall()}
+
+@router.post("/admin/inventory/movements", status_code=201)
+def record_stock_movement(body: StockMovementInput, authorization: str | None = Header(default=None)):
+    actor=_require(authorization, {"super_admin","admin"})
+    if body.quantity_delta == 0: raise HTTPException(422,"Stock movement cannot be zero.")
+    if body.movement_type not in {"opening_balance","adjustment","sale","return","transfer_in","transfer_out","goods_receipt"}:
+        raise HTTPException(422,"Unsupported stock movement type.")
+    ref=body.reference.strip() or _ref("STK")
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c)
+        if not c.execute("SELECT id FROM sb_warehouses WHERE id=%s AND active",(body.warehouse_id,)).fetchone():
+            raise HTTPException(404,"Active warehouse not found.")
+        if not c.execute("SELECT id FROM product_variants WHERE id=%s",(body.variant_id,)).fetchone():
+            raise HTTPException(404,"Product variant not found.")
+        balance=c.execute("SELECT COALESCE(SUM(quantity_delta),0) qty FROM sb_inventory_ledger WHERE warehouse_id=%s AND variant_id=%s",
+          (body.warehouse_id,body.variant_id)).fetchone()["qty"]
+        if balance+body.quantity_delta<0: raise HTTPException(409,"Movement would make available stock negative.")
+        row=c.execute("""INSERT INTO sb_inventory_ledger(warehouse_id,variant_id,quantity_delta,movement_type,reference,note,actor_id)
+          VALUES(%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+          (body.warehouse_id,body.variant_id,body.quantity_delta,body.movement_type,ref,body.note,actor["id"])).fetchone()
+        _event(c,ref,"stock_movement",actor["id"],details={"warehouse_id":body.warehouse_id,"variant_id":body.variant_id,"quantity_delta":body.quantity_delta})
+        return {"movement":row,"balance":balance+body.quantity_delta}
