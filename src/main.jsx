@@ -35,7 +35,7 @@ const DETAILS = {
 };
 const MODULE_TABS = {
  orders:[['overview','Overview'],['sale','Sale'],['pos-desk','POS'],['customers','Customers'],['invoices','Invoices'],['returns','Returns & Refunds']],
- products:[['overview','Overview'],['catalogue','Products'],['stock','Stock Levels'],['movements','Stock Movements'],['categories','Categories']],
+ products:[['overview','Overview'],['catalogue','Products'],['stock','Stock Levels'],['categories','Categories']],
  purchases:[['overview','Overview'],['workspace','Purchase Orders'],['vendors','Vendors'],['receipts','Goods Received'],['supplier-payments','Supplier Payments']],
  logistics:[['overview','Overview'],['workspace','Shipments'],['routes','Routes & Drivers'],['tracking','Delivery Tracking']],
  accounting:[['overview','Overview'],['accounts','Chart of Accounts'],['bills','Bills & Receivables'],['journals','Journal Entries'],['reports','Financial Reports'],['gst','GST']],
