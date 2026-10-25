@@ -704,7 +704,7 @@ def record_stock_movement(body: StockMovementInput, authorization: str | None = 
     ref=body.reference.strip() or _ref("STK")
     with psycopg.connect(_db(), row_factory=dict_row) as c:
         _schema(c)
-        if not c.execute("SELECT id FROM sb_warehouses WHERE id=%s AND active",(body.warehouse_id,)).fetchone():
+        if not c.execute("SELECT id FROM sb_warehouses WHERE id=%s AND active FOR UPDATE",(body.warehouse_id,)).fetchone():
             raise HTTPException(404,"Active warehouse not found.")
         if not c.execute("SELECT id FROM product_variants WHERE id=%s",(body.variant_id,)).fetchone():
             raise HTTPException(404,"Product variant not found.")
