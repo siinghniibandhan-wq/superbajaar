@@ -105,7 +105,13 @@ def list_products(
 
             product_status = "p.status = 'active'" if "status" in product_columns else "TRUE"
             variant_status = "v.status = 'active'" if "status" in variant_columns else "TRUE"
-            image_select = "v.image_url AS image_url" if "image_url" in variant_columns else "NULL::text AS image_url"
+            image_candidates = []
+            if "image_url" in variant_columns:
+                image_candidates.append("NULLIF(v.image_url, '')")
+            for image_column in ("cover_image_url", "main_image_url", "image_url"):
+                if image_column in product_columns:
+                    image_candidates.append(f"NULLIF(p.{image_column}, '')")
+            image_select = ("COALESCE(" + ", ".join(image_candidates) + ") AS image_url") if image_candidates else "NULL::text AS image_url"
             brand_select = "p.brand AS brand" if "brand" in product_columns else "NULL::text AS brand"
             description_select = "p.description AS description" if "description" in product_columns else "NULL::text AS description"
             specification_select = "p.specifications AS specifications" if "specifications" in product_columns else "'[]'::jsonb AS specifications"
@@ -180,7 +186,13 @@ def get_product_by_variant(variant_id: int) -> dict[str, Any]:
                 raise HTTPException(status_code=503, detail="The existing catalogue tables are not available")
             product_status = "p.status = 'active'" if "status" in product_columns else "TRUE"
             variant_status = "v.status = 'active'" if "status" in variant_columns else "TRUE"
-            image_select = "v.image_url AS image_url" if "image_url" in variant_columns else "NULL::text AS image_url"
+            image_candidates = []
+            if "image_url" in variant_columns:
+                image_candidates.append("NULLIF(v.image_url, '')")
+            for image_column in ("cover_image_url", "main_image_url", "image_url"):
+                if image_column in product_columns:
+                    image_candidates.append(f"NULLIF(p.{image_column}, '')")
+            image_select = ("COALESCE(" + ", ".join(image_candidates) + ") AS image_url") if image_candidates else "NULL::text AS image_url"
             brand_select = "p.brand AS brand" if "brand" in product_columns else "NULL::text AS brand"
             description_select = "p.description AS description" if "description" in product_columns else "NULL::text AS description"
             specification_select = "p.specifications AS specifications" if "specifications" in product_columns else "'[]'::jsonb AS specifications"
