@@ -62,8 +62,13 @@ def _schema(conn):
     """CREATE TABLE IF NOT EXISTS sb_returns(
       id BIGSERIAL PRIMARY KEY, reference TEXT NOT NULL UNIQUE, invoice_reference TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'requested', reason TEXT NOT NULL DEFAULT '', items JSONB NOT NULL DEFAULT '[]',
-      origin_warehouse_id BIGINT, created_by BIGINT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      origin_warehouse_id BIGINT, refund_amount NUMERIC(14,2) NOT NULL DEFAULT 0,
+      created_by BIGINT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
+    """CREATE TABLE IF NOT EXISTS sb_credit_notes(
+      id BIGSERIAL PRIMARY KEY, reference TEXT NOT NULL UNIQUE, invoice_reference TEXT NOT NULL,
+      return_reference TEXT NOT NULL UNIQUE, amount NUMERIC(14,2) NOT NULL CHECK(amount>=0),
+      status TEXT NOT NULL DEFAULT 'posted', created_by BIGINT, created_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
     """CREATE TABLE IF NOT EXISTS sb_accounts(
       id BIGSERIAL PRIMARY KEY, code TEXT NOT NULL UNIQUE, name TEXT NOT NULL, account_type TEXT NOT NULL,
       active BOOLEAN NOT NULL DEFAULT TRUE)""",
@@ -78,6 +83,7 @@ def _schema(conn):
     ]
     for sql in statements: conn.execute(sql)
     conn.execute("ALTER TABLE sb_procurements ADD COLUMN IF NOT EXISTS purchase_order_reference TEXT")
+    conn.execute("ALTER TABLE sb_returns ADD COLUMN IF NOT EXISTS refund_amount NUMERIC(14,2) NOT NULL DEFAULT 0")
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS sb_procurements_po_ref_uidx ON sb_procurements(purchase_order_reference) WHERE purchase_order_reference IS NOT NULL")
     conn.execute("CREATE INDEX IF NOT EXISTS sb_events_ref_idx ON sb_document_events(reference,created_at)")
     conn.execute("CREATE INDEX IF NOT EXISTS sb_inventory_variant_idx ON sb_inventory_ledger(variant_id,warehouse_id,created_at)")
@@ -165,6 +171,7 @@ class ReturnInput(BaseModel):
 class ReturnStatusInput(BaseModel):
     status: str
     origin_warehouse_id: int | None = None
+    accepted_items: list[dict[str, Any]] = []
 
 
 @router.get("/admin/catalogue/attributes")
