@@ -97,6 +97,9 @@ def _schema(conn):
     """CREATE TABLE IF NOT EXISTS sb_document_events(
       id BIGSERIAL PRIMARY KEY, reference TEXT NOT NULL, event_type TEXT NOT NULL,
       from_status TEXT, to_status TEXT, actor_id BIGINT, details JSONB NOT NULL DEFAULT '{}',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
+    """CREATE TABLE IF NOT EXISTS sb_document_registry(
+      reference TEXT PRIMARY KEY, document_type TEXT NOT NULL, document_id BIGINT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now())"""
     ]
     for sql in statements: conn.execute(sql)
@@ -116,6 +119,11 @@ def _schema(conn):
 
 def _ref(prefix):
     return prefix + "-" + secrets.token_hex(5).upper()
+
+
+def _register_document(conn, reference, document_type, document_id):
+    conn.execute("INSERT INTO sb_document_registry(reference,document_type,document_id) VALUES(%s,%s,%s)",
+      (reference,document_type,document_id))
 
 
 def _event(conn, ref, kind, actor, old=None, new=None, details=None):
@@ -743,6 +751,7 @@ def create_invoice(body: InvoiceInput, authorization: str | None = Header(defaul
         row=c.execute("""INSERT INTO sb_invoices(reference,source_channel,customer_name,status,subtotal,discount_total,tax_total,total,items,created_by)
           VALUES(%s,%s,%s,'issued',%s,%s,%s,%s,%s::jsonb,%s) RETURNING *""",
           (ref,body.source_channel,body.customer_name,subtotal,discount,tax,total,json.dumps(body.items),actor["id"])).fetchone()
+        _register_document(c,ref,"sale_invoice",row["id"])
         if body.source_channel=="pos":
             for line in body.items:
                 c.execute("""INSERT INTO sb_inventory_ledger(warehouse_id,variant_id,quantity_delta,movement_type,reference,note,actor_id)
