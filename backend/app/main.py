@@ -10,6 +10,8 @@ from pydantic import BaseModel, Field
 import psycopg
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi import Request
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
@@ -23,6 +25,17 @@ origins = list(dict.fromkeys(configured_origins + [
     "https://bw7rptzexc5.amplifyapp.com",
     "https://main.d33bw7rptzexc5.amplifyapp.com",
 ]))
+@app.middleware("http")
+async def return_json_for_unhandled_errors(request: Request, call_next):
+    # Registered BEFORE CORSMiddleware so CORS wraps it: a server error then reaches the browser
+    # with CORS headers and a readable message, instead of a bare "Failed to fetch".
+    try:
+        return await call_next(request)
+    except Exception:
+        logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+        return JSONResponse(status_code=500, content={"detail": "Server error while processing this request. Check backend logs."})
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
