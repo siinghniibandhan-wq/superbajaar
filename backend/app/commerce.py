@@ -629,3 +629,142 @@ def update_store_setting(
             return {"item": row}
     except psycopg.Error as exc:
         raise HTTPException(status_code=503, detail="Could not save store settings.") from exc
+
+
+class ReturnRequestInput(BaseModel):
+    reason: str = Field(min_length=5, max_length=1000)
+
+
+class ReturnStatusUpdate(BaseModel):
+    status: str
+    note: str = Field(default="", max_length=1000)
+
+
+def _ensure_returns_schema(conn: Any) -> None:
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS store_return_requests (
+            id BIGSERIAL PRIMARY KEY,
+            order_id BIGINT NOT NULL REFERENCES store_orders(id) ON DELETE CASCADE,
+            user_id BIGINT NOT NULL REFERENCES app_users(id),
+            reason TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'requested'
+                CHECK (status IN ('requested','approved','rejected','received','refund_recorded')),
+            staff_note TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            UNIQUE(order_id)
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS store_return_requests_status_created_idx ON store_return_requests(status, created_at DESC)")
+
+
+@router.post("/orders/{order_id}/returns", status_code=201)
+def request_order_return(
+    order_id: int,
+    body: ReturnRequestInput,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    user = _current(authorization)
+    if user["role"] != "customer":
+        raise HTTPException(status_code=403, detail="Only the customer who placed an order can request its return.")
+    try:
+        with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
+            _ensure_commerce_schema(conn)
+            _ensure_returns_schema(conn)
+            with conn.transaction():
+                order = conn.execute(
+                    "SELECT id,user_id,status FROM store_orders WHERE id=%s FOR UPDATE",
+                    (order_id,),
+                ).fetchone()
+                if not order or int(order["user_id"]) != int(user["id"]):
+                    raise HTTPException(status_code=404, detail="Order not found.")
+                if order["status"] != "delivered":
+                    raise HTTPException(status_code=409, detail="A return can only be requested after the order is delivered.")
+                existing = conn.execute(
+                    "SELECT id,status FROM store_return_requests WHERE order_id=%s",
+                    (order_id,),
+                ).fetchone()
+                if existing:
+                    raise HTTPException(status_code=409, detail=f"A return request already exists for this order (status: {existing['status']}).")
+                row = conn.execute(
+                    """INSERT INTO store_return_requests(order_id,user_id,reason)
+                       VALUES(%s,%s,%s) RETURNING id,order_id,reason,status,staff_note,created_at,updated_at""",
+                    (order_id, user["id"], body.reason.strip()),
+                ).fetchone()
+                return {"item": row, "message": "Return request submitted for store review."}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(status_code=503, detail="Return request service is temporarily unavailable.") from exc
+
+
+@router.get("/admin/returns")
+def list_return_requests(
+    status: str = Query(default="", pattern="^(|requested|approved|rejected|received|refund_recorded)$"),
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    _require(authorization, {"super_admin", "admin", "staff"})
+    try:
+        with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
+            _ensure_commerce_schema(conn)
+            _ensure_returns_schema(conn)
+            rows = conn.execute(
+                """SELECT r.id,r.order_id,o.order_number,r.user_id,u.full_name,u.email,
+                          r.reason,r.status,r.staff_note,r.created_at,r.updated_at,o.total,o.payment_status
+                   FROM store_return_requests r
+                   JOIN store_orders o ON o.id=r.order_id
+                   JOIN app_users u ON u.id=r.user_id
+                   WHERE (%s='' OR r.status=%s)
+                   ORDER BY r.created_at DESC LIMIT 500""",
+                (status, status),
+            ).fetchall()
+            return {"items": rows}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(status_code=503, detail="Return requests are temporarily unavailable.") from exc
+
+
+@router.patch("/admin/returns/{return_id}")
+def update_return_request(
+    return_id: int,
+    body: ReturnStatusUpdate,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    user = _require(authorization, {"super_admin", "admin", "staff"})
+    allowed = {"approved", "rejected", "received", "refund_recorded"}
+    if body.status not in allowed:
+        raise HTTPException(status_code=422, detail="Choose approved, rejected, received, or refund_recorded.")
+    try:
+        with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
+            _ensure_commerce_schema(conn)
+            _ensure_returns_schema(conn)
+            with conn.transaction():
+                current = conn.execute(
+                    "SELECT id,status FROM store_return_requests WHERE id=%s FOR UPDATE",
+                    (return_id,),
+                ).fetchone()
+                if not current:
+                    raise HTTPException(status_code=404, detail="Return request not found.")
+                transitions = {
+                    "requested": {"approved", "rejected"},
+                    "approved": {"received", "rejected"},
+                    "received": {"refund_recorded"},
+                    "rejected": set(),
+                    "refund_recorded": set(),
+                }
+                if body.status not in transitions.get(current["status"], set()):
+                    raise HTTPException(status_code=409, detail=f"Cannot change a return request from {current['status']} to {body.status}.")
+                row = conn.execute(
+                    """UPDATE store_return_requests SET status=%s,
+                              staff_note=CASE WHEN %s='' THEN staff_note ELSE %s END,
+                              updated_at=now()
+                       WHERE id=%s
+                       RETURNING id,order_id,user_id,reason,status,staff_note,created_at,updated_at""",
+                    (body.status, body.note.strip(), body.note.strip(), return_id),
+                ).fetchone()
+                return {"item": row, "message": "Return request updated. No payment or refund was executed."}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(status_code=503, detail="Return request could not be updated.") from exc
