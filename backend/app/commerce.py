@@ -519,6 +519,15 @@ def update_admin_order(
             if body.status not in transitions.get(previous["status"], set()):
                 raise HTTPException(status_code=409, detail=f"Cannot move order from {previous['status']} to {body.status}; use reverse logistics after dispatch.")
             row = conn.execute("UPDATE store_orders SET status=%s,updated_at=now() WHERE id=%s RETURNING id", (body.status, order_id)).fetchone()
+            if body.status == "cancelled":
+                from .operations import _schema as _ensure_operations_schema
+                _ensure_operations_schema(conn)
+                reserved = conn.execute("SELECT warehouse_id,variant_id,quantity FROM store_order_items WHERE order_id=%s", (order_id,)).fetchall()
+                for item in reserved:
+                    if item["warehouse_id"] is not None:
+                        conn.execute("""INSERT INTO sb_inventory_ledger(warehouse_id,variant_id,quantity_delta,movement_type,reference,note,actor_id)
+                            VALUES(%s,%s,%s,'release',%s,'Pre-dispatch order cancellation releases reservation',%s)""",
+                            (item["warehouse_id"],item["variant_id"],item["quantity"],previous["invoice_number"],actor["id"]))
             conn.execute("""INSERT INTO document_events
                 (document_type,document_id,reference,event_type,from_status,to_status,actor_id)
                 VALUES ('sale',%s,%s,'status_changed',%s,%s,%s)""",
