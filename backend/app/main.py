@@ -108,10 +108,10 @@ def attach_catalogue_media_and_attributes(conn: psycopg.Connection, rows: list[d
             if isinstance(value, (bytes, bytearray)) and value:
                 decoded = bytes(value)
                 encoded = base64.b64encode(decoded).decode("ascii")
-                if decoded.startswith(b"\\xff\\xd8\\xff"): mime = "image/jpeg"
+                if decoded.startswith(b"\xff\xd8\xff"): mime = "image/jpeg"
                 elif decoded.startswith(b"RIFF") and decoded[8:12] == b"WEBP": mime = "image/webp"
                 elif decoded.startswith(b"GIF8"): mime = "image/gif"
-                elif decoded.startswith(b"\\x89PNG\\r\\n\\x1a\\n"): mime = "image/png"
+                elif decoded.startswith(b"\x89PNG\r\n\x1a\n"): mime = "image/png"
                 else: mime = ""
                 if mime:
                     row["image_url"] = f"data:{mime};base64,{encoded}"
@@ -121,10 +121,10 @@ def attach_catalogue_media_and_attributes(conn: psycopg.Connection, rows: list[d
                 try:
                     decoded = base64.b64decode(value, validate=True)
                     if decoded:
-                        if decoded.startswith(b"\\xff\\xd8\\xff"): mime = "image/jpeg"
+                        if decoded.startswith(b"\xff\xd8\xff"): mime = "image/jpeg"
                         elif decoded.startswith(b"RIFF") and decoded[8:12] == b"WEBP": mime = "image/webp"
                         elif decoded.startswith(b"GIF8"): mime = "image/gif"
-                        elif decoded.startswith(b"\\x89PNG\\r\\n\\x1a\\n"): mime = "image/png"
+                        elif decoded.startswith(b"\x89PNG\r\n\x1a\n"): mime = "image/png"
                         else: mime = ""
                         if mime:
                             row["image_url"] = f"data:{mime};base64,{base64.b64encode(decoded).decode('ascii')}"
