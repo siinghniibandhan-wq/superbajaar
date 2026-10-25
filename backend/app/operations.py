@@ -545,10 +545,25 @@ def create_return(body: ReturnInput, authorization: str | None = Header(default=
     ref=_ref("RET")
     with psycopg.connect(_db(), row_factory=dict_row) as c:
         _schema(c)
-        if not c.execute("SELECT id FROM sb_invoices WHERE reference=%s",(body.invoice_reference,)).fetchone():
-            # Website checkout invoices also share this reference namespace.
-            if not c.execute("SELECT id FROM store_orders WHERE invoice_number=%s",(body.invoice_reference,)).fetchone():
-                raise HTTPException(404,"Invoice reference not found.")
+        invoice=c.execute("SELECT * FROM sb_invoices WHERE reference=%s",(body.invoice_reference,)).fetchone()
+        website_order=c.execute("SELECT * FROM store_orders WHERE invoice_number=%s",(body.invoice_reference,)).fetchone() if not invoice else None
+        if not invoice and not website_order: raise HTTPException(404,"Invoice reference not found.")
+        if invoice:
+            sold={int(x["variant_id"]):int(x["quantity"]) for x in invoice["items"] if x.get("variant_id")}
+        else:
+            sold={int(x["variant_id"]):int(x["quantity"]) for x in c.execute("SELECT variant_id,quantity FROM store_order_items WHERE order_id=%s",(website_order["id"],)).fetchall()}
+        requested={}
+        for line in body.items:
+            vid=int(line.get("variant_id",0)); qty=int(line.get("quantity",0))
+            if vid not in sold or qty<1: raise HTTPException(422,"Return lines must match sold variants and have positive quantities.")
+            requested[vid]=requested.get(vid,0)+qty
+        previous=c.execute("SELECT items FROM sb_returns WHERE invoice_reference=%s AND status<>'cancelled'",(body.invoice_reference,)).fetchall()
+        returned={}
+        for prev in previous:
+            for line in prev["items"]:
+                vid=int(line["variant_id"]); returned[vid]=returned.get(vid,0)+int(line.get("quantity",0))
+        for vid,qty in requested.items():
+            if returned.get(vid,0)+qty>sold[vid]: raise HTTPException(409,f"Return quantity exceeds sold quantity for variant {vid}.")
         row=c.execute("""INSERT INTO sb_returns(reference,invoice_reference,status,reason,items,created_by)
           VALUES(%s,%s,'requested',%s,%s::jsonb,%s) RETURNING *""",(ref,body.invoice_reference,body.reason,json.dumps(body.items),actor["id"])).fetchone()
         _event(c,ref,"return_requested",actor["id"],new="requested",details={"invoice_reference":body.invoice_reference})
