@@ -561,7 +561,19 @@ def pos_sale(body:POSInput,authorization:str|None=Header(default=None))->dict[st
                     conn.execute("UPDATE sb_stock SET quantity=quantity-%s,updated_at=now() WHERE variant_id=%s AND warehouse='Main'",(line.quantity,line.variant_id))
                     conn.execute("""INSERT INTO sb_stock_movements(variant_id,warehouse,movement_type,quantity,reference_type,reference_id,created_by)
                         VALUES(%s,'Main','pos_sale',%s,'pos',%s,%s)""",(line.variant_id,line.quantity,sale["id"],user["id"]))
-                journal_lines=[("cash",total,Decimal("0")),("sales",Decimal("0"),subtotal)]
+                from .invoices import create_invoice
+                customer=conn.execute("SELECT name,email,phone FROM sb_customers WHERE id=%s",(body.customer_id,)).fetchone() if body.customer_id else None
+                invoice_lines=[]
+                for line,price,applied_rate,line_total in resolved:
+                    line_subtotal=(price*line.quantity).quantize(Decimal("0.01"))
+                    invoice_lines.append({"description":"Product variant "+str(line.variant_id),"variant_id":line.variant_id,
+                        "quantity":line.quantity,"unit_price":price,"tax_rate":applied_rate,
+                        "line_subtotal":line_subtotal,"line_tax":line_total-line_subtotal,"line_total":line_total})
+                create_invoice(conn,source_type="pos",source_id=int(sale["id"]),
+                    customer_name=(customer["name"] if customer else "Walk-in customer"),
+                    customer_email=(customer["email"] if customer else None),customer_phone=(customer["phone"] if customer else None),
+                    subtotal=subtotal,tax_total=tax_total,total=total,lines=invoice_lines)
+                journal_lines=[("accounts_receivable",total,Decimal("0")),("sales",Decimal("0"),subtotal)]
                 if tax_total:
                     journal_lines.append(("output_gst",Decimal("0"),tax_total))
                 if cogs_total:
