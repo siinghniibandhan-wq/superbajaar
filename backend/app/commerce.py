@@ -315,6 +315,56 @@ def checkout_options(
         raise HTTPException(status_code=503, detail="Checkout options are temporarily unavailable.") from exc
 
 
+
+def _catalogue_variant_available(conn: Any, product_id: int, variant_id: int, pincode: str) -> bool:
+    """Evaluate product/variant restrictions; rules within a scope are alternatives, scopes combine with AND."""
+    if not conn.execute("SELECT to_regclass('public.sb_product_availability_rules') AS t").fetchone()["t"]:
+        return True
+    rules = conn.execute(
+        """SELECT scope_type,region_id,pincode,warehouse_id
+           FROM sb_product_availability_rules
+           WHERE product_id=%s AND (variant_id IS NULL OR variant_id=%s)""",
+        (product_id, variant_id),
+    ).fetchall()
+    if not rules:
+        return True
+    by_scope: dict[str, list[dict[str, Any]]] = {}
+    for rule in rules:
+        by_scope.setdefault(rule["scope_type"], []).append(rule)
+    pin = pincode.strip()
+    if "pincode" in by_scope and not any(rule["pincode"] == pin for rule in by_scope["pincode"]):
+        return False
+    matching_region_ids: set[int] = set()
+    if conn.execute("SELECT to_regclass('public.sb_region_pincodes') AS t").fetchone()["t"]:
+        matching_region_ids = {
+            int(row["region_id"]) for row in conn.execute(
+                "SELECT region_id FROM sb_region_pincodes WHERE pincode=%s AND active=TRUE", (pin,)
+            ).fetchall()
+        }
+    if "region" in by_scope and not any(int(rule["region_id"]) in matching_region_ids for rule in by_scope["region"]):
+        return False
+    if "warehouse" in by_scope:
+        warehouse_ids = [int(rule["warehouse_id"]) for rule in by_scope["warehouse"]]
+        warehouses = conn.execute(
+            """SELECT id,region_id,pincode,serviceable_pincodes
+               FROM sb_warehouses WHERE active=TRUE AND id = ANY(%s)""", (warehouse_ids,)
+        ).fetchall()
+        def serves(row: dict[str, Any]) -> bool:
+            serviceable = row.get("serviceable_pincodes") or []
+            if isinstance(serviceable, str):
+                try:
+                    import json
+                    serviceable = json.loads(serviceable)
+                except Exception:
+                    serviceable = []
+            pin_match = str(row.get("pincode") or "") == pin or (isinstance(serviceable, list) and pin in [str(x) for x in serviceable])
+            region_match = "region" not in by_scope or (row.get("region_id") is not None and int(row["region_id"]) in {int(r["region_id"]) for r in by_scope["region"]})
+            return pin_match and region_match
+        if not any(serves(row) for row in warehouses):
+            return False
+    return True
+
+
 @router.post("/checkout", status_code=201)
 def create_order(body: CheckoutInput, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     user = _current(authorization)
@@ -355,6 +405,8 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
                 ).fetchone()
                 if not product:
                     raise HTTPException(status_code=409, detail=f"Product variant {variant_id} is no longer available.")
+                if not _catalogue_variant_available(conn, int(product["product_id"]), int(product["variant_id"]), body.shipping_address.pincode):
+                    raise HTTPException(status_code=422, detail=f"{product['name']} is not available for delivery to PIN code {body.shipping_address.pincode}.")
                 price = Decimal(str(product["selling_price"] or 0))
                 if price <= 0:
                     raise HTTPException(status_code=409, detail=f"Price is not configured for {product['name']}.")
