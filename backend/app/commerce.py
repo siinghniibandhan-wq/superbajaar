@@ -50,9 +50,18 @@ def _ensure_commerce_schema(conn: Any) -> None:
             updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
         )
     """)
-    conn.execute("ALTER TABLE store_orders DROP CONSTRAINT IF EXISTS store_orders_status_check")
-    conn.execute("""ALTER TABLE store_orders ADD CONSTRAINT store_orders_status_check
-        CHECK (status IN ('placed','confirmed','processing','packed','picked','in_transit','out_for_delivery','shipped','delivered','cancelled'))""")
+    conn.execute("""DO $
+    BEGIN
+      IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='store_orders'::regclass
+        AND conname='store_orders_status_check' AND pg_get_constraintdef(oid) NOT LIKE '%picked%') THEN
+        ALTER TABLE store_orders DROP CONSTRAINT store_orders_status_check;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='store_orders'::regclass
+        AND conname='store_orders_status_check') THEN
+        ALTER TABLE store_orders ADD CONSTRAINT store_orders_status_check
+          CHECK (status IN ('placed','confirmed','processing','packed','picked','in_transit','out_for_delivery','shipped','delivered','cancelled'));
+      END IF;
+    END $""")
     conn.execute("ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS invoice_number TEXT")
     conn.execute("ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS source_channel TEXT NOT NULL DEFAULT 'website'")
     conn.execute("UPDATE store_orders SET invoice_number = 'INV-' || order_number WHERE invoice_number IS NULL")
