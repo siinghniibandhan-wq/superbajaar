@@ -210,13 +210,13 @@ def _delivery_quote(config: Any, pincode: str | None, subtotal: Decimal) -> dict
 def _order_detail(conn: Any, order_id: int) -> dict[str, Any]:
     order = conn.execute(
         """SELECT id,order_number,user_id,status,payment_method,payment_status,currency,
-                  subtotal,shipping_fee,loyalty_discount,loyalty_coins_redeemed,total,shipping_address,customer_note,created_at,updated_at
+                  subtotal,shipping_fee,tax_total,loyalty_discount,loyalty_coins_redeemed,total,shipping_address,customer_note,created_at,updated_at
            FROM store_orders WHERE id=%s""", (order_id,)
     ).fetchone()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     order["items"] = conn.execute(
-        """SELECT variant_id,product_id,sku,product_name,quantity,unit_price,line_total
+        """SELECT variant_id,product_id,sku,product_name,quantity,unit_price,line_total,tax_rate,taxable_amount,cgst_amount,sgst_amount,igst_amount,tax_amount,tax_inclusive
            FROM store_order_items WHERE order_id=%s ORDER BY id""", (order_id,)
     ).fetchall()
     return order
@@ -583,13 +583,13 @@ def list_my_orders(authorization: str | None = Header(default=None)) -> dict[str
             _ensure_commerce_schema(conn)
             rows = conn.execute(
                 """SELECT id,order_number,status,payment_method,payment_status,currency,
-                          subtotal,shipping_fee,loyalty_discount,loyalty_coins_redeemed,total,shipping_address,created_at,updated_at
+                          subtotal,shipping_fee,tax_total,loyalty_discount,loyalty_coins_redeemed,total,shipping_address,created_at,updated_at
                    FROM store_orders WHERE user_id=%s ORDER BY created_at DESC LIMIT 100""",
                 (user["id"],)
             ).fetchall()
             for row in rows:
                 row["items"] = conn.execute(
-                    """SELECT variant_id,product_id,sku,product_name,quantity,unit_price,line_total
+                    """SELECT variant_id,product_id,sku,product_name,quantity,unit_price,line_total,tax_rate,taxable_amount,cgst_amount,sgst_amount,igst_amount,tax_amount,tax_inclusive
                        FROM store_order_items WHERE order_id=%s ORDER BY id""", (row["id"],)
                 ).fetchall()
             return {"items": rows}
@@ -622,7 +622,7 @@ def list_admin_orders(
             ).fetchall()
             for row in rows:
                 row["items"] = conn.execute(
-                    """SELECT variant_id,product_id,sku,product_name,quantity,unit_price,line_total
+                    """SELECT variant_id,product_id,sku,product_name,quantity,unit_price,line_total,tax_rate,taxable_amount,cgst_amount,sgst_amount,igst_amount,tax_amount,tax_inclusive
                        FROM store_order_items WHERE order_id=%s ORDER BY id""", (row["id"],)
                 ).fetchall()
             return {"items": rows}
