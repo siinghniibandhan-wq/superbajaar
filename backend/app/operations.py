@@ -430,13 +430,13 @@ def create_invoice(body: InvoiceInput, authorization: str | None = Header(defaul
         _schema(c)
         if body.source_channel=="pos":
             if body.warehouse_id is None: raise HTTPException(422,"Select a warehouse for POS stock deduction.")
-            if not c.execute("SELECT id FROM sb_warehouses WHERE id=%s AND active",(body.warehouse_id,)).fetchone():
+            if not c.execute("SELECT id FROM sb_warehouses WHERE id=%s AND active FOR UPDATE",(body.warehouse_id,)).fetchone():
                 raise HTTPException(404,"Active POS warehouse not found.")
             for line in body.items:
                 vid=int(line["variant_id"]); qty=int(line["quantity"])
                 if not c.execute("SELECT id FROM product_variants WHERE id=%s",(vid,)).fetchone():
                     raise HTTPException(404,f"Variant {vid} not found.")
-                balance=c.execute("SELECT COALESCE(SUM(quantity_delta),0) qty FROM sb_inventory_ledger WHERE warehouse_id=%s AND variant_id=%s FOR UPDATE",(body.warehouse_id,vid)).fetchone()["qty"]
+                balance=c.execute("SELECT COALESCE(SUM(quantity_delta),0) qty FROM sb_inventory_ledger WHERE warehouse_id=%s AND variant_id=%s",(body.warehouse_id,vid)).fetchone()["qty"]
                 if balance<qty: raise HTTPException(409,f"Insufficient stock for variant {vid} at selected warehouse.")
         row=c.execute("""INSERT INTO sb_invoices(reference,source_channel,customer_name,status,subtotal,tax_total,total,items,created_by)
           VALUES(%s,%s,%s,'issued',%s,%s,%s,%s::jsonb,%s) RETURNING *""",
