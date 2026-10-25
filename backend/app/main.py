@@ -530,30 +530,49 @@ class CategoryWriteInput(BaseModel):
     status: str = Field(default="active", pattern="^(active|inactive)$")
 
 
+def _category_values(columns: dict[str, dict[str, Any]], name: str, parent_id: int | None, status: str) -> dict[str, Any]:
+    clean_name = name.strip()
+    slug = "-".join(part for part in re.sub(r"[^a-z0-9]+", "-", clean_name.lower()).strip("-").split("-") if part)
+    candidates: dict[str, Any] = {
+        "name": clean_name, "parent_id": parent_id, "status": status,
+        "slug": slug, "code": slug.upper().replace("-", "_"),
+        "description": "", "sort_order": 0, "position": 0,
+        "is_active": status == "active", "active": status == "active",
+    }
+    return {key: value for key, value in candidates.items() if key in columns and (value is not None or key in {"parent_id"})}
+
+
 @app.post("/api/admin/categories", status_code=201)
 def create_catalogue_category(body: CategoryWriteInput, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     _admin_catalogue_user(authorization)
+    clean_name = body.name.strip()
+    if not clean_name:
+        raise HTTPException(status_code=422, detail="Enter a category name.")
     try:
         with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
             columns = _catalogue_columns(conn, "product_categories")
             if not columns:
                 raise HTTPException(status_code=503, detail="The existing category table is unavailable.")
             if body.parent_id is not None:
-                parent = conn.execute("SELECT id FROM product_categories WHERE id=%s", (body.parent_id,)).fetchone()
-                if not parent:
+                if "parent_id" not in columns:
+                    raise HTTPException(status_code=503, detail="Category nesting is not available in the current database schema.")
+                if not conn.execute("SELECT id FROM product_categories WHERE id=%s", (body.parent_id,)).fetchone():
                     raise HTTPException(status_code=422, detail="Selected parent category does not exist.")
-            values = {"name": body.name.strip(), "parent_id": body.parent_id, "status": body.status}
+            values = _category_values(columns, clean_name, body.parent_id, body.status)
             return {"category": _catalogue_insert(conn, "product_categories", values)}
     except HTTPException:
         raise
     except psycopg.Error as exc:
-        logger.exception("Category creation failed")
-        raise HTTPException(status_code=503, detail="Category could not be saved.") from exc
+        logger.exception("Category creation failed for name=%r parent_id=%r", clean_name, body.parent_id)
+        raise HTTPException(status_code=503, detail="Category could not be saved. Check the category table constraints and server log.") from exc
 
 
 @app.put("/api/admin/categories/{category_id}")
 def update_catalogue_category(category_id: int, body: CategoryWriteInput, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     _admin_catalogue_user(authorization)
+    clean_name = body.name.strip()
+    if not clean_name:
+        raise HTTPException(status_code=422, detail="Enter a category name.")
     try:
         with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
             columns = _catalogue_columns(conn, "product_categories")
@@ -564,36 +583,50 @@ def update_catalogue_category(category_id: int, body: CategoryWriteInput, author
                 raise HTTPException(status_code=404, detail="Category not found.")
             if body.parent_id == category_id:
                 raise HTTPException(status_code=422, detail="A category cannot be its own parent.")
-            if body.parent_id is not None and not conn.execute("SELECT id FROM product_categories WHERE id=%s", (body.parent_id,)).fetchone():
-                raise HTTPException(status_code=422, detail="Selected parent category does not exist.")
-            if "parent_id" not in columns and body.parent_id is not None:
-                raise HTTPException(status_code=503, detail="Apply the dynamic catalogue schema migration before using parent categories.")
-            values = {"name": body.name.strip(), "parent_id": body.parent_id, "status": body.status}
-            values = {key: value for key, value in values.items() if key in columns}
+            if body.parent_id is not None:
+                if "parent_id" not in columns:
+                    raise HTTPException(status_code=503, detail="Category nesting is not available in the current database schema.")
+                if not conn.execute("SELECT id FROM product_categories WHERE id=%s", (body.parent_id,)).fetchone():
+                    raise HTTPException(status_code=422, detail="Selected parent category does not exist.")
+                # Prevent cycles, including moving a category under one of its descendants.
+                if conn.execute("""WITH RECURSIVE descendants(id) AS (
+                    SELECT id FROM product_categories WHERE parent_id=%s
+                    UNION ALL SELECT c.id FROM product_categories c JOIN descendants d ON c.parent_id=d.id
+                ) SELECT 1 FROM descendants WHERE id=%s LIMIT 1""", (category_id, body.parent_id)).fetchone():
+                    raise HTTPException(status_code=422, detail="A category cannot be moved under its own subcategory.")
+            values = _category_values(columns, clean_name, body.parent_id, body.status)
+            values = {key: value for key, value in values.items() if key in columns and key != "id"}
             assignments = ", ".join(f"{key}=%s" for key in values)
             row = conn.execute(f"UPDATE product_categories SET {assignments} WHERE id=%s RETURNING *", [*values.values(), category_id]).fetchone()
             return {"category": row}
     except HTTPException:
         raise
     except psycopg.Error as exc:
-        logger.exception("Category update failed")
-        raise HTTPException(status_code=503, detail="Category could not be updated.") from exc
+        logger.exception("Category update failed for id=%s", category_id)
+        raise HTTPException(status_code=503, detail="Category could not be updated. Check the category table constraints and server log.") from exc
 
 
 @app.get("/api/categories")
-def list_categories() -> dict[str, Any]:
+def list_categories(include_inactive: bool = False) -> dict[str, Any]:
     try:
         with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
             columns = get_columns(conn, "product_categories")
             if not columns:
                 raise HTTPException(status_code=503, detail="The existing category table is not available")
-            status_filter = "WHERE c.status = 'active'" if "status" in columns else ""
+            status_filter = "" if include_inactive or "status" not in columns else "WHERE c.status = 'active'"
+            parent_join = "LEFT JOIN product_categories parent ON parent.id = c.parent_id" if "parent_id" in columns else ""
             parent_select = "c.parent_id AS parent_id, parent.name AS parent_name" if "parent_id" in columns else "NULL::bigint AS parent_id, NULL::text AS parent_name"
-            rows = conn.execute(f"""SELECT c.id, c.name, {parent_select}
+            path_select = """CASE WHEN c.parent_id IS NULL THEN c.name ELSE
+                COALESCE((WITH RECURSIVE ancestors(id, parent_id, name, depth) AS (
+                    SELECT p.id, p.parent_id, p.name, 1 FROM product_categories p WHERE p.id=c.parent_id
+                    UNION ALL SELECT p.id, p.parent_id, p.name, a.depth+1
+                    FROM product_categories p JOIN ancestors a ON p.id=a.parent_id WHERE a.depth < 20
+                ) SELECT string_agg(name, ' › ' ORDER BY depth DESC) FROM ancestors), '') || ' › ' || c.name END AS category_path""" if "parent_id" in columns else "c.name AS category_path"
+            rows = conn.execute(f"""SELECT c.id, c.name, {parent_select}, {path_select}
                 FROM product_categories c
-                LEFT JOIN product_categories parent ON parent.id = c.parent_id
+                {parent_join}
                 {status_filter}
-                ORDER BY COALESCE(parent.name, c.name), c.parent_id NULLS FIRST, c.name""").fetchall()
+                ORDER BY category_path""").fetchall()
             return {"items": rows}
     except HTTPException:
         raise
