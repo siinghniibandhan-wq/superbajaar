@@ -265,6 +265,46 @@ def set_product_availability(product_id: int, body: ProductAvailabilityRuleInput
         logger.exception("Product availability save failed")
         raise HTTPException(status_code=503, detail="Product availability could not be saved.") from exc
 
+
+class ProductRegionWriteInput(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    code: str = Field(min_length=2, max_length=40)
+    pincodes: list[str] = Field(default_factory=list, max_length=2000)
+
+
+@app.post("/api/admin/product-creation/regions", status_code=201)
+def create_product_region(body: ProductRegionWriteInput, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _admin_catalogue_user(authorization)
+    name, code = body.name.strip(), re.sub(r"[^A-Za-z0-9_-]", "", body.code.strip().upper())
+    pincodes = list(dict.fromkeys(str(pin).strip() for pin in body.pincodes if str(pin).strip()))
+    if not code or any(not re.fullmatch(r"[0-9]{6}", pin) for pin in pincodes):
+        raise HTTPException(status_code=422, detail="Use a region code and only six-digit PIN codes.")
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            row = conn.execute(
+                """INSERT INTO sb_regions(name,code) VALUES(%s,%s)
+                   ON CONFLICT(name) DO UPDATE SET active=TRUE RETURNING id,name,code""",
+                (name, code),
+            ).fetchone()
+            # A region code already assigned to another region must not be silently reassigned.
+            if not row:
+                raise HTTPException(status_code=409, detail="Could not create region.")
+            for pin in pincodes:
+                conn.execute(
+                    """INSERT INTO sb_region_pincodes(region_id,pincode) VALUES(%s,%s)
+                       ON CONFLICT(region_id,pincode) DO UPDATE SET active=TRUE""",
+                    (row["id"], pin),
+                )
+            return {"region": row, "pincodes_added": len(pincodes)}
+    except HTTPException:
+        raise
+    except psycopg.errors.UniqueViolation as exc:
+        raise HTTPException(status_code=409, detail="Region name or code already exists.") from exc
+    except psycopg.Error as exc:
+        logger.exception("Region setup failed")
+        raise HTTPException(status_code=503, detail="Region and PIN-code setup failed.") from exc
+
+
 @app.get("/api/admin/product-creation/references")
 def product_creation_references(authorization: str | None = Header(default=None)) -> dict[str, Any]:
     """Read existing tax and warehouse references without creating or altering schema."""
