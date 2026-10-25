@@ -589,6 +589,8 @@ def create_invoice(body: InvoiceInput, authorization: str | None = Header(defaul
         _schema(c)
         gst_split={"cgst":Decimal("0"),"sgst":Decimal("0"),"igst":Decimal("0")}
         tax_config=c.execute("SELECT seller_state_code,rates_json FROM sb_tax_config WHERE id=1").fetchone()
+        if tax==0 and tax_config and any(item.get("hsn_code") or item.get("gst_rate") for item in body.items) and not body.place_of_supply_state_code:
+            raise HTTPException(422,"Place of supply is required to calculate GST from configured HSN rates.")
         if tax==0 and tax_config and body.place_of_supply_state_code:
             seller_state=str(tax_config["seller_state_code"])
             place_state=str(body.place_of_supply_state_code)
