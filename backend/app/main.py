@@ -94,7 +94,8 @@ def attach_catalogue_media_and_attributes(conn: psycopg.Connection, rows: list[d
             ).fetchall()
             if gallery:
                 row["gallery_images"] = gallery
-                row["image_url"] = next((im["image_url"] for im in gallery if im.get("image_url")), row.get("image_url"))
+                cover = next((im["image_url"] for im in gallery if im.get("image_url") and int(im.get("sort_order") or 0) == 0), None)
+                row["image_url"] = cover or row.get("image_url") or next((im["image_url"] for im in gallery if im.get("image_url")), None)
         # Prefer a saved variant image; if absent, use the product's saved cover image.
         if product_id and product_columns:
             candidates = [c for c in ("cover_image_url", "main_image_url", "image_url", "image", "image_1920") if c in product_columns]
@@ -954,8 +955,8 @@ def update_catalogue_product(
                 raise HTTPException(status_code=422, detail="Selected variant does not belong to this product.")
             if variant and variant_values:
                 requested_cover = body.variant_covers[0].strip() if body.variant_covers else ""
-                if requested_cover:
-                    if not requested_cover.startswith(("https://", "http://", "data:image/")) or (requested_cover.startswith("data:image/") and ";base64," not in requested_cover):
+                if body.variant_covers:
+                    if requested_cover and (not requested_cover.startswith(("https://", "http://", "data:image/")) or (requested_cover.startswith("data:image/") and ";base64," not in requested_cover)):
                         raise HTTPException(status_code=422, detail="Variant cover must be an HTTP(S) URL or valid image data URL.")
                     variant_values["image_url"] = requested_cover
                 assignments = ", ".join(f"{k}=%s" for k in variant_values)
