@@ -573,7 +573,8 @@ def pos_sale(body:POSInput,authorization:str|None=Header(default=None))->dict[st
                     customer_name=(customer["name"] if customer else "Walk-in customer"),
                     customer_email=(customer["email"] if customer else None),customer_phone=(customer["phone"] if customer else None),
                     subtotal=subtotal,tax_total=tax_total,total=total,lines=invoice_lines)
-                journal_lines=[("accounts_receivable",total,Decimal("0")),("sales",Decimal("0"),subtotal)]
+                conn.execute("UPDATE sb_sales_invoices SET amount_received=%s,payment_status='paid' WHERE source_type='pos' AND source_id=%s",(total,sale["id"]))
+                journal_lines=[("cash",total,Decimal("0")),("sales",Decimal("0"),subtotal)]
                 if tax_total:
                     journal_lines.append(("output_gst",Decimal("0"),tax_total))
                 if cogs_total:
