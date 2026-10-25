@@ -259,6 +259,23 @@ function AdminOrders(){
 }
 
 
+function InventoryStockLevels(){
+ const [items,setItems]=useState([]),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[search,setSearch]=useState('');
+ const token=()=>localStorage.getItem('sb_admin_token')||'';
+ async function load(){if(!token()){setError('Sign in as an administrator first.');return}setBusy(true);setError('');try{const r=await fetch(API_PATH('/admin/inventory/stock-levels'),{headers:{Authorization:'Bearer '+token()}});const j=await r.json().catch(()=>({}));if(!r.ok)throw Error(j.detail||'Could not load stock levels');setItems(j.items||[])}catch(e){setError(e.message||'Stock levels unavailable')}finally{setBusy(false)}}
+ useEffect(()=>{load()},[]);
+ async function replenish(item){const target=Number(item.minimum_quantity)||0;const suggested=Math.max(1,target-Number(item.quantity||0));const answer=window.prompt('How many units would you like to reorder for '+item.name+'? This will open a purchase order workflow; it will not change stock until goods are received.',String(suggested));if(answer===null)return;const qty=Number(answer);if(!Number.isFinite(qty)||qty<=0){setError('Enter a quantity greater than zero.');return}setNotice('Use Purchase Orders to place the supplier order for '+qty+' units of '+item.name+'. Stock will update only after the GRN is completed.');}
+ const filtered=items.filter(x=>[x.name,x.sku,x.brand,x.warehouse_name].some(v=>String(v||'').toLowerCase().includes(search.trim().toLowerCase())));
+ const low=filtered.filter(x=>Number(x.quantity)<=Number(x.minimum_quantity||0)&&Number(x.minimum_quantity||0)>0).length;
+ const out=filtered.filter(x=>Number(x.quantity)<=0).length;
+ return <section className="panel product-manager"><div className="panel-heading"><div><h2>Stock Levels</h2><p>See what is available in each warehouse and what needs replenishing.</p></div><button className="outline-action" onClick={load} disabled={busy}>{busy?'Loading…':'↻ Refresh'}</button></div>
+ {error&&<p className="review-feedback error" role="alert">{error}</p>}{notice&&<p className="review-feedback success" role="status">{notice}</p>}
+ <div className="metric-grid"><div className="metric-card"><span>Product variants</span><b>{items.length}</b></div><div className="metric-card"><span>Low stock</span><b>{items.filter(x=>Number(x.minimum_quantity||0)>0&&Number(x.quantity)<=Number(x.minimum_quantity)).length}</b></div><div className="metric-card"><span>Out of stock</span><b>{items.filter(x=>Number(x.quantity)<=0).length}</b></div></div>
+ <div className="moderation-controls"><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search product, SKU or warehouse" aria-label="Search stock levels"/></div>
+ <p className="module-overview-note">Stock is updated by completed goods receipts (GRN), sales and recorded stock corrections. Replenishing does not increase stock; stock changes after goods are received.</p>
+ <div className="user-table-wrap"><table className="user-table"><thead><tr><th>Product</th><th>SKU</th><th>Warehouse</th><th>Current stock</th><th>Minimum stock</th><th>Status</th><th>Action</th></tr></thead><tbody>{filtered.map((x,i)=>{const qty=Number(x.quantity)||0,min=Number(x.minimum_quantity)||0;const status=qty<=0?'Out of stock':min>0&&qty<=min?'Low stock':'In stock';return <tr key={x.variant_id+'-'+x.warehouse_id+'-'+i}><td><b>{x.name}</b><small>{x.brand||''}</small></td><td>{x.sku||'—'}</td><td>{x.warehouse_name||'—'}</td><td>{qty}</td><td>{min}</td><td><span className="status-badge">{status}</span></td><td>{min>0&&qty<=min?<button className="outline-action" onClick={()=>replenish(x)}>Replenish</button>:<span>—</span>}</td></tr>})}</tbody></table>{!busy&&!error&&filtered.length===0&&<p className="catalogue-empty">No stock records found. Complete a goods receipt (GRN) to add stock.</p>}</div></section>
+}
+
 function CategoryManager(){
  const [items,setItems]=useState([]),[name,setName]=useState(''),[parentId,setParentId]=useState(''),[editing,setEditing]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const token=()=>localStorage.getItem('sb_admin_token')||'';
