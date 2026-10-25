@@ -421,6 +421,10 @@ def list_products(
             specification_select = "p.specifications AS specifications" if "specifications" in product_columns else "'[]'::jsonb AS specifications"
             manufacturer_select = "p.manufacturer_details AS manufacturer_details" if "manufacturer_details" in product_columns else "'[]'::jsonb AS manufacturer_details"
             seller_select = "p.seller_details AS seller_details" if "seller_details" in product_columns else "'[]'::jsonb AS seller_details"
+            tax_category_select = "p.tax_category AS tax_category" if "tax_category" in product_columns else "''::text AS tax_category"
+            gst_rate_select = "p.gst_rate AS gst_rate" if "gst_rate" in product_columns else "NULL::numeric AS gst_rate"
+            sale_badge_select = "p.sale_badge AS sale_badge" if "sale_badge" in product_columns else "''::text AS sale_badge"
+            sale_badge_active_select = "p.sale_badge_active AS sale_badge_active" if "sale_badge_active" in product_columns else "FALSE AS sale_badge_active"
             currency_select = "v.currency AS currency" if "currency" in variant_columns else "'INR'::text AS currency"
             product_status_select = "p.status AS status" if "status" in product_columns else "'active'::text AS status"
             variant_status_select = "v.status AS variant_status" if "status" in variant_columns else "'active'::text AS variant_status"
@@ -486,7 +490,7 @@ def list_products(
                               {('v.sku' if 'sku' in variant_columns else 'NULL::text AS sku')},
                               {('v.mrp' if 'mrp' in variant_columns else 'NULL::numeric AS mrp')},
                               {('v.selling_price' if 'selling_price' in variant_columns else 'NULL::numeric AS selling_price')},
-                              {currency_select}, {image_select}, {specification_select}, {manufacturer_select}, {seller_select}, {review_select}{attribute_select}
+                              {currency_select}, {image_select}, {specification_select}, {manufacturer_select}, {seller_select}, {tax_category_select}, {gst_rate_select}, {sale_badge_select}, {sale_badge_active_select}, {review_select}{attribute_select}
                        FROM products p
                        JOIN product_variants v ON v.product_id = p.id
                        {category_join}
@@ -528,6 +532,10 @@ def get_product_by_variant(variant_id: int) -> dict[str, Any]:
             specification_select = "p.specifications AS specifications" if "specifications" in product_columns else "'[]'::jsonb AS specifications"
             manufacturer_select = "p.manufacturer_details AS manufacturer_details" if "manufacturer_details" in product_columns else "'[]'::jsonb AS manufacturer_details"
             seller_select = "p.seller_details AS seller_details" if "seller_details" in product_columns else "'[]'::jsonb AS seller_details"
+            tax_category_select = "p.tax_category AS tax_category" if "tax_category" in product_columns else "''::text AS tax_category"
+            gst_rate_select = "p.gst_rate AS gst_rate" if "gst_rate" in product_columns else "NULL::numeric AS gst_rate"
+            sale_badge_select = "p.sale_badge AS sale_badge" if "sale_badge" in product_columns else "''::text AS sale_badge"
+            sale_badge_active_select = "p.sale_badge_active AS sale_badge_active" if "sale_badge_active" in product_columns else "FALSE AS sale_badge_active"
             currency_select = "v.currency AS currency" if "currency" in variant_columns else "'INR'::text AS currency"
             category_join = "LEFT JOIN product_categories c ON c.id = p.category_id" if "category_id" in product_columns else "LEFT JOIN product_categories c ON FALSE"
             sku_select = "v.sku AS sku" if "sku" in variant_columns else "NULL::text AS sku"
