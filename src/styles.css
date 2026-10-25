@@ -221,3 +221,37 @@
 .pos-desk .pos-product-card{display:block}
 .pos-desk .pos-product-card .primary-cta{margin-top:12px;width:100%}
 @media(max-width:560px){.variant-picker select{font-size:14px}}
+
+
+/* Storefront reference layout: compact three-column mobile product cards and
+   independent, human-readable attribute selectors on product detail pages. */
+.product-card-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px}
+.product-card-actions .quick-add,.product-card-actions .wishlist-button{position:static;inset:auto;opacity:1;transform:none;display:grid;place-items:center;flex:0 0 32px;width:32px;height:32px;padding:0;border:0;border-radius:50%;box-shadow:0 3px 12px #28183c16;line-height:1}
+.product-card-actions .quick-add{background:var(--purple);color:#fff;font-size:14px}
+.product-card-actions .wishlist-button{background:#dc4bd4;color:#fff;font-size:18px}
+.product-card-actions .wishlist-button.is-saved{background:var(--purple);color:#fff}
+.variant-picker-groups{gap:16px}
+.variant-attribute-group{min-width:0;margin:0;padding:0;border:0}
+.variant-attribute-group legend{margin:0 0 8px;padding:0;color:var(--ink);font-size:12px;font-weight:800}
+.variant-radio-options{display:flex;flex-wrap:wrap;gap:8px}
+.variant-radio-option{display:inline-flex;align-items:center;gap:6px;padding:7px 11px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--ink);font-size:12px;font-weight:500;cursor:pointer}
+.variant-radio-option input{width:14px;height:14px;margin:0;accent-color:var(--purple)}
+.variant-radio-option:has(input:checked){border-color:var(--purple);background:#f3ebff;color:var(--purple);font-weight:700}
+@media(max-width:760px){
+ .products-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+ .product-tile{border-radius:10px}
+ .product-picture{height:clamp(88px,25vw,145px)}
+ .product-picture img{padding:6px;object-fit:contain}
+ .product-details{padding:8px}
+ .product-brand{display:none}
+ .product-details h3{font-size:10px;line-height:1.35;margin:2px 0 6px;min-height:27px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+ .price-line{gap:4px}
+ .price-line b{font-size:11px}
+ .price-line del{font-size:9px}
+ .variant-count{font-size:8px;padding:4px 6px;margin-top:5px}
+ .product-card-actions{margin-top:8px}
+ .product-card-actions .quick-add,.product-card-actions .wishlist-button{flex-basis:29px;width:29px;height:29px}
+ .product-card-actions .quick-add{font-size:12px}
+ .product-card-actions .wishlist-button{font-size:16px}
+ .view-details{display:none}
+}
