@@ -568,9 +568,23 @@ def update_return(return_id: int, body: ReturnStatusInput, authorization: str | 
           "picked_up":{"in_transit"},"in_transit":{"received_at_origin"},"received_at_origin":{"inspected"},
           "inspected":{"refunded"},"refunded":set(),"cancelled":set()}
         if body.status not in transitions.get(r["status"],set()): raise HTTPException(409,f"Cannot move return from {r['status']} to {body.status}.")
-        c.execute("UPDATE sb_returns SET status=%s,origin_warehouse_id=COALESCE(%s,origin_warehouse_id),updated_at=now() WHERE id=%s",(body.status,body.origin_warehouse_id,return_id))
-        if body.status=="received_at_origin" and body.origin_warehouse_id:
-            if not c.execute("SELECT id FROM sb_warehouses WHERE id=%s",(body.origin_warehouse_id,)).fetchone(): raise HTTPException(404,"Origin warehouse not found.")
+        items=list(r["items"])
+        if body.status=="inspected":
+            if r["origin_warehouse_id"] is None: raise HTTPException(409,"Set an origin warehouse before inspection.")
+            accepted={int(x.get("variant_id",0)):int(x.get("quantity",0)) for x in body.accepted_items}
+            returned={int(x["variant_id"]):int(x["quantity"]) for x in items}
+            if set(accepted)-set(returned) or any(q<0 or q>returned[vid] for vid,q in accepted.items()):
+                raise HTTPException(422,"Accepted quantities must be valid quantities from this return.")
+            for line in items:
+                vid=int(line["variant_id"]); good=accepted.get(vid,0)
+                line["accepted_quantity"]=good; line["rejected_quantity"]=int(line["quantity"])-good
+                if good:
+                    c.execute("""INSERT INTO sb_inventory_ledger(warehouse_id,variant_id,quantity_delta,movement_type,reference,note,actor_id)
+                      VALUES(%s,%s,%s,'return',%s,'Accepted customer return',%s)""",(r["origin_warehouse_id"],vid,good,r["reference"],actor["id"]))
+        if body.status=="received_at_origin":
+            if body.origin_warehouse_id is None: raise HTTPException(422,"Select the origin warehouse when the return arrives.")
+            if not c.execute("SELECT id FROM sb_warehouses WHERE id=%s AND active",(body.origin_warehouse_id,)).fetchone(): raise HTTPException(404,"Active origin warehouse not found.")
+        c.execute("UPDATE sb_returns SET status=%s,items=%s::jsonb,origin_warehouse_id=COALESCE(%s,origin_warehouse_id),updated_at=now() WHERE id=%s",(body.status,json.dumps(items),body.origin_warehouse_id,return_id))
         _event(c,r["reference"],"reverse_logistics_status",actor["id"],r["status"],body.status,{"invoice_reference":r["invoice_reference"]})
         return {"reference":r["reference"],"invoice_reference":r["invoice_reference"],"status":body.status}
 
