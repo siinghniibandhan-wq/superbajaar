@@ -41,7 +41,7 @@ def _schema(conn):
       id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE, phone TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL DEFAULT 'active', created_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
     """CREATE TABLE IF NOT EXISTS sb_procurements(
-      id BIGSERIAL PRIMARY KEY, reference TEXT NOT NULL UNIQUE, vendor_id BIGINT NOT NULL REFERENCES sb_vendors(id),
+      id BIGSERIAL PRIMARY KEY, reference TEXT NOT NULL UNIQUE, purchase_order_reference TEXT UNIQUE, vendor_id BIGINT NOT NULL REFERENCES sb_vendors(id),
       status TEXT NOT NULL DEFAULT 'draft', items JSONB NOT NULL DEFAULT '[]', expected_date DATE,
       created_by BIGINT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
     """CREATE TABLE IF NOT EXISTS sb_receipts(
@@ -77,6 +77,8 @@ def _schema(conn):
       created_at TIMESTAMPTZ NOT NULL DEFAULT now())"""
     ]
     for sql in statements: conn.execute(sql)
+    conn.execute("ALTER TABLE sb_procurements ADD COLUMN IF NOT EXISTS purchase_order_reference TEXT")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS sb_procurements_po_ref_uidx ON sb_procurements(purchase_order_reference) WHERE purchase_order_reference IS NOT NULL")
     conn.execute("CREATE INDEX IF NOT EXISTS sb_events_ref_idx ON sb_document_events(reference,created_at)")
     conn.execute("CREATE INDEX IF NOT EXISTS sb_inventory_variant_idx ON sb_inventory_ledger(variant_id,warehouse_id,created_at)")
     conn.execute("""INSERT INTO sb_accounts(code,name,account_type) VALUES
@@ -330,9 +332,9 @@ def convert_to_po(procurement_id: int, authorization: str | None = Header(defaul
         if not p: raise HTTPException(404,"Procurement record not found.")
         if p["status"] not in {"accepted","quoted"}: raise HTTPException(409,"Vendor must accept or quote before PO conversion.")
         ref=_ref("PO")
-        c.execute("UPDATE sb_procurements SET reference=%s,status='purchase_order',updated_at=now() WHERE id=%s",(ref,procurement_id))
-        _event(c,ref,"purchase_order_created",actor["id"],p["status"],"purchase_order",{"quotation_reference":p["reference"]})
-        return {"id":procurement_id,"reference":ref,"status":"purchase_order","vendor_id":p["vendor_id"],"items":p["items"]}
+        c.execute("UPDATE sb_procurements SET purchase_order_reference=%s,status='purchase_order',updated_at=now() WHERE id=%s",(ref,procurement_id))
+        _event(c,p["reference"],"purchase_order_created",actor["id"],p["status"],"purchase_order",{"quotation_reference":p["reference"],"purchase_order_reference":ref})
+        return {"id":procurement_id,"reference":p["reference"],"purchase_order_reference":ref,"status":"purchase_order","vendor_id":p["vendor_id"],"items":p["items"]}
 
 
 @router.post("/admin/procurements/{procurement_id}/receipts", status_code=201)
