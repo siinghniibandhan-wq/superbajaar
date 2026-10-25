@@ -269,7 +269,7 @@ function CategoryManager(){
 function ProductManager(){
  const [items,setItems]=useState([]),[categories,setCategories]=useState([]),[editing,setEditing]=useState(null),[formOpen,setFormOpen]=useState(false);
  const [form,setForm]=useState({name:'',selling_price:'',mrp:'',brand:'',description:'',category_id:'',sku:'',image_url:'',status:'active'}),[galleryUrls,setGalleryUrls]=useState(''),[galleryFiles,setGalleryFiles]=useState([]);
- const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]='';
+ const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const token=()=>localStorage.getItem('sb_admin_token')||'';
  async function load(){setError('');try{const [p,c]=await Promise.all([fetch(API_PATH('/products?limit=100')),fetch(API_PATH('/categories'))]);const pj=await p.json().catch(()=>({}));if(!p.ok)throw Error(pj.detail||'Could not load products');const cj=await c.json().catch(()=>({}));setItems(Array.isArray(pj)?pj:(pj.items||[]));setCategories(cj.items||[])}catch(e){setError(e.message||'Could not load catalogue')}}
  useEffect(()=>{load();const openCreate=()=>start(null);window.addEventListener('sb-product-create',openCreate);return()=>window.removeEventListener('sb-product-create',openCreate)},[]);
