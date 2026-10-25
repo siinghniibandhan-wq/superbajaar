@@ -582,11 +582,16 @@ def create_catalogue_product(
             variant_columns = _catalogue_columns(conn, "product_variants")
             if not product_columns or not variant_columns:
                 raise HTTPException(status_code=503, detail="The existing catalogue schema is unavailable.")
+            # Keep the cover image attached to the product record where the existing
+            # schema supports a text URL column, while retaining the variant image
+            # below for storefronts that select a specific variant.
+            cover_url = body.image_url.strip() or None
             product_values = {"product_code": "SB-" + uuid.uuid4().hex[:12].upper(),
                               "name": body.name.strip(), "brand": body.brand.strip(),
                               "description": body.description.strip(), "specifications": Jsonb(body.specifications),
                               "manufacturer_details": Jsonb(body.manufacturer_details), "seller_details": Jsonb(body.seller_details),
-                              "category_id": body.category_id, "status": body.status}
+                              "category_id": body.category_id, "status": body.status,
+                              "cover_image_url": cover_url, "main_image_url": cover_url, "image_url": cover_url}
             product = _catalogue_insert(conn, "products", product_values)
             variant_values = {"product_id": product["id"], "selling_price": body.selling_price,
                               "mrp": body.mrp, "sku": body.sku.strip() or None,
@@ -613,10 +618,15 @@ def update_catalogue_product(
             variant_columns = _catalogue_columns(conn, "product_variants")
             if not product_columns or not variant_columns:
                 raise HTTPException(status_code=503, detail="The existing catalogue schema is unavailable.")
+            # Update the product-level cover as well as the selected variant image.
+            # _catalogue_columns filters these optional fields to the columns that
+            # actually exist, so this remains compatible with the live schema.
+            cover_url = body.image_url.strip() or None
             product_values = {"name": body.name.strip(), "brand": body.brand.strip(),
                               "description": body.description.strip(), "specifications": Jsonb(body.specifications),
                               "manufacturer_details": Jsonb(body.manufacturer_details), "seller_details": Jsonb(body.seller_details),
-                              "category_id": body.category_id, "status": body.status}
+                              "category_id": body.category_id, "status": body.status,
+                              "cover_image_url": cover_url, "main_image_url": cover_url, "image_url": cover_url}
             product_values = {k: v for k, v in product_values.items() if k in product_columns}
             if not product_values:
                 raise HTTPException(status_code=503, detail="The product schema has no editable fields.")
