@@ -65,38 +65,107 @@ function Store({goAdmin}) {
  useEffect(()=>{if(!customerToken){setCustomer(null);setLoyaltyWallet(null);return}let active=true;(async()=>{try{const walletResponse=await fetch(API_PATH('/loyalty/me'),{headers:{Authorization:'Bearer '+customerToken}});if(walletResponse.ok){const walletData=await walletResponse.json();if(active)setLoyaltyWallet(walletData)}const r=await fetch(API_PATH('/auth/me'),{headers:{Authorization:'Bearer '+customerToken}});const j=await r.json().catch(()=>({}));if(!r.ok)throw Error(j.detail||'Session expired');if(active)setCustomer(j.user)}catch{if(active){localStorage.removeItem('sb_customer_token');setCustomerToken('');setCustomer(null);setCustomerMessage('Your session expired. Please sign in again.')}}})();return()=>{active=false}},[customerToken]);
  useEffect(()=>{if(page!=='orders'||!customerToken)return;let active=true;(async()=>{try{const r=await fetch(API_PATH('/orders/me'),{headers:{Authorization:'Bearer '+customerToken}});const j=await r.json().catch(()=>({}));if(!r.ok)throw Error(j.detail||'Could not load orders');if(active)setCustomerOrders(j.items||[])}catch(e){if(active)setCustomerMessage(e.message||'Could not load orders')}})();return()=>{active=false}},[page,customerToken]);
  const variantGroupKey=p=>String(p.product_id||p.parent_product_id||p.parent_id||p.product?.id||p.name||p.sku||keyOf(p));
- function variantLabel(p){
-  const human=v=>{if(v==null)return '';if(typeof v==='string'||typeof v==='number')return String(v);if(Array.isArray(v))return v.map(human).filter(Boolean).join(', ');if(typeof v==='object'){if(Array.isArray(v.display_name))return v.display_name.join(', ');return human(v.display_name||v.value_name||v.value||v.name||v.label||v.attribute_value_name||v.attribute_name||v.attribute||v.values||v.value_ids)}return ''};
-  const clean=v=>{const x=human(v).trim();return /^ODOO[-_ ]?VAR[-_ ]?\d+$/i.test(x)?'':x};
-  const attributeName=clean(p.attribute_name||p.variant_type_name||p.variant_type);
-  const attributeValue=clean(p.attribute_value||p.variant_value);
-  if(attributeName&&attributeValue&&attributeName!==attributeValue)return attributeName+': '+attributeValue;
-  // Prefer structured attribute/value pairs over display_name or short variant codes.
-  // Some catalogue APIs use display_name for an internal variant label, which hides
-  // the human-readable attribute names even when structured attributes are available.
-  const attrFields=[p.attributes,p.attribute_values,p.variant_attributes,p.attribute_lines,p.product_template_attribute_value_ids,p.product_template_variant_value_ids,p.product_variant_attributes,p.combination,p.attribute_value_ids,p.variant_attribute_values,p.attribute_values_ids];
-  for(const field of attrFields){
-   const entries=Array.isArray(field)?field:(field&&typeof field==='object'?Object.entries(field):[]);
-   const parts=entries.map(item=>{
-    if(Array.isArray(item)){
-     if(item.length>1&&typeof item[0]==='string')return clean(item[0])+': '+clean(item[1]);
-     if(item.length>1)return clean(item[1]);
-     return clean(item[0]);
+ function variantAttributeMap(p){
+  const result={};
+  const human=v=>{
+   if(v==null)return '';
+   if(typeof v==='string'||typeof v==='number')return String(v);
+   if(Array.isArray(v))return v.map(human).filter(Boolean).join(', ');
+   if(typeof v==='object')return human(v.display_name||v.value_name||v.attribute_value_name||v.value?.name||v.value?.display_name||v.value||v.name||v.label||v.attribute_name||v.attribute);
+   return '';
+  };
+  const clean=v=>{const value=human(v).trim();return /^ODOO[-_ ]?VAR[-_ ]?\d+$/i.test(value)?'':value};
+  const put=(name,value)=>{
+   const key=clean(name),val=clean(value);
+   if(key&&val&&key!==val&&!/^id$/i.test(key))result[key]=val;
+  };
+  const parseText=value=>{
+   const text=clean(value);
+   if(!text)return;
+   text.split(/\s*(?:·|\||;)\s*/).forEach(part=>{
+    const match=part.match(/^([^:]{1,60})\s*:\s*(.+)$/);
+    if(match)put(match[1],match[2]);
+   });
+  };
+  const read=(field)=>{
+   if(field==null)return;
+   if(typeof field==='string'){
+    const trimmed=field.trim();
+    if((trimmed.startsWith('{')&&trimmed.endsWith('}'))||(trimmed.startsWith('[')&&trimmed.endsWith(']'))){
+     try{const parsed=JSON.parse(trimmed);if(parsed&&parsed!==field){read(parsed);return}}catch{}
     }
-    if(!item||typeof item!=='object')return clean(item);
-    const value=clean(item.value_name||item.attribute_value_name||item.value?.name||item.value?.display_name||item.value||item.display_value||item.display_name||item.label||item.name);
-    const attribute=clean(item.attribute_name||item.attribute?.name||item.attribute?.display_name||item.attribute?.[1]||item.attribute_id?.name||(Array.isArray(item.attribute_id)?item.attribute_id[1]:'')||item.attribute?.label);
-    if(attribute&&value&&attribute!==value)return attribute+': '+value;
-    return value||attribute;
-   }).filter(Boolean);
-   if(parts.length)return [...new Set(parts)].join(' · ');
+    parseText(trimmed);return;
+   }
+   if(Array.isArray(field)){
+    field.forEach(item=>{
+     if(Array.isArray(item)){
+      if(item.length>1&&typeof item[0]==='string'&&String(item[0]).includes(':'))parseText(item[0]+': '+human(item[1]));
+      else if(item.length>1&&typeof item[1]==='string'&&String(item[1]).includes(':'))parseText(item[1]);
+      else if(item.length>1&&typeof item[0]==='string'&&!/^\d+$/.test(item[0]))put(item[0],item[1]);
+      else parseText(item.length>1?item[1]:item[0]);
+      return;
+     }
+     if(typeof item==='string'||typeof item==='number'){parseText(item);return}
+     if(!item||typeof item!=='object')return;
+     const attribute=item.attribute_name||item.attribute?.name||item.attribute?.display_name||item.attribute_id?.name||(Array.isArray(item.attribute_id)?item.attribute_id[1]:'')||item.attribute?.label;
+     const value=item.attribute_value_name||item.value_name||item.value?.name||item.value?.display_name||item.value||item.display_value||item.display_name||item.label||item.name;
+     if(attribute&&value)put(attribute,value);
+     else if(item.name)parseText(item.name);
+     else Object.entries(item).forEach(([key,val])=>{if(!['id','attribute_id','create_date','write_date'].includes(key)&&typeof val!=='object')put(key,val)});
+    });
+    return;
+   }
+   if(typeof field==='object'){
+    const attribute=field.attribute_name||field.attribute?.name||field.attribute?.display_name||field.attribute_id?.name||(Array.isArray(field.attribute_id)?field.attribute_id[1]:'');
+    const value=field.attribute_value_name||field.value_name||field.value?.name||field.value?.display_name||field.value||field.display_value||field.display_name||field.label;
+    if(attribute&&value){put(attribute,value);return}
+    Object.entries(field).forEach(([key,val])=>{if(!['id','create_date','write_date'].includes(key)&&val!=null){if(typeof val==='object')read(val);else put(key,val)}});
+   }
+  };
+  put(p.attribute_name||p.variant_type_name||p.variant_type,p.attribute_value||p.variant_value||p.variant_type_value);
+  read(p.attributes);read(p.attribute_values);read(p.variant_attributes);read(p.attribute_lines);
+  read(p.product_template_attribute_value_ids);read(p.product_template_variant_value_ids);
+  read(p.product_variant_attributes);read(p.combination);read(p.attribute_value_ids);
+  read(p.variant_attribute_values);read(p.attribute_values_ids);
+  parseText(p.variant_label);parseText(p.option_label);parseText(p.attributes_label);
+  parseText(p.attribute_values_display);parseText(p.variant_description);parseText(p.variant_name);parseText(p.variant_title);
+  if(p.quantity_label)put('Qty',p.quantity_label);
+  if(p.weight)put('Weight',p.weight);
+  if(p.pack_size)put('Pack size',p.pack_size);
+  if(p.volume)put('Volume',p.volume);
+  if(p.size)put('Size',p.size);
+  return result;
+ }
+ function variantAttributeGroups(variants){
+  const maps=(variants||[]).map(variantAttributeMap);
+  const names=[...new Set(maps.flatMap(map=>Object.keys(map)))];
+  return names.map(name=>({name,values:[...new Set(maps.map(map=>map[name]).filter(Boolean))]})).filter(group=>group.values.length);
+ }
+ function variantLabel(p){
+  const attributes=variantAttributeMap(p);
+  const pairs=Object.entries(attributes);
+  if(pairs.length)return pairs.map(([name,value])=>name+': '+value).join(' · ');
+  const human=v=>{if(v==null)return '';if(typeof v==='string'||typeof v==='number')return String(v);if(Array.isArray(v))return v.map(human).filter(Boolean).join(', ');if(typeof v==='object')return human(v.display_name||v.value_name||v.value||v.name||v.label||v.attribute_value_name||v.attribute_name||v.attribute||v.values||v.value_ids);return ''};
+  const clean=v=>{const x=human(v).trim();return /^ODOO[-_ ]?VAR[-_ ]?\d+$/i.test(x)?'':x};
+  for(const v of [p.variant_label,p.option_label,p.attributes_label,p.attribute_values_display,p.variant_description,p.variant_name,p.variant_title,p.display_name,p.variant_display_name,p.size,p.weight,p.pack_size,p.unit,p.volume,p.quantity_label]){
+   const label=clean(v);if(label)return label;
   }
-  const direct=[p.variant_label,p.option_label,p.attributes_label,p.attribute_values_display,p.variant_description,p.variant_name,p.variant_title,p.display_name,p.variant_display_name];
-  for(const v of direct){const x=clean(v);if(x)return x}
-  for(const v of [p.size,p.weight,p.pack_size,p.unit,p.volume,p.quantity_label]){const x=clean(v);if(x)return x}
   const sku=clean(p.sku);if(sku&&!/^ODOO[-_ ]?VAR[-_ ]?\d+$/i.test(sku))return sku;
   return 'Select option';
-}
+ }
+ function selectVariantAttribute(attribute,value){
+  if(!selectedProduct)return;
+  const variants=selectedProduct._variants||[selectedProduct];
+  const current=variantAttributeMap(selectedProduct);
+  const candidates=variants.filter(variant=>variantAttributeMap(variant)[attribute]===value);
+  const chosen=candidates.find(variant=>{
+   const attrs=variantAttributeMap(variant);
+   return Object.entries(current).every(([name,currentValue])=>name===attribute||attrs[name]===currentValue);
+  })||candidates[0];
+  if(!chosen)return;
+  setSelectedProduct({...chosen,_variants:variants});
+  if(chosen.variant_id)history.replaceState({},'',`/product/${productSlug(chosen)}`);
+ }
  const productGroups=useMemo(()=>{const groups=new Map();for(const p of products){const k=variantGroupKey(p);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(p)}return [...groups.values()].map(variants=>({ ...variants[0], _variants:variants, _minPrice:Math.min(...variants.map(v=>Number(v.selling_price??v.price??0))), _maxPrice:Math.max(...variants.map(v=>Number(v.selling_price??v.price??0))) }))},[products]);
  const shown=useMemo(()=>{const rows=productGroups.filter(p=>(category==='All'||p.category===category)&&[p.name,p.brand,p.description,p.category,...(p._variants||[]).map(variantLabel)].some(v=>String(v||'').toLowerCase().includes(search.toLowerCase())));if(sort==='price-low')rows.sort((a,b)=>a._minPrice-b._minPrice);if(sort==='price-high')rows.sort((a,b)=>b._maxPrice-a._maxPrice);if(sort==='name')rows.sort((a,b)=>String(a.name||'').localeCompare(String(b.name||'')));return rows},[productGroups,category,search,sort]);
  const count=cart.reduce((n,x)=>n+x.qty,0),subtotal=cart.reduce((sum,item)=>{const p=item.product||products.find(x=>keyOf(x)===item.key)||{};return sum+Number(p.selling_price??p.price??0)*item.qty},0);
