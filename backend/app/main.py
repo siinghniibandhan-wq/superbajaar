@@ -116,6 +116,10 @@ def attach_catalogue_media_and_attributes(conn: psycopg.Connection, rows: list[d
                     detail = conn.execute(f'SELECT "{col}" FROM products WHERE id=%s', (product_id,)).fetchone()
                     if detail and detail.get(col) is not None:
                         row[col] = detail[col]
+        if product_id and conn.execute("SELECT to_regclass('public.catalog_product_tax') AS t").fetchone()["t"]:
+            tax_row = conn.execute("SELECT hsn_code FROM catalog_product_tax WHERE product_id=%s", (product_id,)).fetchone()
+            if tax_row:
+                row["hsn_code"] = tax_row.get("hsn_code") or ""
         # Convert legacy Odoo binary/base64 image fields to browser-loadable data URLs.
         import base64
         for key in ("image_url", "image", "image_1920"):
@@ -792,6 +796,7 @@ class ProductWriteInput(BaseModel):
     sku: str = Field(default="", max_length=120)
     image_url: str = Field(default="", max_length=6000000)
     tax_category: str = Field(default="", max_length=120)
+    hsn_code: str = Field(default="", max_length=20)
     gst_rate: float | None = Field(default=None, ge=0, le=100)
     tax_inclusive: bool = True
     sale_badge: str = Field(default="", max_length=80)
@@ -855,6 +860,12 @@ def create_catalogue_product(
                               "sale_badge": body.sale_badge.strip(), "sale_badge_active": body.sale_badge_active,
                               "cover_image_url": cover_url, "main_image_url": cover_url, "image_url": cover_url}
             product = _catalogue_insert(conn, "products", product_values)
+            if body.hsn_code.strip() and conn.execute("SELECT to_regclass('public.catalog_product_tax') AS t").fetchone()["t"]:
+                conn.execute(
+                    """INSERT INTO catalog_product_tax(product_id,hsn_code) VALUES(%s,%s)
+                       ON CONFLICT(product_id) DO UPDATE SET hsn_code=EXCLUDED.hsn_code,updated_at=now()""",
+                    (product["id"], body.hsn_code.strip()),
+                )
             normalized_attributes: list[tuple[int, str, list[str]]] = []
             for item in body.attributes:
                 attr_name = str(item.get("name") or "").strip()
@@ -975,6 +986,12 @@ def update_catalogue_product(
             ).fetchone()
             if not product:
                 raise HTTPException(status_code=404, detail="Product not found.")
+            if body.hsn_code.strip() and conn.execute("SELECT to_regclass('public.catalog_product_tax') AS t").fetchone()["t"]:
+                conn.execute(
+                    """INSERT INTO catalog_product_tax(product_id,hsn_code) VALUES(%s,%s)
+                       ON CONFLICT(product_id) DO UPDATE SET hsn_code=EXCLUDED.hsn_code,updated_at=now()""",
+                    (product_id, body.hsn_code.strip()),
+                )
             variant_values = {"selling_price": body.selling_price, "mrp": body.mrp,
                               "sku": body.sku.strip() or None, "image_url": body.image_url.strip() or None,
                               "status": body.status}
