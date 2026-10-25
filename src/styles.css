@@ -242,7 +242,7 @@
  .products-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
  .product-tile{border-radius:10px}
  .product-picture{height:clamp(88px,25vw,145px)}
- .product-picture img{padding:0;object-fit:cover}
+ .product-picture img{padding:4px;object-fit:contain}
  .product-tag{display:none}
  .product-details{padding:8px}
  .product-brand{display:none}
