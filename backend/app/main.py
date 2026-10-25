@@ -473,6 +473,10 @@ app.include_router(accounting_router)
 from .operations import router as operations_router
 app.include_router(operations_router)
 
+# Sales invoices are created transactionally by POS and website checkout, then confirmed/paid by staff.
+from .invoices import router as invoices_router
+app.include_router(invoices_router)
+
 
 from .loyalty import router as loyalty_router
 app.include_router(loyalty_router)
