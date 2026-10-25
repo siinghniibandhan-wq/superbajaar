@@ -191,7 +191,7 @@ def list_products(
                               {('v.sku' if 'sku' in variant_columns else 'NULL::text AS sku')},
                               {('v.mrp' if 'mrp' in variant_columns else 'NULL::numeric AS mrp')},
                               {('v.selling_price' if 'selling_price' in variant_columns else 'NULL::numeric AS selling_price')},
-                              {currency_select}, {image_select}, {review_select}{attribute_select}
+                              {currency_select}, {image_select}, {specification_select}, {manufacturer_select}, {seller_select}, {review_select}{attribute_select}
                        FROM products p
                        JOIN product_variants v ON v.product_id = p.id
                        {category_join}
