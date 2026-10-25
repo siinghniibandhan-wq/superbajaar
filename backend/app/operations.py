@@ -774,8 +774,12 @@ def accounting_overview(authorization: str | None = Header(default=None)):
         website=c.execute("""SELECT COUNT(*)::int count,COALESCE(SUM(total),0) total,
           COALESCE(SUM(CASE WHEN payment_status='paid' THEN total ELSE 0 END),0) paid
           FROM store_orders WHERE status NOT IN ('cancelled')""").fetchone()
+        credit_total=c.execute("SELECT COALESCE(SUM(amount),0) amount FROM sb_credit_notes WHERE status='posted'").fetchone()["amount"]
+        gross_sales=operational["total"]+website["total"]
         return {
-          "sales_invoices":{"count":operational["count"]+website["count"],"total":operational["total"]+website["total"],"paid":operational["paid"]+website["paid"]},
+          "sales_invoices":{"count":operational["count"]+website["count"],"total":gross_sales,"paid":operational["paid"]+website["paid"]},
+          "credit_notes":credit_total,
+          "net_sales":gross_sales-credit_total,
           "receivables":c.execute("SELECT COALESCE(SUM(total-paid_total),0) amount FROM sb_invoices WHERE status IN ('issued','partially_paid','overdue')").fetchone()["amount"] + c.execute("SELECT COALESCE(SUM(CASE WHEN payment_status='paid' THEN 0 ELSE total END),0) amount FROM store_orders WHERE status NOT IN ('cancelled')").fetchone()["amount"],
           "payables":0,
           "cash_collected":c.execute("SELECT COALESCE(SUM(amount),0) amount FROM sb_payments WHERE status='posted'").fetchone()["amount"] + c.execute("SELECT COALESCE(SUM(CASE WHEN payment_status='paid' THEN total ELSE 0 END),0) amount FROM store_orders").fetchone()["amount"],
