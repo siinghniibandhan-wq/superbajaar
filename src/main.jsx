@@ -269,7 +269,7 @@ function InventoryStockLevels(){
  const filtered=items.filter(x=>[x.name,x.sku,x.brand,x.warehouse_name].some(v=>String(v||'').toLowerCase().includes(search.trim().toLowerCase())));
  const low=filtered.filter(x=>Number(x.quantity)<=Number(x.minimum_quantity||0)&&Number(x.minimum_quantity||0)>0).length;
  const out=filtered.filter(x=>Number(x.quantity)<=0).length;
- return <section className="panel product-manager"><div className="panel-heading"><div><h2>Stock Levels</h2><p>See what is available in each warehouse and what needs replenishing.</p></div><button className="outline-action" onClick={load} disabled={busy}>{busy?'Loading…':'↻ Refresh'}</button></div>
+ return <section className="panel product-manager inventory-stock-levels"><div className="panel-heading"><div><h2>Stock Levels</h2><p>See what is available in each warehouse and what needs replenishing.</p></div><button className="outline-action" onClick={load} disabled={busy}>{busy?'Loading…':'↻ Refresh'}</button></div>
  {error&&<p className="review-feedback error" role="alert">{error}</p>}{notice&&<p className="review-feedback success" role="status">{notice}</p>}
  <div className="metric-grid"><div className="metric-card"><span>Product variants</span><b>{items.length}</b></div><div className="metric-card"><span>Low stock</span><b>{items.filter(x=>Number(x.minimum_quantity||0)>0&&Number(x.quantity)<=Number(x.minimum_quantity)).length}</b></div><div className="metric-card"><span>Out of stock</span><b>{items.filter(x=>Number(x.quantity)<=0).length}</b></div></div>
  <div className="moderation-controls"><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search product, SKU or warehouse" aria-label="Search stock levels"/></div>
