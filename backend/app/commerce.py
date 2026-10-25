@@ -417,6 +417,7 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
             ensure_loyalty(conn)
             products: list[dict[str, Any]] = []
             subtotal = Decimal("0")
+            tax_total = Decimal("0")
             for variant_id, quantity in quantities.items():
                 product_columns = {r["column_name"] for r in conn.execute(
                     "SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='products'"
@@ -429,9 +430,11 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
                 active_product = " AND p.status='active'" if "status" in product_columns else ""
                 active_variant = " AND v.status='active'" if "status" in variant_columns else ""
                 sku_select = "v.sku" if "sku" in variant_columns else "NULL::text"
+                tax_rate_select = "p.gst_rate" if "gst_rate" in product_columns else "NULL::numeric"
+                tax_inclusive_select = "p.tax_inclusive" if "tax_inclusive" in product_columns else "TRUE"
                 product = conn.execute(
                     f"""SELECT p.id AS product_id,p.name,v.id AS variant_id,
-                               v.selling_price,{sku_select} AS sku
+                               v.selling_price,{sku_select} AS sku,{tax_rate_select} AS gst_rate,{tax_inclusive_select} AS tax_inclusive
                         FROM products p JOIN product_variants v ON v.product_id=p.id
                         WHERE v.id=%s{active_product}{active_variant}
                         FOR SHARE OF p,v""", (variant_id,)
@@ -443,9 +446,42 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
                 price = Decimal(str(product["selling_price"] or 0))
                 if price <= 0:
                     raise HTTPException(status_code=409, detail=f"Price is not configured for {product['name']}.")
-                line_total = (price * quantity).quantize(Decimal("0.01"))
+                rate = Decimal(str(product.get("gst_rate") or 0))
+                if rate < 0 or rate > 100:
+                    raise HTTPException(status_code=503, detail=f"GST rate is invalid for {product['name']}.")
+                inclusive = bool(product.get("tax_inclusive", True))
+                if rate > 0 and not inclusive:
+                    taxable_unit = price
+                    gross_unit = price * (Decimal("1") + rate / Decimal("100"))
+                elif rate > 0:
+                    gross_unit = price
+                    taxable_unit = price / (Decimal("1") + rate / Decimal("100"))
+                else:
+                    gross_unit = price
+                    taxable_unit = price
+                line_total = (gross_unit * quantity).quantize(Decimal("0.01"))
+                taxable_amount = (taxable_unit * quantity).quantize(Decimal("0.01"))
+                tax_amount = (line_total - taxable_amount).quantize(Decimal("0.01"))
+                cgst_amount = Decimal("0")
+                sgst_amount = Decimal("0")
+                igst_amount = Decimal("0")
+                if tax_amount > 0:
+                    seller_row = conn.execute("SELECT seller_state_code FROM sb_tax_config WHERE id=1").fetchone() if conn.execute("SELECT to_regclass('public.sb_tax_config') AS t").fetchone()["t"] else None
+                    seller_code = _india_state_code(seller_row.get("seller_state_code") if seller_row else None)
+                    buyer_code = _india_state_code(body.shipping_address.state)
+                    if not seller_code or not buyer_code:
+                        raise HTTPException(status_code=422, detail="Configure the seller GST state code and enter a recognised delivery state before placing a GST-taxed order.")
+                    if seller_code == buyer_code:
+                        cgst_amount = (tax_amount / Decimal("2")).quantize(Decimal("0.01"))
+                        sgst_amount = tax_amount - cgst_amount
+                    else:
+                        igst_amount = tax_amount
                 subtotal += line_total
-                products.append({**product, "quantity": quantity, "unit_price": price, "line_total": line_total})
+                tax_total += tax_amount
+                products.append({**product, "quantity": quantity, "unit_price": price, "line_total": line_total,
+                                 "tax_rate": rate, "taxable_amount": taxable_amount, "tax_amount": tax_amount,
+                                 "cgst_amount": cgst_amount, "sgst_amount": sgst_amount, "igst_amount": igst_amount,
+                                 "tax_inclusive": inclusive})
             delivery_row = conn.execute(
                 "SELECT setting_value FROM store_settings WHERE setting_key='delivery'"
             ).fetchone()
@@ -483,10 +519,10 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
             order_number = "SB-" + secrets.token_hex(5).upper()
             row = conn.execute(
                 """INSERT INTO store_orders
-                   (order_number,user_id,status,payment_method,payment_status,subtotal,shipping_fee,total,loyalty_discount,loyalty_coins_redeemed,shipping_address,customer_note)
-                   VALUES (%s,%s,'placed','cash_on_delivery','pending',%s,%s,%s,%s,%s,%s::jsonb,%s)
+                   (order_number,user_id,status,payment_method,payment_status,subtotal,shipping_fee,total,tax_total,loyalty_discount,loyalty_coins_redeemed,shipping_address,customer_note)
+                   VALUES (%s,%s,'placed','cash_on_delivery','pending',%s,%s,%s,%s,%s,%s,%s::jsonb,%s)
                    RETURNING id""",
-                (order_number, user["id"], subtotal, shipping_fee, total, loyalty_discount, coins_used,
+                (order_number, user["id"], subtotal, shipping_fee, total, tax_total, loyalty_discount, coins_used,
                  json.dumps(body.shipping_address.model_dump()), body.customer_note.strip())
             ).fetchone()
             if coins_used:
@@ -495,10 +531,12 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
             for product in products:
                 conn.execute(
                     """INSERT INTO store_order_items
-                       (order_id,variant_id,product_id,sku,product_name,quantity,unit_price,line_total)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                       (order_id,variant_id,product_id,sku,product_name,quantity,unit_price,line_total,tax_rate,taxable_amount,cgst_amount,sgst_amount,igst_amount,tax_amount,tax_inclusive)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (row["id"], product["variant_id"], product["product_id"], product["sku"],
-                     product["name"], product["quantity"], product["unit_price"], product["line_total"])
+                     product["name"], product["quantity"], product["unit_price"], product["line_total"],
+                     product["tax_rate"], product["taxable_amount"], product["cgst_amount"], product["sgst_amount"],
+                     product["igst_amount"], product["tax_amount"], product["tax_inclusive"])
                 )
                 stock=conn.execute("SELECT quantity FROM sb_stock WHERE variant_id=%s AND warehouse='Main' FOR UPDATE",(product["variant_id"],)).fetchone()
                 # Enforce inventory only for variants explicitly tracked in the stock ledger.
