@@ -365,7 +365,7 @@ def moderate_product_review(
 
 
 class VariantImageInput(BaseModel):
-    image_url: str = Field(min_length=1, max_length=5500000)
+    image_url: str = Field(min_length=1, max_length=6000000)
     alt_text: str = Field(default="", max_length=240)
     sort_order: int = Field(default=0, ge=0, le=10000)
 
