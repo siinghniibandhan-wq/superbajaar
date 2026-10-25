@@ -89,6 +89,10 @@ def list_products(
             attribute_select = (", " + attribute_select) if attribute_select else ""
             category_id_select = "p.category_id AS category_id" if "category_id" in product_columns else "NULL::bigint AS category_id"
             category_join = "LEFT JOIN product_categories c ON c.id = p.category_id" if "category_id" in product_columns else "LEFT JOIN product_categories c ON FALSE"
+            reviews_table = conn.execute("SELECT to_regclass('public.product_reviews') AS table_name").fetchone()["table_name"]
+            review_select = ("""COALESCE((SELECT AVG(r.rating)::numeric(3,2) FROM product_reviews r WHERE r.product_id=p.id AND r.status='approved'),0) AS average_rating,
+                                COALESCE((SELECT COUNT(*)::int FROM product_reviews r WHERE r.product_id=p.id AND r.status='approved'),0) AS review_count"""
+                             if reviews_table else "0::numeric AS average_rating, 0::int AS review_count")
             where = [product_status, variant_status]
             params: list[Any] = []
             if search.strip():
@@ -108,7 +112,7 @@ def list_products(
                               {('v.sku' if 'sku' in variant_columns else 'NULL::text AS sku')},
                               {('v.mrp' if 'mrp' in variant_columns else 'NULL::numeric AS mrp')},
                               {('v.selling_price' if 'selling_price' in variant_columns else 'NULL::numeric AS selling_price')},
-                              {currency_select}, {image_select}{attribute_select}
+                              {currency_select}, {image_select}, {review_select}{attribute_select}
                        FROM products p
                        JOIN product_variants v ON v.product_id = p.id
                        {category_join}
@@ -448,8 +452,13 @@ def list_categories() -> dict[str, Any]:
             columns = get_columns(conn, "product_categories")
             if not columns:
                 raise HTTPException(status_code=503, detail="The existing category table is not available")
-            status_filter = "WHERE status = 'active'" if "status" in columns else ""
-            rows = conn.execute(f"SELECT id, name FROM product_categories {status_filter} ORDER BY name").fetchall()
+            status_filter = "WHERE c.status = 'active'" if "status" in columns else ""
+            parent_select = "c.parent_id AS parent_id, parent.name AS parent_name" if "parent_id" in columns else "NULL::bigint AS parent_id, NULL::text AS parent_name"
+            rows = conn.execute(f"""SELECT c.id, c.name, {parent_select}
+                FROM product_categories c
+                LEFT JOIN product_categories parent ON parent.id = c.parent_id
+                {status_filter}
+                ORDER BY COALESCE(parent.name, c.name), c.parent_id NULLS FIRST, c.name""").fetchall()
             return {"items": rows}
     except HTTPException:
         raise
