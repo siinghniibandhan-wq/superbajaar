@@ -151,6 +151,50 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/admin/operations/readiness")
+def operational_readiness(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    """Return authenticated, real schema readiness checks for the admin dashboard."""
+    from .auth import _require
+    _require(authorization, {"super_admin", "admin"})
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            existing = {
+                name: bool(conn.execute("SELECT to_regclass(%s) AS table_name", (f"public.{name}",)).fetchone()["table_name"])
+                for name in (
+                    "products", "product_variants", "catalog_attributes", "variant_attribute_values",
+                    "sb_stock", "sb_stock_movements", "sb_inventory_ledger", "sb_warehouses",
+                    "sb_purchase_orders", "sb_procurements", "sb_pos_sales", "sb_invoices",
+                    "sb_accounts", "sb_journal_entries", "sb_employees", "sb_attendance",
+                    "sb_payroll_runs", "sb_shipments", "orders",
+                )
+            }
+            def item(label: str, required: tuple[str, ...], message: str) -> dict[str, Any]:
+                missing = [table for table in required if not existing.get(table, False)]
+                return {
+                    "status": "connected" if not missing else "needs_setup",
+                    "integrated": not missing,
+                    "tables_detected": [table for table in required if existing.get(table, False)],
+                    "message": message if not missing else "Missing required database tables: " + ", ".join(missing),
+                }
+            return {
+                "catalogue": item("Catalogue", ("products", "product_variants"), "Product and variant tables are available."),
+                "inventory": item("Inventory", ("sb_stock", "sb_stock_movements"), "Inventory ledger tables are available."),
+                "delivery": item("Delivery", ("sb_shipments",), "Shipment table is available."),
+                "payments": item("Payments", ("sb_invoices",), "Invoice/payment foundation is available."),
+                "purchasing": item("Purchasing", ("sb_purchase_orders",), "Purchase-order table is available."),
+                "accounting": item("Accounting", ("sb_accounts", "sb_journal_entries"), "Accounting tables are available."),
+                "logistics": item("Logistics", ("sb_shipments",), "Shipment table is available."),
+                "people": item("People", ("sb_employees", "sb_attendance", "sb_payroll_runs"), "HR and payroll tables are available."),
+            }
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        logger.exception("Operational readiness database check failed")
+        raise HTTPException(status_code=503, detail="Operational readiness could not query the database schema.") from exc
+
+
+
+
 @app.get("/api/products")
 def list_products(
     search: str = Query(default="", max_length=120),
