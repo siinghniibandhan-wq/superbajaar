@@ -492,13 +492,23 @@ def document_timeline(reference: str, authorization: str | None = Header(default
                 "SELECT id,order_number,invoice_number,source_channel,status,created_at,updated_at FROM store_orders WHERE invoice_number=%s OR order_number=%s LIMIT 1",
                 (reference, reference),
             ).fetchone()
-            if not order:
-                raise HTTPException(status_code=404, detail="Document not found.")
-            events = conn.execute(
-                "SELECT event_type,from_status,to_status,actor_id,details,created_at FROM document_events WHERE reference=%s ORDER BY created_at,id",
-                (order["invoice_number"],),
-            ).fetchall()
-            return {"document": order, "events": events}
+            if order:
+                reference_key=order["invoice_number"]
+                events = conn.execute(
+                    "SELECT event_type,from_status,to_status,actor_id,details,created_at FROM document_events WHERE reference=%s ORDER BY created_at,id",
+                    (reference_key,),
+                ).fetchall()
+                return {"document": order, "events": events}
+            invoice_table=conn.execute("SELECT to_regclass('public.sb_invoices') AS t").fetchone()["t"]
+            if invoice_table:
+                invoice=conn.execute("SELECT id,reference,source_channel,status,total,paid_total,created_at FROM sb_invoices WHERE reference=%s LIMIT 1",(reference,)).fetchone()
+                if invoice:
+                    events=[]
+                    event_table=conn.execute("SELECT to_regclass('public.sb_document_events') AS t").fetchone()["t"]
+                    if event_table:
+                        events=conn.execute("SELECT event_type,from_status,to_status,actor_id,details,created_at FROM sb_document_events WHERE reference=%s ORDER BY created_at,id",(reference,)).fetchall()
+                    return {"document":invoice,"events":events}
+            raise HTTPException(status_code=404, detail="Document not found.")
     except HTTPException:
         raise
     except psycopg.Error as exc:
