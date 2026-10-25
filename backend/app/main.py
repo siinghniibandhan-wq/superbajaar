@@ -156,7 +156,15 @@ def get_product_by_variant(variant_id: int) -> dict[str, Any]:
                 LIMIT 1""", (variant_id,)).fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Product not found")
-            return row
+            # Include sibling variants so the storefront can render one selector per
+            # attribute even when a customer opens a product URL directly.
+            sibling_variants = conn.execute(f"""SELECT p.id AS product_id, p.name, {description_select}, {brand_select},
+                c.name AS category, v.id AS variant_id, {sku_select}, {mrp_select},
+                {price_select}, {currency_select}, {image_select}{attribute_select}
+                FROM products p JOIN product_variants v ON v.product_id = p.id
+                {category_join} WHERE p.id = %s AND {product_status} AND {variant_status}
+                ORDER BY v.id""", (row["product_id"],)).fetchall()
+            return {**row, "_variants": sibling_variants}
     except HTTPException:
         raise
     except psycopg.Error as exc:
