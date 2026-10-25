@@ -706,7 +706,7 @@ def list_invoices(authorization: str | None = Header(default=None)):
           UNION ALL
           SELECT o.id,o.invoice_number AS reference,o.source_channel,o.id AS source_id,
             COALESCE(o.shipping_address->>'full_name','Website customer') AS customer_name,
-            CASE WHEN o.status='cancelled' THEN 'cancelled' WHEN o.payment_status='paid' THEN 'paid' ELSE 'issued' END AS status,
+            CASE WHEN o.status='cancelled' THEN 'cancelled' WHEN o.payment_status='paid' THEN 'paid' WHEN o.payment_status='partially_paid' THEN 'partially_paid' ELSE 'issued' END AS status,
             o.subtotal,0::numeric AS discount_total,0::numeric AS tax_total,o.total,
             o.paid_total,
             COALESCE((SELECT jsonb_agg(jsonb_build_object('variant_id',i.variant_id,'product_id',i.product_id,'sku',i.sku,'name',i.product_name,'quantity',i.quantity,'unit_price',i.unit_price,'line_total',i.line_total))
