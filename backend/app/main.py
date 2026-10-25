@@ -537,6 +537,7 @@ def _category_values(columns: dict[str, dict[str, Any]], name: str, parent_id: i
     candidates: dict[str, Any] = {
         "name": clean_name, "parent_id": parent_id, "status": status,
         "slug": slug, "code": slug.upper().replace("-", "_"),
+        "category_code": slug.upper().replace("-", "_") or "CATEGORY",
         # Existing deployments may require category_code rather than code/slug.
         "category_code": slug.upper().replace("-", "_") or "CATEGORY",
         "description": "", "sort_order": 0, "position": 0,
