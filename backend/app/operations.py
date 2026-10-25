@@ -431,6 +431,17 @@ def vendor_quote_response(procurement_id: int, body: QuoteResponseInput, authori
           WHERE p.id=%s AND lower(v.email)=lower(%s) AND v.status='active' FOR UPDATE""",(procurement_id,user["email"])).fetchone()
         if not p: raise HTTPException(404,"Supplier quotation not found.")
         if p["status"] not in {"quotation_requested","quoted"}: raise HTTPException(409,"This quotation is no longer editable.")
+        if body.status=="quoted":
+            if not body.items: raise HTTPException(422,"Submit quoted line items with unit_price.")
+            original={int(x["variant_id"]):int(x["quantity"]) for x in p["items"]}
+            quoted={}
+            for line in body.items:
+                if "unit_price" not in line or Decimal(str(line["unit_price"]))<0:
+                    raise HTTPException(422,"Every quoted line needs a non-negative unit_price.")
+                vid=int(line.get("variant_id",0)); qty=int(line.get("quantity",0))
+                if vid not in original or qty!=original[vid]: raise HTTPException(422,"Quoted variants and quantities must match the requested quotation.")
+                quoted[vid]=qty
+            if quoted!=original: raise HTTPException(422,"The quote must include every requested variant.")
         c.execute("UPDATE sb_procurements SET status=%s,items=COALESCE(%s::jsonb,items),updated_at=now() WHERE id=%s",
           (body.status,json.dumps(body.items) if body.items is not None else None,procurement_id))
         _event(c,p["reference"],"vendor_response",user["id"],p["status"],body.status)
