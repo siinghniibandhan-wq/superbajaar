@@ -414,6 +414,8 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
                 (order_number, "INV-" + order_number, user["id"], subtotal, shipping_fee, total,
                  json.dumps(body.shipping_address.model_dump()), body.customer_note.strip())
             ).fetchone()
+            conn.execute("INSERT INTO sb_document_registry(reference,document_type,document_id) VALUES(%s,'sale_invoice',%s)",
+                ("INV-"+order_number,row["id"]))
             conn.execute("""INSERT INTO document_events
                 (document_type,document_id,reference,event_type,to_status,actor_id,details)
                 VALUES ('sale',%s,%s,'created','placed',%s,%s::jsonb)""",
