@@ -16,10 +16,12 @@ from pydantic import BaseModel, Field
 from psycopg.rows import dict_row
 
 from .auth import _current, _require, _db
+from .schema_guard import tolerate_missing_ddl_permission
 
 router = APIRouter(prefix="/api", tags=["commerce"])
 
 
+@tolerate_missing_ddl_permission
 def _ensure_commerce_schema(conn: Any) -> None:
     conn.execute("""
         CREATE TABLE IF NOT EXISTS store_settings (
