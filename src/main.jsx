@@ -139,6 +139,8 @@ function Store({goAdmin}) {
  function variantAttributeGroups(variants){
   const maps=(variants||[]).map(variantAttributeMap);
   const names=[...new Set(maps.flatMap(map=>Object.keys(map)))];
+  const priority=name=>/^(qty|quantity|weight|pack\s*size|size|volume)$/i.test(name.trim())?0:/^(variant|type|flavour|flavor|colour|color)$/i.test(name.trim())?1:2;
+  names.sort((a,b)=>priority(a)-priority(b));
   return names.map(name=>({name,values:[...new Set(maps.map(map=>map[name]).filter(Boolean))]})).filter(group=>group.values.length);
  }
  function variantLabel(p){
