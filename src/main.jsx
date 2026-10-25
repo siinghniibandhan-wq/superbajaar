@@ -99,7 +99,12 @@ function Store({goAdmin}) {
    if(Array.isArray(field)){
     field.forEach(item=>{
      if(Array.isArray(item)){
-      if(item.length>1&&typeof item[0]==='string'&&String(item[0]).includes(':'))parseText(item[0]+': '+human(item[1]));
+      if(item.length>1&&typeof item[0]==='string'&&String(item[0]).includes(':')){
+       const label=String(item[0]),match=label.match(/^([^:]{1,60})\s*:\s*(.*)$/);
+       if(match&&match[2].trim())parseText(label);
+       else if(match)put(match[1],item[1]);
+       if(typeof item[1]==='string'&&item[1].includes(':'))parseText(item[1]);
+      }
       else if(item.length>1&&typeof item[1]==='string'&&String(item[1]).includes(':'))parseText(item[1]);
       else if(item.length>1&&typeof item[0]==='string'&&!/^\d+$/.test(item[0]))put(item[0],item[1]);
       else parseText(item.length>1?item[1]:item[0]);
