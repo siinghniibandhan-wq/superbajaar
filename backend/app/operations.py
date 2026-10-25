@@ -346,15 +346,21 @@ def create_receipt(procurement_id: int, body: ReceiptInput, authorization: str |
         p=c.execute("SELECT * FROM sb_procurements WHERE id=%s FOR UPDATE",(procurement_id,)).fetchone()
         if not p or p["status"] not in {"purchase_order","partially_received"}: raise HTTPException(409,"Only an open purchase order can receive goods.")
         if not c.execute("SELECT id FROM sb_warehouses WHERE id=%s AND active",(body.warehouse_id,)).fetchone(): raise HTTPException(404,"Active warehouse not found.")
+        pending=c.execute("SELECT id FROM sb_receipts WHERE procurement_id=%s AND status='inspection' LIMIT 1",(procurement_id,)).fetchone()
+        if pending: raise HTTPException(409,"Finish quality inspection for the pending GRN before recording another receipt.")
         expected={int(i["variant_id"]):int(i["quantity"]) for i in p["items"]}
         already=c.execute("SELECT COALESCE(jsonb_agg(items),'[]'::jsonb) x FROM sb_receipts WHERE procurement_id=%s AND status='accepted'",(procurement_id,)).fetchone()["x"]
         received={}
         for receipt in already:
             for line in receipt:
                 received[int(line["variant_id"])]=received.get(int(line["variant_id"]),0)+int(line.get("accepted_quantity",line.get("quantity",0)))
+        incoming={}
         for line in body.items:
             vid=int(line.get("variant_id",0)); qty=int(line.get("quantity",0))
-            if vid not in expected or qty<1 or qty+received.get(vid,0)>expected[vid]: raise HTTPException(422,"Receipt quantities must not exceed outstanding PO quantities.")
+            if vid not in expected or qty<1: raise HTTPException(422,"Receipt lines must match PO variants and have positive quantities.")
+            incoming[vid]=incoming.get(vid,0)+qty
+        for vid,qty in incoming.items():
+            if qty+received.get(vid,0)>expected[vid]: raise HTTPException(422,"Receipt quantities must not exceed outstanding PO quantities.")
         row=c.execute("""INSERT INTO sb_receipts(reference,procurement_id,warehouse_id,status,items,note,received_by)
           VALUES(%s,%s,%s,'inspection',%s::jsonb,%s,%s) RETURNING *""",(ref,procurement_id,body.warehouse_id,json.dumps(body.items),body.note,actor["id"])).fetchone()
         _event(c,ref,"goods_received_for_inspection",actor["id"],new="inspection",details={"po_reference":p["reference"]})
@@ -371,6 +377,8 @@ def inspect_receipt(receipt_id: int, body: ReceiptInspectionInput, authorization
         received={int(x["variant_id"]):int(x["quantity"]) for x in r["items"]}
         accepted={int(x["variant_id"]):int(x["quantity"]) for x in body.accepted_items}
         rejected={int(x["variant_id"]):int(x["quantity"]) for x in body.rejected_items}
+        if (set(accepted)|set(rejected)) != set(received):
+            raise HTTPException(422,"Inspection must account for every received variant as accepted or rejected.")
         for vid in set(accepted)|set(rejected):
             if accepted.get(vid,0)<0 or rejected.get(vid,0)<0 or accepted.get(vid,0)+rejected.get(vid,0)!=received.get(vid,0):
                 raise HTTPException(422,"Accepted plus rejected quantity must equal the received quantity for each variant.")
