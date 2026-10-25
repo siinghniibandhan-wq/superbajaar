@@ -104,7 +104,7 @@ def _schema(conn):
     conn.execute("""INSERT INTO sb_accounts(code,name,account_type) VALUES
       ('1000','Cash and bank','asset'),('1100','Accounts receivable','asset'),
       ('2000','Accounts payable','liability'),('2100','GST payable','liability'),
-      ('2110','CGST payable','liability'),('2120','SGST payable','liability'),('2130','IGST payable','liability'),('4000','Sales revenue','income'),('5000','Cost of goods sold','expense')
+      ('2110','CGST payable','liability'),('2120','SGST payable','liability'),('2130','IGST payable','liability'),('3000','Retained earnings','equity'),('4000','Sales revenue','income'),('5000','Cost of goods sold','expense')
       ON CONFLICT(code) DO NOTHING""")
 
 
@@ -843,6 +843,29 @@ def list_returns(authorization: str | None = Header(default=None)):
     with psycopg.connect(_db(), row_factory=dict_row) as c:
         _schema(c)
         return {"items":c.execute("SELECT * FROM sb_returns ORDER BY created_at DESC LIMIT 500").fetchall()}
+
+@router.get("/admin/accounting/reports")
+def accounting_reports(authorization: str | None = Header(default=None)):
+    _require(authorization, {"super_admin","admin","staff"})
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c)
+        balances=c.execute("""SELECT a.code,a.name,a.account_type,
+          COALESCE(SUM((x->>'debit')::numeric),0) AS debits,
+          COALESCE(SUM((x->>'credit')::numeric),0) AS credits
+          FROM sb_accounts a LEFT JOIN sb_journal_entries j ON j.posted
+          LEFT JOIN LATERAL jsonb_array_elements(j.lines) x ON x->>'account_code'=a.code
+          WHERE a.active GROUP BY a.code,a.name,a.account_type ORDER BY a.code""").fetchall()
+        for row in balances:
+            row["balance"]=row["debits"]-row["credits"] if row["account_type"] in {"asset","expense"} else row["credits"]-row["debits"]
+        pnl=[x for x in balances if x["account_type"] in {"income","expense"}]
+        balance_sheet=[x for x in balances if x["account_type"] in {"asset","liability","equity"}]
+        cash=c.execute("""SELECT COALESCE(SUM((x->>'debit')::numeric-(x->>'credit')::numeric),0) amount
+          FROM sb_journal_entries j CROSS JOIN LATERAL jsonb_array_elements(j.lines) x
+          WHERE j.posted AND x->>'account_code'='1000'""").fetchone()["amount"]
+        return {"trial_balance":balances,"profit_and_loss":pnl,
+          "net_profit":sum((x["balance"] if x["account_type"]=="income" else -x["balance"] for x in pnl),Decimal("0")),
+          "balance_sheet":balance_sheet,"cash_flow":{"cash_and_bank_movement":cash}}
+
 
 @router.get("/admin/accounting/journals")
 def list_journals(authorization: str | None = Header(default=None)):
