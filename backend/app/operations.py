@@ -440,7 +440,7 @@ def purchases(authorization: str | None = Header(default=None),limit:int=Query(1
     try:
         with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
             _ensure(conn)
-            return {"items":conn.execute("""SELECT p.*,v.name AS vendor_name FROM sb_purchase_orders p JOIN sb_vendors v ON v.id=p.vendor_id ORDER BY p.id DESC LIMIT %s""",(limit,)).fetchall()}
+            return {"items":conn.execute("""SELECT p.*,v.name AS vendor_name,sp.id AS supplier_payment_id,sp.amount AS paid_amount,sp.payment_account,sp.reference AS payment_reference,sp.paid_at FROM sb_purchase_orders p JOIN sb_vendors v ON v.id=p.vendor_id LEFT JOIN sb_supplier_payments sp ON sp.purchase_id=p.id ORDER BY p.id DESC LIMIT %s""",(limit,)).fetchall()}
     except Exception as exc: raise HTTPException(status_code=503,detail="Purchase orders unavailable") from exc
 
 @router.get("/purchases/{purchase_id}")
