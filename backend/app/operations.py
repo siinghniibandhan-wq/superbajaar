@@ -959,8 +959,10 @@ def record_stock_movement(body: StockMovementInput, authorization: str | None = 
     ref=body.reference.strip() or _ref("STK")
     with psycopg.connect(_db(), row_factory=dict_row) as c:
         _schema(c)
-        if not c.execute("SELECT id FROM sb_warehouses WHERE id=%s AND active FOR UPDATE",(body.warehouse_id,)).fetchone():
-            raise HTTPException(404,"Active warehouse not found.")
+        warehouse=c.execute("SELECT id,locations FROM sb_warehouses WHERE id=%s AND active FOR UPDATE",(body.warehouse_id,)).fetchone()
+        if not warehouse: raise HTTPException(404,"Active warehouse not found.")
+        allowed_locations=warehouse["locations"] if isinstance(warehouse["locations"],list) else []
+        if allowed_locations and body.location not in allowed_locations: raise HTTPException(422,"Select a configured warehouse bin/location.")
         if not c.execute("SELECT id FROM product_variants WHERE id=%s",(body.variant_id,)).fetchone():
             raise HTTPException(404,"Product variant not found.")
         balance=c.execute("SELECT COALESCE(SUM(quantity_delta),0) qty FROM sb_inventory_ledger WHERE warehouse_id=%s AND variant_id=%s",
