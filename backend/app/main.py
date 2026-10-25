@@ -41,7 +41,7 @@ app.add_middleware(
     allow_origins=origins,
     allow_origin_regex=r"https://.*\.app\.github\.dev",
     allow_credentials=False,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Accept", "Content-Type", "Authorization", "X-Review-Moderation-Token"],
 )
 
@@ -145,6 +145,62 @@ def attach_catalogue_media_and_attributes(conn: psycopg.Connection, rows: list[d
                     pass
     return rows
 
+
+
+
+@app.delete("/api/admin/products/{product_id}/variants/{variant_id}/images/{image_id}")
+def delete_variant_image(product_id: int, variant_id: int, image_id: int, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    """Remove a gallery image using the existing product_variant_images table."""
+    _admin_catalogue_user(authorization)
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            row = conn.execute(
+                """DELETE FROM product_variant_images
+                   WHERE id=%s AND variant_id=%s AND variant_id IN
+                     (SELECT id FROM product_variants WHERE product_id=%s)
+                   RETURNING id""",
+                (image_id, variant_id, product_id),
+            ).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Variant image not found.")
+            return {"deleted": True, "image_id": row["id"]}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        logger.exception("Variant image delete failed")
+        raise HTTPException(status_code=503, detail="Variant image could not be removed.") from exc
+
+
+@app.get("/api/admin/product-creation/references")
+def product_creation_references(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    """Read existing tax and warehouse references without creating or altering schema."""
+    _admin_catalogue_user(authorization)
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            tables = {
+                name: bool(conn.execute("SELECT to_regclass(%s) AS t", (f"public.{name}",)).fetchone()["t"])
+                for name in ("sb_tax_config", "sb_warehouses")
+            }
+            result: dict[str, Any] = {"tax_rates": {}, "warehouses": []}
+            if tables["sb_tax_config"]:
+                row = conn.execute("SELECT seller_state_code, rates_json FROM sb_tax_config WHERE id=1").fetchone()
+                if row:
+                    result["seller_state_code"] = row.get("seller_state_code") or ""
+                    rates = row.get("rates_json") or {}
+                    result["tax_rates"] = rates if isinstance(rates, dict) else {}
+            if tables["sb_warehouses"]:
+                columns = _catalogue_columns(conn, "sb_warehouses")
+                select_columns = [name for name in ("id", "name", "code", "address", "pincode", "serviceable_pincodes", "locations", "active") if name in columns]
+                if select_columns:
+                    result["warehouses"] = conn.execute(
+                        "SELECT " + ", ".join(select_columns) + " FROM sb_warehouses WHERE active=TRUE ORDER BY name"
+                    ).fetchall()
+            return result
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        logger.exception("Product creation references could not be loaded")
+        raise HTTPException(status_code=503, detail="Existing tax and warehouse references could not be loaded.") from exc
 
 @app.get("/api/health")
 def health() -> dict[str, str]:
@@ -535,7 +591,11 @@ class ProductWriteInput(BaseModel):
     seller_details: list[dict[str, str]] = Field(default_factory=list, max_length=100)
     category_id: int | None = Field(default=None, gt=0)
     sku: str = Field(default="", max_length=120)
-    image_url: str = Field(default="", max_length=2000)
+    image_url: str = Field(default="", max_length=6000000)
+    tax_category: str = Field(default="", max_length=120)
+    gst_rate: float | None = Field(default=None, ge=0, le=100)
+    sale_badge: str = Field(default="", max_length=80)
+    sale_badge_active: bool = False
     status: str = Field(default="active", pattern="^(active|inactive|draft)$")
 
 
@@ -591,6 +651,8 @@ def create_catalogue_product(
                               "description": body.description.strip(), "specifications": Jsonb(body.specifications),
                               "manufacturer_details": Jsonb(body.manufacturer_details), "seller_details": Jsonb(body.seller_details),
                               "category_id": body.category_id, "status": body.status,
+                              "tax_category": body.tax_category.strip(), "gst_rate": body.gst_rate,
+                              "sale_badge": body.sale_badge.strip(), "sale_badge_active": body.sale_badge_active,
                               "cover_image_url": cover_url, "main_image_url": cover_url, "image_url": cover_url}
             product = _catalogue_insert(conn, "products", product_values)
             variant_values = {"product_id": product["id"], "selling_price": body.selling_price,
@@ -626,6 +688,8 @@ def update_catalogue_product(
                               "description": body.description.strip(), "specifications": Jsonb(body.specifications),
                               "manufacturer_details": Jsonb(body.manufacturer_details), "seller_details": Jsonb(body.seller_details),
                               "category_id": body.category_id, "status": body.status,
+                              "tax_category": body.tax_category.strip(), "gst_rate": body.gst_rate,
+                              "sale_badge": body.sale_badge.strip(), "sale_badge_active": body.sale_badge_active,
                               "cover_image_url": cover_url, "main_image_url": cover_url, "image_url": cover_url}
             product_values = {k: v for k, v in product_values.items() if k in product_columns}
             if not product_values:
