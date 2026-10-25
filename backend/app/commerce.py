@@ -45,6 +45,7 @@ def _ensure_commerce_schema(conn: Any) -> None:
             subtotal NUMERIC(12,2) NOT NULL CHECK (subtotal >= 0),
             shipping_fee NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (shipping_fee >= 0),
             total NUMERIC(12,2) NOT NULL CHECK (total >= 0),
+            tax_total NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (tax_total >= 0),
             shipping_address JSONB NOT NULL,
             customer_note TEXT NOT NULL DEFAULT '',
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -65,10 +66,21 @@ def _ensure_commerce_schema(conn: Any) -> None:
             product_name TEXT NOT NULL,
             quantity INTEGER NOT NULL CHECK (quantity BETWEEN 1 AND 50),
             unit_price NUMERIC(12,2) NOT NULL CHECK (unit_price >= 0),
-            line_total NUMERIC(12,2) NOT NULL CHECK (line_total >= 0)
+            line_total NUMERIC(12,2) NOT NULL CHECK (line_total >= 0),
+            tax_rate NUMERIC(5,2) NOT NULL DEFAULT 0,
+            taxable_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+            cgst_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+            sgst_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+            igst_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+            tax_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+            tax_inclusive BOOLEAN NOT NULL DEFAULT TRUE
         )
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS store_order_items_order_idx ON store_order_items(order_id)")
+    conn.execute("ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS tax_total NUMERIC(12,2) NOT NULL DEFAULT 0")
+    for column, definition in (("tax_rate","NUMERIC(5,2) NOT NULL DEFAULT 0"),("taxable_amount","NUMERIC(12,2) NOT NULL DEFAULT 0"),("cgst_amount","NUMERIC(12,2) NOT NULL DEFAULT 0"),("sgst_amount","NUMERIC(12,2) NOT NULL DEFAULT 0"),("igst_amount","NUMERIC(12,2) NOT NULL DEFAULT 0"),("tax_amount","NUMERIC(12,2) NOT NULL DEFAULT 0"),("tax_inclusive","BOOLEAN NOT NULL DEFAULT TRUE")):
+        conn.execute(f"ALTER TABLE store_order_items ADD COLUMN IF NOT EXISTS {column} {definition}")
+
 
 
 class CheckoutItem(BaseModel):
@@ -314,6 +326,27 @@ def checkout_options(
     except psycopg.Error as exc:
         raise HTTPException(status_code=503, detail="Checkout options are temporarily unavailable.") from exc
 
+
+
+
+def _india_state_code(value: Any) -> str | None:
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return None
+    if re.fullmatch(r"[0-9]{1,2}", raw):
+        return raw.zfill(2)
+    names = {
+        "jammu and kashmir":"01","jammu & kashmir":"01","himachal pradesh":"02","punjab":"03",
+        "chandigarh":"04","uttarakhand":"05","haryana":"06","delhi":"07","nct of delhi":"07",
+        "rajasthan":"08","uttar pradesh":"09","bihar":"10","sikkim":"11","arunachal pradesh":"12",
+        "nagaland":"13","manipur":"14","mizoram":"15","tripura":"16","meghalaya":"17","assam":"18",
+        "west bengal":"19","jharkhand":"20","odisha":"21","orissa":"21","chhattisgarh":"22",
+        "madhya pradesh":"23","gujarat":"24","dadra and nagar haveli and daman and diu":"26",
+        "maharashtra":"27","andhra pradesh":"37","karnataka":"29","goa":"30","lakshadweep":"31",
+        "kerala":"32","tamil nadu":"33","puducherry":"34","pondicherry":"34",
+        "andaman and nicobar islands":"35","andaman and nicobar":"35","telangana":"36","ladakh":"38",
+    }
+    return names.get(raw)
 
 
 def _catalogue_variant_available(conn: Any, product_id: int, variant_id: int, pincode: str) -> bool:
