@@ -75,6 +75,9 @@ def list_products(
             image_select = "v.image_url AS image_url" if "image_url" in variant_columns else "NULL::text AS image_url"
             brand_select = "p.brand AS brand" if "brand" in product_columns else "NULL::text AS brand"
             description_select = "p.description AS description" if "description" in product_columns else "NULL::text AS description"
+            specification_select = "p.specifications AS specifications" if "specifications" in product_columns else "'[]'::jsonb AS specifications"
+            manufacturer_select = "p.manufacturer_details AS manufacturer_details" if "manufacturer_details" in product_columns else "'[]'::jsonb AS manufacturer_details"
+            seller_select = "p.seller_details AS seller_details" if "seller_details" in product_columns else "'[]'::jsonb AS seller_details"
             currency_select = "v.currency AS currency" if "currency" in variant_columns else "'INR'::text AS currency"
             product_status_select = "p.status AS status" if "status" in product_columns else "'active'::text AS status"
             variant_status_select = "v.status AS variant_status" if "status" in variant_columns else "'active'::text AS variant_status"
@@ -157,6 +160,7 @@ def get_product_by_variant(variant_id: int) -> dict[str, Any]:
             attribute_select = ", ".join(f"v.{column} AS {column}" for column in attribute_columns if column in variant_columns)
             attribute_select = (", " + attribute_select) if attribute_select else ""
             row = conn.execute(f"""SELECT p.id AS product_id, p.name, {description_select}, {brand_select},
+                {specification_select}, {manufacturer_select}, {seller_select},
                 c.name AS category, v.id AS variant_id, {sku_select}, {mrp_select},
                 {price_select}, {currency_select}, {image_select}{attribute_select}
                 FROM products p JOIN product_variants v ON v.product_id = p.id
@@ -167,6 +171,7 @@ def get_product_by_variant(variant_id: int) -> dict[str, Any]:
             # Include sibling variants so the storefront can render one selector per
             # attribute even when a customer opens a product URL directly.
             sibling_variants = conn.execute(f"""SELECT p.id AS product_id, p.name, {description_select}, {brand_select},
+                {specification_select}, {manufacturer_select}, {seller_select},
                 c.name AS category, v.id AS variant_id, {sku_select}, {mrp_select},
                 {price_select}, {currency_select}, {image_select}{attribute_select}
                 FROM products p JOIN product_variants v ON v.product_id = p.id
