@@ -9,10 +9,12 @@ from pydantic import BaseModel, Field
 from psycopg.rows import dict_row
 
 from .auth import _current, _require, _db
+from .schema_guard import tolerate_missing_ddl_permission
 
 router = APIRouter(prefix="/api/loyalty", tags=["loyalty"])
 
 
+@tolerate_missing_ddl_permission
 def _ensure(conn: Any) -> None:
     conn.execute("""CREATE TABLE IF NOT EXISTS sb_loyalty_program (
         id SMALLINT PRIMARY KEY DEFAULT 1 CHECK(id=1),

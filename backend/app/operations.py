@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from psycopg.rows import dict_row
 
 from .auth import _require, _db, _current
+from .schema_guard import tolerate_missing_ddl_permission
 
 router = APIRouter(prefix="/api/operations", tags=["operations"])
 
@@ -22,6 +23,7 @@ def _admin(authorization: str | None) -> dict[str, Any]:
 def _current_user_id(authorization: str | None) -> int:
     return int(_admin(authorization)["id"])
 
+@tolerate_missing_ddl_permission
 def _ensure(conn: Any) -> None:
     conn.execute("""CREATE TABLE IF NOT EXISTS sb_customers (
         id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, phone TEXT, email TEXT, gstin TEXT,

@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from psycopg.rows import dict_row
 
 from .auth import _require, _db
+from .schema_guard import tolerate_missing_ddl_permission
 
 router = APIRouter(prefix="/api/accounting", tags=["accounting"])
 
@@ -33,6 +34,7 @@ GST_RATES = [
     {"rate": 0, "label": "Non-GST", "classification": "non_gst"},
 ]
 
+@tolerate_missing_ddl_permission
 def _ensure(conn: Any) -> None:
     conn.execute("""
         CREATE TABLE IF NOT EXISTS sb_accounts (

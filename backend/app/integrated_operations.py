@@ -17,104 +17,31 @@ from .auth import _current, _require, _db
 router = APIRouter(prefix="/api", tags=["integrated-operations"])
 
 
+_REQUIRED_TABLES = (
+    "catalog_attributes", "catalog_product_tax", "product_attribute_assignments", "variant_attribute_values",
+    "sb_warehouses", "sb_inventory_ledger", "sb_vendors", "sb_procurements", "sb_vendor_dispatches",
+    "sb_receipts", "sb_invoices", "sb_supplier_bills", "sb_payments", "sb_returns", "sb_credit_notes",
+    "sb_tax_config", "sb_accounts", "sb_journal_entries", "sb_document_events", "sb_document_registry",
+)
+_schema_checked = False
+
+
 def _schema(conn):
-    statements = [
-    """CREATE TABLE IF NOT EXISTS catalog_product_tax(
-      product_id BIGINT PRIMARY KEY, hsn_code TEXT NOT NULL, updated_by BIGINT,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
-    """CREATE TABLE IF NOT EXISTS catalog_attributes(
-      id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL UNIQUE, values_json JSONB NOT NULL DEFAULT '[]',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
-    """CREATE TABLE IF NOT EXISTS product_attribute_assignments(
-      product_id BIGINT NOT NULL, attribute_id BIGINT NOT NULL REFERENCES catalog_attributes(id) ON DELETE CASCADE,
-      PRIMARY KEY(product_id,attribute_id))""",
-    """CREATE TABLE IF NOT EXISTS variant_attribute_values(
-      variant_id BIGINT NOT NULL, attribute_id BIGINT NOT NULL REFERENCES catalog_attributes(id),
-      value TEXT NOT NULL, PRIMARY KEY(variant_id,attribute_id))""",
-    """CREATE TABLE IF NOT EXISTS sb_warehouses(
-      id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, code TEXT NOT NULL UNIQUE, address TEXT NOT NULL DEFAULT '',
-      pincode TEXT NOT NULL DEFAULT '', serviceable_pincodes JSONB NOT NULL DEFAULT '[]',
-      locations JSONB NOT NULL DEFAULT '[]', active BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
-    """CREATE TABLE IF NOT EXISTS sb_inventory_ledger(
-      id BIGSERIAL PRIMARY KEY, warehouse_id BIGINT NOT NULL REFERENCES sb_warehouses(id),
-      variant_id BIGINT NOT NULL, quantity_delta INTEGER NOT NULL, movement_type TEXT NOT NULL,
-      reference TEXT NOT NULL, location TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', actor_id BIGINT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
-    """CREATE TABLE IF NOT EXISTS sb_vendors(
-      id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE, phone TEXT NOT NULL DEFAULT '',
-      status TEXT NOT NULL DEFAULT 'active', created_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
-    """CREATE TABLE IF NOT EXISTS sb_procurements(
-      id BIGSERIAL PRIMARY KEY, reference TEXT NOT NULL UNIQUE, purchase_order_reference TEXT UNIQUE, vendor_id BIGINT NOT NULL REFERENCES sb_vendors(id),
-      status TEXT NOT NULL DEFAULT 'draft', items JSONB NOT NULL DEFAULT '[]', expected_date DATE,
-      created_by BIGINT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
-    """CREATE TABLE IF NOT EXISTS sb_vendor_dispatches(
-      id BIGSERIAL PRIMARY KEY, reference TEXT NOT NULL UNIQUE, procurement_id BIGINT NOT NULL REFERENCES sb_procurements(id),
-      vendor_id BIGINT NOT NULL REFERENCES sb_vendors(id), items JSONB NOT NULL, carrier TEXT NOT NULL DEFAULT '',
-      tracking_reference TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'dispatched',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
-    """CREATE TABLE IF NOT EXISTS sb_receipts(
-      id BIGSERIAL PRIMARY KEY, reference TEXT NOT NULL UNIQUE, procurement_id BIGINT NOT NULL REFERENCES sb_procurements(id),
-      warehouse_id BIGINT NOT NULL REFERENCES sb_warehouses(id), status TEXT NOT NULL DEFAULT 'inspection',
-      items JSONB NOT NULL DEFAULT '[]', note TEXT NOT NULL DEFAULT '', received_by BIGINT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
-    """CREATE TABLE IF NOT EXISTS sb_invoices(
-      id BIGSERIAL PRIMARY KEY, reference TEXT NOT NULL UNIQUE, source_channel TEXT NOT NULL,
-      source_id BIGINT, customer_name TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'issued',
-      subtotal NUMERIC(14,2) NOT NULL DEFAULT 0, discount_total NUMERIC(14,2) NOT NULL DEFAULT 0, tax_total NUMERIC(14,2) NOT NULL DEFAULT 0,
-      total NUMERIC(14,2) NOT NULL DEFAULT 0, paid_total NUMERIC(14,2) NOT NULL DEFAULT 0,
-      items JSONB NOT NULL DEFAULT '[]', created_by BIGINT, created_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
-    """CREATE TABLE IF NOT EXISTS sb_supplier_bills(
-      id BIGSERIAL PRIMARY KEY, reference TEXT NOT NULL UNIQUE, vendor_id BIGINT NOT NULL REFERENCES sb_vendors(id),
-      procurement_id BIGINT REFERENCES sb_procurements(id), vendor_invoice_number TEXT NOT NULL,
-      amount NUMERIC(14,2) NOT NULL CHECK(amount>=0), tax_total NUMERIC(14,2) NOT NULL DEFAULT 0,
-      paid_total NUMERIC(14,2) NOT NULL DEFAULT 0, due_date DATE, status TEXT NOT NULL DEFAULT 'submitted',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(), UNIQUE(vendor_id,vendor_invoice_number))""",
-    """CREATE TABLE IF NOT EXISTS sb_payments(
-      id BIGSERIAL PRIMARY KEY, reference TEXT NOT NULL UNIQUE, invoice_id BIGINT NOT NULL REFERENCES sb_invoices(id),
-      amount NUMERIC(14,2) NOT NULL CHECK(amount>0), method TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'posted',
-      recorded_by BIGINT, created_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
-    """CREATE TABLE IF NOT EXISTS sb_returns(
-      id BIGSERIAL PRIMARY KEY, reference TEXT NOT NULL UNIQUE, invoice_reference TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'requested', reason TEXT NOT NULL DEFAULT '', items JSONB NOT NULL DEFAULT '[]',
-      origin_warehouse_id BIGINT, refund_amount NUMERIC(14,2) NOT NULL DEFAULT 0,
-      created_by BIGINT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
-    """CREATE TABLE IF NOT EXISTS sb_credit_notes(
-      id BIGSERIAL PRIMARY KEY, reference TEXT NOT NULL UNIQUE, invoice_reference TEXT NOT NULL,
-      return_reference TEXT NOT NULL UNIQUE, amount NUMERIC(14,2) NOT NULL CHECK(amount>=0),
-      status TEXT NOT NULL DEFAULT 'posted', created_by BIGINT, created_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
-    """CREATE TABLE IF NOT EXISTS sb_tax_config(
-      id SMALLINT PRIMARY KEY CHECK(id=1), seller_gstin TEXT NOT NULL DEFAULT '',
-      seller_state_code TEXT NOT NULL DEFAULT '', rates_json JSONB NOT NULL DEFAULT '{}',
-      updated_by BIGINT, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
-    """CREATE TABLE IF NOT EXISTS sb_accounts(
-      id BIGSERIAL PRIMARY KEY, code TEXT NOT NULL UNIQUE, name TEXT NOT NULL, account_type TEXT NOT NULL,
-      active BOOLEAN NOT NULL DEFAULT TRUE)""",
-    """CREATE TABLE IF NOT EXISTS sb_journal_entries(
-      id BIGSERIAL PRIMARY KEY, reference TEXT NOT NULL UNIQUE, source_reference TEXT NOT NULL,
-      entry_date DATE NOT NULL DEFAULT CURRENT_DATE, memo TEXT NOT NULL DEFAULT '', lines JSONB NOT NULL,
-      posted BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
-    """CREATE TABLE IF NOT EXISTS sb_document_events(
-      id BIGSERIAL PRIMARY KEY, reference TEXT NOT NULL, event_type TEXT NOT NULL,
-      from_status TEXT, to_status TEXT, actor_id BIGINT, details JSONB NOT NULL DEFAULT '{}',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
-    """CREATE TABLE IF NOT EXISTS sb_document_registry(
-      reference TEXT PRIMARY KEY, document_type TEXT NOT NULL, document_id BIGINT NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now())"""
-    ]
-    for sql in statements: conn.execute(sql)
-    conn.execute("ALTER TABLE catalog_attributes ADD COLUMN IF NOT EXISTS display_type TEXT NOT NULL DEFAULT 'text' CHECK (display_type IN ('text','color','image','dropdown','button'))")
-    conn.execute("ALTER TABLE sb_inventory_ledger ADD COLUMN IF NOT EXISTS location TEXT NOT NULL DEFAULT ''")
-    conn.execute("ALTER TABLE sb_procurements ADD COLUMN IF NOT EXISTS purchase_order_reference TEXT")
-    conn.execute("ALTER TABLE sb_returns ADD COLUMN IF NOT EXISTS refund_amount NUMERIC(14,2) NOT NULL DEFAULT 0")
-    conn.execute("ALTER TABLE sb_invoices ADD COLUMN IF NOT EXISTS discount_total NUMERIC(14,2) NOT NULL DEFAULT 0")
-    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS sb_procurements_po_ref_uidx ON sb_procurements(purchase_order_reference) WHERE purchase_order_reference IS NOT NULL")
-    conn.execute("CREATE INDEX IF NOT EXISTS sb_events_ref_idx ON sb_document_events(reference,created_at)")
-    conn.execute("CREATE INDEX IF NOT EXISTS sb_inventory_variant_idx ON sb_inventory_ledger(variant_id,warehouse_id,created_at)")
-    conn.execute("""INSERT INTO sb_accounts(code,name,account_type) VALUES
-      ('1000','Cash and bank','asset'),('1100','Accounts receivable','asset'),('1200','GST input credit','asset'),
-      ('2000','Accounts payable','liability'),('2100','GST payable','liability'),
-      ('2110','CGST payable','liability'),('2120','SGST payable','liability'),('2130','IGST payable','liability'),('3000','Retained earnings','equity'),('4000','Sales revenue','income'),('5000','Cost of goods sold','expense')
+    """Verify the operations tables exist. Tables are created by backend/schema/010_admin_operations_tables.sql,
+    applied by the deploy process. The API database role cannot (and should not) run CREATE/ALTER TABLE."""
+    global _schema_checked
+    if not _schema_checked:
+        missing = [t for t in _REQUIRED_TABLES
+                   if conn.execute("SELECT to_regclass(%s) AS t", ("public." + t,)).fetchone()["t"] is None]
+        if missing:
+            raise HTTPException(503, "Database schema is incomplete (missing: " + ", ".join(missing) + "). Apply the latest schema migrations.")
+        _schema_checked = True
+    # Default ledger accounts used by automatic postings. Data only; no schema changes.
+    conn.execute("""INSERT INTO sb_accounts(code,name,account_type,detail_type,is_system) VALUES
+      ('1000','Cash and bank','asset','asset',TRUE),('1100','Accounts receivable','asset','asset',TRUE),('1200','GST input credit','asset','asset',TRUE),
+      ('2000','Accounts payable','liability','liability',TRUE),('2100','GST payable','liability','liability',TRUE),
+      ('2110','CGST payable','liability','liability',TRUE),('2120','SGST payable','liability','liability',TRUE),('2130','IGST payable','liability','liability',TRUE),
+      ('3000','Retained earnings','equity','equity',TRUE),('4000','Sales revenue','income','income',TRUE),('5000','Cost of goods sold','expense','expense',TRUE)
       ON CONFLICT(code) DO NOTHING""")
 
 
@@ -798,8 +725,8 @@ def create_account(body: AccountInput, authorization: str | None = Header(defaul
         raise HTTPException(422,"Account type must be asset, liability, equity, income or expense.")
     with psycopg.connect(_db(), row_factory=dict_row) as c:
         _schema(c)
-        return c.execute("INSERT INTO sb_accounts(code,name,account_type) VALUES(%s,%s,%s) RETURNING *",
-          (body.code.strip(),body.name.strip(),body.account_type)).fetchone()
+        return c.execute("INSERT INTO sb_accounts(code,name,account_type,detail_type) VALUES(%s,%s,%s,%s) RETURNING *",
+          (body.code.strip(),body.name.strip(),body.account_type,body.account_type)).fetchone()
 
 
 @router.get("/admin/accounting/gst-settings")
@@ -1052,7 +979,7 @@ def accounting_overview(authorization: str | None = Header(default=None)):
           "payables":c.execute("SELECT COALESCE(SUM(amount+tax_total-paid_total),0) amount FROM sb_supplier_bills WHERE status IN ('approved','partially_paid')").fetchone()["amount"],
           "cash_collected":c.execute("SELECT COALESCE(SUM(amount),0) amount FROM sb_payments WHERE status='posted'").fetchone()["amount"] + c.execute("SELECT COALESCE(SUM(paid_total),0) amount FROM store_orders").fetchone()["amount"],
           "journal_entries":c.execute("SELECT COUNT(*)::int count FROM sb_journal_entries WHERE posted").fetchone()["count"],
-          "accounts":c.execute("SELECT * FROM sb_accounts WHERE active ORDER BY code").fetchall()
+          "accounts":c.execute("SELECT * FROM sb_accounts WHERE is_active ORDER BY code").fetchall()
         }
 
 
@@ -1116,7 +1043,7 @@ def accounting_reports(authorization: str | None = Header(default=None)):
           COALESCE(SUM((x->>'credit')::numeric),0) AS credits
           FROM sb_accounts a LEFT JOIN sb_journal_entries j ON j.posted
           LEFT JOIN LATERAL jsonb_array_elements(j.lines) x ON x->>'account_code'=a.code
-          WHERE a.active GROUP BY a.code,a.name,a.account_type ORDER BY a.code""").fetchall()
+          WHERE a.is_active GROUP BY a.code,a.name,a.account_type ORDER BY a.code""").fetchall()
         for row in balances:
             row["balance"]=row["debits"]-row["credits"] if row["account_type"] in {"asset","expense"} else row["credits"]-row["debits"]
         pnl=[x for x in balances if x["account_type"] in {"income","expense"}]

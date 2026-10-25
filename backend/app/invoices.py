@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from psycopg.rows import dict_row
 
 from .auth import _db, _require
+from .schema_guard import tolerate_missing_ddl_permission
 
 router = APIRouter(prefix="/api/sales-invoices", tags=["sales-invoices"])
 
@@ -18,6 +19,7 @@ def _admin(auth: str | None) -> dict[str, Any]:
     return _require(auth, {"super_admin", "admin", "staff"})
 
 
+@tolerate_missing_ddl_permission
 def _ensure(conn: Any) -> None:
     conn.execute("""CREATE TABLE IF NOT EXISTS sb_sales_invoices (
         id BIGSERIAL PRIMARY KEY,
