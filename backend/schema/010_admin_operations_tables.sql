@@ -106,7 +106,7 @@ CREATE TABLE IF NOT EXISTS sb_document_registry(
 ALTER TABLE sb_accounts ADD COLUMN IF NOT EXISTS detail_type TEXT NOT NULL DEFAULT 'other';
 ALTER TABLE sb_accounts ADD COLUMN IF NOT EXISTS is_system BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE sb_accounts ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
-DO $
+DO $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
@@ -114,7 +114,7 @@ BEGIN
   ) THEN
     UPDATE sb_accounts SET is_active = active WHERE is_active IS DISTINCT FROM active;
   END IF;
-END $;
+END $$;
 
 -- The operations module expects a vendor status; existing vendors become 'active'.
 ALTER TABLE sb_vendors ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
