@@ -32,6 +32,8 @@ def _ensure_commerce_schema(conn: Any) -> None:
         CREATE TABLE IF NOT EXISTS store_orders (
             id BIGSERIAL PRIMARY KEY,
             order_number TEXT NOT NULL UNIQUE,
+            invoice_number TEXT UNIQUE,
+            source_channel TEXT NOT NULL DEFAULT 'website' CHECK (source_channel IN ('website','pos')),
             user_id BIGINT NOT NULL REFERENCES app_users(id),
             status TEXT NOT NULL DEFAULT 'placed'
                 CHECK (status IN ('placed','confirmed','processing','packed','shipped','delivered','cancelled')),
@@ -48,6 +50,16 @@ def _ensure_commerce_schema(conn: Any) -> None:
             updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
         )
     """)
+    conn.execute("ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS invoice_number TEXT")
+    conn.execute("ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS source_channel TEXT NOT NULL DEFAULT 'website'")
+    conn.execute("UPDATE store_orders SET invoice_number = 'INV-' || order_number WHERE invoice_number IS NULL")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS store_orders_invoice_number_uidx ON store_orders(invoice_number)")
+    conn.execute("""CREATE TABLE IF NOT EXISTS document_events (
+        id BIGSERIAL PRIMARY KEY, document_type TEXT NOT NULL, document_id BIGINT NOT NULL,
+        reference TEXT NOT NULL, event_type TEXT NOT NULL, from_status TEXT, to_status TEXT,
+        actor_id BIGINT, details JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS document_events_reference_idx ON document_events(reference, created_at)")
     conn.execute("CREATE INDEX IF NOT EXISTS store_orders_user_created_idx ON store_orders(user_id, created_at DESC)")
     conn.execute("CREATE INDEX IF NOT EXISTS store_orders_status_created_idx ON store_orders(status, created_at DESC)")
     conn.execute("""
@@ -191,7 +203,7 @@ def _delivery_quote(config: Any, pincode: str | None, subtotal: Decimal) -> dict
 
 def _order_detail(conn: Any, order_id: int) -> dict[str, Any]:
     order = conn.execute(
-        """SELECT id,order_number,user_id,status,payment_method,payment_status,currency,
+        """SELECT id,order_number,invoice_number,source_channel,user_id,status,payment_method,payment_status,currency,
                   subtotal,shipping_fee,total,shipping_address,customer_note,created_at,updated_at
            FROM store_orders WHERE id=%s""", (order_id,)
     ).fetchone()
@@ -357,12 +369,16 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
             order_number = "SB-" + secrets.token_hex(5).upper()
             row = conn.execute(
                 """INSERT INTO store_orders
-                   (order_number,user_id,status,payment_method,payment_status,subtotal,shipping_fee,total,shipping_address,customer_note)
-                   VALUES (%s,%s,'placed','cash_on_delivery','pending',%s,%s,%s,%s::jsonb,%s)
+                   (order_number,invoice_number,source_channel,user_id,status,payment_method,payment_status,subtotal,shipping_fee,total,shipping_address,customer_note)
+                   VALUES (%s,%s,'website',%s,'placed','cash_on_delivery','pending',%s,%s,%s,%s::jsonb,%s)
                    RETURNING id""",
-                (order_number, user["id"], subtotal, shipping_fee, total,
+                (order_number, "INV-" + order_number, user["id"], subtotal, shipping_fee, total,
                  json.dumps(body.shipping_address.model_dump()), body.customer_note.strip())
             ).fetchone()
+            conn.execute("""INSERT INTO document_events
+                (document_type,document_id,reference,event_type,to_status,actor_id,details)
+                VALUES ('sale',%s,%s,'created','placed',%s,%s::jsonb)""",
+                (row["id"], "INV-" + order_number, user["id"], json.dumps({"channel":"website","order_number":order_number})))
             for product in products:
                 conn.execute(
                     """INSERT INTO store_order_items
@@ -388,7 +404,7 @@ def list_my_orders(authorization: str | None = Header(default=None)) -> dict[str
         with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
             _ensure_commerce_schema(conn)
             rows = conn.execute(
-                """SELECT id,order_number,status,payment_method,payment_status,currency,
+                """SELECT id,order_number,invoice_number,source_channel,status,payment_method,payment_status,currency,
                           subtotal,shipping_fee,total,shipping_address,created_at,updated_at
                    FROM store_orders WHERE user_id=%s ORDER BY created_at DESC LIMIT 100""",
                 (user["id"],)
@@ -420,7 +436,7 @@ def list_admin_orders(
                 where.append("o.status=%s")
                 params.append(status)
             rows = conn.execute(
-                """SELECT o.id,o.order_number,o.user_id,u.email,u.full_name,o.status,o.payment_method,
+                """SELECT o.id,o.order_number,o.invoice_number,o.source_channel,o.user_id,u.email,u.full_name,o.status,o.payment_method,
                           o.payment_status,o.subtotal,o.shipping_fee,o.total,o.shipping_address,o.created_at,o.updated_at
                    FROM store_orders o JOIN app_users u ON u.id=o.user_id
                    WHERE """ + " AND ".join(where) + " ORDER BY o.created_at DESC LIMIT 200",
@@ -448,18 +464,45 @@ def update_admin_order(
     try:
         with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
             _ensure_commerce_schema(conn)
-            row = conn.execute(
-                """UPDATE store_orders SET status=%s,updated_at=now()
-                   WHERE id=%s AND status NOT IN ('cancelled','delivered') RETURNING id""",
-                (body.status, order_id)
-            ).fetchone()
-            if not row:
+            previous = conn.execute("SELECT id,invoice_number,status FROM store_orders WHERE id=%s FOR UPDATE", (order_id,)).fetchone()
+            if not previous or previous["status"] in {"cancelled", "delivered"}:
                 raise HTTPException(status_code=404, detail="Order not found or already closed.")
+            row = conn.execute("UPDATE store_orders SET status=%s,updated_at=now() WHERE id=%s RETURNING id", (body.status, order_id)).fetchone()
+            conn.execute("""INSERT INTO document_events
+                (document_type,document_id,reference,event_type,from_status,to_status,actor_id)
+                VALUES ('sale',%s,%s,'status_changed',%s,%s,%s)""",
+                (row["id"], previous["invoice_number"], previous["status"], body.status, actor["id"]))
             return {"order": _order_detail(conn, row["id"]), "updated_by": actor["id"]}
     except HTTPException:
         raise
     except psycopg.Error as exc:
         raise HTTPException(status_code=503, detail="Could not update order status.") from exc
+
+
+@router.get("/admin/documents/{reference}/timeline")
+def document_timeline(reference: str, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    """Return the audit timeline for a stable invoice/order reference."""
+    _require(authorization, {"super_admin", "admin", "staff"})
+    if not re.fullmatch(r"[A-Za-z0-9_-]{3,80}", reference):
+        raise HTTPException(status_code=422, detail="Invalid document reference.")
+    try:
+        with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
+            _ensure_commerce_schema(conn)
+            order = conn.execute(
+                "SELECT id,order_number,invoice_number,source_channel,status,created_at,updated_at FROM store_orders WHERE invoice_number=%s OR order_number=%s LIMIT 1",
+                (reference, reference),
+            ).fetchone()
+            if not order:
+                raise HTTPException(status_code=404, detail="Document not found.")
+            events = conn.execute(
+                "SELECT event_type,from_status,to_status,actor_id,details,created_at FROM document_events WHERE reference=%s ORDER BY created_at,id",
+                (order["invoice_number"],),
+            ).fetchall()
+            return {"document": order, "events": events}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(status_code=503, detail="Document timeline is temporarily unavailable.") from exc
 
 
 @router.get("/admin/store-settings")
