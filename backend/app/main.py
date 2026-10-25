@@ -77,6 +77,8 @@ def list_products(
             brand_select = "p.brand AS brand" if "brand" in product_columns else "NULL::text AS brand"
             description_select = "p.description AS description" if "description" in product_columns else "NULL::text AS description"
             currency_select = "v.currency AS currency" if "currency" in variant_columns else "'INR'::text AS currency"
+            hsn_select = "v.hsn_code AS hsn_code" if "hsn_code" in variant_columns else ("p.hsn_code AS hsn_code" if "hsn_code" in product_columns else "NULL::text AS hsn_code")
+            gst_rate_select = "v.gst_rate AS gst_rate" if "gst_rate" in variant_columns else ("p.gst_rate AS gst_rate" if "gst_rate" in product_columns else "NULL::numeric AS gst_rate")
             category_join = "LEFT JOIN product_categories c ON c.id = p.category_id" if "category_id" in product_columns else "LEFT JOIN product_categories c ON FALSE"
             where = [product_status, variant_status]
             params: list[Any] = []
@@ -96,7 +98,7 @@ def list_products(
                               {('v.sku' if 'sku' in variant_columns else 'NULL::text AS sku')},
                               {('v.mrp' if 'mrp' in variant_columns else 'NULL::numeric AS mrp')},
                               {('v.selling_price' if 'selling_price' in variant_columns else 'NULL::numeric AS selling_price')},
-                              {currency_select}, {image_select}
+                              {currency_select}, {image_select}, {hsn_select}, {gst_rate_select}
                        FROM products p
                        JOIN product_variants v ON v.product_id = p.id
                        {category_join}
@@ -114,7 +116,7 @@ def list_products(
                 grouped[pid]["variants"].append({
                     "variant_id": row["variant_id"], "sku": row.get("sku"), "mrp": row.get("mrp"),
                     "selling_price": row.get("selling_price"), "currency": row.get("currency"),
-                    "image_url": row.get("image_url"), "attributes": {}
+                    "image_url": row.get("image_url"), "hsn_code": row.get("hsn_code"), "gst_rate": row.get("gst_rate"), "attributes": {}
                 })
             items = list(grouped.values())
             for item in items:
@@ -146,13 +148,15 @@ def get_product_by_variant(variant_id: int) -> dict[str, Any]:
             brand_select = "p.brand AS brand" if "brand" in product_columns else "NULL::text AS brand"
             description_select = "p.description AS description" if "description" in product_columns else "NULL::text AS description"
             currency_select = "v.currency AS currency" if "currency" in variant_columns else "'INR'::text AS currency"
+            hsn_select = "v.hsn_code AS hsn_code" if "hsn_code" in variant_columns else ("p.hsn_code AS hsn_code" if "hsn_code" in product_columns else "NULL::text AS hsn_code")
+            gst_rate_select = "v.gst_rate AS gst_rate" if "gst_rate" in variant_columns else ("p.gst_rate AS gst_rate" if "gst_rate" in product_columns else "NULL::numeric AS gst_rate")
             category_join = "LEFT JOIN product_categories c ON c.id = p.category_id" if "category_id" in product_columns else "LEFT JOIN product_categories c ON FALSE"
             sku_select = "v.sku AS sku" if "sku" in variant_columns else "NULL::text AS sku"
             mrp_select = "v.mrp AS mrp" if "mrp" in variant_columns else "NULL::numeric AS mrp"
             price_select = "v.selling_price AS selling_price" if "selling_price" in variant_columns else "NULL::numeric AS selling_price"
             row = conn.execute(f"""SELECT p.id AS product_id, p.name, {description_select}, {brand_select},
                 c.name AS category, v.id AS variant_id, {sku_select}, {mrp_select},
-                {price_select}, {currency_select}, {image_select}
+                {price_select}, {currency_select}, {image_select}, {hsn_select}, {gst_rate_select}
                 FROM products p JOIN product_variants v ON v.product_id = p.id
                 {category_join} WHERE v.id = %s AND {product_status} AND {variant_status}
                 LIMIT 1""", (variant_id,)).fetchone()
