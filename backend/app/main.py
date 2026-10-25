@@ -94,7 +94,6 @@ def list_products(
             if category.strip():
                 where.append("c.name = %s")
                 params.append(category.strip())
-            params.extend([limit, offset])
             query = f"""SELECT p.id AS product_id, p.name, {description_select}, {brand_select},
                               c.name AS category, v.id AS variant_id,
                               {('v.sku' if 'sku' in variant_columns else 'NULL::text AS sku')},
@@ -106,8 +105,7 @@ def list_products(
                        {category_join}
                        {tax_join}
                        WHERE {' AND '.join(where)}
-                       ORDER BY p.name, v.id
-                       LIMIT %s OFFSET %s"""
+                       ORDER BY p.name, v.id"""
             rows = conn.execute(query, params).fetchall()
             # Storefront catalogue is parent-product based; variants remain selectable on detail pages.
             grouped: dict[int, dict[str, Any]] = {}
@@ -121,7 +119,7 @@ def list_products(
                     "selling_price": row.get("selling_price"), "currency": row.get("currency"),
                     "image_url": row.get("image_url"), "hsn_code": row.get("hsn_code"), "gst_rate": row.get("gst_rate"), "attributes": {}
                 })
-            items = list(grouped.values())
+            items = list(grouped.values())[offset:offset + limit]
             for item in items:
                 if item["variants"]:
                     # Keep the first available variant as the initial selection for backwards compatibility.
