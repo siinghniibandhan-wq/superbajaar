@@ -99,20 +99,35 @@ def attach_catalogue_media_and_attributes(conn: psycopg.Connection, rows: list[d
                     detail = conn.execute(f'SELECT "{col}" FROM products WHERE id=%s', (product_id,)).fetchone()
                     if detail and detail.get(col) is not None:
                         row[col] = detail[col]
-        # Convert legacy Odoo binary image fields to browser-loadable data URLs when needed.
+        # Convert legacy Odoo binary/base64 image fields to browser-loadable data URLs.
+        import base64
         for key in ("image_url", "image", "image_1920"):
             value = row.get(key)
-            if isinstance(value, str) and value and not value.startswith(("http://", "https://", "data:", "/")):
-                import base64
+            if isinstance(value, memoryview):
+                value = value.tobytes()
+            if isinstance(value, (bytes, bytearray)) and value:
+                decoded = bytes(value)
+                encoded = base64.b64encode(decoded).decode("ascii")
+                if decoded.startswith(b"\\xff\\xd8\\xff"): mime = "image/jpeg"
+                elif decoded.startswith(b"RIFF") and decoded[8:12] == b"WEBP": mime = "image/webp"
+                elif decoded.startswith(b"GIF8"): mime = "image/gif"
+                elif decoded.startswith(b"\\x89PNG\\r\\n\\x1a\\n"): mime = "image/png"
+                else: mime = ""
+                if mime:
+                    row["image_url"] = f"data:{mime};base64,{encoded}"
+                if key != "image_url":
+                    row.pop(key, None)
+            elif isinstance(value, str) and value and not value.startswith(("http://", "https://", "data:", "/")):
                 try:
                     decoded = base64.b64decode(value, validate=True)
                     if decoded:
-                        mime = "image/png"
-                        if decoded.startswith(b"\xff\xd8\xff"): mime = "image/jpeg"
+                        if decoded.startswith(b"\\xff\\xd8\\xff"): mime = "image/jpeg"
                         elif decoded.startswith(b"RIFF") and decoded[8:12] == b"WEBP": mime = "image/webp"
                         elif decoded.startswith(b"GIF8"): mime = "image/gif"
-                        elif decoded.startswith(b"\x89PNG\r\n\x1a\n"): mime = "image/png"
-                        row["image_url"] = f"data:{mime};base64,{value}"
+                        elif decoded.startswith(b"\\x89PNG\\r\\n\\x1a\\n"): mime = "image/png"
+                        else: mime = ""
+                        if mime:
+                            row["image_url"] = f"data:{mime};base64,{base64.b64encode(decoded).decode('ascii')}"
                 except Exception:
                     pass
     return rows
