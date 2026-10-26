@@ -385,3 +385,45 @@
 .product-delivery-message.error{color:var(--danger-color,#b42318)}
 .product-delivery-check>small{display:block;margin-top:.35rem}
 @media(max-width:420px){.product-delivery-input-row{flex-wrap:wrap}.product-delivery-input-row input{flex-basis:100%}}
+
+
+/* Storefront homepage catalogue layout and responsive product rails */
+.home-products{padding:30px 0 24px;min-width:0}
+.home-product-section{min-width:0;margin:0 0 34px}
+.home-product-section .section-title{align-items:center;margin-bottom:15px;gap:12px}
+.home-product-section .section-title h2{font-size:clamp(21px,2.4vw,28px)}
+.carousel-arrows{display:flex;gap:6px;flex-shrink:0}
+.carousel-arrows button{width:34px;height:34px;border:1px solid #e9e1f1;border-radius:9px;background:#fff;color:#5f2bc9;font-size:21px;line-height:1}
+.carousel-arrows button:disabled{opacity:.35;cursor:not-allowed}
+.products-carousel{display:flex;align-items:stretch;gap:15px;overflow-x:auto;overflow-y:hidden;padding:2px 1px 12px;scroll-snap-type:x mandatory;scrollbar-width:thin;scrollbar-color:#d9c8f2 transparent;-webkit-overflow-scrolling:touch}
+.carousel-product{flex:0 0 clamp(205px,22%,260px);min-width:0;scroll-snap-align:start}
+.carousel-product .product-tile{height:100%;display:flex;flex-direction:column}
+.carousel-product .product-picture{height:clamp(145px,17vw,190px);flex:0 0 auto}
+.carousel-product .product-picture img{display:block;max-width:100%;max-height:100%;object-fit:contain}
+.carousel-product .product-details{display:flex;flex:1;flex-direction:column;align-items:stretch;min-width:0}
+.carousel-product .product-details h3{min-height:3em;overflow-wrap:anywhere}
+.carousel-product .product-card-actions{margin-top:auto;padding-top:8px}
+.carousel-empty{margin:0;padding:16px 0 22px;color:#82768f;font-size:12px;line-height:1.7}
+.home-products>.catalog-state{margin:20px 0 28px;min-height:125px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:25px 18px}
+.home-products>.catalog-state p{margin:0}
+.product-picture img{display:block;max-width:100%;max-height:100%}
+.product-picture .product-placeholder{flex:0 0 auto}
+@media(max-width:760px){
+ .home-products{padding:24px 0 18px}
+ .home-product-section{margin-bottom:26px}
+ .home-product-section .section-title{margin-bottom:12px}
+ .home-product-section .section-title h2{font-size:21px}
+ .carousel-arrows button{width:30px;height:30px}
+ .products-carousel{gap:11px;padding-bottom:10px}
+ .carousel-product{flex-basis:clamp(185px,68vw,245px)}
+ .carousel-product .product-picture{height:150px}
+ .carousel-product .product-details{padding:11px}
+ .carousel-product .product-details h3{font-size:12px;min-height:0;margin-bottom:9px}
+ .carousel-product .price-line b{font-size:13px}
+ .carousel-product .product-card-rating{font-size:11px}
+ .carousel-product .product-card-actions{margin-top:auto}
+}
+@media(max-width:380px){
+ .carousel-product{flex-basis:78vw}
+ .carousel-product .product-picture{height:135px}
+}
