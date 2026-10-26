@@ -539,43 +539,56 @@
 }
 
 
-/* Consistent product-card shopping bag and favourite heart icons */
-.product-card-actions .quick-add{
- display:grid;
+/* Consistent, truly circular product-card action buttons and aligned icon row */
+.product-card-actions{
+ display:flex;
+ align-items:center;
+ justify-content:space-between;
+ gap:12px;
+ width:100%;
+}
+.product-card-actions .quick-add,.product-card-actions .wishlist-button{
+ box-sizing:border-box;
+ display:inline-grid;
  place-items:center;
+ flex:0 0 40px;
  width:40px;
- height:40px;
  min-width:40px;
+ max-width:40px;
+ height:40px;
+ min-height:40px;
+ max-height:40px;
+ aspect-ratio:1/1;
  padding:0;
- border:1px solid #eadff5;
+ border:1px solid transparent;
  border-radius:50%;
+ line-height:1;
+ opacity:1;
+ transform:none;
+}
+.product-card-actions .quick-add{
+ border-color:#eadff5;
  background:linear-gradient(145deg,#7028d8,#5420bd);
  color:#fff;
  box-shadow:0 3px 10px rgba(75,28,140,.18);
- opacity:1;
  transition:transform .18s ease,box-shadow .18s ease;
 }
 .product-bag-icon{display:block;width:23px;height:23px}
 .product-card-actions .quick-add:hover{transform:translateY(-1px);box-shadow:0 5px 13px rgba(75,28,140,.24)}
 .product-card-actions .wishlist-button{
- display:grid;
- place-items:center;
- width:40px;
- height:40px;
- padding:0;
- border:1px solid #f1d9eb;
- border-radius:50%;
+ border-color:#f1d9eb;
  background:linear-gradient(145deg,#e65acb,#c943b7);
  color:#fff;
  box-shadow:0 3px 10px rgba(184,49,153,.18);
- line-height:1;
  transition:transform .18s ease,background .18s ease;
 }
 .product-heart-icon{display:block;width:22px;height:22px}
 .product-card-actions .wishlist-button.is-saved{background:#c943b7;color:#fff;border-color:#c943b7}
 .product-card-actions .wishlist-button:hover{transform:translateY(-1px)}
 @media(max-width:760px){
- .product-card-actions .quick-add,.product-card-actions .wishlist-button{width:38px;height:38px;min-width:38px}
+ .product-card-actions .quick-add,.product-card-actions .wishlist-button{
+  flex-basis:38px;width:38px;min-width:38px;max-width:38px;height:38px;min-height:38px;max-height:38px;
+ }
  .product-bag-icon{width:22px;height:22px}
  .product-heart-icon{width:21px;height:21px}
 }
