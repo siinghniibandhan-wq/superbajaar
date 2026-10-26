@@ -665,6 +665,8 @@ def create_shipment(body:ShipmentInput,authorization:str|None=Header(default=Non
             if body.order_type == "website":
                 conn.execute("UPDATE store_orders SET status='shipped',updated_at=now() WHERE id=%s AND status IN ('confirmed','processing','packed')", (body.order_id,))
             return {"shipment":row}
+    except HTTPException:
+        raise
     except Exception as exc: raise HTTPException(status_code=503,detail="Shipment could not be created") from exc
 
 @router.get("/shipments")
