@@ -761,10 +761,10 @@ function Dashboard({goStore}) {
   const inventoryTabs=['Overview','Products','Stock Levels','Movements','Warehouses','Categories','Attributes'];
   const money=value=>'₹'+Number(value||0).toLocaleString('en-IN',{maximumFractionDigits:2});
   return <main style={{minHeight:'100vh',background:'#19191f',color:'#f4f1f8',fontFamily:'inherit'}}>
-   <header style={{display:'flex',alignItems:'center',gap:12,minHeight:54,padding:'8px 16px',background:'#23232b',borderBottom:'1px solid #393943',flexWrap:'wrap'}}>
+   <header style={{display:'flex',alignItems:'center',gap:12,minHeight:54,padding:'8px 16px',background:'#23232b',borderBottom:'1px solid #393943',flexWrap:'wrap',position:'relative',zIndex:50}}>
     <button type="button" onClick={()=>setActiveModule(null)} aria-label="Back to app launcher" style={{border:0,background:'transparent',color:'#fff',fontSize:22,cursor:'pointer'}}>‹</button>
     <span style={{fontSize:22}}>📦</span><strong>Inventory</strong>
-    <nav aria-label="Inventory navigation" style={{display:'flex',gap:4,marginLeft:8,overflowX:'auto',flex:1,alignItems:'center'}}>
+    <nav aria-label="Inventory navigation" style={{display:'flex',gap:4,marginLeft:8,flex:'1 1 100%',flexWrap:'wrap',overflow:'visible',position:'relative',zIndex:60,alignItems:'center'}}>
      {['Overview','Operations','Products','Reporting','Configuration'].map(menu=><div key={menu} style={{position:'relative',flex:'0 0 auto'}}>
       <button type="button" aria-expanded={inventoryMenu===menu} onClick={()=>setInventoryMenu(inventoryMenu===menu?null:menu)} style={{whiteSpace:'nowrap',border:0,borderRadius:5,padding:'9px 8px',background:inventoryMenu===menu?'#34343d':'transparent',color:inventoryMenu===menu?'#f4b3eb':'#d2ccd9',cursor:'pointer',fontSize:12}}>{menu}{menu!=='Overview'?' ▾':''}</button>
       {inventoryMenu===menu&&menu!=='Overview'&&<div style={{position:'absolute',zIndex:20,top:'100%',left:0,minWidth:190,padding:'7px 0',border:'1px solid #4a4652',borderRadius:8,background:'#393941',boxShadow:'0 12px 30px #0008'}}>
