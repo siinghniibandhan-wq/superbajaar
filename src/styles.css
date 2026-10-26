@@ -738,3 +738,21 @@ html,body,#root{max-width:100%;min-width:0;overflow-x:clip}
 }
 @media(max-width:360px){.carousel-product{flex-basis:148px;min-width:148px}.carousel-product .product-picture{height:128px}}
 @media(prefers-reduced-motion:reduce){.products-carousel{scroll-behavior:auto}}
+
+/* Consistent modern cart icon on every product card and product carousel */
+.product-card-actions .quick-add{
+ display:grid!important;place-items:center!important;flex:0 0 38px!important;width:38px!important;height:38px!important;
+ min-width:38px;padding:0!important;border:1px solid #5420bd!important;border-radius:50%!important;
+ background:#6428d9!important;color:#fff!important;box-shadow:0 4px 12px rgba(83,31,185,.28)!important;
+ opacity:1!important;visibility:visible!important;transform:none!important;line-height:1;overflow:visible;
+ transition:background .18s,box-shadow .18s,transform .18s;
+}
+.product-card-actions .quick-add:hover{background:#4f16b8!important;box-shadow:0 6px 15px rgba(83,31,185,.36)!important;transform:translateY(-1px)!important}
+.product-card-actions .quick-add:focus-visible{outline:3px solid #c6a8ff;outline-offset:3px}
+.product-card-actions .quick-add .product-cart-icon{display:block!important;width:21px!important;height:21px!important;max-width:none;color:#fff;overflow:visible}
+.product-card-actions .wishlist-button{flex:0 0 38px!important;width:38px!important;height:38px!important;min-width:38px;border-radius:50%!important}
+.product-card-actions .quick-add[aria-label="Choose product options"]{background:#6428d9!important}
+@media(max-width:760px){
+ .product-card-actions .quick-add,.product-card-actions .wishlist-button{flex-basis:40px!important;width:40px!important;height:40px!important;min-width:40px}
+ .product-card-actions .quick-add .product-cart-icon{width:22px!important;height:22px!important}
+}
