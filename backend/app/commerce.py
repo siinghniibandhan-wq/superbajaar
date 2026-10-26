@@ -519,7 +519,13 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
                      product["tax_rate"], product["taxable_amount"], product["cgst_amount"], product["sgst_amount"],
                      product["igst_amount"], product["tax_amount"], product["tax_inclusive"])
                 )
-                stock=conn.execute("SELECT quantity FROM sb_stock WHERE variant_id=%s AND warehouse='Main' FOR UPDATE",(product["variant_id"],)).fetchone()
+                stock=conn.execute("""SELECT s.quantity,s.warehouse FROM sb_stock s
+                    LEFT JOIN sb_warehouses w ON lower(w.name)=lower(s.warehouse)
+                    WHERE s.variant_id=%s AND (s.warehouse='Main' OR (w.active=TRUE AND
+                      (w.pincode=%s OR w.serviceable_pincodes ? %s)))
+                    ORDER BY CASE WHEN w.pincode=%s THEN 0 WHEN lower(s.warehouse)='main' THEN 2 ELSE 1 END,s.warehouse
+                    LIMIT 1 FOR UPDATE OF s""",
+                    (product["variant_id"],body.shipping_address.pincode,body.shipping_address.pincode,body.shipping_address.pincode)).fetchone()
                 # Require tracked stock and reserve it atomically at order placement.
                 if not stock:
                     raise HTTPException(status_code=409, detail=f"Stock is not configured for {product['name']}; contact the store before ordering.")
@@ -528,13 +534,13 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
                     if available < product["quantity"]:
                         raise HTTPException(status_code=422,detail=f"Insufficient stock for {product['name']}; available {available}")
                     changed=conn.execute("""UPDATE sb_stock SET quantity=quantity-%s,updated_at=now()
-                        WHERE variant_id=%s AND warehouse='Main' AND quantity >= %s RETURNING quantity""",
-                        (product["quantity"],product["variant_id"],product["quantity"])).fetchone()
+                        WHERE variant_id=%s AND warehouse=%s AND quantity >= %s RETURNING quantity""",
+                        (product["quantity"],product["variant_id"],stock["warehouse"],product["quantity"])).fetchone()
                     if not changed:
                         raise HTTPException(status_code=409,detail=f"Stock changed while reserving {product['name']}; please retry checkout.")
                     conn.execute("""INSERT INTO sb_stock_movements(variant_id,warehouse,movement_type,quantity,reference_type,reference_id,note)
-                        VALUES(%s,'Main','website_sale',%s,'website_order',%s,'Reserved at website order placement')""",
-                        (product["variant_id"],product["quantity"],row["id"]))
+                        VALUES(%s,%s,'website_sale',%s,'website_order',%s,'Reserved at website order placement')""",
+                        (product["variant_id"],stock["warehouse"],product["quantity"],row["id"]))
             from .invoices import create_invoice
             invoice_lines=[{"description":p["name"],"variant_id":p["variant_id"],"quantity":p["quantity"],
                 "unit_price":p["unit_price"],"line_subtotal":p["taxable_amount"],"line_tax":p["tax_amount"],
