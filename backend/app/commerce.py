@@ -446,8 +446,8 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
             gst_row = conn.execute("SELECT setting_value FROM store_settings WHERE setting_key='gst'").fetchone()
             gst_setting = gst_row["setting_value"] if gst_row else None
             if isinstance(gst_setting, dict) and gst_setting.get("origin_state"):
-                origin_state = re.sub(r"\\s+", " ", str(gst_setting["origin_state"])).strip().casefold()
-                destination_state = re.sub(r"\\s+", " ", body.shipping_address.state).strip().casefold()
+                origin_state = re.sub(r"\s+", " ", str(gst_setting["origin_state"])).strip().casefold()
+                destination_state = re.sub(r"\s+", " ", body.shipping_address.state).strip().casefold()
                 if origin_state != destination_state:
                     for product in products:
                         product["cgst_amount"] = Decimal("0.00")
