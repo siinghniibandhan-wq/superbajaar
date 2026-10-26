@@ -708,13 +708,13 @@ def update_shipment(shipment_id:int,body:ShipmentUpdate,authorization:str|None=H
                         if target=="cancelled":
                             order_lines=conn.execute("SELECT variant_id,quantity FROM store_order_items WHERE order_id=%s",(order["id"],)).fetchall()
                             for line in order_lines:
-                                reserved=conn.execute("""SELECT id FROM sb_stock_movements WHERE variant_id=%s AND reference_type='website_order'
-                                    AND reference_id=%s AND movement_type='website_sale' LIMIT 1""",(line["variant_id"],order["id"])).fetchone()
-                                stock=conn.execute("SELECT quantity FROM sb_stock WHERE variant_id=%s AND warehouse='Main' FOR UPDATE",(line["variant_id"],)).fetchone()
+                                reserved=conn.execute("""SELECT warehouse FROM sb_stock_movements WHERE variant_id=%s AND reference_type='website_order'
+                                    AND reference_id=%s AND movement_type='website_sale' ORDER BY id LIMIT 1""",(line["variant_id"],order["id"])).fetchone()
+                                stock=conn.execute("SELECT quantity FROM sb_stock WHERE variant_id=%s AND warehouse=%s FOR UPDATE",(line["variant_id"],reserved["warehouse"] if reserved else "Main")).fetchone()
                                 if reserved and stock:
-                                    conn.execute("UPDATE sb_stock SET quantity=quantity+%s,updated_at=now() WHERE variant_id=%s AND warehouse='Main'",(line["quantity"],line["variant_id"]))
-                                    conn.execute("""INSERT INTO sb_stock_movements(variant_id,warehouse,movement_type,quantity,reference_type,reference_id,created_by)
-                                        VALUES(%s,'Main','return_in',%s,'website_order_cancel',%s,%s)""",(line["variant_id"],line["quantity"],order["id"],user["id"]))
+                                    conn.execute("UPDATE sb_stock SET quantity=quantity+%s,updated_at=now() WHERE variant_id=%s AND warehouse=%s",(line["quantity"],line["variant_id"],reserved["warehouse"]))
+                                    conn.execute("""INSERT INTO sb_stock_movements(variant_id,warehouse,movement_type,quantity,reference_type,reference_id,created_by,note)
+                                        VALUES(%s,%s,'return_in',%s,'website_order_cancel',%s,%s,'Restore order-placement reservation')""",(line["variant_id"],reserved["warehouse"],line["quantity"],order["id"],user["id"]))
                         conn.execute("UPDATE store_orders SET status=%s,updated_at=now() WHERE id=%s",(target,order["id"]))
                         if target=="delivered":
                             from .accounting import _ensure as ensure_accounting
