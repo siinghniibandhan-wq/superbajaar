@@ -105,9 +105,15 @@ def _ensure(conn: Any) -> None:
         UNIQUE(run_id,employee_id))""")
 
 def _post_journal(conn: Any, entry_date: date, reference: str, description: str, source_module: str, source_id: int, lines: list[tuple[str, Decimal, Decimal]], user_id: int) -> int:
-    """Post a balanced journal using seeded account detail types."""
+    """Post a balanced journal once per source module/source ID."""
     from .accounting import _ensure as ensure_accounting
     ensure_accounting(conn)
+    existing = conn.execute(
+        "SELECT id FROM sb_journals WHERE source_module=%s AND source_id=%s ORDER BY id LIMIT 1",
+        (source_module, str(source_id)),
+    ).fetchone()
+    if existing:
+        return int(existing["id"])
     resolved=[]
     for detail_type,debit,credit in lines:
         if debit == 0 and credit == 0:
