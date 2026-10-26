@@ -636,6 +636,10 @@ def update_admin_order(
                 previous=conn.execute("SELECT * FROM store_orders WHERE id=%s FOR UPDATE",(order_id,)).fetchone()
                 if not previous or previous["status"] in ("cancelled","delivered"):
                     raise HTTPException(status_code=404, detail="Order not found or already closed.")
+                if body.status == "delivered" and previous["status"] != "shipped":
+                    raise HTTPException(status_code=409, detail="A website order can be delivered only after staff dispatches it and its status is shipped.")
+                if body.status == "confirmed" and previous["status"] != "placed":
+                    raise HTTPException(status_code=409, detail="Only a newly placed order can be confirmed.")
                 if body.status=="cancelled":
                     lines=conn.execute("SELECT variant_id,quantity FROM store_order_items WHERE order_id=%s",(order_id,)).fetchall()
                     for line in lines:
