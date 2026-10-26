@@ -702,6 +702,7 @@ function POSDesk(){
 function Dashboard({goStore}) {
  const [activeModule,setActiveModule]=useState(null);
  const [inventoryTab,setInventoryTab]=useState('Overview');
+ const [inventoryMenu,setInventoryMenu]=useState(null);
  const [inventoryProducts,setInventoryProducts]=useState([]);
  const [inventoryStock,setInventoryStock]=useState([]);
  const [inventoryMovements,setInventoryMovements]=useState([]);
@@ -762,7 +763,15 @@ function Dashboard({goStore}) {
    <header style={{display:'flex',alignItems:'center',gap:12,minHeight:54,padding:'8px 16px',background:'#23232b',borderBottom:'1px solid #393943',flexWrap:'wrap'}}>
     <button type="button" onClick={()=>setActiveModule(null)} aria-label="Back to app launcher" style={{border:0,background:'transparent',color:'#fff',fontSize:22,cursor:'pointer'}}>‹</button>
     <span style={{fontSize:22}}>📦</span><strong>Inventory</strong>
-    <div style={{display:'flex',gap:14,marginLeft:12,overflowX:'auto',flex:1}}>{inventoryTabs.map(tab=><button key={tab} onClick={()=>setInventoryTab(tab)} type="button" style={{whiteSpace:'nowrap',border:0,borderBottom:inventoryTab===tab?'2px solid #dc68d1':'2px solid transparent',padding:'12px 2px',background:'transparent',color:inventoryTab===tab?'#f4b3eb':'#c9c4d1',cursor:'pointer',fontSize:12}}>{tab}</button>)}</div>
+    <nav aria-label="Inventory navigation" style={{display:'flex',gap:4,marginLeft:8,overflowX:'auto',flex:1,alignItems:'center'}}>
+     {['Overview','Operations','Products','Reporting','Configuration'].map(menu=><div key={menu} style={{position:'relative',flex:'0 0 auto'}}>
+      <button type="button" aria-expanded={inventoryMenu===menu} onClick={()=>setInventoryMenu(inventoryMenu===menu?null:menu)} style={{whiteSpace:'nowrap',border:0,borderRadius:5,padding:'9px 8px',background:inventoryMenu===menu?'#34343d':'transparent',color:inventoryMenu===menu?'#f4b3eb':'#d2ccd9',cursor:'pointer',fontSize:12}}>{menu}{menu!=='Overview'?' ▾':''}</button>
+      {inventoryMenu===menu&&menu!=='Overview'&&<div style={{position:'absolute',zIndex:20,top:'100%',left:0,minWidth:190,padding:'7px 0',border:'1px solid #4a4652',borderRadius:8,background:'#393941',boxShadow:'0 12px 30px #0008'}}>
+       {(menu==='Operations'?['Transfers','Receipts','Deliveries','Physical Inventory','Scrap','Replenishment']:menu==='Products'?['Products','Product Variants','Categories','Attributes']:menu==='Reporting'?['Stock','Moves History','Moves Analysis']:['Warehouses','Operations Types','Categories','Attributes','Reorder Rules']).map(item=><button key={item} type="button" onClick={()=>{setInventoryTab(({ 'Moves History':'Movements','Moves Analysis':'Movements','Stock':'Stock Levels','Product Variants':'Products','Operations Types':'Warehouses','Reorder Rules':'Stock Levels'})[item]||item);setInventoryMenu(null);setInventorySearch('')}} style={{display:'block',width:'100%',textAlign:'left',border:0,background:'transparent',color:'#f0ecf5',padding:'10px 14px',fontSize:12,cursor:'pointer'}}>{item}</button>)}
+      </div>}
+     </div>)}
+     <button type="button" onClick={()=>{setInventoryTab('Overview');setInventoryMenu(null)}} style={{border:0,borderBottom:inventoryTab==='Overview'?'2px solid #dc68d1':'2px solid transparent',background:'transparent',color:inventoryTab==='Overview'?'#f4b3eb':'#c9c4d1',padding:'9px 7px',fontSize:12,cursor:'pointer'}}>Home</button>
+    </nav>
     <button type="button" onClick={goStore} style={{border:'1px solid #51495c',borderRadius:7,padding:'7px 10px',background:'transparent',color:'#fff',fontSize:12}}>Storefront</button>
    </header>
    <section style={{maxWidth:1200,margin:'0 auto',padding:'18px 14px 40px'}}>
