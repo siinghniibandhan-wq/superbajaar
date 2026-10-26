@@ -507,7 +507,10 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
             create_invoice(conn,source_type="website",source_id=int(row["id"]),
                 customer_name=str(address.get("full_name") or user.get("full_name") or "Website customer"),
                 customer_email=user.get("email"),customer_phone=address.get("phone"),
-                subtotal=subtotal, tax_total=tax_total, total=total, lines=invoice_lines)
+                # Keep the invoice header subtotal aligned with its line subtotals:
+                # taxable product value + shipping - loyalty discount. Tax remains separate.
+                subtotal=(subtotal + shipping_fee - loyalty_discount),
+                tax_total=tax_total, total=total, lines=invoice_lines)
             return {"order": _order_detail(conn, row["id"]),
                     "message": "Order placed. Tracked inventory is deducted atomically; payment is due on delivery."}
     except HTTPException:
