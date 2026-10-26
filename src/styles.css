@@ -489,3 +489,33 @@ img,video,svg,canvas{
   transition-duration:.01ms!important;
  }
 }
+
+
+/* Storefront finish: persistent navigation, polished footer, and resilient mobile layout. */
+.shop-nav{position:sticky;top:0;z-index:120;background:rgba(255,255,255,.97);backdrop-filter:saturate(150%) blur(12px)}
+.shop-nav .logo{flex-shrink:0}
+.shop-search{min-width:120px}
+.customer-nav button:focus-visible,.account-button:focus-visible,.cart-button:focus-visible,.category-strip button:focus-visible,.store-footer button:focus-visible{outline:3px solid #bca0f5;outline-offset:2px}
+.category-strip{background:#fff;scrollbar-width:thin;overscroll-behavior-x:contain}
+.store-footer{margin-top:40px;padding-top:6px;background:linear-gradient(180deg,#fff 0%,#fcfaff 100%)}
+.footer-main>div:not(:first-child)>button{cursor:pointer;line-height:1.5}
+.footer-main>div:not(:first-child)>button:hover{text-decoration:underline;text-underline-offset:3px}
+.footer-bottom{flex-wrap:wrap;align-items:center}
+.cart-button b{min-width:22px;text-align:center}
+.mobile-menu-button{flex-shrink:0;border-radius:9px;padding:7px}
+@media(min-width:761px){.shop-nav{box-shadow:0 1px 0 rgba(40,24,60,.04)}}
+@media(max-width:760px){
+ .shop-nav{position:sticky;top:0;min-height:72px;height:auto;padding-block:10px;flex-wrap:wrap}
+ .shop-search{order:2;flex:1 0 100%;max-width:none;margin:2px 0 0;height:42px}
+ .customer-nav{top:100%;left:12px;right:12px}
+ .category-strip{padding:8px 0}
+ .store-footer{margin-top:24px}
+}
+@media(max-width:420px){
+ .shop-shell{padding-inline:12px}
+ .announcement-bar{text-align:center;line-height:1.5}
+ .shop-nav .logo small{display:none}
+ .account-button{padding:8px}
+ .footer-main{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .footer-bottom{font-size:10px}
+}
