@@ -195,14 +195,7 @@ def get_product_availability(product_id: int, authorization: str | None = Header
         with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
             if not conn.execute("SELECT id FROM products WHERE id=%s", (product_id,)).fetchone():
                 raise HTTPException(status_code=404, detail="Product not found.")
-            if not conn.execute("SELECT to_regclass('public.sb_product_availability_rules') AS t").fetchone()["t"]:
-                raise HTTPException(status_code=503, detail="Apply product creation schema 011 first.")
-            rows = conn.execute(
-                """SELECT id,variant_id,scope_type,region_id,pincode,warehouse_id
-                   FROM sb_product_availability_rules WHERE product_id=%s
-                   ORDER BY variant_id NULLS FIRST,scope_type,id""", (product_id,)
-            ).fetchall()
-            return {"rules": rows, "unrestricted": len(rows) == 0}
+            return {"rules": [], "unrestricted": True, "uses_existing_delivery_network": True}
     except HTTPException:
         raise
     except psycopg.Error as exc:
@@ -214,69 +207,15 @@ def get_product_availability(product_id: int, authorization: str | None = Header
 def set_product_availability(product_id: int, body: ProductAvailabilityRuleInput,
                               authorization: str | None = Header(default=None)) -> dict[str, Any]:
     _admin_catalogue_user(authorization)
-    region_ids = list(dict.fromkeys(body.region_ids))
-    pincodes = list(dict.fromkeys(str(pin).strip() for pin in body.pincodes if str(pin).strip()))
-    warehouse_ids = list(dict.fromkeys(body.warehouse_ids))
-    if any(not re.fullmatch(r"[0-9]{6}", pin) for pin in pincodes):
-        raise HTTPException(status_code=422, detail="Every PIN code must contain exactly six digits.")
+    if body.region_ids or body.pincodes or body.warehouse_ids:
+        raise HTTPException(status_code=422, detail="Custom product delivery restrictions are not supported by the existing schema. Configure serviceable PIN codes under Warehouses.")
     try:
         with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
             if not conn.execute("SELECT id FROM products WHERE id=%s", (product_id,)).fetchone():
                 raise HTTPException(status_code=404, detail="Product not found.")
-            if body.variant_id and not conn.execute(
-                "SELECT id FROM product_variants WHERE id=%s AND product_id=%s", (body.variant_id, product_id)
-            ).fetchone():
+            if body.variant_id and not conn.execute("SELECT id FROM product_variants WHERE id=%s AND product_id=%s", (body.variant_id, product_id)).fetchone():
                 raise HTTPException(status_code=422, detail="Variant does not belong to this product.")
-            if not conn.execute("SELECT to_regclass('public.sb_product_availability_rules') AS t").fetchone()["t"]:
-                raise HTTPException(status_code=503, detail="Apply product creation schema 011 first.")
-            # Validate every selected reference before replacing the existing rules.
-            for region_id in region_ids:
-                if not conn.execute("SELECT id FROM sb_regions WHERE id=%s AND active=TRUE", (region_id,)).fetchone():
-                    raise HTTPException(status_code=422, detail="One selected region is unavailable.")
-            for warehouse_id in warehouse_ids:
-                if not conn.execute("SELECT id FROM sb_warehouses WHERE id=%s AND active=TRUE", (warehouse_id,)).fetchone():
-                    raise HTTPException(status_code=422, detail="One selected warehouse is unavailable.")
-            for pin in pincodes:
-                if not conn.execute(
-                    """SELECT 1 FROM sb_region_pincodes WHERE pincode=%s AND active=TRUE
-                       UNION ALL SELECT 1 FROM sb_warehouses
-                       WHERE active=TRUE AND (pincode=%s OR serviceable_pincodes @> %s::jsonb) LIMIT 1""",
-                    (pin, pin, Jsonb([pin])),
-                ).fetchone():
-                    raise HTTPException(status_code=422, detail=f"PIN code {pin} is not in an active region or warehouse service area.")
-                if region_ids and not conn.execute(
-                    "SELECT 1 FROM sb_region_pincodes WHERE region_id = ANY(%s) AND pincode=%s AND active=TRUE LIMIT 1",
-                    (region_ids, pin),
-                ).fetchone():
-                    raise HTTPException(status_code=422, detail=f"PIN code {pin} is outside the selected region(s).")
-            if region_ids and warehouse_ids:
-                if conn.execute(
-                    "SELECT 1 FROM sb_warehouses WHERE id = ANY(%s) AND (region_id IS NULL OR NOT (region_id = ANY(%s))) LIMIT 1",
-                    (warehouse_ids, region_ids),
-                ).fetchone():
-                    raise HTTPException(status_code=422, detail="Every selected warehouse must belong to one of the selected regions.")
-            conn.execute(
-                "DELETE FROM sb_product_availability_rules WHERE product_id=%s AND variant_id IS NOT DISTINCT FROM %s",
-                (product_id, body.variant_id),
-            )
-            # No rules means unrestricted across the existing delivery network.
-            for region_id in region_ids:
-                conn.execute(
-                    """INSERT INTO sb_product_availability_rules(product_id,variant_id,scope_type,region_id)
-                       VALUES(%s,%s,'region',%s)""", (product_id, body.variant_id, region_id)
-                )
-            for pin in pincodes:
-                conn.execute(
-                    """INSERT INTO sb_product_availability_rules(product_id,variant_id,scope_type,pincode)
-                       VALUES(%s,%s,'pincode',%s)""", (product_id, body.variant_id, pin)
-                )
-            for warehouse_id in warehouse_ids:
-                conn.execute(
-                    """INSERT INTO sb_product_availability_rules(product_id,variant_id,scope_type,warehouse_id)
-                       VALUES(%s,%s,'warehouse',%s)""", (product_id, body.variant_id, warehouse_id)
-                )
-            return {"saved": True, "unrestricted": not (region_ids or pincodes or warehouse_ids),
-                    "counts": {"regions": len(region_ids), "pincodes": len(pincodes), "warehouses": len(warehouse_ids)}}
+            return {"saved": True, "unrestricted": True, "uses_existing_delivery_network": True}
     except HTTPException:
         raise
     except psycopg.Error as exc:
@@ -290,37 +229,10 @@ class ProductRegionWriteInput(BaseModel):
     pincodes: list[str] = Field(default_factory=list, max_length=2000)
 
 
-@app.post("/api/admin/product-creation/regions", status_code=201)
+@app.post("/api/admin/product-creation/regions", status_code=501)
 def create_product_region(body: ProductRegionWriteInput, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     _admin_catalogue_user(authorization)
-    name, code = body.name.strip(), re.sub(r"[^A-Za-z0-9_-]", "", body.code.strip().upper())
-    pincodes = list(dict.fromkeys(str(pin).strip() for pin in body.pincodes if str(pin).strip()))
-    if not code or any(not re.fullmatch(r"[0-9]{6}", pin) for pin in pincodes):
-        raise HTTPException(status_code=422, detail="Use a region code and only six-digit PIN codes.")
-    try:
-        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
-            row = conn.execute(
-                """INSERT INTO sb_regions(name,code) VALUES(%s,%s)
-                   ON CONFLICT(name) DO UPDATE SET active=TRUE RETURNING id,name,code""",
-                (name, code),
-            ).fetchone()
-            # A region code already assigned to another region must not be silently reassigned.
-            if not row:
-                raise HTTPException(status_code=409, detail="Could not create region.")
-            for pin in pincodes:
-                conn.execute(
-                    """INSERT INTO sb_region_pincodes(region_id,pincode) VALUES(%s,%s)
-                       ON CONFLICT(region_id,pincode) DO UPDATE SET active=TRUE""",
-                    (row["id"], pin),
-                )
-            return {"region": row, "pincodes_added": len(pincodes)}
-    except HTTPException:
-        raise
-    except psycopg.errors.UniqueViolation as exc:
-        raise HTTPException(status_code=409, detail="Region name or code already exists.") from exc
-    except psycopg.Error as exc:
-        logger.exception("Region setup failed")
-        raise HTTPException(status_code=503, detail="Region and PIN-code setup failed.") from exc
+    raise HTTPException(status_code=501, detail="Custom regions require a database schema change, which is disabled. Configure serviceable PIN codes under Warehouses.")
 
 
 @app.get("/api/admin/product-creation/references")
@@ -342,17 +254,6 @@ def product_creation_references(authorization: str | None = Header(default=None)
                     result["tax_rates"] = rates if isinstance(rates, dict) else {}
             result["regions"] = []
             result["region_pincodes"] = []
-            if conn.execute("SELECT to_regclass('public.sb_regions') AS t").fetchone()["t"]:
-                result["regions"] = conn.execute("SELECT id,name,code FROM sb_regions WHERE active=TRUE ORDER BY name").fetchall()
-            if conn.execute("SELECT to_regclass('public.sb_region_pincodes') AS t").fetchone()["t"]:
-                result["region_pincodes"] = conn.execute("SELECT region_id,pincode FROM sb_region_pincodes WHERE active=TRUE ORDER BY pincode").fetchall()
-            if tables["sb_warehouses"]:
-                columns = _catalogue_columns(conn, "sb_warehouses")
-                select_columns = [name for name in ("id", "name", "code", "address", "pincode", "serviceable_pincodes", "locations", "active", "region_id") if name in columns]
-                if select_columns:
-                    result["warehouses"] = conn.execute(
-                        "SELECT " + ", ".join(select_columns) + " FROM sb_warehouses WHERE active=TRUE ORDER BY name"
-                    ).fetchall()
             return result
     except HTTPException:
         raise
@@ -860,6 +761,7 @@ def create_catalogue_product(
                               "tax_category": body.tax_category.strip(), "gst_rate": body.gst_rate, "tax_inclusive": body.tax_inclusive,
                               "sale_badge": body.sale_badge.strip(), "sale_badge_active": body.sale_badge_active,
                               "cover_image_url": cover_url, "main_image_url": cover_url, "image_url": cover_url}
+            product_values = {k: v for k, v in product_values.items() if k in product_columns}
             product = _catalogue_insert(conn, "products", product_values)
             if body.hsn_code.strip() and conn.execute("SELECT to_regclass('public.catalog_product_tax') AS t").fetchone()["t"]:
                 conn.execute(
