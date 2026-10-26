@@ -627,3 +627,29 @@ img,video,svg,canvas{
 .category-strip .category-card:hover{border-color:#c8b0f1;box-shadow:0 7px 17px rgba(91,33,182,.12);transform:translateY(-1px)}
 .category-strip .category-card.selected{border-color:#7c3aed;background:linear-gradient(150deg,#f2eaff,#fff1e7);box-shadow:0 0 0 2px rgba(124,58,237,.12)}
 @media(max-width:760px){.category-strip{gap:9px;padding:10px 12px}.category-strip .category-card{flex-basis:94px;width:94px;min-width:94px;height:110px;padding:7px 7px 8px;gap:7px;border-radius:14px;font-size:11px}.category-strip .category-card img{height:66px;flex-basis:66px;border-radius:9px}}
+
+
+/* Mobile storefront overflow and category-card readability fixes */
+html,body,#root{max-width:100%;min-width:0;overflow-x:clip}
+.shop-shell{width:100%;max-width:100%;min-width:0;overflow-x:clip}
+.shop-nav,.category-strip,.shop-hero,.shop-promises,.catalog-section,.store-help,.store-footer{max-width:100%;min-width:0}
+.shop-hero{box-sizing:border-box;overflow:hidden}
+.hero-text,.hero-visual{min-width:0}
+.category-strip{box-sizing:border-box;flex-wrap:nowrap;justify-content:flex-start;scrollbar-width:none;touch-action:pan-x}
+.category-strip::-webkit-scrollbar{display:none}
+.category-strip .category-card{height:132px;min-height:132px;box-sizing:border-box;flex-shrink:0}
+.category-strip .category-card img{object-fit:cover;flex-shrink:0}
+.category-strip .category-card span{width:100%;min-height:28px;line-height:1.25;white-space:normal}
+@media(max-width:760px){
+ .shop-nav{box-sizing:border-box;width:100%;padding-inline:12px;gap:8px}
+ .shop-search{box-sizing:border-box;width:100%;max-width:100%}
+ .shop-hero{grid-template-columns:minmax(0,1fr);gap:20px;padding:28px 20px}
+ .hero-visual{width:100%;max-width:100%;min-height:180px}
+ .hero-text h1{font-size:clamp(28px,7vw,42px);overflow-wrap:anywhere}
+ .shop-promises{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+ .shop-promises>div{min-width:0}
+ .category-strip .category-card{flex-basis:96px;width:96px;min-width:96px;height:118px;min-height:118px}
+ .category-strip .category-card img{height:65px;flex-basis:65px}
+ .category-strip .category-card span{font-size:11px;min-height:28px}
+ .catalog-section,.store-help{width:100%;box-sizing:border-box}
+}
