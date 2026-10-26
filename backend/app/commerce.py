@@ -350,13 +350,13 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
                 active_product = " AND p.status='active'" if "status" in product_columns else ""
                 active_variant = " AND v.status='active'" if "status" in variant_columns else ""
                 sku_select = "v.sku" if "sku" in variant_columns else "NULL::text"
-                gst_rate_select = "p.gst_rate" if "gst_rate" in product_columns else "0::numeric AS gst_rate"
-                tax_inclusive_select = "p.tax_inclusive" if "tax_inclusive" in product_columns else "TRUE AS tax_inclusive"
+                gst_rate_select = "p.gst_rate AS gst_rate" if "gst_rate" in product_columns else "0::numeric AS gst_rate"
+                tax_inclusive_select = "p.tax_inclusive AS tax_inclusive" if "tax_inclusive" in product_columns else "TRUE AS tax_inclusive"
                 product = conn.execute(
                     f"""SELECT p.id AS product_id,p.name,v.id AS variant_id,
                                v.selling_price,{sku_select} AS sku,
-                               {gst_rate_select}{',' if ' AS gst_rate' in gst_rate_select else ' AS gst_rate'},
-                               {tax_inclusive_select}{',' if ' AS tax_inclusive' in tax_inclusive_select else ' AS tax_inclusive'}
+                               {gst_rate_select},
+                               {tax_inclusive_select}
                         FROM products p JOIN product_variants v ON v.product_id=p.id
                         WHERE v.id=%s{active_product}{active_variant}
                         FOR SHARE OF p,v""", (variant_id,)
