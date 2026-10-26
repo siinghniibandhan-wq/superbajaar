@@ -54,9 +54,11 @@ def _ensure(conn: Any) -> None:
         id BIGSERIAL PRIMARY KEY, variant_id BIGINT NOT NULL, warehouse TEXT NOT NULL DEFAULT 'Main',
         min_quantity NUMERIC(14,3) NOT NULL DEFAULT 0 CHECK(min_quantity>=0),
         max_quantity NUMERIC(14,3) NOT NULL DEFAULT 0 CHECK(max_quantity>=0),
-        snoozed_until DATE, active BOOLEAN NOT NULL DEFAULT TRUE, created_by BIGINT,
+        snoozed_until DATE, active BOOLEAN NOT NULL DEFAULT TRUE, auto_order BOOLEAN NOT NULL DEFAULT FALSE, vendor_id BIGINT REFERENCES sb_vendors(id), created_by BIGINT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         UNIQUE(variant_id,warehouse), CHECK(max_quantity>=min_quantity))""")
+    conn.execute("ALTER TABLE sb_replenishment_rules ADD COLUMN IF NOT EXISTS auto_order BOOLEAN NOT NULL DEFAULT FALSE")
+    conn.execute("ALTER TABLE sb_replenishment_rules ADD COLUMN IF NOT EXISTS vendor_id BIGINT REFERENCES sb_vendors(id)")
     conn.execute("""CREATE TABLE IF NOT EXISTS sb_inventory_scraps (
         id BIGSERIAL PRIMARY KEY, variant_id BIGINT NOT NULL, warehouse TEXT NOT NULL DEFAULT 'Main',
         quantity NUMERIC(14,3) NOT NULL CHECK(quantity>0), reason TEXT NOT NULL,
@@ -558,6 +560,8 @@ class ReplenishmentRuleInput(BaseModel):
     warehouse: str = Field(default="Main", max_length=120)
     min_quantity: Decimal = Field(ge=0, max_digits=14, decimal_places=3)
     max_quantity: Decimal = Field(ge=0, max_digits=14, decimal_places=3)
+    vendor_id: int | None = Field(default=None, gt=0)
+    auto_order: bool = False
 
 
 @router.get("/inventory/replenishment")
@@ -586,13 +590,57 @@ def save_replenishment(body: ReplenishmentRuleInput, authorization: str | None =
             if not conn.execute("SELECT id FROM product_variants WHERE id=%s",(body.variant_id,)).fetchone():
                 raise HTTPException(status_code=404,detail="Product variant not found")
             warehouse=body.warehouse.strip() or "Main"
-            row=conn.execute("""INSERT INTO sb_replenishment_rules(variant_id,warehouse,min_quantity,max_quantity,created_by)
-                VALUES(%s,%s,%s,%s,%s) ON CONFLICT(variant_id,warehouse) DO UPDATE SET
-                min_quantity=EXCLUDED.min_quantity,max_quantity=EXCLUDED.max_quantity,active=TRUE,updated_at=now()
-                RETURNING *""",(body.variant_id,warehouse,body.min_quantity,body.max_quantity,user["id"])).fetchone()
+            row=conn.execute("""INSERT INTO sb_replenishment_rules(variant_id,warehouse,min_quantity,max_quantity,vendor_id,auto_order,created_by)
+                VALUES(%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(variant_id,warehouse) DO UPDATE SET
+                min_quantity=EXCLUDED.min_quantity,max_quantity=EXCLUDED.max_quantity,vendor_id=EXCLUDED.vendor_id,
+                auto_order=EXCLUDED.auto_order,active=TRUE,updated_at=now()
+                RETURNING *""",(body.variant_id,warehouse,body.min_quantity,body.max_quantity,body.vendor_id,body.auto_order,user["id"])).fetchone()
             return {"item":row}
     except HTTPException: raise
     except Exception as exc: raise HTTPException(status_code=503,detail="Replenishment rule could not be saved") from exc
+
+
+@router.post("/inventory/replenishment/{rule_id}/order", status_code=201)
+def order_replenishment(rule_id: int, authorization: str | None = Header(default=None)) -> dict[str,Any]:
+    user=_admin(authorization)
+    try:
+        with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
+            _ensure(conn)
+            with conn.transaction():
+                rule=conn.execute("""SELECT r.*,COALESCE(s.quantity,0) AS on_hand FROM sb_replenishment_rules r
+                    LEFT JOIN sb_stock s ON s.variant_id=r.variant_id AND s.warehouse=r.warehouse
+                    WHERE r.id=%s AND r.active=TRUE FOR UPDATE OF r""",(rule_id,)).fetchone()
+                if not rule: raise HTTPException(status_code=404,detail="Replenishment rule not found")
+                if not rule["vendor_id"]: raise HTTPException(status_code=422,detail="Choose a supplier in the replenishment rule before creating an order.")
+                quantity=max(Decimal("0"),Decimal(str(rule["max_quantity"]))-Decimal(str(rule["on_hand"])))
+                if quantity<=0: raise HTTPException(status_code=422,detail="Current stock is already at or above the maximum level.")
+                if not conn.execute("SELECT id FROM sb_vendors WHERE id=%s",(rule["vendor_id"],)).fetchone():
+                    raise HTTPException(status_code=422,detail="The selected supplier no longer exists.")
+                po=conn.execute("""INSERT INTO sb_purchase_orders(vendor_id,order_date,total,note,created_by)
+                    VALUES(%s,CURRENT_DATE,0,%s,%s) RETURNING *""",
+                    (rule["vendor_id"],f"Replenishment rule #{rule_id}; warehouse {rule['warehouse']}",user["id"])).fetchone()
+                line=conn.execute("""INSERT INTO sb_purchase_lines(purchase_id,variant_id,quantity,unit_cost)
+                    VALUES(%s,%s,%s,0) RETURNING *""",(po["id"],rule["variant_id"],quantity)).fetchone()
+                return {"purchase":po,"lines":[line],"suggested_quantity":quantity}
+    except HTTPException: raise
+    except Exception as exc: raise HTTPException(status_code=503,detail="Replenishment purchase order could not be created") from exc
+
+
+@router.post("/inventory/replenishment/{rule_id}/automate")
+def automate_replenishment(rule_id: int, authorization: str | None = Header(default=None)) -> dict[str,Any]:
+    _admin(authorization)
+    try:
+        with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
+            _ensure(conn)
+            row=conn.execute("""UPDATE sb_replenishment_rules SET auto_order=NOT auto_order,updated_at=now()
+                WHERE id=%s AND active=TRUE RETURNING *""",(rule_id,)).fetchone()
+            if not row: raise HTTPException(status_code=404,detail="Replenishment rule not found")
+            if row["auto_order"] and not row["vendor_id"]:
+                conn.execute("UPDATE sb_replenishment_rules SET auto_order=FALSE WHERE id=%s",(rule_id,))
+                raise HTTPException(status_code=422,detail="Choose a supplier before enabling automation.")
+            return {"item":row}
+    except HTTPException: raise
+    except Exception as exc: raise HTTPException(status_code=503,detail="Automation setting could not be updated") from exc
 
 
 @router.post("/inventory/replenishment/{rule_id}/snooze")
