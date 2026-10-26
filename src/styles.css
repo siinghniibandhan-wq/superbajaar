@@ -413,3 +413,79 @@
 .pipe-next{margin:6px 0 0;font-size:12px}
 .pipe-events{margin:10px 0 0;padding:10px 0 0 18px;border-top:1px solid var(--admin-border);font-size:12px;line-height:1.6}
 .pipe-events small{display:block;color:var(--admin-muted);font-size:10px}
+
+
+
+/* Frontend UX hardening: consistent focus, form feedback, and narrow-screen safety. */
+:where(a,button,input,select,textarea,[role="button"],[tabindex]):focus-visible{
+ outline:3px solid var(--purple,#6428d9);
+ outline-offset:3px;
+}
+button:disabled,[role="button"][aria-disabled="true"]{
+ cursor:not-allowed;
+ opacity:.62;
+}
+input:disabled,select:disabled,textarea:disabled{
+ cursor:not-allowed;
+ opacity:.7;
+}
+img,video,svg,canvas{
+ max-width:100%;
+}
+.admin-shell,.shop-shell,.product-detail,.product-page,.checkout-page{
+ min-width:0;
+}
+.admin-shell :where(input,select,textarea,button),
+.shop-shell :where(input,select,textarea,button){
+ max-width:100%;
+}
+.admin-shell .inventory-product-modal,
+.admin-shell .inventory-form-modal,
+.admin-shell .product-form-section,
+.admin-shell .product-tabs,
+.admin-shell .product-edit-form{
+ min-width:0;
+}
+.admin-shell .product-tabs{
+ overscroll-behavior-x:contain;
+ scroll-padding-inline:12px;
+}
+.admin-shell .product-tab:focus-visible{
+ outline-offset:-2px;
+}
+.admin-shell .user-table td,
+.admin-shell .user-table th{
+ overflow-wrap:anywhere;
+}
+.product-card-actions :where(button,a):focus-visible{
+ outline-offset:2px;
+}
+@media(max-width:640px){
+ .admin-shell .panel-heading,
+ .admin-shell .inventory-toolbar{
+  align-items:stretch;
+  flex-wrap:wrap;
+ }
+ .admin-shell .panel-heading> :where(button,a),
+ .admin-shell .inventory-toolbar> :where(button,a){
+  max-width:100%;
+ }
+ .admin-shell .inventory-product-modal .product-edit-form .moderation-controls{
+  align-items:stretch;
+ }
+ .admin-shell .inventory-product-modal .product-edit-form .moderation-controls>button{
+  min-height:42px;
+ }
+ .shop-shell{
+  padding-inline:16px;
+ }
+}
+@media(prefers-reduced-motion:reduce){
+ html{scroll-behavior:auto!important}
+ *,*::before,*::after{
+  animation-duration:.01ms!important;
+  animation-iteration-count:1!important;
+  scroll-behavior:auto!important;
+  transition-duration:.01ms!important;
+ }
+}
