@@ -579,10 +579,17 @@ def create_blanket_release(blanket_id: int, body: dict[str, Any], authorization:
             release_lines.append({"variant_id":vid,"quantity":qty,"unit_price":str(price),"line_total":str(line_value)})
         if used_value+value>Decimal(str(b["max_value"])):
             raise HTTPException(422,"Release exceeds the blanket order's remaining value commitment.")
+        # A release is also an issued PO in the shared procurement lifecycle.
+        po_ref=_ref("PO")
+        po=c.execute("""INSERT INTO sb_procurements(reference,purchase_order_reference,vendor_id,status,items,expected_date,created_by)
+          VALUES(%s,%s,%s,'purchase_order',%s::jsonb,%s,%s) RETURNING id,reference,purchase_order_reference,status""",
+          (po_ref,po_ref,b["vendor_id"],json.dumps(release_lines),b["valid_until"],actor["id"])).fetchone()
         ref=_ref("REL")
-        row=c.execute("""INSERT INTO sb_blanket_releases(reference,blanket_order_id,status,items,total_value,created_by)
-          VALUES(%s,%s,'released',%s::jsonb,%s,%s) RETURNING *""",(ref,blanket_id,json.dumps(release_lines),value,actor["id"])).fetchone()
-        _event(c,b["reference"],"blanket_release_created",actor["id"],new="released",details={"release_reference":ref,"items":release_lines,"total_value":str(value)})
+        row=c.execute("""INSERT INTO sb_blanket_releases(reference,blanket_order_id,status,items,total_value,created_by,procurement_id)
+          VALUES(%s,%s,'released',%s::jsonb,%s,%s,%s) RETURNING *""",(ref,blanket_id,json.dumps(release_lines),value,actor["id"],po["id"])).fetchone()
+        _event(c,b["reference"],"blanket_release_created",actor["id"],new="released",details={"release_reference":ref,"purchase_order_reference":po["purchase_order_reference"],"procurement_id":po["id"],"items":release_lines,"total_value":str(value)})
+        row["purchase_order_reference"]=po["purchase_order_reference"]
+        row["procurement_id"]=po["id"]
         return row
 
 
