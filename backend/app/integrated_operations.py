@@ -491,6 +491,101 @@ def vendor_dashboard(authorization: str | None = Header(default=None)):
         return {"vendor":{"id":vendor["id"],"name":vendor["name"]},"procurements":quotes,"receipts":receipts,"dispatches":dispatches,"bills":bills}
 
 
+
+# Blanket purchase agreements and call-off releases
+def _blanket_schema(conn):
+    # The deployment schema sync owns DDL; fail clearly if the blanket-order migration has not landed.
+    missing=conn.execute("SELECT to_regclass('public.sb_blanket_orders') AS t").fetchone()["t"] is None
+    if missing:
+        raise HTTPException(503,"Blanket purchasing schema is not deployed yet. Apply schema 012_blanket_purchase_orders.sql.")
+
+
+@router.get("/admin/blanket-orders")
+def list_blanket_orders(authorization: str | None = Header(default=None)):
+    _require(authorization, {"super_admin","admin","staff"})
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c); _blanket_schema(c)
+        rows=c.execute("""SELECT b.*,v.name AS vendor_name,
+          COALESCE((SELECT jsonb_agg(r ORDER BY r.created_at DESC) FROM sb_blanket_releases r WHERE r.blanket_order_id=b.id),'[]'::jsonb) AS releases
+          FROM sb_blanket_orders b JOIN sb_vendors v ON v.id=b.vendor_id ORDER BY b.created_at DESC LIMIT 500""").fetchall()
+        return {"items":rows}
+
+
+@router.post("/admin/blanket-orders", status_code=201)
+def create_blanket_order(body: dict[str, Any], authorization: str | None = Header(default=None)):
+    actor=_require(authorization, {"super_admin","admin"})
+    try:
+        vendor_id=int(body.get("vendor_id",0)); items=body.get("items") or []
+        valid_from=str(body["valid_from"]); valid_until=str(body["valid_until"])
+        max_value=Decimal(str(body.get("max_value",0)))
+        if vendor_id<1 or not items or max_value<=0 or valid_until<valid_from:
+            raise ValueError()
+        normalized=[]; seen=set()
+        for line in items:
+            vid=int(line.get("variant_id",0)); qty=int(line.get("max_quantity",0)); price=Decimal(str(line.get("unit_price",-1)))
+            if vid<1 or qty<1 or price<0 or vid in seen: raise ValueError()
+            seen.add(vid); normalized.append({"variant_id":vid,"max_quantity":qty,"unit_price":str(price)})
+    except (ValueError, TypeError, KeyError, ArithmeticError):
+        raise HTTPException(422,"Provide a vendor, valid date range, positive agreement value, and unique variants with quantity and non-negative unit price.")
+    ref=_ref("BPO")
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c); _blanket_schema(c)
+        if not c.execute("SELECT id FROM sb_vendors WHERE id=%s AND status='active'",(vendor_id,)).fetchone():
+            raise HTTPException(404,"Active vendor not found.")
+        for line in normalized:
+            if not c.execute("SELECT id FROM product_variants WHERE id=%s",(line["variant_id"],)).fetchone():
+                raise HTTPException(404,"Product variant not found: "+str(line["variant_id"]))
+        row=c.execute("""INSERT INTO sb_blanket_orders(reference,vendor_id,status,valid_from,valid_until,max_value,items,created_by)
+          VALUES(%s,%s,'active',%s,%s,%s,%s::jsonb,%s) RETURNING *""",
+          (ref,vendor_id,valid_from,valid_until,max_value,json.dumps(normalized),actor["id"])).fetchone()
+        _event(c,ref,"blanket_order_created",actor["id"],new="active",details={"vendor_id":vendor_id,"items":normalized,"max_value":str(max_value)})
+        return row
+
+
+@router.post("/admin/blanket-orders/{blanket_id}/releases", status_code=201)
+def create_blanket_release(blanket_id: int, body: dict[str, Any], authorization: str | None = Header(default=None)):
+    actor=_require(authorization, {"super_admin","admin"})
+    try:
+        items=body.get("items") or []
+        if not items: raise ValueError()
+        incoming={}; 
+        for line in items:
+            vid=int(line.get("variant_id",0)); qty=int(line.get("quantity",0))
+            if vid<1 or qty<1: raise ValueError()
+            incoming[vid]=incoming.get(vid,0)+qty
+    except (ValueError, TypeError, AttributeError):
+        raise HTTPException(422,"Release must contain positive quantities for valid variants.")
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c); _blanket_schema(c)
+        b=c.execute("SELECT * FROM sb_blanket_orders WHERE id=%s FOR UPDATE",(blanket_id,)).fetchone()
+        if not b or b["status"]!="active": raise HTTPException(409,"Blanket order is not active.")
+        from datetime import date
+        today=date.today().isoformat()
+        if today < str(b["valid_from"])[:10] or today > str(b["valid_until"])[:10]:
+            raise HTTPException(409,"Blanket order is outside its validity dates.")
+        agreed={int(x["variant_id"]):x for x in b["items"]}
+        prior=c.execute("SELECT items,total_value FROM sb_blanket_releases WHERE blanket_order_id=%s AND status<>'cancelled'",(blanket_id,)).fetchall()
+        used_qty={}; used_value=Decimal("0")
+        for r in prior:
+            used_value+=Decimal(str(r["total_value"]))
+            for line in r["items"]:
+                vid=int(line["variant_id"]); used_qty[vid]=used_qty.get(vid,0)+int(line["quantity"])
+        release_lines=[]; value=Decimal("0")
+        for vid,qty in incoming.items():
+            if vid not in agreed: raise HTTPException(422,"Release variant is not covered by the blanket order.")
+            if used_qty.get(vid,0)+qty>int(agreed[vid]["max_quantity"]):
+                raise HTTPException(422,"Release exceeds the remaining agreed quantity for variant "+str(vid)+".")
+            price=Decimal(str(agreed[vid]["unit_price"])); line_value=price*qty; value+=line_value
+            release_lines.append({"variant_id":vid,"quantity":qty,"unit_price":str(price),"line_total":str(line_value)})
+        if used_value+value>Decimal(str(b["max_value"])):
+            raise HTTPException(422,"Release exceeds the blanket order's remaining value commitment.")
+        ref=_ref("REL")
+        row=c.execute("""INSERT INTO sb_blanket_releases(reference,blanket_order_id,status,items,total_value,created_by)
+          VALUES(%s,%s,'released',%s::jsonb,%s,%s) RETURNING *""",(ref,blanket_id,json.dumps(release_lines),value,actor["id"])).fetchone()
+        _event(c,b["reference"],"blanket_release_created",actor["id"],new="released",details={"release_reference":ref,"items":release_lines,"total_value":str(value)})
+        return row
+
+
 @router.post("/admin/procurements", status_code=201)
 def create_procurement(body: ProcurementInput, authorization: str | None = Header(default=None)):
     actor=_require(authorization, {"super_admin","admin","staff"})
