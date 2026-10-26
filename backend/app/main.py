@@ -791,10 +791,22 @@ def create_catalogue_product(
                 raise HTTPException(status_code=422, detail="A product can generate at most 100 variants.")
             variants = []
             for index, combo in enumerate(combos):
-                suffix = "-".join(re.sub(r"[^A-Za-z0-9]+", "-", value).strip("-").upper()[:18] for value in combo if value)
-                sku = body.sku.strip() or None
-                if sku and len(combos) > 1:
-                    sku = (sku[:max(1, 119-len(suffix))] + "-" + suffix)[:120]
+                # Every sellable variant receives a stable, backend-generated SKU.
+                # A caller-supplied SKU remains an optional base/prefix; it is never stored
+                # unchanged on multiple variants. Product IDs make generated bases distinct,
+                # while the variant ordinal distinguishes options within the same product.
+                supplied_sku = re.sub(r"[^A-Za-z0-9-]+", "-", body.sku.strip()).strip("-").upper()
+                base_sku = supplied_sku or f"SB-{int(product['id']):06d}"
+                sku = f"{base_sku[:100]}-V{index + 1:02d}"
+                # Avoid collisions with legacy/manual SKUs as well as other generated SKUs.
+                # The unique database constraint remains the final concurrency guard.
+                if "sku" in variant_columns:
+                    candidate = sku
+                    collision = 1
+                    while conn.execute("SELECT id FROM product_variants WHERE sku=%s", (candidate,)).fetchone():
+                        collision += 1
+                        candidate = f"{sku[:max(1, 114-len(str(collision)))]}-{collision}"
+                    sku = candidate[:120]
                 requested_cover = body.variant_covers[index].strip() if index < len(body.variant_covers) else ""
                 variant_cover = requested_cover or body.image_url.strip() or None
                 price_spec = body.variant_prices[index] if index < len(body.variant_prices) else {}
