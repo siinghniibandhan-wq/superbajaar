@@ -41,6 +41,15 @@ def _ensure(conn: Any) -> None:
         variant_id BIGINT PRIMARY KEY, hsn_sac TEXT, gst_rate NUMERIC(5,2) NOT NULL DEFAULT 0 CHECK(gst_rate>=0 AND gst_rate<=100),
         classification TEXT NOT NULL DEFAULT 'taxable' CHECK(classification IN ('taxable','nil_rated','exempt','non_gst')),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_by BIGINT)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS sb_physical_counts (
+        id BIGSERIAL PRIMARY KEY, status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','applied','cancelled')),
+        scheduled_date DATE NOT NULL DEFAULT CURRENT_DATE, note TEXT, created_by BIGINT,
+        applied_by BIGINT, applied_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS sb_physical_count_lines (
+        id BIGSERIAL PRIMARY KEY, count_id BIGINT NOT NULL REFERENCES sb_physical_counts(id) ON DELETE CASCADE,
+        variant_id BIGINT NOT NULL, warehouse TEXT NOT NULL DEFAULT 'Main',
+        on_hand NUMERIC(14,3) NOT NULL DEFAULT 0, counted NUMERIC(14,3),
+        UNIQUE(count_id,variant_id,warehouse))""")
     conn.execute("""CREATE TABLE IF NOT EXISTS sb_stock_movements (
         id BIGSERIAL PRIMARY KEY, variant_id BIGINT NOT NULL, warehouse TEXT NOT NULL DEFAULT 'Main',
         movement_type TEXT NOT NULL, quantity NUMERIC(14,3) NOT NULL CHECK(quantity>0),
@@ -371,6 +380,121 @@ def inventory(authorization: str | None = Header(default=None), warehouse: str |
             rows=conn.execute("SELECT variant_id,warehouse,quantity,updated_at FROM sb_stock WHERE (%s::text IS NULL OR warehouse=%s) ORDER BY warehouse,variant_id",(warehouse,warehouse)).fetchall()
             return {"items":rows,"source":"stock_ledger"}
     except Exception as exc: raise HTTPException(status_code=503,detail="Inventory unavailable") from exc
+
+class PhysicalCountCreate(BaseModel):
+    scheduled_date: date | None = None
+    note: str = Field(default="", max_length=1000)
+    lines: list[dict[str, Any]] = Field(default_factory=list, max_length=500)
+
+
+@router.get("/inventory/physical-counts")
+def list_physical_counts(authorization: str | None = Header(default=None), limit: int = Query(100, ge=1, le=500)) -> dict[str, Any]:
+    _admin(authorization)
+    try:
+        with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
+            _ensure(conn)
+            counts=conn.execute("""SELECT c.*, COUNT(l.id) AS line_count,
+                COALESCE(SUM(CASE WHEN l.counted IS NOT NULL THEN 1 ELSE 0 END),0) AS counted_lines
+                FROM sb_physical_counts c LEFT JOIN sb_physical_count_lines l ON l.count_id=c.id
+                GROUP BY c.id ORDER BY c.id DESC LIMIT %s""",(limit,)).fetchall()
+            return {"items":counts}
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Physical inventory counts unavailable") from exc
+
+
+@router.post("/inventory/physical-counts", status_code=201)
+def create_physical_count(body: PhysicalCountCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    user=_admin(authorization)
+    try:
+        with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
+            _ensure(conn)
+            with conn.transaction():
+                count=conn.execute("""INSERT INTO sb_physical_counts(scheduled_date,note,created_by)
+                    VALUES(COALESCE(%s,CURRENT_DATE),%s,%s) RETURNING *""",(body.scheduled_date,body.note.strip() or None,user["id"])).fetchone()
+                for line in body.lines:
+                    variant_id=int(line.get("variant_id") or 0)
+                    warehouse=str(line.get("warehouse") or "Main").strip() or "Main"
+                    if variant_id<1 or not conn.execute("SELECT id FROM product_variants WHERE id=%s",(variant_id,)).fetchone():
+                        raise HTTPException(status_code=422,detail="Select a valid product variant for every count line.")
+                    stock=conn.execute("SELECT quantity FROM sb_stock WHERE variant_id=%s AND warehouse=%s FOR UPDATE",(variant_id,warehouse)).fetchone()
+                    on_hand=Decimal(str(stock["quantity"] if stock else 0))
+                    counted=line.get("counted")
+                    conn.execute("""INSERT INTO sb_physical_count_lines(count_id,variant_id,warehouse,on_hand,counted)
+                        VALUES(%s,%s,%s,%s,%s)""",(count["id"],variant_id,warehouse,on_hand,Decimal(str(counted)) if counted not in (None,"") else None))
+                lines=conn.execute("SELECT * FROM sb_physical_count_lines WHERE count_id=%s ORDER BY id",(count["id"],)).fetchall()
+                return {"count":count,"lines":lines}
+    except HTTPException: raise
+    except Exception as exc:
+        raise HTTPException(status_code=503,detail="Physical inventory count could not be created") from exc
+
+
+@router.get("/inventory/physical-counts/{count_id}")
+def get_physical_count(count_id: int, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _admin(authorization)
+    try:
+        with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
+            _ensure(conn)
+            count=conn.execute("SELECT * FROM sb_physical_counts WHERE id=%s",(count_id,)).fetchone()
+            if not count: raise HTTPException(status_code=404,detail="Physical inventory count not found")
+            lines=conn.execute("""SELECT l.*, COALESCE(pv.sku,'') AS sku,
+                COALESCE(pv.name,'') AS product_name
+                FROM sb_physical_count_lines l LEFT JOIN product_variants pv ON pv.id=l.variant_id
+                WHERE l.count_id=%s ORDER BY l.id""",(count_id,)).fetchall()
+            return {"count":count,"lines":lines}
+    except HTTPException: raise
+    except Exception as exc:
+        raise HTTPException(status_code=503,detail="Physical inventory count could not be loaded") from exc
+
+
+@router.patch("/inventory/physical-counts/{count_id}/lines/{line_id}")
+def update_physical_count_line(count_id: int, line_id: int, body: dict[str, Any], authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _admin(authorization)
+    try:
+        counted=Decimal(str(body.get("counted")))
+        if not counted.is_finite() or counted<0: raise HTTPException(status_code=422,detail="Counted quantity must be zero or greater.")
+        with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
+            _ensure(conn)
+            with conn.transaction():
+                count=conn.execute("SELECT status FROM sb_physical_counts WHERE id=%s FOR UPDATE",(count_id,)).fetchone()
+                if not count: raise HTTPException(status_code=404,detail="Physical inventory count not found")
+                if count["status"]!="draft": raise HTTPException(status_code=409,detail="Only draft physical counts can be edited.")
+                line=conn.execute("UPDATE sb_physical_count_lines SET counted=%s WHERE id=%s AND count_id=%s RETURNING *",(counted,line_id,count_id)).fetchone()
+                if not line: raise HTTPException(status_code=404,detail="Physical inventory line not found")
+                return {"line":line}
+    except HTTPException: raise
+    except Exception as exc: raise HTTPException(status_code=503,detail="Physical inventory line could not be saved") from exc
+
+
+@router.post("/inventory/physical-counts/{count_id}/apply")
+def apply_physical_count(count_id: int, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    user=_admin(authorization)
+    try:
+        with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
+            _ensure(conn)
+            with conn.transaction():
+                count=conn.execute("SELECT * FROM sb_physical_counts WHERE id=%s FOR UPDATE",(count_id,)).fetchone()
+                if not count: raise HTTPException(status_code=404,detail="Physical inventory count not found")
+                if count["status"]=="applied": return {"count":count,"already_applied":True}
+                if count["status"]!="draft": raise HTTPException(status_code=409,detail="This physical count is not editable.")
+                lines=conn.execute("SELECT * FROM sb_physical_count_lines WHERE count_id=%s ORDER BY id FOR UPDATE",(count_id,)).fetchall()
+                if not lines or any(line["counted"] is None for line in lines):
+                    raise HTTPException(status_code=422,detail="Save a counted quantity for every line before applying.")
+                for line in lines:
+                    conn.execute("""INSERT INTO sb_stock(variant_id,warehouse,quantity) VALUES(%s,%s,0)
+                        ON CONFLICT(variant_id,warehouse) DO NOTHING""",(line["variant_id"],line["warehouse"]))
+                    stock=conn.execute("SELECT quantity FROM sb_stock WHERE variant_id=%s AND warehouse=%s FOR UPDATE",(line["variant_id"],line["warehouse"])).fetchone()
+                    old=Decimal(str(stock["quantity"])); target=Decimal(str(line["counted"])); delta=target-old
+                    if delta:
+                        conn.execute("UPDATE sb_stock SET quantity=%s,updated_at=now() WHERE variant_id=%s AND warehouse=%s",(target,line["variant_id"],line["warehouse"]))
+                        conn.execute("""INSERT INTO sb_stock_movements(variant_id,warehouse,movement_type,quantity,reference_type,reference_id,note,created_by)
+                            VALUES(%s,%s,%s,%s,'physical_count',%s,%s,%s)""",(line["variant_id"],line["warehouse"],"adjustment_in" if delta>0 else "adjustment_out",abs(delta),count_id,"Physical inventory count #"+str(count_id),user["id"]))
+                updated=conn.execute("""UPDATE sb_physical_counts SET status='applied',applied_by=%s,applied_at=now()
+                    WHERE id=%s RETURNING *""",(user["id"],count_id)).fetchone()
+                return {"count":updated,"already_applied":False}
+    except HTTPException: raise
+    except Exception as exc:
+        raise HTTPException(status_code=503,detail="Physical inventory count could not be applied") from exc
+
 
 @router.post("/inventory/movements",status_code=201)
 def stock_movement(body: StockInput, authorization: str | None = Header(default=None)) -> dict[str,Any]:
