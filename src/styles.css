@@ -342,3 +342,33 @@
  .admin-shell .inventory-warehouses .inventory-toolbar button{flex:1}
  .admin-shell .inventory-warehouses .modal-actions button{flex:1}
 }
+
+
+/* Product editor: clear hierarchy, compact field rhythm, and consistent section cards. */
+.admin-shell .inventory-product-modal .product-edit-form{display:block;min-width:0}
+.admin-shell .inventory-product-modal .product-form-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
+.admin-shell .inventory-product-modal .product-form-section{box-sizing:border-box;min-width:0;margin:0;padding:18px;border:1px solid var(--admin-border);border-radius:14px;background:var(--admin-surface-soft)}
+.admin-shell .inventory-product-modal .product-form-section>h4{margin:0 0 15px;padding:0 0 11px;border-bottom:1px solid var(--admin-border);font-size:14px;font-weight:800;letter-spacing:.01em;color:var(--admin-text)}
+.admin-shell .inventory-product-modal .product-form-section>p{margin:0 0 12px;color:var(--admin-muted);font-size:12px;line-height:1.5}
+.admin-shell .inventory-product-modal .product-basic-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.admin-shell .inventory-product-modal .product-tax-section{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px;margin-top:16px;padding:14px;border:1px solid var(--admin-border);border-radius:12px;background:var(--admin-bg)}
+.admin-shell .inventory-product-modal .product-tax-section h5{grid-column:1/-1;margin:0;font-size:12px;font-weight:800;color:var(--admin-text)}
+.admin-shell .inventory-product-modal .product-tax-section>p{grid-column:1/-1;margin:0;color:var(--admin-muted);font-size:11px;line-height:1.45}
+.admin-shell .inventory-product-modal .product-tax-section label{min-width:0}
+.admin-shell .inventory-product-modal .product-details-section label{margin-bottom:11px}
+.admin-shell .inventory-product-modal .product-details-section textarea{min-height:70px}
+.admin-shell .inventory-product-modal .product-delivery-section details{margin:12px 0;padding:12px;border:1px solid var(--admin-border);border-radius:10px;background:var(--admin-bg)}
+.admin-shell .inventory-product-modal .product-delivery-section summary{cursor:pointer;font-weight:700}
+.admin-shell .inventory-product-modal .product-variants-section>div.wide-field{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px;margin-top:14px;padding:14px;border:1px solid var(--admin-border);border-radius:12px;background:var(--admin-bg)}
+.admin-shell .inventory-product-modal .product-variants-section>div.wide-field>label:first-child{grid-column:1/-1}
+.admin-shell .inventory-product-modal .saved-gallery-preview{padding:14px;border:1px solid var(--admin-border);border-radius:12px;background:var(--admin-surface-soft)}
+.admin-shell .inventory-product-modal .product-edit-form label{display:flex;flex-direction:column;gap:6px;min-width:0;line-height:1.4}
+.admin-shell .inventory-product-modal .product-edit-form input:not([type=checkbox]):not([type=file]),.admin-shell .inventory-product-modal .product-edit-form select,.admin-shell .inventory-product-modal .product-edit-form textarea{width:100%;min-width:0;padding:10px 11px;border-radius:9px}
+.admin-shell .inventory-product-modal .product-edit-form input[type=checkbox]{align-self:flex-start}
+.admin-shell .inventory-product-modal .product-edit-form .product-tax-section label:has(input[type=checkbox]){flex-direction:row;align-items:center;gap:8px}
+.admin-shell .inventory-product-modal .product-edit-form .moderation-controls{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
+@media(max-width:600px){
+ .admin-shell .inventory-product-modal .product-form-section{padding:13px}
+ .admin-shell .inventory-product-modal .product-basic-grid,.admin-shell .inventory-product-modal .product-tax-section,.admin-shell .inventory-product-modal .product-variants-section>div.wide-field{grid-template-columns:minmax(0,1fr)}
+ .admin-shell .inventory-product-modal .product-tax-section h5,.admin-shell .inventory-product-modal .product-tax-section>p,.admin-shell .inventory-product-modal .product-variants-section>div.wide-field>label:first-child{grid-column:auto}
+}
