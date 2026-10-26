@@ -655,6 +655,20 @@ def update_admin_order(
                 previous=conn.execute("SELECT * FROM store_orders WHERE id=%s FOR UPDATE",(order_id,)).fetchone()
                 if not previous or previous["status"] in ("cancelled","delivered"):
                     raise HTTPException(status_code=404, detail="Order not found or already closed.")
+                # Enforce the fulfilment state machine: do not allow skipped steps or
+                # restock a parcel after dispatch, which could make inventory oversell.
+                transitions = {
+                    "placed": {"confirmed", "cancelled"},
+                    "confirmed": {"processing", "packed", "cancelled"},
+                    "processing": {"packed", "cancelled"},
+                    "packed": {"shipped", "cancelled"},
+                    "shipped": {"delivered"},
+                }
+                if body.status not in transitions.get(previous["status"], set()):
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"Invalid order transition from {previous['status']} to {body.status}.",
+                    )
                 if body.status == "delivered" and previous["status"] != "shipped":
                     raise HTTPException(status_code=409, detail="A website order can be delivered only after staff dispatches it and its status is shipped.")
                 if body.status == "confirmed" and previous["status"] != "placed":
