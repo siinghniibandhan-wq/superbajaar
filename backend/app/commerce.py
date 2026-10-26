@@ -198,6 +198,45 @@ def _delivery_quote(config: Any, pincode: str | None, subtotal: Decimal) -> dict
             "message": message or ("Free delivery applied." if fee == 0 else "Delivery is available.")}
 
 
+def _product_available_for_pincode(conn: Any, product_id: int, variant_id: int, pincode: str) -> bool:
+    """Apply explicit product/variant availability rules; no rules means unrestricted."""
+    tables = conn.execute(
+        """SELECT to_regclass('public.sb_product_availability_rules') AS rules,
+                  to_regclass('public.sb_region_pincodes') AS pins,
+                  to_regclass('public.sb_regions') AS regions"""
+    ).fetchone()
+    if not tables or not tables.get("rules"):
+        return True
+    rules = conn.execute(
+        """SELECT scope_type, region_id, pincode, warehouse_id
+           FROM sb_product_availability_rules
+           WHERE product_id=%s AND (variant_id IS NULL OR variant_id=%s)""",
+        (product_id, variant_id),
+    ).fetchall()
+    if not rules:
+        return True
+    active_region_ids = set()
+    if tables.get("pins") and tables.get("regions"):
+        active_region_ids = {row["region_id"] for row in conn.execute(
+            """SELECT rp.region_id FROM sb_region_pincodes rp
+               JOIN sb_regions r ON r.id=rp.region_id
+               WHERE rp.pincode=%s AND rp.active=TRUE AND r.active=TRUE""",
+            (pincode,),
+        ).fetchall()}
+    for rule in rules:
+        if rule["scope_type"] == "pincode" and rule["pincode"] == pincode:
+            return True
+        if rule["scope_type"] == "region" and rule["region_id"] in active_region_ids:
+            return True
+        if rule["scope_type"] == "warehouse" and rule["warehouse_id"] is not None and active_region_ids:
+            if conn.execute(
+                "SELECT 1 FROM sb_warehouses WHERE id=%s AND region_id = ANY(%s) LIMIT 1",
+                (rule["warehouse_id"], list(active_region_ids)),
+            ).fetchone():
+                return True
+    return False
+
+
 def _order_detail(conn: Any, order_id: int) -> dict[str, Any]:
     order = conn.execute(
         """SELECT id,order_number,user_id,status,payment_method,payment_status,currency,
@@ -363,6 +402,8 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
                 ).fetchone()
                 if not product:
                     raise HTTPException(status_code=409, detail=f"Product variant {variant_id} is no longer available.")
+                if not _product_available_for_pincode(conn, int(product["product_id"]), int(product["variant_id"]), body.shipping_address.pincode):
+                    raise HTTPException(status_code=422, detail=f"{product['name']} is not available for delivery to pincode {body.shipping_address.pincode}.")
                 price = Decimal(str(product["selling_price"] or 0))
                 if price <= 0:
                     raise HTTPException(status_code=409, detail=f"Price is not configured for {product['name']}.")
