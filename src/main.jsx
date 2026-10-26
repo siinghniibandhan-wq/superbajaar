@@ -701,6 +701,45 @@ function POSDesk(){
 
 function Dashboard({goStore}) {
  const [activeModule,setActiveModule]=useState(null);
+ const [inventoryTab,setInventoryTab]=useState('Overview');
+ const [inventoryProducts,setInventoryProducts]=useState([]);
+ const [inventoryStock,setInventoryStock]=useState([]);
+ const [inventoryMovements,setInventoryMovements]=useState([]);
+ const [inventoryLoading,setInventoryLoading]=useState(false);
+ const [inventoryError,setInventoryError]=useState('');
+ const [inventorySearch,setInventorySearch]=useState('');
+ useEffect(()=>{
+  if(activeModule!=='inventory')return;
+  let cancelled=false;
+  async function loadInventory(){
+   setInventoryLoading(true);setInventoryError('');
+   const token=localStorage.getItem('sb_admin_token')||'';
+   const headers=token?{Authorization:'Bearer '+token}:{};
+   const request=async path=>{
+    const response=await fetch(API_PATH(path),{headers});
+    const payload=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(readableApiError(payload,'Unable to load '+path));
+    return payload;
+   };
+   try{
+    const results=await Promise.allSettled([
+     request('/products'),
+     request('/operations/inventory'),
+     request('/operations/inventory/movements?limit=100')
+    ]);
+    if(cancelled)return;
+    if(results[0].status==='fulfilled')setInventoryProducts(Array.isArray(results[0].value)?results[0].value:(results[0].value.items||results[0].value.products||[]));
+    if(results[1].status==='fulfilled')setInventoryStock(results[1].value.items||[]);
+    if(results[2].status==='fulfilled')setInventoryMovements(results[2].value.items||[]);
+    const failures=results.filter(x=>x.status==='rejected');
+    if(failures.length===3)throw failures[0].reason;
+    if(failures.length)setInventoryError('Some inventory data could not load. Check admin access and API availability.');
+   }catch(error){if(!cancelled)setInventoryError(error.message||'Inventory data could not be loaded.')}
+   finally{if(!cancelled)setInventoryLoading(false)}
+  }
+  loadInventory();
+  return()=>{cancelled=true};
+ },[activeModule]);
  const modules=[
   {id:'purchase',name:'Purchase',icon:'🧾',color:'#ef8d32',desc:'Suppliers and purchase orders'},
   {id:'inventory',name:'Inventory',icon:'📦',color:'#9b59d0',desc:'Products, stock and warehouses'},
@@ -713,6 +752,34 @@ function Dashboard({goStore}) {
   {id:'crm',name:'CRM',icon:'🤝',color:'#e27d43',desc:'Customer relationships and follow-ups'},
   {id:'loyalty',name:'Loyalty & Rewards',icon:'🎁',color:'#bd58be',desc:'Points, rewards and gift cards'}
  ];
+ if(activeModule==='inventory') {
+  const filteredProducts=inventoryProducts.filter(p=>String(p.name||p.title||p.product_name||'').toLowerCase().includes(inventorySearch.toLowerCase())||String(p.sku||p.default_code||'').toLowerCase().includes(inventorySearch.toLowerCase()));
+  const stockTotal=inventoryStock.reduce((sum,row)=>sum+Number(row.quantity||0),0);
+  const lowStock=inventoryStock.filter(row=>Number(row.quantity||0)<=5).length;
+  const inventoryTabs=['Overview','Products','Stock Levels','Movements','Warehouses','Categories','Attributes'];
+  const money=value=>'₹'+Number(value||0).toLocaleString('en-IN',{maximumFractionDigits:2});
+  return <main style={{minHeight:'100vh',background:'#19191f',color:'#f4f1f8',fontFamily:'inherit'}}>
+   <header style={{display:'flex',alignItems:'center',gap:12,minHeight:54,padding:'8px 16px',background:'#23232b',borderBottom:'1px solid #393943',flexWrap:'wrap'}}>
+    <button type="button" onClick={()=>setActiveModule(null)} aria-label="Back to app launcher" style={{border:0,background:'transparent',color:'#fff',fontSize:22,cursor:'pointer'}}>‹</button>
+    <span style={{fontSize:22}}>📦</span><strong>Inventory</strong>
+    <div style={{display:'flex',gap:14,marginLeft:12,overflowX:'auto',flex:1}}>{inventoryTabs.map(tab=><button key={tab} onClick={()=>setInventoryTab(tab)} type="button" style={{whiteSpace:'nowrap',border:0,borderBottom:inventoryTab===tab?'2px solid #dc68d1':'2px solid transparent',padding:'12px 2px',background:'transparent',color:inventoryTab===tab?'#f4b3eb':'#c9c4d1',cursor:'pointer',fontSize:12}}>{tab}</button>)}</div>
+    <button type="button" onClick={goStore} style={{border:'1px solid #51495c',borderRadius:7,padding:'7px 10px',background:'transparent',color:'#fff',fontSize:12}}>Storefront</button>
+   </header>
+   <section style={{maxWidth:1200,margin:'0 auto',padding:'18px 14px 40px'}}>
+    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap',marginBottom:14}}><div><h1 style={{fontSize:22,margin:'0 0 5px',fontWeight:650}}>Inventory Overview</h1><p style={{margin:0,color:'#a9a3b3',fontSize:12}}>Products, stock levels and inventory activity</p></div><button type="button" onClick={()=>{setInventoryTab('Products');setInventorySearch('')}} style={{border:0,borderRadius:6,padding:'9px 13px',background:'#9b55b8',color:'#fff',fontWeight:700,fontSize:12}}>View Products</button></div>
+    <input aria-label="Search inventory" value={inventorySearch} onChange={e=>setInventorySearch(e.target.value)} placeholder="⌕  Search products or SKU..." style={{boxSizing:'border-box',width:'100%',background:'#292930',color:'#f6f3fa',border:'1px solid #3d3b45',borderRadius:9,padding:'12px 14px',outline:'none',marginBottom:14}}/>
+    {inventoryError&&<div role="status" style={{padding:12,marginBottom:14,border:'1px solid #6d5144',borderRadius:8,background:'#342823',color:'#ffd0b5',fontSize:12}}>{inventoryError}</div>}
+    {inventoryTab==='Overview'&&<div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(145px,1fr))',gap:10,marginBottom:14}}>
+     {[['Products',inventoryProducts.length,'#df73c8'],['Stock on hand',stockTotal.toLocaleString('en-IN',{maximumFractionDigits:3}),'#62c9bb'],['Low-stock lines',lowStock,'#e9a15b'],['Recent movements',inventoryMovements.length,'#a98af2']].map(item=><article key={item[0]} style={{background:'#292930',border:'1px solid #3a3943',borderRadius:9,padding:14}}><div style={{fontSize:12,color:'#b9b3c1'}}>{item[0]}</div><strong style={{display:'block',fontSize:25,marginTop:8,color:item[2]}}>{inventoryLoading?'—':item[1]}</strong></article>)}
+    </div>}
+    {(inventoryTab==='Overview'||inventoryTab==='Products')&&<section style={{background:'#292930',border:'1px solid #3a3943',borderRadius:9,overflow:'hidden',marginBottom:14}}><div style={{padding:'13px 14px',borderBottom:'1px solid #3a3943',fontWeight:700,fontSize:13}}>Products</div><div style={{overflowX:'auto'}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12,minWidth:520}}><thead><tr>{['Product','SKU','Category','Price','Status'].map(x=><th key={x} style={{textAlign:'left',padding:12,color:'#b9b3c1',fontWeight:600,borderBottom:'1px solid #3a3943'}}>{x}</th>)}</tr></thead><tbody>{filteredProducts.slice(0,100).map((p,i)=><tr key={p.id||p.product_id||i}>{[p.name||p.title||p.product_name||'Unnamed product',p.sku||p.default_code||'—',p.category_name||p.category||'—',money(p.selling_price??p.price),p.is_active===false?'Inactive':p.status||'Active'].map((v,j)=><td key={j} style={{padding:12,borderBottom:'1px solid #373640',color:j===0?'#f5f0fa':'#d0cad7'}}>{String(v)}</td>)}</tr>)}{!inventoryLoading&&filteredProducts.length===0&&<tr><td colSpan={5} style={{padding:22,textAlign:'center',color:'#aaa3b6'}}>{inventorySearch?'No products match this search.':'No product records returned by the API.'}</td></tr>}</tbody></table></div></section>}
+    {(inventoryTab==='Overview'||inventoryTab==='Stock Levels')&&<section style={{background:'#292930',border:'1px solid #3a3943',borderRadius:9,overflow:'hidden',marginBottom:14}}><div style={{padding:'13px 14px',borderBottom:'1px solid #3a3943',fontWeight:700,fontSize:13}}>Stock Levels</div><div style={{overflowX:'auto'}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12,minWidth:460}}><thead><tr>{['Variant ID','Warehouse','Quantity','Updated'].map(x=><th key={x} style={{textAlign:'left',padding:12,color:'#b9b3c1',fontWeight:600,borderBottom:'1px solid #3a3943'}}>{x}</th>)}</tr></thead><tbody>{inventoryStock.filter(row=>String(row.variant_id||'').includes(inventorySearch)||String(row.warehouse||'').toLowerCase().includes(inventorySearch.toLowerCase())).slice(0,100).map((row,i)=><tr key={row.id||row.variant_id+'-'+row.warehouse+i}><td style={{padding:12,borderBottom:'1px solid #373640'}}>{row.variant_id}</td><td style={{padding:12,borderBottom:'1px solid #373640'}}>{row.warehouse||'Main'}</td><td style={{padding:12,borderBottom:'1px solid #373640',color:Number(row.quantity)<=5?'#f2a45f':'#70d1b7'}}>{row.quantity}</td><td style={{padding:12,borderBottom:'1px solid #373640'}}>{row.updated_at?new Date(row.updated_at).toLocaleString():'—'}</td></tr>)}{!inventoryLoading&&inventoryStock.length===0&&<tr><td colSpan={4} style={{padding:22,textAlign:'center',color:'#aaa3b6'}}>No stock ledger records returned.</td></tr>}</tbody></table></div></section>}
+    {(inventoryTab==='Overview'||inventoryTab==='Movements')&&<section style={{background:'#292930',border:'1px solid #3a3943',borderRadius:9,overflow:'hidden',marginBottom:14}}><div style={{padding:'13px 14px',borderBottom:'1px solid #3a3943',fontWeight:700,fontSize:13}}>Recent Stock Movements</div><div style={{overflowX:'auto'}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12,minWidth:500}}><thead><tr>{['Variant','Warehouse','Movement','Quantity','Date'].map(x=><th key={x} style={{textAlign:'left',padding:12,color:'#b9b3c1',fontWeight:600,borderBottom:'1px solid #3a3943'}}>{x}</th>)}</tr></thead><tbody>{inventoryMovements.slice(0,50).map((row,i)=><tr key={row.id||i}>{[row.variant_id,row.warehouse||'Main',row.movement_type,row.quantity,row.created_at?new Date(row.created_at).toLocaleString():'—'].map((v,j)=><td key={j} style={{padding:12,borderBottom:'1px solid #373640'}}>{String(v??'—')}</td>)}</tr>)}{!inventoryLoading&&inventoryMovements.length===0&&<tr><td colSpan={5} style={{padding:22,textAlign:'center',color:'#aaa3b6'}}>No stock movements returned.</td></tr>}</tbody></table></div></section>}
+    {['Warehouses','Categories','Attributes'].includes(inventoryTab)&&<section style={{background:'#292930',border:'1px solid #3a3943',borderRadius:9,padding:18}}><h2 style={{fontSize:16,margin:'0 0 8px'}}>{inventoryTab}</h2><p style={{fontSize:12,color:'#b9b3c1',lineHeight:1.6,margin:0}}>{inventoryTab==='Warehouses'?'Warehouse reference data and multi-location stock operations will be connected after verifying the current backend schema.':inventoryTab==='Categories'?'Categories are managed through the existing catalogue APIs; category management actions are being wired separately.':'Product attributes and variant options will be connected to the existing catalogue API contracts.'}</p></section>}
+    {inventoryLoading&&<p style={{fontSize:12,color:'#b9b3c1'}}>Loading live inventory data…</p>}
+   </section>
+  </main>
+ }
  if(activeModule) {
   const selected=modules.find(m=>m.id===activeModule);
   return <main style={{minHeight:'100vh',background:'#17171d',color:'#f6f3fa',fontFamily:'inherit'}}>
