@@ -1020,6 +1020,104 @@ def update_catalogue_product(
                 ).fetchone()
             else:
                 raise HTTPException(status_code=404, detail="No variant exists for this product.")
+            # Editing a product must use the same attribute/variant persistence model
+            # as creation. Previously the PUT endpoint silently ignored body.attributes.
+            normalized_attributes: list[tuple[int, str, list[str]]] = []
+            for item in body.attributes:
+                attr_name = str(item.get("name") or "").strip()
+                raw_values = item.get("values", [])
+                if not attr_name or not isinstance(raw_values, list):
+                    continue
+                values = list(dict.fromkeys(str(value).strip() for value in raw_values if str(value).strip()))
+                if not values:
+                    continue
+                if not conn.execute("SELECT to_regclass('public.catalog_attributes') AS t").fetchone()["t"]:
+                    raise HTTPException(status_code=503, detail="Product attribute tables are unavailable; apply the catalogue schema before adding attributes.")
+                attr = conn.execute(
+                    """INSERT INTO catalog_attributes(name, values_json)
+                       VALUES(%s, %s) ON CONFLICT(name) DO UPDATE SET values_json=EXCLUDED.values_json
+                       RETURNING id""", (attr_name, Jsonb(values))
+                ).fetchone()
+                normalized_attributes.append((attr["id"], attr_name, values))
+
+            if normalized_attributes:
+                if not conn.execute("SELECT to_regclass('public.variant_attribute_values') AS t").fetchone()["t"]:
+                    raise HTTPException(status_code=503, detail="Variant attribute value table is unavailable; apply the catalogue schema before adding attributes.")
+                combinations = list(itertools.product(*(item[2] for item in normalized_attributes)))
+                if len(combinations) > 100:
+                    raise HTTPException(status_code=422, detail="A product can generate at most 100 variants.")
+                all_variants = conn.execute(
+                    "SELECT * FROM product_variants WHERE product_id=%s ORDER BY id FOR UPDATE",
+                    (product_id,),
+                ).fetchall()
+                if not all_variants:
+                    raise HTTPException(status_code=404, detail="No variant exists for this product.")
+                selected_id = int(variant["id"])
+                ordered_variants = [next((v for v in all_variants if int(v["id"]) == selected_id), all_variants[0])]
+                ordered_variants.extend(v for v in all_variants if int(v["id"]) != int(ordered_variants[0]["id"]))
+                for index, combo in enumerate(combinations):
+                    attribute_values = {name: value for (_aid, name, _values), value in zip(normalized_attributes, combo)}
+                    if index < len(ordered_variants):
+                        target = ordered_variants[index]
+                        target_id = int(target["id"])
+                        if index > 0:
+                            price_spec = body.variant_prices[index] if index < len(body.variant_prices) else {}
+                            price = float(price_spec.get("selling_price") or body.selling_price)
+                            mrp_raw = price_spec.get("mrp", body.mrp)
+                            mrp = float(mrp_raw) if mrp_raw not in (None, "") else None
+                            if price <= 0 or (mrp is not None and mrp < price):
+                                raise HTTPException(status_code=422, detail="Each variant must have a positive selling price and MRP not lower than selling price.")
+                            updates = {"selling_price": price, "mrp": mrp}
+                            updates = {k: v for k, v in updates.items() if k in variant_columns}
+                            if updates:
+                                conn.execute("UPDATE product_variants SET " + ", ".join(f"{k}=%s" for k in updates) + " WHERE id=%s",
+                                             [*updates.values(), target_id])
+                    else:
+                        price_spec = body.variant_prices[index] if index < len(body.variant_prices) else {}
+                        price = float(price_spec.get("selling_price") or body.selling_price)
+                        mrp_raw = price_spec.get("mrp", body.mrp)
+                        mrp = float(mrp_raw) if mrp_raw not in (None, "") else None
+                        if price <= 0 or (mrp is not None and mrp < price):
+                            raise HTTPException(status_code=422, detail="Each variant must have a positive selling price and MRP not lower than selling price.")
+                        base_sku = _build_catalogue_sku(conn, product_id, body.name, body.brand, attribute_values, body.sku)
+                        sku = f"{base_sku}-V{index + 1:02d}"
+                        if "sku" in variant_columns:
+                            candidate, suffix = sku, 1
+                            while conn.execute("SELECT id FROM product_variants WHERE sku=%s", (candidate,)).fetchone():
+                                suffix += 1
+                                tail = f"-{suffix}"
+                                candidate = f"{sku[:180-len(tail)]}{tail}"
+                            sku = candidate
+                        cover = body.variant_covers[index].strip() if index < len(body.variant_covers) else (body.image_url.strip() or None)
+                        new_values = {"product_id": product_id, "selling_price": price, "mrp": mrp, "sku": sku,
+                                      "image_url": cover, "status": body.status}
+                        target = _catalogue_insert(conn, "product_variants", new_values)
+                        target_id = int(target["id"])
+                    conn.execute("DELETE FROM variant_attribute_values WHERE variant_id=%s", (target_id,))
+                    for attribute_id, _attribute_name, _values in normalized_attributes:
+                        value = attribute_values[_attribute_name]
+                        conn.execute(
+                            """INSERT INTO variant_attribute_values(variant_id,attribute_id,value)
+                               VALUES(%s,%s,%s) ON CONFLICT(variant_id,attribute_id)
+                               DO UPDATE SET value=EXCLUDED.value""",
+                            (target_id, attribute_id, value),
+                        )
+                # If fewer combinations are requested than variants already exist, retire
+                # the surplus rather than leaving duplicate selectable variants active.
+                if "status" in variant_columns and len(ordered_variants) > len(combinations):
+                    for extra in ordered_variants[len(combinations):]:
+                        conn.execute("UPDATE product_variants SET status='inactive' WHERE id=%s", (extra["id"],))
+                if conn.execute("SELECT to_regclass('public.product_attribute_assignments') AS t").fetchone()["t"]:
+                    for attribute_id, _attribute_name, _values in normalized_attributes:
+                        conn.execute(
+                            "INSERT INTO product_attribute_assignments(product_id,attribute_id) VALUES(%s,%s) ON CONFLICT DO NOTHING",
+                            (product_id, attribute_id),
+                        )
+                variants_now = conn.execute(
+                    "SELECT * FROM product_variants WHERE product_id=%s AND (status IS NULL OR status <> 'inactive') ORDER BY id",
+                    (product_id,),
+                ).fetchall()
+                return {"product": product, "variant": variant, "variants": variants_now}
             return {"product": product, "variant": variant}
     except HTTPException:
         raise
