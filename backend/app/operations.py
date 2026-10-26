@@ -50,6 +50,11 @@ def _ensure(conn: Any) -> None:
         variant_id BIGINT NOT NULL, warehouse TEXT NOT NULL DEFAULT 'Main',
         on_hand NUMERIC(14,3) NOT NULL DEFAULT 0, counted NUMERIC(14,3),
         UNIQUE(count_id,variant_id,warehouse))""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS sb_inventory_scraps (
+        id BIGSERIAL PRIMARY KEY, variant_id BIGINT NOT NULL, warehouse TEXT NOT NULL DEFAULT 'Main',
+        quantity NUMERIC(14,3) NOT NULL CHECK(quantity>0), reason TEXT NOT NULL,
+        should_replenish BOOLEAN NOT NULL DEFAULT FALSE, status TEXT NOT NULL DEFAULT 'done',
+        created_by BIGINT, created_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
     conn.execute("""CREATE TABLE IF NOT EXISTS sb_stock_movements (
         id BIGSERIAL PRIMARY KEY, variant_id BIGINT NOT NULL, warehouse TEXT NOT NULL DEFAULT 'Main',
         movement_type TEXT NOT NULL, quantity NUMERIC(14,3) NOT NULL CHECK(quantity>0),
@@ -494,6 +499,51 @@ def apply_physical_count(count_id: int, authorization: str | None = Header(defau
     except HTTPException: raise
     except Exception as exc:
         raise HTTPException(status_code=503,detail="Physical inventory count could not be applied") from exc
+
+
+class ScrapInput(BaseModel):
+    variant_id: int = Field(gt=0)
+    quantity: Decimal = Field(gt=0, max_digits=14, decimal_places=3)
+    reason: str = Field(min_length=1, max_length=300)
+    should_replenish: bool = False
+    warehouse: str = Field(default="Main", max_length=120)
+
+
+@router.get("/inventory/scraps")
+def list_scraps(authorization: str | None = Header(default=None), limit: int = Query(100,ge=1,le=500)) -> dict[str,Any]:
+    _admin(authorization)
+    try:
+        with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
+            _ensure(conn)
+            return {"items":conn.execute("""SELECT s.*,COALESCE(pv.name,'') AS product_name,COALESCE(pv.sku,'') AS sku
+                FROM sb_inventory_scraps s LEFT JOIN product_variants pv ON pv.id=s.variant_id
+                ORDER BY s.id DESC LIMIT %s""",(limit,)).fetchall()}
+    except Exception as exc: raise HTTPException(status_code=503,detail="Scrap records unavailable") from exc
+
+
+@router.post("/inventory/scraps",status_code=201)
+def create_scrap(body: ScrapInput, authorization: str | None = Header(default=None)) -> dict[str,Any]:
+    user=_admin(authorization)
+    try:
+        with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
+            _ensure(conn)
+            with conn.transaction():
+                if not conn.execute("SELECT id FROM product_variants WHERE id=%s",(body.variant_id,)).fetchone():
+                    raise HTTPException(status_code=404,detail="Product variant not found")
+                warehouse=body.warehouse.strip() or "Main"
+                conn.execute("""INSERT INTO sb_stock(variant_id,warehouse,quantity) VALUES(%s,%s,0)
+                    ON CONFLICT(variant_id,warehouse) DO NOTHING""",(body.variant_id,warehouse))
+                stock=conn.execute("SELECT quantity FROM sb_stock WHERE variant_id=%s AND warehouse=%s FOR UPDATE",(body.variant_id,warehouse)).fetchone()
+                old=Decimal(str(stock["quantity"]))
+                if body.quantity>old: raise HTTPException(status_code=422,detail=f"Scrap quantity exceeds available stock ({old}).")
+                conn.execute("UPDATE sb_stock SET quantity=%s,updated_at=now() WHERE variant_id=%s AND warehouse=%s",(old-body.quantity,body.variant_id,warehouse))
+                row=conn.execute("""INSERT INTO sb_inventory_scraps(variant_id,warehouse,quantity,reason,should_replenish,status,created_by)
+                    VALUES(%s,%s,%s,%s,%s,'done',%s) RETURNING *""",(body.variant_id,warehouse,body.quantity,body.reason.strip(),body.should_replenish,user["id"])).fetchone()
+                conn.execute("""INSERT INTO sb_stock_movements(variant_id,warehouse,movement_type,quantity,reference_type,reference_id,note,created_by)
+                    VALUES(%s,%s,'scrap_out',%s,'scrap',%s,%s,%s)""",(body.variant_id,warehouse,body.quantity,row["id"],body.reason.strip(),user["id"]))
+                return {"item":row,"balance":old-body.quantity}
+    except HTTPException: raise
+    except Exception as exc: raise HTTPException(status_code=503,detail="Scrap could not be recorded") from exc
 
 
 @router.post("/inventory/movements",status_code=201)
