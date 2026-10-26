@@ -264,6 +264,15 @@ def _order_detail(conn: Any, order_id: int) -> dict[str, Any]:
         """SELECT variant_id,product_id,sku,product_name,quantity,unit_price,line_total,tax_rate,taxable_amount,cgst_amount,sgst_amount,igst_amount,tax_amount,tax_inclusive
            FROM store_order_items WHERE order_id=%s ORDER BY id""", (order_id,)
     ).fetchall()
+    shipment_table = conn.execute("SELECT to_regclass('public.sb_shipments') AS table_name").fetchone()
+    if shipment_table and shipment_table.get("table_name"):
+        order["shipment"] = conn.execute(
+            """SELECT carrier,tracking_number,tracking_url,status,estimated_delivery,dispatched_at,delivered_at
+               FROM sb_shipments WHERE order_type='website' AND order_id=%s ORDER BY id DESC LIMIT 1""",
+            (order_id,),
+        ).fetchone()
+    else:
+        order["shipment"] = None
     return order
 
 
