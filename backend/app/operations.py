@@ -50,6 +50,13 @@ def _ensure(conn: Any) -> None:
         variant_id BIGINT NOT NULL, warehouse TEXT NOT NULL DEFAULT 'Main',
         on_hand NUMERIC(14,3) NOT NULL DEFAULT 0, counted NUMERIC(14,3),
         UNIQUE(count_id,variant_id,warehouse))""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS sb_replenishment_rules (
+        id BIGSERIAL PRIMARY KEY, variant_id BIGINT NOT NULL, warehouse TEXT NOT NULL DEFAULT 'Main',
+        min_quantity NUMERIC(14,3) NOT NULL DEFAULT 0 CHECK(min_quantity>=0),
+        max_quantity NUMERIC(14,3) NOT NULL DEFAULT 0 CHECK(max_quantity>=0),
+        snoozed_until DATE, active BOOLEAN NOT NULL DEFAULT TRUE, created_by BIGINT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE(variant_id,warehouse), CHECK(max_quantity>=min_quantity))""")
     conn.execute("""CREATE TABLE IF NOT EXISTS sb_inventory_scraps (
         id BIGSERIAL PRIMARY KEY, variant_id BIGINT NOT NULL, warehouse TEXT NOT NULL DEFAULT 'Main',
         quantity NUMERIC(14,3) NOT NULL CHECK(quantity>0), reason TEXT NOT NULL,
@@ -544,6 +551,62 @@ def create_scrap(body: ScrapInput, authorization: str | None = Header(default=No
                 return {"item":row,"balance":old-body.quantity}
     except HTTPException: raise
     except Exception as exc: raise HTTPException(status_code=503,detail="Scrap could not be recorded") from exc
+
+
+class ReplenishmentRuleInput(BaseModel):
+    variant_id: int = Field(gt=0)
+    warehouse: str = Field(default="Main", max_length=120)
+    min_quantity: Decimal = Field(ge=0, max_digits=14, decimal_places=3)
+    max_quantity: Decimal = Field(ge=0, max_digits=14, decimal_places=3)
+
+
+@router.get("/inventory/replenishment")
+def list_replenishment(authorization: str | None = Header(default=None)) -> dict[str,Any]:
+    _admin(authorization)
+    try:
+        with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
+            _ensure(conn)
+            rows=conn.execute("""SELECT r.*,COALESCE(pv.name,'') AS product_name,COALESCE(pv.sku,'') AS sku,
+                COALESCE(s.quantity,0) AS on_hand,COALESCE(s.quantity,0) AS forecast,
+                GREATEST(r.max_quantity-COALESCE(s.quantity,0),0) AS to_order
+                FROM sb_replenishment_rules r LEFT JOIN product_variants pv ON pv.id=r.variant_id
+                LEFT JOIN sb_stock s ON s.variant_id=r.variant_id AND s.warehouse=r.warehouse
+                WHERE r.active=TRUE ORDER BY (COALESCE(s.quantity,0)<r.min_quantity) DESC,r.id DESC""").fetchall()
+            return {"items":rows}
+    except Exception as exc: raise HTTPException(status_code=503,detail="Replenishment rules unavailable") from exc
+
+
+@router.post("/inventory/replenishment",status_code=201)
+def save_replenishment(body: ReplenishmentRuleInput, authorization: str | None = Header(default=None)) -> dict[str,Any]:
+    user=_admin(authorization)
+    if body.max_quantity<body.min_quantity: raise HTTPException(status_code=422,detail="Maximum quantity must be at least the minimum.")
+    try:
+        with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
+            _ensure(conn)
+            if not conn.execute("SELECT id FROM product_variants WHERE id=%s",(body.variant_id,)).fetchone():
+                raise HTTPException(status_code=404,detail="Product variant not found")
+            warehouse=body.warehouse.strip() or "Main"
+            row=conn.execute("""INSERT INTO sb_replenishment_rules(variant_id,warehouse,min_quantity,max_quantity,created_by)
+                VALUES(%s,%s,%s,%s,%s) ON CONFLICT(variant_id,warehouse) DO UPDATE SET
+                min_quantity=EXCLUDED.min_quantity,max_quantity=EXCLUDED.max_quantity,active=TRUE,updated_at=now()
+                RETURNING *""",(body.variant_id,warehouse,body.min_quantity,body.max_quantity,user["id"])).fetchone()
+            return {"item":row}
+    except HTTPException: raise
+    except Exception as exc: raise HTTPException(status_code=503,detail="Replenishment rule could not be saved") from exc
+
+
+@router.post("/inventory/replenishment/{rule_id}/snooze")
+def snooze_replenishment(rule_id: int, authorization: str | None = Header(default=None)) -> dict[str,Any]:
+    _admin(authorization)
+    try:
+        with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
+            _ensure(conn)
+            row=conn.execute("""UPDATE sb_replenishment_rules SET snoozed_until=CURRENT_DATE+7,updated_at=now()
+                WHERE id=%s AND active=TRUE RETURNING *""",(rule_id,)).fetchone()
+            if not row: raise HTTPException(status_code=404,detail="Replenishment rule not found")
+            return {"item":row}
+    except HTTPException: raise
+    except Exception as exc: raise HTTPException(status_code=503,detail="Replenishment rule could not be snoozed") from exc
 
 
 @router.post("/inventory/movements",status_code=201)
