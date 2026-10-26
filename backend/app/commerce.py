@@ -69,6 +69,9 @@ def _ensure_commerce_schema(conn: Any) -> None:
         )
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS store_order_items_order_idx ON store_order_items(order_id)")
+    conn.execute("ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS tax_total NUMERIC(12,2) NOT NULL DEFAULT 0")
+    for column, definition in (("tax_rate","NUMERIC(5,2) NOT NULL DEFAULT 0"),("taxable_amount","NUMERIC(12,2) NOT NULL DEFAULT 0"),("cgst_amount","NUMERIC(12,2) NOT NULL DEFAULT 0"),("sgst_amount","NUMERIC(12,2) NOT NULL DEFAULT 0"),("igst_amount","NUMERIC(12,2) NOT NULL DEFAULT 0"),("tax_amount","NUMERIC(12,2) NOT NULL DEFAULT 0"),("tax_inclusive","BOOLEAN NOT NULL DEFAULT TRUE")):
+        conn.execute(f"ALTER TABLE store_order_items ADD COLUMN IF NOT EXISTS {column} {definition}")
 
 
 class CheckoutItem(BaseModel):
@@ -156,6 +159,21 @@ def _validated_delivery_setting(value: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+
+def _validated_gst_setting(value: dict[str, Any]) -> dict[str, str]:
+    """Validate the store's dispatch state used to distinguish CGST/SGST from IGST."""
+    allowed = {"origin_state", "gstin"}
+    if set(value) - allowed:
+        raise HTTPException(status_code=422, detail="GST settings accept only origin_state and gstin.")
+    state = value.get("origin_state")
+    if not isinstance(state, str) or not state.strip() or len(state.strip()) > 100:
+        raise HTTPException(status_code=422, detail="GST settings require the store's origin_state.")
+    gstin = value.get("gstin", "")
+    if not isinstance(gstin, str) or (gstin and not re.fullmatch(r"[0-9A-Z]{15}", gstin.strip().upper())):
+        raise HTTPException(status_code=422, detail="GSTIN must contain 15 alphanumeric uppercase characters.")
+    return {"origin_state": state.strip(), "gstin": gstin.strip().upper()}
+
+
 def _delivery_quote(config: Any, pincode: str | None, subtotal: Decimal) -> dict[str, Any]:
     if not isinstance(config, dict) or config.get("enabled") is not True:
         return {"configured": False, "serviceable": None, "shipping_fee": None,
@@ -195,16 +213,55 @@ def _delivery_quote(config: Any, pincode: str | None, subtotal: Decimal) -> dict
             "message": message or ("Free delivery applied." if fee == 0 else "Delivery is available.")}
 
 
+def _product_available_for_pincode(conn: Any, product_id: int, variant_id: int, pincode: str) -> bool:
+    """Apply explicit product/variant availability rules; no rules means unrestricted."""
+    tables = conn.execute(
+        """SELECT to_regclass('public.sb_product_availability_rules') AS rules,
+                  to_regclass('public.sb_region_pincodes') AS pins,
+                  to_regclass('public.sb_regions') AS regions"""
+    ).fetchone()
+    if not tables or not tables.get("rules"):
+        return True
+    rules = conn.execute(
+        """SELECT scope_type, region_id, pincode, warehouse_id
+           FROM sb_product_availability_rules
+           WHERE product_id=%s AND (variant_id IS NULL OR variant_id=%s)""",
+        (product_id, variant_id),
+    ).fetchall()
+    if not rules:
+        return True
+    active_region_ids = set()
+    if tables.get("pins") and tables.get("regions"):
+        active_region_ids = {row["region_id"] for row in conn.execute(
+            """SELECT rp.region_id FROM sb_region_pincodes rp
+               JOIN sb_regions r ON r.id=rp.region_id
+               WHERE rp.pincode=%s AND rp.active=TRUE AND r.active=TRUE""",
+            (pincode,),
+        ).fetchall()}
+    for rule in rules:
+        if rule["scope_type"] == "pincode" and rule["pincode"] == pincode:
+            return True
+        if rule["scope_type"] == "region" and rule["region_id"] in active_region_ids:
+            return True
+        if rule["scope_type"] == "warehouse" and rule["warehouse_id"] is not None and active_region_ids:
+            if conn.execute(
+                "SELECT 1 FROM sb_warehouses WHERE id=%s AND region_id = ANY(%s) LIMIT 1",
+                (rule["warehouse_id"], list(active_region_ids)),
+            ).fetchone():
+                return True
+    return False
+
+
 def _order_detail(conn: Any, order_id: int) -> dict[str, Any]:
     order = conn.execute(
         """SELECT id,order_number,user_id,status,payment_method,payment_status,currency,
-                  subtotal,shipping_fee,loyalty_discount,loyalty_coins_redeemed,total,shipping_address,customer_note,created_at,updated_at
+                  subtotal,shipping_fee,tax_total,loyalty_discount,loyalty_coins_redeemed,total,shipping_address,customer_note,created_at,updated_at
            FROM store_orders WHERE id=%s""", (order_id,)
     ).fetchone()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     order["items"] = conn.execute(
-        """SELECT variant_id,product_id,sku,product_name,quantity,unit_price,line_total
+        """SELECT variant_id,product_id,sku,product_name,quantity,unit_price,line_total,tax_rate,taxable_amount,cgst_amount,sgst_amount,igst_amount,tax_amount,tax_inclusive
            FROM store_order_items WHERE order_id=%s ORDER BY id""", (order_id,)
     ).fetchall()
     return order
@@ -334,6 +391,7 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
             ensure_loyalty(conn)
             products: list[dict[str, Any]] = []
             subtotal = Decimal("0")
+            tax_total = Decimal("0")
             for variant_id, quantity in quantities.items():
                 product_columns = {r["column_name"] for r in conn.execute(
                     "SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='products'"
@@ -346,21 +404,56 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
                 active_product = " AND p.status='active'" if "status" in product_columns else ""
                 active_variant = " AND v.status='active'" if "status" in variant_columns else ""
                 sku_select = "v.sku" if "sku" in variant_columns else "NULL::text"
+                gst_rate_select = "p.gst_rate AS gst_rate" if "gst_rate" in product_columns else "0::numeric AS gst_rate"
+                tax_inclusive_select = "p.tax_inclusive AS tax_inclusive" if "tax_inclusive" in product_columns else "TRUE AS tax_inclusive"
                 product = conn.execute(
                     f"""SELECT p.id AS product_id,p.name,v.id AS variant_id,
-                               v.selling_price,{sku_select} AS sku
+                               v.selling_price,{sku_select} AS sku,
+                               {gst_rate_select},
+                               {tax_inclusive_select}
                         FROM products p JOIN product_variants v ON v.product_id=p.id
                         WHERE v.id=%s{active_product}{active_variant}
                         FOR SHARE OF p,v""", (variant_id,)
                 ).fetchone()
                 if not product:
                     raise HTTPException(status_code=409, detail=f"Product variant {variant_id} is no longer available.")
+                if not _product_available_for_pincode(conn, int(product["product_id"]), int(product["variant_id"]), body.shipping_address.pincode):
+                    raise HTTPException(status_code=422, detail=f"{product['name']} is not available for delivery to pincode {body.shipping_address.pincode}.")
                 price = Decimal(str(product["selling_price"] or 0))
                 if price <= 0:
                     raise HTTPException(status_code=409, detail=f"Price is not configured for {product['name']}.")
                 line_total = (price * quantity).quantize(Decimal("0.01"))
-                subtotal += line_total
-                products.append({**product, "quantity": quantity, "unit_price": price, "line_total": line_total})
+                rate = Decimal(str(product.get("gst_rate") or 0))
+                if not rate.is_finite() or rate < 0 or rate > 100:
+                    raise HTTPException(status_code=409, detail=f"GST rate is invalid for {product['name']}.")
+                inclusive = product.get("tax_inclusive") is not False
+                if inclusive:
+                    taxable_amount = (line_total / (Decimal("1") + rate / Decimal("100"))).quantize(Decimal("0.01")) if rate else line_total
+                    item_tax = line_total - taxable_amount
+                    customer_line_total = line_total
+                else:
+                    taxable_amount = line_total
+                    item_tax = (taxable_amount * rate / Decimal("100")).quantize(Decimal("0.01"))
+                    customer_line_total = line_total + item_tax
+                tax_total += item_tax
+                subtotal += taxable_amount
+                products.append({**product, "quantity": quantity, "unit_price": price, "line_total": line_total,
+                    "tax_rate": rate, "taxable_amount": taxable_amount, "tax_amount": item_tax,
+                    "cgst_amount": (item_tax / 2).quantize(Decimal("0.01")) if item_tax else Decimal("0.00"),
+                    "sgst_amount": item_tax - (item_tax / 2).quantize(Decimal("0.01")) if item_tax else Decimal("0.00"),
+                    "igst_amount": Decimal("0.00"), "tax_inclusive": inclusive,
+                    "customer_line_total": customer_line_total})
+            gst_row = conn.execute("SELECT setting_value FROM store_settings WHERE setting_key='gst'").fetchone()
+            gst_setting = gst_row["setting_value"] if gst_row else None
+            if isinstance(gst_setting, dict) and gst_setting.get("origin_state"):
+                origin_state = re.sub(r"\s+", " ", str(gst_setting["origin_state"])).strip().casefold()
+                destination_state = re.sub(r"\s+", " ", body.shipping_address.state).strip().casefold()
+                if origin_state != destination_state:
+                    for product in products:
+                        product["cgst_amount"] = Decimal("0.00")
+                        product["sgst_amount"] = Decimal("0.00")
+                        product["igst_amount"] = product["tax_amount"]
+
             delivery_row = conn.execute(
                 "SELECT setting_value FROM store_settings WHERE setting_key='delivery'"
             ).fetchone()
@@ -374,7 +467,7 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
             if delivery_quote["serviceable"] is not True:
                 raise HTTPException(status_code=422, detail=delivery_quote["message"])
             shipping_fee = Decimal(str(delivery_quote["shipping_fee"]))
-            total_before_coins = subtotal + shipping_fee
+            total_before_coins = subtotal + tax_total + shipping_fee
             loyalty_discount = Decimal("0")
             coins_used = 0
             if body.super_coins_to_redeem:
@@ -398,10 +491,10 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
             order_number = "SB-" + secrets.token_hex(5).upper()
             row = conn.execute(
                 """INSERT INTO store_orders
-                   (order_number,user_id,status,payment_method,payment_status,subtotal,shipping_fee,total,loyalty_discount,loyalty_coins_redeemed,shipping_address,customer_note)
-                   VALUES (%s,%s,'placed','cash_on_delivery','pending',%s,%s,%s,%s,%s,%s::jsonb,%s)
+                   (order_number,user_id,status,payment_method,payment_status,subtotal,shipping_fee,tax_total,total,loyalty_discount,loyalty_coins_redeemed,shipping_address,customer_note)
+                   VALUES (%s,%s,'placed','cash_on_delivery','pending',%s,%s,%s,%s,%s,%s,%s::jsonb,%s)
                    RETURNING id""",
-                (order_number, user["id"], subtotal, shipping_fee, total, loyalty_discount, coins_used,
+                (order_number, user["id"], subtotal, shipping_fee, tax_total, total, loyalty_discount, coins_used,
                  json.dumps(body.shipping_address.model_dump()), body.customer_note.strip())
             ).fetchone()
             if coins_used:
@@ -410,10 +503,12 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
             for product in products:
                 conn.execute(
                     """INSERT INTO store_order_items
-                       (order_id,variant_id,product_id,sku,product_name,quantity,unit_price,line_total)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                       (order_id,variant_id,product_id,sku,product_name,quantity,unit_price,line_total,tax_rate,taxable_amount,cgst_amount,sgst_amount,igst_amount,tax_amount,tax_inclusive)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (row["id"], product["variant_id"], product["product_id"], product["sku"],
-                     product["name"], product["quantity"], product["unit_price"], product["line_total"])
+                     product["name"], product["quantity"], product["unit_price"], product["line_total"],
+                     product["tax_rate"], product["taxable_amount"], product["cgst_amount"], product["sgst_amount"],
+                     product["igst_amount"], product["tax_amount"], product["tax_inclusive"])
                 )
                 stock=conn.execute("SELECT quantity FROM sb_stock WHERE variant_id=%s AND warehouse='Main' FOR UPDATE",(product["variant_id"],)).fetchone()
                 # Enforce inventory only for variants explicitly tracked in the stock ledger.
@@ -426,9 +521,10 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
                         VALUES(%s,'Main','website_sale',%s,'website_order',%s)""",(product["variant_id"],product["quantity"],row["id"]))
             from .invoices import create_invoice
             invoice_lines=[{"description":p["name"],"variant_id":p["variant_id"],"quantity":p["quantity"],
-                "unit_price":p["unit_price"],"line_subtotal":p["line_total"],"line_tax":0,"line_total":p["line_total"]}
+                "unit_price":p["unit_price"],"line_subtotal":p["taxable_amount"],"line_tax":p["tax_amount"],
+                "line_total":p["customer_line_total"]}
                 for p in products]
-            product_total=sum((Decimal(str(p["line_total"])) for p in products),Decimal("0"))
+            product_total=sum((Decimal(str(p["customer_line_total"])) for p in products),Decimal("0"))
             adjustment=Decimal(str(total))-product_total
             if adjustment:
                 invoice_lines.append({"description":"Shipping / discount adjustment","quantity":1,"unit_price":adjustment,
@@ -437,7 +533,10 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
             create_invoice(conn,source_type="website",source_id=int(row["id"]),
                 customer_name=str(address.get("full_name") or user.get("full_name") or "Website customer"),
                 customer_email=user.get("email"),customer_phone=address.get("phone"),
-                subtotal=total,tax_total=Decimal("0"),total=total,lines=invoice_lines)
+                # Keep the invoice header subtotal aligned with its line subtotals:
+                # taxable product value + shipping - loyalty discount. Tax remains separate.
+                subtotal=(subtotal + shipping_fee - loyalty_discount),
+                tax_total=tax_total, total=total, lines=invoice_lines)
             return {"order": _order_detail(conn, row["id"]),
                     "message": "Order placed. Tracked inventory is deducted atomically; payment is due on delivery."}
     except HTTPException:
@@ -599,10 +698,15 @@ def update_store_setting(
     authorization: str | None = Header(default=None)
 ) -> dict[str, Any]:
     actor = _require(authorization, {"super_admin", "admin"})
-    if setting_key not in {"brand", "catalogue", "checkout", "delivery", "policies"}:
+    if setting_key not in {"brand", "catalogue", "checkout", "delivery", "gst", "policies"}:
         raise HTTPException(status_code=422, detail="Unsupported store setting key.")
     # Settings are JSON objects with strict size limits; no executable templates or secrets.
-    value = _validated_delivery_setting(body.value) if setting_key == "delivery" else body.value
+    if setting_key == "delivery":
+        value = _validated_delivery_setting(body.value)
+    elif setting_key == "gst":
+        value = _validated_gst_setting(body.value)
+    else:
+        value = body.value
     encoded = json.dumps(value, separators=(",", ":"))
     if len(encoded) > 20000:
         raise HTTPException(status_code=413, detail="Setting payload is too large.")
