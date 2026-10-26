@@ -537,3 +537,45 @@
   .shop-hero .hero-dots button{width:6px;height:6px;min-width:6px;min-height:6px}
   .shop-hero .hero-dots button.active{width:15px}
 }
+
+
+/* Consistent product-card shopping bag and favourite heart icons */
+.product-card-actions .quick-add{
+ display:grid;
+ place-items:center;
+ width:40px;
+ height:40px;
+ min-width:40px;
+ padding:0;
+ border:1px solid #eadff5;
+ border-radius:50%;
+ background:linear-gradient(145deg,#7028d8,#5420bd);
+ color:#fff;
+ box-shadow:0 3px 10px rgba(75,28,140,.18);
+ opacity:1;
+ transition:transform .18s ease,box-shadow .18s ease;
+}
+.product-bag-icon{display:block;width:23px;height:23px}
+.product-card-actions .quick-add:hover{transform:translateY(-1px);box-shadow:0 5px 13px rgba(75,28,140,.24)}
+.product-card-actions .wishlist-button{
+ display:grid;
+ place-items:center;
+ width:40px;
+ height:40px;
+ padding:0;
+ border:1px solid #f1d9eb;
+ border-radius:50%;
+ background:linear-gradient(145deg,#e65acb,#c943b7);
+ color:#fff;
+ box-shadow:0 3px 10px rgba(184,49,153,.18);
+ line-height:1;
+ transition:transform .18s ease,background .18s ease;
+}
+.product-heart-icon{display:block;width:22px;height:22px}
+.product-card-actions .wishlist-button.is-saved{background:#c943b7;color:#fff;border-color:#c943b7}
+.product-card-actions .wishlist-button:hover{transform:translateY(-1px)}
+@media(max-width:760px){
+ .product-card-actions .quick-add,.product-card-actions .wishlist-button{width:38px;height:38px;min-width:38px}
+ .product-bag-icon{width:22px;height:22px}
+ .product-heart-icon{width:21px;height:21px}
+}
