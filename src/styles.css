@@ -679,3 +679,23 @@ html,body,#root{max-width:100%;min-width:0;overflow-x:clip}
 @keyframes heroSlideIn{from{opacity:.65;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
 @media(max-width:760px){.shop-hero{border-radius:22px;padding-bottom:68px}.hero-carousel-controls{right:14px;bottom:12px}.hero-visual{min-height:170px}.hero-bag{font-size:84px}}
 @media(prefers-reduced-motion:reduce){.shop-hero .hero-text,.shop-hero .hero-visual{animation:none}}
+
+/* Modern, high-contrast cart control: visible in every storefront state */
+.shop-nav .cart-button{
+ position:relative;isolation:isolate;flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;gap:7px;
+ min-width:46px;min-height:44px;padding:9px 10px;border:1px solid #e6daf8;border-radius:14px;
+ background:#f5efff!important;color:#5620bd!important;box-shadow:0 3px 10px rgba(67,32,119,.09);
+ opacity:1;overflow:visible;z-index:3;line-height:1;transition:background .18s,border-color .18s,transform .18s,box-shadow .18s;
+}
+.shop-nav .cart-button:hover{background:#eadcff!important;border-color:#cbb3f3;box-shadow:0 5px 14px rgba(67,32,119,.15);transform:translateY(-1px)}
+.shop-nav .cart-button .cart-icon{display:block;flex:0 0 22px;width:22px;height:22px;max-width:none;color:#5620bd;overflow:visible}
+.shop-nav .cart-button .cart-label{display:inline!important;font-size:12px;font-weight:750;color:inherit}
+.shop-nav .cart-button .cart-count{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;min-width:21px;height:21px;padding:0 5px;border:2px solid #f5efff;border-radius:999px;background:#6428d9;color:#fff;font-size:10px;font-weight:800;line-height:1;box-shadow:0 1px 3px rgba(36,15,70,.15)}
+.shop-nav .cart-button:focus-visible{outline:3px solid #bca0f5;outline-offset:3px}
+@media(max-width:760px){
+ .shop-nav .cart-button{min-width:42px;min-height:42px;gap:0;padding:8px;border-radius:13px}
+ .shop-nav .cart-button .cart-icon{width:22px;height:22px;flex-basis:22px}
+ .shop-nav .cart-button .cart-label{display:none!important}
+ .shop-nav .cart-button .cart-count{position:absolute;top:-6px;right:-6px;min-width:19px;height:19px;padding:0 4px;border-width:2px;border-color:#fff;font-size:10px}
+}
+@media(prefers-reduced-motion:reduce){.shop-nav .cart-button{transition:none}}
