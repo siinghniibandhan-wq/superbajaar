@@ -511,14 +511,19 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
                      product["igst_amount"], product["tax_amount"], product["tax_inclusive"])
                 )
                 stock=conn.execute("SELECT quantity FROM sb_stock WHERE variant_id=%s AND warehouse='Main' FOR UPDATE",(product["variant_id"],)).fetchone()
-                # Enforce inventory only for variants explicitly tracked in the stock ledger.
+                # Reserve stock atomically when the website order is placed.
                 if stock:
                     available=Decimal(str(stock["quantity"]))
                     if available < product["quantity"]:
                         raise HTTPException(status_code=422,detail=f"Insufficient stock for {product['name']}; available {available}")
-                    conn.execute("UPDATE sb_stock SET quantity=quantity-%s,updated_at=now() WHERE variant_id=%s AND warehouse='Main'",(product["quantity"],product["variant_id"]))
-                    conn.execute("""INSERT INTO sb_stock_movements(variant_id,warehouse,movement_type,quantity,reference_type,reference_id)
-                        VALUES(%s,'Main','website_sale',%s,'website_order',%s)""",(product["variant_id"],product["quantity"],row["id"]))
+                    changed=conn.execute("""UPDATE sb_stock SET quantity=quantity-%s,updated_at=now()
+                        WHERE variant_id=%s AND warehouse='Main' AND quantity >= %s RETURNING quantity""",
+                        (product["quantity"],product["variant_id"],product["quantity"])).fetchone()
+                    if not changed:
+                        raise HTTPException(status_code=409,detail=f"Stock changed while reserving {product['name']}; please retry checkout.")
+                    conn.execute("""INSERT INTO sb_stock_movements(variant_id,warehouse,movement_type,quantity,reference_type,reference_id,note)
+                        VALUES(%s,'Main','website_sale',%s,'website_order',%s,'Reserved at website order placement')""",
+                        (product["variant_id"],product["quantity"],row["id"]))
             from .invoices import create_invoice
             invoice_lines=[{"description":p["name"],"variant_id":p["variant_id"],"quantity":p["quantity"],
                 "unit_price":p["unit_price"],"line_subtotal":p["taxable_amount"],"line_tax":p["tax_amount"],
