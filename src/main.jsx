@@ -764,6 +764,10 @@ function Dashboard({goStore}) {
     const payload=await response.json().catch(()=>({}));
     if(!response.ok)throw new Error(readableApiError(payload,'Unable to load purchase receipts'));
     if(!cancelled)setActualReceipts(Array.isArray(payload.items)?payload.items:[]);
+    const ordersResponse=await fetch(API_PATH('/operations/purchases'),{headers:token?{Authorization:'Bearer '+token}:{}});
+    const ordersPayload=await ordersResponse.json().catch(()=>({}));
+    if(!ordersResponse.ok)throw new Error(readableApiError(ordersPayload,'Unable to load open purchase orders'));
+    if(!cancelled)setReceiptOrders(Array.isArray(ordersPayload.items)?ordersPayload.items:[]);
    }catch(error){if(!cancelled)setReceiptError(error.message||'Unable to load receipts')}
    finally{if(!cancelled)setReceiptLoading(false)}
   }
