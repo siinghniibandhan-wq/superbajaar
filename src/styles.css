@@ -600,3 +600,20 @@ img,video,svg,canvas{
   .account-page .loyalty-wallet-summary b{font-size:13px}
   .account-page .loyalty-card-top,.account-page .loyalty-card-bottom{font-size:10px}
 }
+
+
+/* Parent-only category cards in storefront header */
+.category-strip{
+ display:flex;align-items:center;gap:10px;padding:12px clamp(12px,3vw,32px);
+ overflow-x:auto;white-space:nowrap;border-bottom:1px solid #f0ebf5;
+ scrollbar-width:thin;
+}
+.category-strip .category-card{
+ flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;
+ min-height:40px;padding:10px 16px;border:1px solid #ece5f5;border-radius:13px;
+ background:#fff;color:#574568;font-size:12px;font-weight:700;line-height:1.2;
+ box-shadow:0 3px 12px rgba(48,22,75,.04);transition:background .18s,border-color .18s,transform .18s,box-shadow .18s;
+}
+.category-strip .category-card:hover{transform:translateY(-1px);border-color:#cbb7f0;box-shadow:0 6px 16px rgba(91,33,182,.09)}
+.category-strip .category-card.selected{color:#fff;background:linear-gradient(120deg,#6428d9,#8b3de8);border-color:transparent;box-shadow:0 5px 14px rgba(100,40,217,.18)}
+@media(max-width:760px){.category-strip{gap:8px;padding:10px 12px}.category-strip .category-card{min-height:38px;padding:9px 13px;border-radius:12px;font-size:11px}}
