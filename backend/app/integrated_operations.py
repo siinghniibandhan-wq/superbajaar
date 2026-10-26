@@ -941,6 +941,8 @@ def inspect_receipt(receipt_id: int, body: ReceiptInspectionInput, authorization
         _schema(c)
         r=c.execute("SELECT * FROM sb_receipts WHERE id=%s FOR UPDATE",(receipt_id,)).fetchone()
         if not r or r["status"]!="inspection": raise HTTPException(409,"Receipt is not awaiting inspection.")
+        warehouse_row=c.execute("SELECT name FROM sb_warehouses WHERE id=%s",(r["warehouse_id"],)).fetchone()
+        warehouse_name=str(warehouse_row["name"] or "").strip() if warehouse_row else ""
         received={int(x["variant_id"]):int(x["quantity"]) for x in r["items"]}
         accepted={int(x["variant_id"]):int(x["quantity"]) for x in body.accepted_items}
         rejected={int(x["variant_id"]):int(x["quantity"]) for x in body.rejected_items}
