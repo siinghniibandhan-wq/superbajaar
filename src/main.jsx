@@ -700,12 +700,59 @@ function POSDesk(){
 }
 
 function Dashboard({goStore}) {
- return <main className="admin-rebuild-placeholder" style={{minHeight:'100vh',display:'grid',placeItems:'center',padding:'24px',background:'var(--page-bg, #f8f7fb)',color:'var(--text, #241b35)'}}>
-  <section style={{maxWidth:560,textAlign:'center'}}>
-   <p style={{fontWeight:800,letterSpacing:'.08em',textTransform:'uppercase',color:'#7041c6'}}>SUPER BAJAAR</p>
-   <h1 style={{fontSize:'clamp(28px,5vw,42px)',margin:'12px 0'}}>Admin dashboard rebuild</h1>
-   <p style={{lineHeight:1.7,opacity:.78}}>The previous admin dashboard and its frontend functionality have been removed. The new admin modules will be implemented from scratch.</p>
-   <button type="button" onClick={goStore} style={{marginTop:20,border:0,borderRadius:12,padding:'12px 18px',fontWeight:700,cursor:'pointer',background:'#7041c6',color:'#fff'}}>Return to storefront</button>
+ const [activeModule,setActiveModule]=useState(null);
+ const modules=[
+  {id:'purchase',name:'Purchase',icon:'🧾',color:'#ef8d32',desc:'Suppliers and purchase orders'},
+  {id:'inventory',name:'Inventory',icon:'📦',color:'#9b59d0',desc:'Products, stock and warehouses'},
+  {id:'logistics',name:'Logistics',icon:'🚚',color:'#e16bb8',desc:'Shipments and delivery operations'},
+  {id:'accounting',name:'Accounting',icon:'📊',color:'#27b8a7',desc:'Ledgers, GST and financial reports'},
+  {id:'pos',name:'POS',icon:'🛍️',color:'#f1a13a',desc:'Walk-in sales and checkout'},
+  {id:'website',name:'Website',icon:'🌐',color:'#e45d99',desc:'Storefront and catalogue management'},
+  {id:'hr',name:'HR',icon:'👥',color:'#6d7fe8',desc:'Employees, attendance and leave'},
+  {id:'payroll',name:'Payroll',icon:'💳',color:'#39b6a6',desc:'Salary and payslip processing'},
+  {id:'crm',name:'CRM',icon:'🤝',color:'#e27d43',desc:'Customer relationships and follow-ups'},
+  {id:'loyalty',name:'Loyalty & Rewards',icon:'🎁',color:'#bd58be',desc:'Points, rewards and gift cards'}
+ ];
+ if(activeModule) {
+  const selected=modules.find(m=>m.id===activeModule);
+  return <main style={{minHeight:'100vh',background:'#17171d',color:'#f6f3fa',fontFamily:'inherit'}}>
+   <header style={{height:58,display:'flex',alignItems:'center',gap:14,padding:'0 18px',background:'#222229',borderBottom:'1px solid #37343e'}}>
+    <button type="button" onClick={()=>setActiveModule(null)} aria-label="Back to app launcher" style={{border:0,background:'transparent',color:'#f6f3fa',fontSize:24,cursor:'pointer'}}>‹</button>
+    <strong>Super Bajaar</strong><span style={{opacity:.65}}>/</span><span>{selected.name}</span>
+    <button type="button" onClick={goStore} style={{marginLeft:'auto',border:'1px solid #51495c',borderRadius:8,padding:'8px 12px',background:'transparent',color:'#fff'}}>View Storefront</button>
+   </header>
+   <section style={{maxWidth:900,margin:'0 auto',padding:'32px 20px'}}>
+    <div style={{display:'flex',alignItems:'center',gap:14}}>
+     <div style={{width:58,height:58,borderRadius:15,display:'grid',placeItems:'center',fontSize:30,background:selected.color+'24',border:'1px solid '+selected.color+'66'}}>{selected.icon}</div>
+     <div><h1 style={{margin:0,fontSize:28}}>{selected.name}</h1><p style={{margin:'5px 0 0',opacity:.68}}>{selected.desc}</p></div>
+    </div>
+    <div style={{marginTop:28,padding:22,border:'1px solid #393540',borderRadius:14,background:'#202027'}}>
+     <h2 style={{marginTop:0,fontSize:18}}>{selected.id==='purchase'?'Purchase module — build starting point':selected.name+' module'}</h2>
+     <p style={{lineHeight:1.7,color:'#c9c3d2',marginBottom:0}}>{selected.id==='purchase'?'This module is scheduled first. The workspace will be connected to the existing backend for suppliers, purchase orders, goods receipts and supplier bills/payments. No sample transactions are shown as real data.':'This module has its own workspace entry. Its operational screens will be implemented and connected in the planned module-by-module build; no placeholder data is presented as live business data.'}</p>
+    </div>
+    <button type="button" onClick={()=>setActiveModule(null)} style={{marginTop:20,border:0,borderRadius:9,padding:'11px 16px',background:'#7041c6',color:'#fff',fontWeight:700,cursor:'pointer'}}>Back to all apps</button>
+   </section>
+  </main>
+ }
+ return <main style={{minHeight:'100vh',background:'#17171d',color:'#f6f3fa',fontFamily:'inherit'}}>
+  <header style={{height:58,display:'flex',alignItems:'center',gap:12,padding:'0 18px',background:'#222229',borderBottom:'1px solid #37343e'}}>
+   <div style={{width:30,height:30,display:'grid',placeItems:'center',borderRadius:8,background:'linear-gradient(135deg,#7028d8,#e65acb)',fontWeight:900}}>S</div>
+   <strong style={{fontSize:15}}>Super Bajaar</strong><span style={{opacity:.65,fontSize:13}}>Administration</span>
+   <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:14}}>
+    <button type="button" aria-label="Notifications" title="Notifications" style={{border:0,background:'transparent',color:'#ded8e7',fontSize:20}}>♧</button>
+    <button type="button" aria-label="Activities" title="Activities" style={{border:0,background:'transparent',color:'#ded8e7',fontSize:20}}>◷</button>
+    <button type="button" aria-label="User profile" title="User profile" style={{width:30,height:30,border:0,borderRadius:8,background:'#7041c6',color:'#fff',fontWeight:800}}>K</button>
+    <button type="button" onClick={goStore} style={{border:'1px solid #51495c',borderRadius:8,padding:'7px 10px',background:'transparent',color:'#fff',fontSize:12}}>Storefront</button>
+   </div>
+  </header>
+  <section style={{maxWidth:1100,margin:'0 auto',padding:'28px 22px 44px'}}>
+   <div style={{marginBottom:25}}><h1 style={{margin:'0 0 6px',fontSize:'clamp(23px,4vw,30px)',fontWeight:750}}>Apps</h1><p style={{margin:0,color:'#aaa3b6',fontSize:14}}>Choose a workspace to manage your business.</p></div>
+   <div className="sb-admin-app-grid" style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(105px,1fr))',gap:'24px 18px'}}>
+    {modules.map(m=><button type="button" key={m.id} onClick={()=>setActiveModule(m.id)} style={{appearance:'none',border:0,background:'transparent',color:'#f6f3fa',display:'flex',flexDirection:'column',alignItems:'center',gap:9,padding:'4px 3px',cursor:'pointer',minWidth:0}}>
+     <span style={{width:62,height:62,display:'grid',placeItems:'center',borderRadius:12,background:'#292831',border:'1px solid #3c3844',boxShadow:'0 4px 12px #0003',fontSize:29,position:'relative',overflow:'hidden'}}><span style={{position:'absolute',inset:0,background:'linear-gradient(140deg,'+m.color+'20,transparent 65%)'}}></span><span style={{position:'relative'}}>{m.icon}</span></span>
+     <span style={{fontSize:13,textAlign:'center',fontWeight:550,lineHeight:1.25}}>{m.name}</span>
+    </button>)}
+   </div>
   </section>
  </main>
 }
