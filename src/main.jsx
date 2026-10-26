@@ -709,6 +709,17 @@ function Dashboard({goStore}) {
  const [inventoryLoading,setInventoryLoading]=useState(false);
  const [inventoryError,setInventoryError]=useState('');
  const [inventorySearch,setInventorySearch]=useState('');
+ const [receiptOrders,setReceiptOrders]=useState([]);
+ const [receiptPage,setReceiptPage]=useState('list');
+ const [receiptLoading,setReceiptLoading]=useState(false);
+ const [receiptError,setReceiptError]=useState('');
+ const [receiptSearch,setReceiptSearch]=useState('');
+ const [selectedPurchase,setSelectedPurchase]=useState(null);
+ const [purchaseLines,setPurchaseLines]=useState([]);
+ const [receiveQuantities,setReceiveQuantities]=useState({});
+ const [receiptSaving,setReceiptSaving]=useState(false);
+ const [receiptMessage,setReceiptMessage]=useState('');
+
  useEffect(()=>{
   if(activeModule!=='inventory')return;
   let cancelled=false;
@@ -741,6 +752,56 @@ function Dashboard({goStore}) {
   loadInventory();
   return()=>{cancelled=true};
  },[activeModule]);
+ useEffect(()=>{
+  if(activeModule!=='inventory'||inventoryTab!=='Receipts')return;
+  let cancelled=false;
+  async function loadReceipts(){
+   setReceiptLoading(true);setReceiptError('');
+   try{
+    const token=localStorage.getItem('sb_admin_token')||'';
+    const response=await fetch(API_PATH('/operations/purchases'),{headers:token?{Authorization:'Bearer '+token}:{}});
+    const payload=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(readableApiError(payload,'Unable to load purchase receipts'));
+    if(!cancelled)setReceiptOrders(Array.isArray(payload.items)?payload.items:[]);
+   }catch(error){if(!cancelled)setReceiptError(error.message||'Unable to load receipts')}
+   finally{if(!cancelled)setReceiptLoading(false)}
+  }
+  loadReceipts();return()=>{cancelled=true};
+ },[activeModule,inventoryTab]);
+ async function openPurchaseReceipt(order){
+  setReceiptLoading(true);setReceiptError('');setReceiptMessage('');
+  try{
+   const token=localStorage.getItem('sb_admin_token')||'';
+   const response=await fetch(API_PATH('/operations/purchases/'+order.id),{headers:token?{Authorization:'Bearer '+token}:{}});
+   const payload=await response.json().catch(()=>({}));
+   if(!response.ok)throw new Error(readableApiError(payload,'Unable to open purchase order'));
+   setSelectedPurchase(payload.purchase||order);
+   const lines=Array.isArray(payload.lines)?payload.lines:[];
+   setPurchaseLines(lines);
+   setReceiveQuantities(Object.fromEntries(lines.map(line=>[String(line.id),String(line.outstanding_quantity??(Number(line.quantity)-Number(line.received_qty||0)))])));
+   setReceiptPage('form');
+  }catch(error){setReceiptError(error.message||'Unable to open purchase order')}
+  finally{setReceiptLoading(false)}
+ }
+ async function submitPurchaseReceipt(){
+  if(!selectedPurchase)return;
+  const lines=purchaseLines.map(line=>({line_id:Number(line.id),quantity:Number(receiveQuantities[String(line.id)]||0)})).filter(line=>Number.isFinite(line.quantity)&&line.quantity>0);
+  if(!lines.length){setReceiptError('Enter at least one positive receipt quantity.');return}
+  setReceiptSaving(true);setReceiptError('');setReceiptMessage('');
+  try{
+   const token=localStorage.getItem('sb_admin_token')||'';
+   const response=await fetch(API_PATH('/operations/purchases/'+selectedPurchase.id+'/receive'),{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:JSON.stringify({lines})});
+   const payload=await response.json().catch(()=>({}));
+   if(!response.ok)throw new Error(readableApiError(payload,'Receipt could not be validated'));
+   setReceiptMessage(payload.message||'Receipt validated and stock updated.');
+   setReceiptPage('list');setSelectedPurchase(null);
+   const refreshed=await fetch(API_PATH('/operations/purchases'),{headers:token?{Authorization:'Bearer '+token}:{}});
+   const data=await refreshed.json().catch(()=>({}));
+   if(refreshed.ok)setReceiptOrders(Array.isArray(data.items)?data.items:[]);
+   setInventoryTab('Receipts');
+  }catch(error){setReceiptError(error.message||'Receipt could not be saved')}
+  finally{setReceiptSaving(false)}
+ }
  const modules=[
   {id:'purchase',name:'Purchase',icon:'🧾',color:'#ef8d32',desc:'Suppliers and purchase orders'},
   {id:'inventory',name:'Inventory',icon:'📦',color:'#9b59d0',desc:'Products, stock and warehouses'},
@@ -754,6 +815,25 @@ function Dashboard({goStore}) {
   {id:'loyalty',name:'Loyalty & Rewards',icon:'🎁',color:'#bd58be',desc:'Points, rewards and gift cards'},
   {id:'settings',name:'Settings',icon:'⚙️',color:'#7d8da8',desc:'Store configuration and administration'}
  ];
+ if(activeModule==='inventory'&&inventoryTab==='Receipts') {
+  const rows=receiptOrders.filter(order=>String(order.id).includes(receiptSearch)||String(order.vendor_name||'').toLowerCase().includes(receiptSearch.toLowerCase())||String(order.status||'').toLowerCase().includes(receiptSearch.toLowerCase()));
+  const fmtDate=value=>value?new Date(value).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'—';
+  return <main style={{minHeight:'100vh',background:'#19191f',color:'#f4f1f8',fontFamily:'inherit'}}>
+   <header style={{display:'flex',alignItems:'center',gap:12,minHeight:54,padding:'8px 16px',background:'#23232b',borderBottom:'1px solid #393943',flexWrap:'wrap',position:'relative',zIndex:50}}>
+    <button type="button" onClick={()=>{setInventoryTab('Overview');setReceiptPage('list');setReceiptError('')}} aria-label="Back to Inventory" style={{border:0,background:'transparent',color:'#fff',fontSize:22,cursor:'pointer'}}>‹</button><span style={{fontSize:20}}>📦</span><strong>Inventory</strong>
+    <nav aria-label="Inventory navigation" style={{display:'flex',gap:4,flex:'1 1 100%',flexWrap:'wrap',overflow:'visible',alignItems:'center'}}>{['Overview','Operations','Products','Reporting','Configuration'].map(menu=><div key={menu} style={{position:'relative'}}><button type="button" onClick={()=>setInventoryMenu(inventoryMenu===menu?null:menu)} style={{border:0,borderRadius:5,padding:'9px 8px',background:inventoryMenu===menu?'#34343d':'transparent',color:inventoryMenu===menu?'#f4b3eb':'#d2ccd9',fontSize:12}}>{menu}{menu!=='Overview'?' ▾':''}</button>{inventoryMenu===menu&&menu!=='Overview'&&<div style={{position:'absolute',zIndex:9999,top:'100%',left:0,minWidth:190,maxWidth:'calc(100vw - 24px)',maxHeight:'60vh',overflowY:'auto',padding:'7px 0',border:'1px solid #4a4652',borderRadius:8,background:'#393941'}}>{(menu==='Operations'?['Receipts','Deliveries','Physical Inventory','Scrap','Replenishment']:menu==='Products'?['Products']:menu==='Reporting'?['Stock','Moves History','Moves Analysis']:['Warehouses','Operations Types','Categories','Attributes','Reorder Rules']).map(item=><button className="sb-inventory-dropdown-item" key={item} type="button" onClick={()=>{setInventoryTab(({ 'Moves History':'Movements','Moves Analysis':'Movements','Stock':'Stock Levels','Operations Types':'Warehouses','Reorder Rules':'Stock Levels'})[item]||item);setInventoryMenu(null)}}>{item}</button>)}</div>}</div>)}</nav>
+   </header>
+   <section style={{padding:'14px 12px 36px',maxWidth:1200,margin:'0 auto'}}>
+    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14,flexWrap:'wrap'}}>{receiptPage==='form'&&<button type="button" onClick={()=>{setReceiptPage('list');setReceiptError('')}} style={{border:'1px solid #45414e',borderRadius:7,background:'#292930',color:'#eee',padding:'8px 10px'}}>‹ Back</button>}<h1 style={{fontSize:18,fontWeight:650,margin:0,flex:1}}>{receiptPage==='form'?'New Receipt':'Receipts'}</h1>{receiptPage==='list'&&<button type="button" onClick={()=>{setReceiptError('');setReceiptMessage('');setReceiptPage('choose')}} style={{border:0,borderRadius:6,padding:'9px 14px',background:'#a34b91',color:'#fff',fontWeight:700}}>New</button>}</div>
+    {receiptError&&<div role="alert" style={{padding:11,marginBottom:12,border:'1px solid #855248',borderRadius:7,background:'#342523',color:'#ffd1c4',fontSize:12}}>{receiptError}</div>}
+    {receiptMessage&&<div role="status" style={{padding:11,marginBottom:12,border:'1px solid #386b59',borderRadius:7,background:'#20352e',color:'#a8f0cf',fontSize:12}}>{receiptMessage}</div>}
+    {receiptPage==='choose'&&<section style={{padding:16,background:'#292930',border:'1px solid #3a3943',borderRadius:9}}><h2 style={{fontSize:16,margin:'0 0 7px'}}>Select a purchase order</h2><p style={{fontSize:12,color:'#b9b3c1'}}>Receipts are created against purchase orders so received stock and accounting remain linked.</p><input value={receiptSearch} onChange={e=>setReceiptSearch(e.target.value)} placeholder="Search purchase order or supplier…" style={{boxSizing:'border-box',width:'100%',padding:11,marginBottom:10,borderRadius:7,border:'1px solid #484551',background:'#202027',color:'#fff'}}/>{receiptOrders.filter(o=>!['received','cancelled'].includes(String(o.status).toLowerCase())).filter(o=>String(o.id).includes(receiptSearch)||String(o.vendor_name||'').toLowerCase().includes(receiptSearch.toLowerCase())).map(o=><button key={o.id} type="button" onClick={()=>openPurchaseReceipt(o)} style={{display:'flex',width:'100%',justifyContent:'space-between',gap:10,textAlign:'left',padding:12,marginTop:6,border:'1px solid #403d48',borderRadius:7,background:'#303038',color:'#f4f1f8'}}><span><strong>PO-{o.id}</strong><span style={{display:'block',fontSize:12,color:'#b9b3c1',marginTop:4}}>{o.vendor_name||'Supplier'} · {fmtDate(o.order_date)}</span></span><span style={{fontSize:11,color:'#e9a5d9'}}>{o.status||'draft'} →</span></button>)}{!receiptLoading&&receiptOrders.filter(o=>!['received','cancelled'].includes(String(o.status).toLowerCase())).length===0&&<p style={{fontSize:12,color:'#b9b3c1'}}>No open purchase orders available. Create a purchase order in the Purchase module first.</p>}</section>}
+    {receiptPage==='form'&&selectedPurchase&&<><div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:12}}>{['Mark as To Do','Validate','Cancel'].map(action=><button key={action} type="button" disabled={receiptSaving} onClick={()=>{if(action==='Validate')submitPurchaseReceipt();else if(action==='Cancel'){setReceiptPage('list');setSelectedPurchase(null)}else setReceiptMessage('Receipt is ready for review. Validate to post received quantities.')}} style={{border:0,borderRadius:6,padding:'9px 12px',background:action==='Validate'?'#a34b91':'#303038',color:'#fff',fontSize:12,opacity:receiptSaving?.65:1}}>{receiptSaving&&action==='Validate'?'Validating…':action}</button>)}</div><section style={{padding:16,background:'#292930',border:'1px solid #3a3943',borderRadius:9}}><h2 style={{fontSize:21,margin:'0 0 16px'}}>New Receipt · PO-{selectedPurchase.id}</h2>{[['Receive From',selectedPurchase.vendor_name||'Supplier'],['Operation Type','Purchase Receipt'],['Scheduled Date',fmtDate(selectedPurchase.order_date)],['Source Document','PO-'+selectedPurchase.id]].map(([label,value])=><div key={label} style={{display:'grid',gridTemplateColumns:'minmax(100px,130px) 1fr',gap:10,padding:'9px 0',borderBottom:'1px solid #3b3943',fontSize:12}}><span style={{color:'#b9b3c1'}}>{label}</span><span>{value}</span></div>)}<div style={{display:'flex',gap:8,borderBottom:'1px solid #494450',marginTop:18}}><span style={{padding:'10px 8px',borderBottom:'2px solid #d16bbd',color:'#eab5df',fontSize:12}}>Operations</span><button type="button" onClick={()=>setReceiptMessage('Additional information is inherited from the linked purchase order.')} style={{border:0,background:'transparent',color:'#c7c1cf',fontSize:12}}>Additional Info</button><button type="button" onClick={()=>setReceiptMessage('Receipt notes can be added in the linked purchase order.')} style={{border:0,background:'transparent',color:'#c7c1cf',fontSize:12}}>Note</button></div><div style={{overflowX:'auto'}}><table style={{width:'100%',minWidth:430,borderCollapse:'collapse',fontSize:12}}><thead><tr>{['Product variant ID','Demand','Receive now'].map(x=><th key={x} style={{textAlign:'left',padding:10,color:'#b9b3c1',borderBottom:'1px solid #3b3943'}}>{x}</th>)}</tr></thead><tbody>{purchaseLines.map(line=><tr key={line.id}><td style={{padding:10,borderBottom:'1px solid #3b3943'}}>Variant #{line.variant_id}</td><td style={{padding:10,borderBottom:'1px solid #3b3943'}}>{line.outstanding_quantity??(Number(line.quantity)-Number(line.received_qty||0))}</td><td style={{padding:10,borderBottom:'1px solid #3b3943'}}><input aria-label={'Receive quantity for line '+line.id} type="number" min="0" max={line.outstanding_quantity??(Number(line.quantity)-Number(line.received_qty||0))} step="any" value={receiveQuantities[String(line.id)]??''} onChange={e=>setReceiveQuantities(prev=>({...prev,[String(line.id)]:e.target.value}))} style={{width:100,padding:7,border:'1px solid #484551',borderRadius:5,background:'#202027',color:'#fff'}}/></td></tr>)}</tbody></table></div><p style={{fontSize:11,color:'#aaa3b6',marginTop:12}}>Validating posts the received quantities to stock and accounting through the existing backend transaction.</p></section><div style={{marginTop:12,padding:12,color:'#aaa3b6',fontSize:12,borderTop:'1px solid #393943'}}>Activity · Messages · Notes</div></>}
+    {receiptPage==='list'&&<><input aria-label="Search receipts" value={receiptSearch} onChange={e=>setReceiptSearch(e.target.value)} placeholder="⌕  Search receipts, supplier or status…" style={{boxSizing:'border-box',width:'100%',padding:11,marginBottom:12,border:'1px solid #3d3b45',borderRadius:8,background:'#292930',color:'#fff'}}/><section style={{background:'#292930',border:'1px solid #3a3943',borderRadius:9,overflowX:'auto'}}><table style={{width:'100%',minWidth:580,borderCollapse:'collapse',fontSize:12}}><thead><tr>{['Reference','Contact','Scheduled Date','Source Document','Status'].map(x=><th key={x} style={{textAlign:'left',padding:11,color:'#b9b3c1',borderBottom:'1px solid #3a3943'}}>{x}</th>)}</tr></thead><tbody>{rows.map(o=><tr key={o.id} onClick={()=>openPurchaseReceipt(o)} style={{cursor:'pointer'}}>{['PO-'+o.id,o.vendor_name||'Supplier',fmtDate(o.order_date),'PO-'+o.id,o.status||'draft'].map((v,i)=><td key={i} style={{padding:11,borderBottom:'1px solid #373640'}}>{v}</td>)}</tr>)}{!receiptLoading&&rows.length===0&&<tr><td colSpan={5} style={{padding:24,textAlign:'center',color:'#aaa3b6'}}><strong style={{display:'block',color:'#e2dce9',marginBottom:7}}>No receipt yet!</strong>Receipts appear here when goods are received against purchase orders.<div style={{marginTop:8}}>Create a purchase order first, or tap New to select one.</div></td></tr>}</tbody></table></section></>}
+    {receiptLoading&&<p style={{fontSize:12,color:'#b9b3c1'}}>Loading purchase receipts…</p>}
+   </section>
+  </main>
+ }
  if(activeModule==='inventory') {
   const filteredProducts=inventoryProducts.filter(p=>String(p.name||p.title||p.product_name||'').toLowerCase().includes(inventorySearch.toLowerCase())||String(p.sku||p.default_code||'').toLowerCase().includes(inventorySearch.toLowerCase()));
   const stockTotal=inventoryStock.reduce((sum,row)=>sum+Number(row.quantity||0),0);
