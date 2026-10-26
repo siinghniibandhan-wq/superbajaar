@@ -617,3 +617,13 @@ img,video,svg,canvas{
 .category-strip .category-card:hover{transform:translateY(-1px);border-color:#cbb7f0;box-shadow:0 6px 16px rgba(91,33,182,.09)}
 .category-strip .category-card.selected{color:#fff;background:linear-gradient(120deg,#6428d9,#8b3de8);border-color:transparent;box-shadow:0 5px 14px rgba(100,40,217,.18)}
 @media(max-width:760px){.category-strip{gap:8px;padding:10px 12px}.category-strip .category-card{min-height:38px;padding:9px 13px;border-radius:12px;font-size:11px}}
+
+
+/* Single-row image category strip with touch scrolling */
+.category-strip{display:flex;flex-wrap:nowrap;align-items:stretch;gap:12px;padding:14px 18px;width:100%;overflow-x:auto;overflow-y:hidden;white-space:nowrap;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;scrollbar-width:thin;scroll-snap-type:x proximity}
+.category-strip .category-card{flex:0 0 112px;width:112px;min-width:112px;height:124px;padding:9px 8px 10px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:8px;white-space:normal;text-align:center;overflow:hidden;border:1px solid #eee4f8;border-radius:16px;background:linear-gradient(150deg,#fff8f0,#f5efff);color:#34204f;font-size:12px;font-weight:750;line-height:1.2;box-shadow:0 4px 12px rgba(53,25,78,.06);scroll-snap-align:start}
+.category-strip .category-card img{display:block;width:100%;height:76px;flex:0 0 76px;object-fit:cover;border-radius:10px;background:#f3edf9}
+.category-strip .category-card span{display:-webkit-box;max-width:100%;overflow:hidden;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}
+.category-strip .category-card:hover{border-color:#c8b0f1;box-shadow:0 7px 17px rgba(91,33,182,.12);transform:translateY(-1px)}
+.category-strip .category-card.selected{border-color:#7c3aed;background:linear-gradient(150deg,#f2eaff,#fff1e7);box-shadow:0 0 0 2px rgba(124,58,237,.12)}
+@media(max-width:760px){.category-strip{gap:9px;padding:10px 12px}.category-strip .category-card{flex-basis:94px;width:94px;min-width:94px;height:110px;padding:7px 7px 8px;gap:7px;border-radius:14px;font-size:11px}.category-strip .category-card img{height:66px;flex-basis:66px;border-radius:9px}}
