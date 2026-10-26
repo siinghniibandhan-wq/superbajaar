@@ -599,9 +599,27 @@ def create_procurement(body: ProcurementInput, authorization: str | None = Heade
             if not c.execute("SELECT id FROM product_variants WHERE id=%s",(int(item["variant_id"]),)).fetchone():
                 raise HTTPException(404,f"Purchase variant {item['variant_id']} not found.")
         row=c.execute("""INSERT INTO sb_procurements(reference,vendor_id,status,items,expected_date,created_by)
-          VALUES(%s,%s,'quotation_requested',%s::jsonb,%s,%s) RETURNING *""",(ref,body.vendor_id,json.dumps(body.items),body.expected_date,actor["id"])).fetchone()
-        _event(c,ref,"quotation_requested",actor["id"],new="quotation_requested",details={"vendor_id":body.vendor_id})
+          VALUES(%s,%s,'pending_approval',%s::jsonb,%s,%s) RETURNING *""",(ref,body.vendor_id,json.dumps(body.items),body.expected_date,actor["id"])).fetchone()
+        _event(c,ref,"purchase_requisition_created",actor["id"],new="pending_approval",details={"vendor_id":body.vendor_id})
         return row
+
+
+@router.patch("/admin/procurements/{procurement_id}/approval")
+def approve_procurement(procurement_id: int, body: dict[str, Any], authorization: str | None = Header(default=None)):
+    actor=_require(authorization, {"super_admin","admin"})
+    decision=str(body.get("decision","")).strip().lower()
+    if decision not in {"approved","rejected"}:
+        raise HTTPException(422,"Decision must be approved or rejected.")
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c)
+        p=c.execute("SELECT * FROM sb_procurements WHERE id=%s FOR UPDATE",(procurement_id,)).fetchone()
+        if not p: raise HTTPException(404,"Purchase requisition not found.")
+        if p["status"]!="pending_approval":
+            raise HTTPException(409,"Only a pending purchase requisition can be approved or rejected.")
+        new_status="quotation_requested" if decision=="approved" else "rejected"
+        c.execute("UPDATE sb_procurements SET status=%s,updated_at=now() WHERE id=%s",(new_status,procurement_id))
+        _event(c,p["reference"],"purchase_requisition_"+decision,actor["id"],p["status"],new_status,details={"decision":decision})
+        return {"id":procurement_id,"reference":p["reference"],"status":new_status}
 
 
 @router.patch("/vendor/procurements/{procurement_id}")
