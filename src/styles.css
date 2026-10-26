@@ -841,3 +841,20 @@ html,body,#root{max-width:100%;min-width:0;overflow-x:clip}
 .product-editor-content .product-form-section{margin-bottom:18px}
 .product-editor-content .product-basic-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 @media(max-width:680px){.product-editor-content{padding:14px;border-radius:12px}.product-editor-heading{align-items:flex-start;flex-direction:column}.product-editor-heading .outline-action{width:100%}.product-editor-content .product-basic-grid{grid-template-columns:minmax(0,1fr)}.product-editor-content .product-tabs{position:static;overflow-x:auto;flex-wrap:nowrap}}
+
+
+/* Structured attribute and variant editor */
+.attribute-builder{display:grid;gap:16px;margin:16px 0}
+.attribute-builder-card{border:1px solid var(--border-color,#dedee5);border-radius:14px;padding:16px;display:grid;gap:14px;background:var(--surface,#fff);min-width:0}
+.attribute-builder-head{display:grid;grid-template-columns:minmax(150px,1.4fr) minmax(140px,1fr) minmax(150px,1fr) auto;gap:12px;align-items:end}
+.attribute-builder-card label{display:flex;flex-direction:column;gap:6px;min-width:0;font-weight:600}
+.attribute-builder-card input:not([type=color]),.attribute-builder-card select{width:100%;min-width:0;box-sizing:border-box}
+.attribute-builder-card input[type=color]{width:100%;height:42px;padding:3px;border:1px solid var(--border-color,#dedee5);border-radius:8px;background:transparent}
+.attribute-colour-swatches{display:flex;flex-wrap:wrap;gap:8px}
+.attribute-colour-chip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border-color,#dedee5);border-radius:999px;padding:6px 10px;font-size:13px}
+.attribute-colour-dot{width:20px;height:20px;border:1px solid #0002;border-radius:50%;flex-shrink:0}
+.attribute-colour-chip small{opacity:.65;font-size:11px}
+.attribute-custom-colour{display:grid;grid-template-columns:minmax(140px,1fr) minmax(110px,.5fr) auto;gap:12px;align-items:end;border-top:1px solid var(--border-color,#dedee5);padding-top:14px}
+.attribute-custom-colour p{grid-column:1/-1;margin:0;font-size:12px;opacity:.7}
+@media(max-width:760px){.attribute-builder-head{grid-template-columns:1fr 1fr}.attribute-builder-head>label:first-child{grid-column:1/-1}.attribute-custom-colour{grid-template-columns:1fr 1fr}.attribute-custom-colour button{grid-column:1/-1}}
+@media(max-width:440px){.attribute-builder-head,.attribute-custom-colour{grid-template-columns:1fr}.attribute-builder-head>label:first-child,.attribute-custom-colour button{grid-column:auto}}
