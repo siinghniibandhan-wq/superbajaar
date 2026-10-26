@@ -241,22 +241,23 @@
 .variant-picker .variant-radio-option{color:var(--ink);font-weight:500}
 .variant-picker .variant-radio-option:has(input:checked){border-color:var(--purple);background:#f3ebff;color:var(--purple);font-weight:700}
 @media(max-width:760px){
- .products-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
- .product-tile{border-radius:10px}
- .product-picture{height:clamp(88px,25vw,145px)}
- .product-picture img{padding:6px;object-fit:contain}
- .product-tag{display:none}
- .product-details{padding:8px}
+ /* Keep the full catalogue readable: two columns, while home shelves stay horizontal. */
+ .products-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+ .product-tile{border-radius:12px}
+ .product-picture{height:clamp(125px,38vw,170px)}
+ .product-picture img{padding:8px;object-fit:contain}
+ .product-tag{display:block;font-size:9px}
+ .product-details{padding:10px}
  .product-brand{display:none}
- .product-details h3{font-size:10px;line-height:1.35;margin:2px 0 6px;min-height:27px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+ .product-details h3{font-size:12px;line-height:1.35;margin:2px 0 7px;min-height:32px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
  .price-line{gap:4px}
- .price-line b{font-size:11px}
- .price-line del{font-size:9px}
- .variant-count{font-size:8px;padding:4px 6px;margin-top:5px}
- .product-card-actions{margin-top:8px}
- .product-card-actions .quick-add,.product-card-actions .wishlist-button{flex-basis:29px;width:29px;height:29px}
+ .price-line b{font-size:12px}
+ .price-line del{font-size:10px}
+ .variant-count{font-size:9px;padding:4px 7px;margin-top:5px}
+ .product-card-actions{margin-top:9px}
+ .product-card-actions .quick-add,.product-card-actions .wishlist-button{flex-basis:40px;width:40px;height:40px}
  .product-card-actions .quick-add{font-size:12px}
- .product-card-actions .wishlist-button{font-size:16px}
+ .product-card-actions .wishlist-button{font-size:18px}
  .view-details{display:none}
 }
 
