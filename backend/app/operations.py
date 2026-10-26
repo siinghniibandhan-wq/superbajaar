@@ -75,6 +75,8 @@ def _ensure(conn: Any) -> None:
         id BIGSERIAL PRIMARY KEY, order_type TEXT NOT NULL, order_id BIGINT NOT NULL, carrier TEXT,
         tracking_number TEXT, status TEXT NOT NULL DEFAULT 'created' CHECK(status IN ('created','packed','in_transit','out_for_delivery','delivered','exception','cancelled')),
         estimated_delivery DATE, delivered_at TIMESTAMPTZ, note TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
+    conn.execute("ALTER TABLE sb_shipments ADD COLUMN IF NOT EXISTS tracking_url TEXT")
+    conn.execute("ALTER TABLE sb_shipments ADD COLUMN IF NOT EXISTS dispatched_at TIMESTAMPTZ")
     conn.execute("""CREATE TABLE IF NOT EXISTS sb_employees (
         id BIGSERIAL PRIMARY KEY, employee_code TEXT NOT NULL UNIQUE, full_name TEXT NOT NULL, email TEXT,
         department TEXT, designation TEXT, joining_date DATE, status TEXT NOT NULL DEFAULT 'active'
@@ -210,12 +212,17 @@ class ShipmentInput(BaseModel):
     order_id: int = Field(gt=0)
     carrier: str = Field(default="", max_length=120)
     tracking_number: str = Field(default="", max_length=160)
+    tracking_url: str = Field(default="", max_length=1000)
     estimated_delivery: date | None = None
     note: str = Field(default="", max_length=1000)
 
 class ShipmentUpdate(BaseModel):
     status: str = Field(pattern="^(created|packed|in_transit|out_for_delivery|delivered|exception|cancelled)$")
     note: str = Field(default="", max_length=1000)
+    carrier: str = Field(default="", max_length=120)
+    tracking_number: str = Field(default="", max_length=160)
+    tracking_url: str = Field(default="", max_length=1000)
+    estimated_delivery: date | None = None
 
 class EmployeeInput(BaseModel):
     employee_code: str = Field(min_length=1, max_length=60)
