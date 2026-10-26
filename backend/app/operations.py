@@ -649,8 +649,21 @@ def create_shipment(body:ShipmentInput,authorization:str|None=Header(default=Non
     try:
         with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
             _ensure(conn)
-            row=conn.execute("""INSERT INTO sb_shipments(order_type,order_id,carrier,tracking_number,estimated_delivery,note)
-                VALUES(%s,%s,%s,%s,%s,%s) RETURNING *""",(body.order_type,body.order_id,body.carrier.strip() or None,body.tracking_number.strip() or None,body.estimated_delivery,body.note.strip() or None)).fetchone()
+            tracking_url = body.tracking_url.strip()
+            if tracking_url and not tracking_url.startswith(("https://", "http://")):
+                raise HTTPException(status_code=422, detail="Tracking URL must start with http:// or https://")
+            if body.order_type == "website":
+                order = conn.execute("SELECT id,status FROM store_orders WHERE id=%s FOR UPDATE", (body.order_id,)).fetchone()
+                if not order:
+                    raise HTTPException(status_code=404, detail="Website order not found")
+                if order["status"] not in ("confirmed", "processing", "packed", "shipped"):
+                    raise HTTPException(status_code=409, detail="Confirm the website order before dispatching it")
+            row=conn.execute("""INSERT INTO sb_shipments(order_type,order_id,carrier,tracking_number,tracking_url,estimated_delivery,note,status,dispatched_at)
+                VALUES(%s,%s,%s,%s,%s,%s,%s,%s,CASE WHEN %s='website' THEN now() ELSE NULL END) RETURNING *""",
+                (body.order_type,body.order_id,body.carrier.strip() or None,body.tracking_number.strip() or None,tracking_url or None,
+                 body.estimated_delivery,body.note.strip() or None,"in_transit" if body.order_type == "website" else "created",body.order_type)).fetchone()
+            if body.order_type == "website":
+                conn.execute("UPDATE store_orders SET status='shipped',updated_at=now() WHERE id=%s AND status IN ('confirmed','processing','packed')", (body.order_id,))
             return {"shipment":row}
     except Exception as exc: raise HTTPException(status_code=503,detail="Shipment could not be created") from exc
 
