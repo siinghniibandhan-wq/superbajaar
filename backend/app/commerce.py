@@ -421,7 +421,7 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
                     item_tax = (taxable_amount * rate / Decimal("100")).quantize(Decimal("0.01"))
                     customer_line_total = line_total + item_tax
                 tax_total += item_tax
-                subtotal += line_total
+                subtotal += taxable_amount
                 products.append({**product, "quantity": quantity, "unit_price": price, "line_total": line_total,
                     "tax_rate": rate, "taxable_amount": taxable_amount, "tax_amount": item_tax,
                     "cgst_amount": (item_tax / 2).quantize(Decimal("0.01")) if item_tax else Decimal("0.00"),
