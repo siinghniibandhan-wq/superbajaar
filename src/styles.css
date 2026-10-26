@@ -653,3 +653,16 @@ html,body,#root{max-width:100%;min-width:0;overflow-x:clip}
  .category-strip .category-card span{font-size:11px;min-height:28px}
  .catalog-section,.store-help{width:100%;box-sizing:border-box}
 }
+
+
+/* Final fix: reserve full height for two-line category labels */
+.category-strip{align-items:stretch;overflow-y:visible;padding-top:12px;padding-bottom:14px}
+.category-strip .category-card{height:136px;min-height:136px;overflow:visible;justify-content:flex-start}
+.category-strip .category-card img{height:76px;flex:0 0 76px}
+.category-strip .category-card span{display:block;flex:0 0 auto;width:100%;min-height:32px;padding:0 1px;line-height:1.35;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
+@media(max-width:760px){
+ .category-strip{padding-top:10px;padding-bottom:12px}
+ .category-strip .category-card{height:126px;min-height:126px;padding:7px 7px 9px;gap:6px;overflow:visible}
+ .category-strip .category-card img{height:62px;flex:0 0 62px}
+ .category-strip .category-card span{min-height:32px;font-size:11px;line-height:1.35;display:block;overflow:visible}
+}
