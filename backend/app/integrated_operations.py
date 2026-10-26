@@ -624,6 +624,14 @@ def vendor_dispatch(procurement_id: int, body: VendorDispatchInput, authorizatio
         if not p: raise HTTPException(404,"Purchase order not found for this supplier.")
         if p["status"] not in {"purchase_order","partially_received"}: raise HTTPException(409,"Only an open purchase order can be dispatched.")
         expected={int(x["variant_id"]):int(x["quantity"]) for x in p["items"]}
+        if len(expected) != len(p["items"]):
+            raise HTTPException(409,"Purchase order contains duplicate variant lines; correct the PO before dispatch.")
+        # Rejected units create replacement entitlement; dispatched quantities remain cumulative.
+        rejected={}
+        for receipt in c.execute("SELECT items FROM sb_receipts WHERE procurement_id=%s AND status='accepted'",(procurement_id,)).fetchall():
+            for line in receipt["items"]:
+                vid=int(line["variant_id"])
+                rejected[vid]=rejected.get(vid,0)+int(line.get("rejected_quantity",0))
         dispatched={}
         for prev in c.execute("SELECT items FROM sb_vendor_dispatches WHERE procurement_id=%s AND status<>'cancelled'",(procurement_id,)).fetchall():
             for line in prev["items"]:
@@ -634,7 +642,9 @@ def vendor_dispatch(procurement_id: int, body: VendorDispatchInput, authorizatio
             if vid not in expected or qty<1: raise HTTPException(422,"Dispatch lines must match PO variants and positive quantities.")
             incoming[vid]=incoming.get(vid,0)+qty
         for vid,qty in incoming.items():
-            if dispatched.get(vid,0)+qty>expected[vid]: raise HTTPException(422,"Dispatch quantity exceeds the outstanding PO quantity.")
+            dispatch_limit=expected[vid]+rejected.get(vid,0)
+            if dispatched.get(vid,0)+qty>dispatch_limit:
+                raise HTTPException(422,"Dispatch quantity exceeds the PO quantity plus quality-rejected replacement allowance.")
         ref=_ref("DSP")
         row=c.execute("""INSERT INTO sb_vendor_dispatches(reference,procurement_id,vendor_id,items,carrier,tracking_reference)
           VALUES(%s,%s,%s,%s::jsonb,%s,%s) RETURNING *""",(ref,procurement_id,p["vendor_id"],json.dumps(body.items),body.carrier,body.tracking_reference)).fetchone()
@@ -666,11 +676,18 @@ def create_receipt(procurement_id: int, body: ReceiptInput, authorization: str |
         pending=c.execute("SELECT id FROM sb_receipts WHERE procurement_id=%s AND status='inspection' LIMIT 1",(procurement_id,)).fetchone()
         if pending: raise HTTPException(409,"Finish quality inspection for the pending GRN before recording another receipt.")
         expected={int(i["variant_id"]):int(i["quantity"]) for i in p["items"]}
+        if len(expected) != len(p["items"]):
+            raise HTTPException(409,"Purchase order contains duplicate variant lines; correct the PO before receiving goods.")
         already=c.execute("SELECT COALESCE(jsonb_agg(items),'[]'::jsonb) x FROM sb_receipts WHERE procurement_id=%s AND status='accepted'",(procurement_id,)).fetchone()["x"]
         received={}
+        physical_received={}
+        rejected={}
         for receipt in already:
             for line in receipt:
-                received[int(line["variant_id"])]=received.get(int(line["variant_id"]),0)+int(line.get("accepted_quantity",line.get("quantity",0)))
+                vid=int(line["variant_id"])
+                received[vid]=received.get(vid,0)+int(line.get("accepted_quantity",line.get("quantity",0)))
+                physical_received[vid]=physical_received.get(vid,0)+int(line.get("quantity",0))
+                rejected[vid]=rejected.get(vid,0)+int(line.get("rejected_quantity",0))
         incoming={}
         for line in body.items:
             vid=int(line.get("variant_id",0)); qty=int(line.get("quantity",0))
@@ -685,8 +702,13 @@ def create_receipt(procurement_id: int, body: ReceiptInput, authorization: str |
             for line in dispatch["items"]:
                 vid=int(line["variant_id"]); dispatched[vid]=dispatched.get(vid,0)+int(line["quantity"])
         for vid,qty in incoming.items():
-            if qty+received.get(vid,0)>expected[vid]: raise HTTPException(422,"Receipt quantities must not exceed outstanding PO quantities.")
-            if qty+received.get(vid,0)>dispatched.get(vid,0): raise HTTPException(409,"Goods receipt cannot exceed quantities dispatched by the vendor.")
+            # Physical receipts include rejected goods; only rejected, inspected units permit replacement.
+            if qty+physical_received.get(vid,0)>expected[vid]+rejected.get(vid,0):
+                raise HTTPException(422,"Receipt quantity exceeds the PO quantity plus quality-rejected replacement allowance.")
+            if qty+physical_received.get(vid,0)>dispatched.get(vid,0):
+                raise HTTPException(409,"Goods receipt cannot exceed quantities dispatched by the vendor.")
+            if received.get(vid,0)>expected[vid]:
+                raise HTTPException(409,"Accepted quantity already exceeds the purchase order quantity.")
         row=c.execute("""INSERT INTO sb_receipts(reference,procurement_id,warehouse_id,status,items,note,received_by)
           VALUES(%s,%s,%s,'inspection',%s::jsonb,%s,%s) RETURNING *""",(ref,procurement_id,body.warehouse_id,json.dumps(body.items),body.note,actor["id"])).fetchone()
         _event(c,ref,"goods_received_for_inspection",actor["id"],new="inspection",details={"po_reference":p["reference"]})
@@ -1143,3 +1165,165 @@ def save_reorder_level(body: ReorderLevelInput, authorization: str | None = Head
           VALUES(%s,%s,%s) ON CONFLICT(warehouse_id,variant_id) DO UPDATE
           SET minimum_quantity=EXCLUDED.minimum_quantity,updated_at=now() RETURNING *""",
           (body.warehouse_id,body.variant_id,body.minimum_quantity)).fetchone()}
+
+
+# Inventory transfers: source stock is deducted at dispatch; destination stock is added only on receipt.
+class InventoryTransferLine(BaseModel):
+    variant_id: int = Field(gt=0)
+    quantity: int = Field(gt=0, le=1000000)
+    source_location: str = ""
+    destination_location: str = ""
+
+class InventoryTransferInput(BaseModel):
+    source_warehouse_id: int = Field(gt=0)
+    destination_warehouse_id: int = Field(gt=0)
+    items: list[InventoryTransferLine] = Field(min_length=1, max_length=500)
+    note: str = ""
+
+class InventoryTransferReceiveInput(BaseModel):
+    items: list[dict[str, Any]] = Field(min_length=1, max_length=500)
+    note: str = ""
+
+def _transfer_tables_ready(c):
+    missing = [name for name in ("sb_inventory_transfers", "sb_inventory_transfer_events")
+               if not c.execute("SELECT to_regclass(%s) AS t", ("public." + name,)).fetchone()["t"]]
+    if missing:
+        raise HTTPException(503, "Inventory transfer schema is not deployed yet. Apply backend/schema/011_inventory_transfers.sql.")
+
+@router.get("/admin/inventory/transfers")
+def list_inventory_transfers(authorization: str | None = Header(default=None)):
+    _require(authorization, {"super_admin", "admin", "staff"})
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c); _transfer_tables_ready(c)
+        rows = c.execute("""SELECT t.*, sw.name source_warehouse_name, dw.name destination_warehouse_name
+          FROM sb_inventory_transfers t JOIN sb_warehouses sw ON sw.id=t.source_warehouse_id
+          JOIN sb_warehouses dw ON dw.id=t.destination_warehouse_id
+          ORDER BY t.created_at DESC LIMIT 500""").fetchall()
+        return {"items": rows}
+
+@router.post("/admin/inventory/transfers", status_code=201)
+def create_inventory_transfer(body: InventoryTransferInput, authorization: str | None = Header(default=None)):
+    actor = _require(authorization, {"super_admin", "admin"})
+    if body.source_warehouse_id == body.destination_warehouse_id:
+        raise HTTPException(422, "Source and destination warehouses must be different.")
+    # Merge duplicate variant/location lines so the same SKU cannot be accidentally dispatched twice.
+    items = [line.model_dump() for line in body.items]
+    if len({x["variant_id"] for x in items}) != len(items):
+        raise HTTPException(422, "Use one transfer line per product variant to keep partial-receipt quantities unambiguous.")
+    ref = _ref("TRF")
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c); _transfer_tables_ready(c)
+        warehouses = c.execute("SELECT id,locations FROM sb_warehouses WHERE id=ANY(%s) AND active FOR UPDATE",
+                               ([body.source_warehouse_id, body.destination_warehouse_id],)).fetchall()
+        if len(warehouses) != 2:
+            raise HTTPException(404, "Both source and destination warehouses must be active.")
+        by_id = {int(w["id"]): w for w in warehouses}
+        source_bins = by_id[body.source_warehouse_id]["locations"] or []
+        dest_bins = by_id[body.destination_warehouse_id]["locations"] or []
+        for line in items:
+            if not c.execute("SELECT id FROM product_variants WHERE id=%s", (line["variant_id"],)).fetchone():
+                raise HTTPException(404, f"Product variant {line['variant_id']} not found.")
+            if source_bins and line["source_location"] not in source_bins:
+                raise HTTPException(422, "Choose a configured source bin for every transfer line.")
+            if dest_bins and line["destination_location"] not in dest_bins:
+                raise HTTPException(422, "Choose a configured destination bin for every transfer line.")
+            balance = c.execute("""SELECT COALESCE(SUM(quantity_delta),0) qty FROM sb_inventory_ledger
+                WHERE warehouse_id=%s AND variant_id=%s AND location=%s""",
+                (body.source_warehouse_id, line["variant_id"], line["source_location"])).fetchone()["qty"]
+            if balance < line["quantity"]:
+                raise HTTPException(409, f"Insufficient stock for variant {line['variant_id']} at the selected source location.")
+        row = c.execute("""INSERT INTO sb_inventory_transfers(reference,source_warehouse_id,destination_warehouse_id,status,items,note,created_by)
+            VALUES(%s,%s,%s,'draft',%s::jsonb,%s,%s) RETURNING *""",
+            (ref, body.source_warehouse_id, body.destination_warehouse_id, json.dumps(items), body.note.strip(), actor["id"])).fetchone()
+        c.execute("INSERT INTO sb_inventory_transfer_events(transfer_id,transfer_reference,event_type,actor_id,details) VALUES(%s,%s,'created',%s,%s::jsonb)",
+                  (row["id"], ref, actor["id"], json.dumps({"items": items})))
+        _event(c, ref, "inventory_transfer_created", actor["id"], details={"source_warehouse_id": body.source_warehouse_id, "destination_warehouse_id": body.destination_warehouse_id})
+        return {"transfer": row}
+
+@router.post("/admin/inventory/transfers/{transfer_id}/approve")
+def approve_inventory_transfer(transfer_id: int, authorization: str | None = Header(default=None)):
+    actor = _require(authorization, {"super_admin", "admin"})
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c); _transfer_tables_ready(c)
+        t = c.execute("SELECT * FROM sb_inventory_transfers WHERE id=%s FOR UPDATE", (transfer_id,)).fetchone()
+        if not t: raise HTTPException(404, "Transfer not found.")
+        if t["status"] != "draft": raise HTTPException(409, "Only draft transfers can be approved.")
+        c.execute("UPDATE sb_inventory_transfers SET status='approved' WHERE id=%s", (transfer_id,))
+        c.execute("INSERT INTO sb_inventory_transfer_events(transfer_id,transfer_reference,event_type,actor_id) VALUES(%s,%s,'approved',%s)", (transfer_id,t["reference"],actor["id"]))
+        _event(c,t["reference"],"inventory_transfer_approved",actor["id"],"draft","approved")
+        return {"id":transfer_id,"reference":t["reference"],"status":"approved"}
+
+@router.post("/admin/inventory/transfers/{transfer_id}/dispatch")
+def dispatch_inventory_transfer(transfer_id: int, authorization: str | None = Header(default=None)):
+    actor = _require(authorization, {"super_admin", "admin", "staff"})
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c); _transfer_tables_ready(c)
+        t = c.execute("SELECT * FROM sb_inventory_transfers WHERE id=%s FOR UPDATE", (transfer_id,)).fetchone()
+        if not t: raise HTTPException(404, "Transfer not found.")
+        if t["status"] != "approved": raise HTTPException(409, "Approve the transfer before dispatch.")
+        c.execute("SELECT id FROM sb_warehouses WHERE id=%s FOR UPDATE", (t["source_warehouse_id"],))
+        for line in t["items"]:
+            balance = c.execute("""SELECT COALESCE(SUM(quantity_delta),0) qty FROM sb_inventory_ledger
+              WHERE warehouse_id=%s AND variant_id=%s AND location=%s""",
+              (t["source_warehouse_id"],line["variant_id"],line.get("source_location",""))).fetchone()["qty"]
+            if balance < int(line["quantity"]):
+                raise HTTPException(409, f"Insufficient source stock for variant {line['variant_id']} at dispatch.")
+        for line in t["items"]:
+            c.execute("""INSERT INTO sb_inventory_ledger(warehouse_id,variant_id,quantity_delta,movement_type,reference,location,note,actor_id)
+              VALUES(%s,%s,%s,'transfer_out',%s,%s,%s,%s)""",
+              (t["source_warehouse_id"],line["variant_id"],-int(line["quantity"]),t["reference"],line.get("source_location",""),"Transfer dispatched",actor["id"]))
+        c.execute("UPDATE sb_inventory_transfers SET status='in_transit',dispatched_by=%s,dispatched_at=now() WHERE id=%s",(actor["id"],transfer_id))
+        c.execute("INSERT INTO sb_inventory_transfer_events(transfer_id,transfer_reference,event_type,actor_id,details) VALUES(%s,%s,'dispatched',%s,%s::jsonb)",
+                  (transfer_id,t["reference"],actor["id"],json.dumps({"items":t["items"]})))
+        _event(c,t["reference"],"inventory_transfer_dispatched",actor["id"],"approved","in_transit")
+        return {"id":transfer_id,"reference":t["reference"],"status":"in_transit"}
+
+@router.post("/admin/inventory/transfers/{transfer_id}/receive")
+def receive_inventory_transfer(transfer_id: int, body: InventoryTransferReceiveInput, authorization: str | None = Header(default=None)):
+    actor = _require(authorization, {"super_admin", "admin", "staff"})
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c); _transfer_tables_ready(c)
+        t = c.execute("SELECT * FROM sb_inventory_transfers WHERE id=%s FOR UPDATE", (transfer_id,)).fetchone()
+        if not t: raise HTTPException(404, "Transfer not found.")
+        if t["status"] not in {"in_transit","partially_received"}: raise HTTPException(409, "Only in-transit transfers can be received.")
+        shipped = {int(x["variant_id"]): int(x["quantity"]) for x in t["items"]}
+        received_before = {int(x["variant_id"]): int(x.get("received_quantity",0)) for x in t["items"]}
+        incoming = {}
+        for line in body.items:
+            try: vid, qty = int(line["variant_id"]), int(line["quantity"])
+            except (KeyError,TypeError,ValueError): raise HTTPException(422,"Each received line requires variant_id and quantity.")
+            if qty < 0 or vid not in shipped: raise HTTPException(422,"Received quantities must refer to a transfer line and cannot be negative.")
+            if vid in incoming: raise HTTPException(422,"Use one receipt line per variant.")
+            if qty + received_before.get(vid,0) > shipped[vid]: raise HTTPException(422,"Received quantity cannot exceed dispatched quantity.")
+            incoming[vid] = qty
+        if not incoming or not any(incoming.values()): raise HTTPException(422,"Enter at least one positive received quantity.")
+        dest = c.execute("SELECT locations FROM sb_warehouses WHERE id=%s AND active FOR UPDATE",(t["destination_warehouse_id"],)).fetchone()
+        bins = dest["locations"] or []
+        new_items=[]
+        for line in t["items"]:
+            vid=int(line["variant_id"]); qty=incoming.get(vid,0)
+            new_line=dict(line); new_line["received_quantity"]=received_before.get(vid,0)+qty
+            if qty:
+                location=line.get("destination_location","")
+                if bins and location not in bins: raise HTTPException(422,"Transfer destination bin is no longer configured.")
+                c.execute("""INSERT INTO sb_inventory_ledger(warehouse_id,variant_id,quantity_delta,movement_type,reference,location,note,actor_id)
+                  VALUES(%s,%s,%s,'transfer_in',%s,%s,%s,%s)""",
+                  (t["destination_warehouse_id"],vid,qty,t["reference"],location,body.note.strip() or "Transfer received",actor["id"]))
+            new_items.append(new_line)
+        complete=all(int(x.get("received_quantity",0)) >= shipped[int(x["variant_id"])] for x in new_items)
+        status="received" if complete else "partially_received"
+        c.execute("UPDATE sb_inventory_transfers SET status=%s,items=%s::jsonb,received_by=%s,received_at=CASE WHEN %s='received' THEN now() ELSE received_at END WHERE id=%s",
+                  (status,json.dumps(new_items),actor["id"],status,transfer_id))
+        c.execute("INSERT INTO sb_inventory_transfer_events(transfer_id,transfer_reference,event_type,actor_id,details) VALUES(%s,%s,%s,%s,%s::jsonb)",
+                  (transfer_id,t["reference"],status,actor["id"],json.dumps({"received":incoming,"note":body.note})))
+        _event(c,t["reference"],"inventory_transfer_"+status,actor["id"],t["status"],status,{"received":incoming})
+        return {"id":transfer_id,"reference":t["reference"],"status":status,"received":incoming}
+
+@router.get("/admin/inventory/transfers/{transfer_id}/timeline")
+def inventory_transfer_timeline(transfer_id: int, authorization: str | None = Header(default=None)):
+    _require(authorization, {"super_admin","admin","staff"})
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c); _transfer_tables_ready(c)
+        if not c.execute("SELECT id FROM sb_inventory_transfers WHERE id=%s",(transfer_id,)).fetchone():
+            raise HTTPException(404,"Transfer not found.")
+        return {"items":c.execute("SELECT * FROM sb_inventory_transfer_events WHERE transfer_id=%s ORDER BY created_at,id",(transfer_id,)).fetchall()}
