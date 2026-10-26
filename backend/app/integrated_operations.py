@@ -700,6 +700,8 @@ def submit_supplier_quotation(procurement_id: int, body: dict[str, Any], authori
         original={int(x["variant_id"]):int(x["quantity"]) for x in p["items"]}
         if set(quoted)!=set(original) or any(quoted[k]["quantity"]!=q for k,q in original.items()):
             raise HTTPException(422,"Quotation products and quantities must exactly match the requisition.")
+        if c.execute("SELECT 1 FROM sb_supplier_quotations WHERE procurement_id=%s AND vendor_id=%s AND status IN ('submitted','selected') LIMIT 1",(procurement_id,vendor_id)).fetchone():
+            raise HTTPException(409,"This supplier has already quoted for this requisition. Compare the existing quotation instead of adding a duplicate.")
         total=sum((Decimal(x["line_total"]) for x in quoted.values()),Decimal("0"))
         ref=_ref("QUO")
         row=c.execute("""INSERT INTO sb_supplier_quotations(reference,procurement_id,vendor_id,status,items,total_value,submitted_by)
@@ -778,6 +780,9 @@ def vendor_submit_bill(procurement_id: int, body: SupplierBillInput, authorizati
         if not p: raise HTTPException(404,"Purchase order not found for this supplier.")
         if p["status"] not in {"purchase_order","partially_received","received"}: raise HTTPException(409,"Bills can only be submitted against an issued purchase order.")
         if body.amount<0 or body.tax_total<0: raise HTTPException(422,"Bill amounts cannot be negative.")
+        inv_no=(body.vendor_invoice_number or "").strip()
+        if inv_no and c.execute("SELECT 1 FROM sb_supplier_bills WHERE vendor_id=%s AND lower(btrim(vendor_invoice_number))=lower(%s) AND status<>'rejected' LIMIT 1",(p["vendor_id"],inv_no)).fetchone():
+            raise HTTPException(409,"This vendor invoice number has already been submitted. Duplicate bills are not accepted.")
         ref=_ref("BILL")
         row=c.execute("""INSERT INTO sb_supplier_bills(reference,vendor_id,procurement_id,vendor_invoice_number,amount,tax_total,due_date)
           VALUES(%s,%s,%s,%s,%s,%s,%s) RETURNING *""",(ref,p["vendor_id"],procurement_id,body.vendor_invoice_number,body.amount,body.tax_total,body.due_date)).fetchone()
@@ -802,6 +807,18 @@ def update_supplier_bill(bill_id: int, status: str = Query(pattern="^(approved|r
         _schema(c)
         b=c.execute("SELECT * FROM sb_supplier_bills WHERE id=%s FOR UPDATE",(bill_id,)).fetchone()
         if not b or b["status"]!="submitted": raise HTTPException(409,"Only a submitted bill can be approved or rejected.")
+        if status=="approved" and b["procurement_id"]:
+            # Three-way match: the bill must be covered by goods that were received AND passed inspection,
+            # counting bills already approved for the same purchase order.
+            proc=c.execute("SELECT items FROM sb_procurements WHERE id=%s",(b["procurement_id"],)).fetchone()
+            price={int(x["variant_id"]):Decimal(str(x.get("unit_price",0))) for x in (proc["items"] if proc else [])}
+            accepted_value=Decimal("0")
+            for rec in c.execute("SELECT items FROM sb_receipts WHERE procurement_id=%s AND status='accepted'",(b["procurement_id"],)).fetchall():
+                for line in rec["items"]:
+                    accepted_value+=price.get(int(line["variant_id"]),Decimal("0"))*int(line.get("accepted_quantity",0))
+            billed=c.execute("SELECT COALESCE(SUM(amount),0) n FROM sb_supplier_bills WHERE procurement_id=%s AND id<>%s AND status IN ('approved','partially_paid','paid')",(b["procurement_id"],bill_id)).fetchone()["n"]
+            if Decimal(str(b["amount"]))+Decimal(str(billed))>accepted_value+Decimal("0.01"):
+                raise HTTPException(409,"Bill does not match goods received. Accepted goods are worth "+str(accepted_value)+" and "+str(billed)+" is already billed; this bill is "+str(b["amount"])+". Receive and inspect the goods first, or reject the bill.")
         c.execute("UPDATE sb_supplier_bills SET status=%s WHERE id=%s",(status,bill_id))
         if status=="approved":
             total=Decimal(str(b["amount"]))+Decimal(str(b["tax_total"]))
@@ -1273,6 +1290,62 @@ def list_procurements(authorization: str | None = Header(default=None)):
         _schema(c)
         return {"items":c.execute("""SELECT p.*,v.name vendor_name,v.email vendor_email FROM sb_procurements p
           JOIN sb_vendors v ON v.id=p.vendor_id ORDER BY p.created_at DESC LIMIT 500""").fetchall()}
+
+PIPELINE_STAGES=[("request","Request"),("approval","Approval"),("quotes","Quotes"),("po","PO"),("dispatch","Dispatch"),("receiving","Receiving"),("bill","Bill"),("payment","Payment")]
+
+
+@router.get("/admin/purchase-pipeline")
+def purchase_pipeline(authorization: str | None = Header(default=None)):
+    """One row per purchase requisition showing how far it has progressed from request to payment."""
+    _require(authorization, {"super_admin","admin","staff"})
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c)
+        procs=c.execute("""SELECT p.id,p.reference,p.status,p.items,p.purchase_order_reference,p.expected_date,p.created_at,v.name vendor_name
+          FROM sb_procurements p JOIN sb_vendors v ON v.id=p.vendor_id ORDER BY p.created_at DESC LIMIT 200""").fetchall()
+        ids=[x["id"] for x in procs]
+        if not ids: return {"stages":[{"key":k,"label":l} for k,l in PIPELINE_STAGES],"items":[]}
+        quotes={r["procurement_id"]:r["n"] for r in c.execute("SELECT procurement_id,count(*) n FROM sb_supplier_quotations WHERE procurement_id=ANY(%s) GROUP BY 1",(ids,)).fetchall()}
+        disp={r["procurement_id"]:r["n"] for r in c.execute("SELECT procurement_id,count(*) n FROM sb_vendor_dispatches WHERE procurement_id=ANY(%s) AND status<>'cancelled' GROUP BY 1",(ids,)).fetchall()}
+        recs={}
+        for r in c.execute("SELECT procurement_id,status,items FROM sb_receipts WHERE procurement_id=ANY(%s)",(ids,)).fetchall():
+            d=recs.setdefault(r["procurement_id"],{"grn":0,"inspecting":0,"accepted_qty":0})
+            d["grn"]+=1
+            if r["status"]=="inspection": d["inspecting"]+=1
+            if r["status"]=="accepted": d["accepted_qty"]+=sum(int(x.get("accepted_quantity",0)) for x in r["items"])
+        bills={}
+        for r in c.execute("SELECT procurement_id,status FROM sb_supplier_bills WHERE procurement_id=ANY(%s)",(ids,)).fetchall():
+            bills.setdefault(r["procurement_id"],[]).append(r["status"])
+        out=[]
+        for p in procs:
+            st=p["status"]; i=p["id"]; rc=recs.get(i,{"grn":0,"inspecting":0,"accepted_qty":0}); bl=[b for b in bills.get(i,[]) if b!="rejected"]
+            ordered=sum(int(x.get("quantity",0)) for x in p["items"])
+            po_done=st in {"purchase_order","partially_received","received"}
+            done={"request":True,
+                  "approval":st not in {"pending_approval"},
+                  "quotes":st in {"quoted","accepted"} or po_done,
+                  "po":po_done,
+                  "dispatch":po_done and (disp.get(i,0)>0 or st=="received"),
+                  "receiving":st=="received",
+                  "bill":any(b in {"approved","partially_paid","paid"} for b in bl),
+                  "payment":bool(bl) and all(b=="paid" for b in bl)}
+            if st=="rejected":
+                stages=[{"key":k,"label":l,"state":"done" if k=="request" else "stopped" if k=="approval" else "todo"} for k,l in PIPELINE_STAGES]; nxt="Rejected at approval. No further action."
+            else:
+                stages=[];cur=None
+                for k,l in PIPELINE_STAGES:
+                    if done[k]: state="done"
+                    elif cur is None: state="current";cur=k
+                    else: state="todo"
+                    stages.append({"key":k,"label":l,"state":state})
+                nxt={"approval":"Approve or reject the requisition.","quotes":"Collect vendor quotations ("+str(quotes.get(i,0))+" so far), compare and select one.",
+                     "po":"Convert the selected quotation into a purchase order.","dispatch":"Waiting for the vendor to dispatch goods.",
+                     "receiving":("Complete quality inspection for the pending GRN." if rc["inspecting"] else "Record goods receipt (GRN) and quality inspection."),
+                     "bill":"Waiting for the vendor bill, or approve the submitted bill.","payment":"Pay the approved bill.",None:"Complete."}.get(cur,"Complete.")
+            out.append({"id":i,"reference":p["reference"],"purchase_order_reference":p["purchase_order_reference"],"vendor_name":p["vendor_name"],"status":st,
+                        "ordered_qty":ordered,"accepted_qty":rc["accepted_qty"],"quotations":quotes.get(i,0),"grns":rc["grn"],"bills":len(bl),
+                        "stages":stages,"next_step":nxt,"created_at":p["created_at"]})
+        return {"stages":[{"key":k,"label":l} for k,l in PIPELINE_STAGES],"items":out}
+
 
 @router.get("/admin/receipts")
 def list_receipts(authorization: str | None = Header(default=None)):
