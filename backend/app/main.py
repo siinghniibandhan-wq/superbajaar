@@ -261,6 +261,297 @@ def product_creation_references(authorization: str | None = Header(default=None)
         logger.exception("Product creation references could not be loaded")
         raise HTTPException(status_code=503, detail="Existing tax and warehouse references could not be loaded.") from exc
 
+
+
+class CatalogueAttributeInput(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    values: list[str] = Field(min_length=1, max_length=200)
+    display_type: str = Field(default="button", pattern="^(text|color|dropdown|button|image)$")
+
+
+class CatalogueAttributeDisplayInput(BaseModel):
+    display_type: str = Field(pattern="^(text|color|dropdown|button|image)$")
+
+
+class CatalogueAttributeAssignmentsInput(BaseModel):
+    attribute_ids: list[int] = Field(default_factory=list, max_length=100)
+
+
+class CatalogueVariantAttributesInput(BaseModel):
+    values: dict[int, str] = Field(default_factory=dict, max_length=100)
+
+
+def _catalogue_attribute_tables(conn: Any) -> tuple[bool, bool, bool]:
+    found = {}
+    for table in ("catalog_attributes", "product_attribute_assignments", "variant_attribute_values"):
+        found[table] = bool(conn.execute("SELECT to_regclass(%s) AS t", (f"public.{table}",)).fetchone()["t"])
+    return found["catalog_attributes"], found["product_attribute_assignments"], found["variant_attribute_values"]
+
+
+@app.get("/api/admin/catalogue/attributes")
+def list_catalogue_attributes(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _admin_catalogue_user(authorization)
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            has_attributes, _, _ = _catalogue_attribute_tables(conn)
+            if not has_attributes:
+                raise HTTPException(status_code=503, detail="The existing catalogue attribute table is missing. Code-only checks are complete; database setup may be required.")
+            columns = get_columns(conn, "catalog_attributes")
+            select = ["id", "name"]
+            if "values_json" in columns:
+                select.append("values_json")
+            else:
+                raise HTTPException(status_code=503, detail="catalog_attributes.values_json is missing; database schema needs review.")
+            if "display_type" in columns:
+                select.append("display_type")
+            rows = conn.execute("SELECT " + ", ".join(select) + " FROM catalog_attributes ORDER BY name, id").fetchall()
+            for row in rows:
+                row["values_json"] = row.get("values_json") or []
+                row["display_type"] = row.get("display_type") or "button"
+            return {"items": rows}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        logger.exception("Catalogue attributes could not be listed")
+        raise HTTPException(status_code=503, detail="Catalogue attributes could not be loaded.") from exc
+
+
+@app.post("/api/admin/catalogue/attributes", status_code=201)
+def create_catalogue_attribute(body: CatalogueAttributeInput, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _admin_catalogue_user(authorization)
+    name = body.name.strip()
+    values = list(dict.fromkeys(v.strip() for v in body.values if v and v.strip()))
+    if not name or not values:
+        raise HTTPException(status_code=422, detail="Enter an attribute name and at least one allowed value.")
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            has_attributes, _, _ = _catalogue_attribute_tables(conn)
+            if not has_attributes:
+                raise HTTPException(status_code=503, detail="The existing catalogue attribute table is missing. Database setup may be required; no schema changes were made.")
+            columns = get_columns(conn, "catalog_attributes")
+            if not {"name", "values_json"}.issubset(columns):
+                raise HTTPException(status_code=503, detail="catalog_attributes is missing required columns; database schema needs review.")
+            if "display_type" in columns:
+                row = conn.execute(
+                    """INSERT INTO catalog_attributes(name, values_json, display_type)
+                       VALUES(%s, %s, %s)
+                       ON CONFLICT(name) DO UPDATE SET values_json=EXCLUDED.values_json, display_type=EXCLUDED.display_type
+                       RETURNING id, name, values_json, display_type""",
+                    (name, Jsonb(values), body.display_type),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    """INSERT INTO catalog_attributes(name, values_json)
+                       VALUES(%s, %s) ON CONFLICT(name) DO UPDATE SET values_json=EXCLUDED.values_json
+                       RETURNING id, name, values_json""",
+                    (name, Jsonb(values)),
+                ).fetchone()
+                row["display_type"] = body.display_type
+            row["values_json"] = row.get("values_json") or []
+            return row
+    except HTTPException:
+        raise
+    except psycopg.errors.UndefinedColumn as exc:
+        logger.exception("Catalogue attribute schema mismatch while creating attribute")
+        raise HTTPException(status_code=503, detail="The existing attribute table does not match the API fields. Database schema review may be needed.") from exc
+    except psycopg.Error as exc:
+        logger.exception("Catalogue attribute could not be created")
+        raise HTTPException(status_code=503, detail="Attribute could not be saved. Check whether the existing attribute table has a unique constraint on name.") from exc
+
+
+@app.put("/api/admin/catalogue/attributes/{attribute_id}/display-type")
+def update_catalogue_attribute_display_type(attribute_id: int, body: CatalogueAttributeDisplayInput,
+                                            authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _admin_catalogue_user(authorization)
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            has_attributes, _, _ = _catalogue_attribute_tables(conn)
+            if not has_attributes:
+                raise HTTPException(status_code=503, detail="The existing catalogue attribute table is missing.")
+            columns = get_columns(conn, "catalog_attributes")
+            if "display_type" not in columns:
+                raise HTTPException(status_code=503, detail="catalog_attributes.display_type is missing; database schema review may be needed.")
+            row = conn.execute(
+                "UPDATE catalog_attributes SET display_type=%s WHERE id=%s RETURNING id, name, values_json, display_type",
+                (body.display_type, attribute_id),
+            ).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Attribute not found.")
+            row["values_json"] = row.get("values_json") or []
+            return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        logger.exception("Catalogue attribute display type could not be updated")
+        raise HTTPException(status_code=503, detail="Attribute display type could not be saved.") from exc
+
+
+@app.get("/api/products/{product_id}/configuration")
+def get_product_attribute_configuration(product_id: int) -> dict[str, Any]:
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            product = conn.execute("SELECT id, name FROM products WHERE id=%s", (product_id,)).fetchone()
+            if not product:
+                raise HTTPException(status_code=404, detail="Product not found.")
+            has_attributes, has_assignments, has_values = _catalogue_attribute_tables(conn)
+            if not has_attributes:
+                raise HTTPException(status_code=503, detail="The existing catalogue attribute table is missing.")
+            if has_assignments:
+                attributes = conn.execute(
+                    """SELECT a.id, a.name, a.values_json, COALESCE(a.display_type, 'button') AS display_type
+                       FROM product_attribute_assignments pa
+                       JOIN catalog_attributes a ON a.id=pa.attribute_id
+                       WHERE pa.product_id=%s ORDER BY a.name, a.id""", (product_id,)
+                ).fetchall()
+            else:
+                attributes = []
+            variants = conn.execute(
+                """SELECT id AS variant_id, sku, selling_price, mrp
+                   FROM product_variants
+                   WHERE product_id=%s AND (status IS NULL OR status <> 'inactive')
+                   ORDER BY id""", (product_id,)
+            ).fetchall()
+            for variant in variants:
+                value_map = {}
+                if has_values:
+                    saved = conn.execute(
+                        """SELECT attribute_id, value FROM variant_attribute_values
+                           WHERE variant_id=%s ORDER BY attribute_id""", (variant["variant_id"],)
+                    ).fetchall()
+                    value_map = {str(row["attribute_id"]): row["value"] for row in saved}
+                variant["attributes"] = value_map
+            return {"product": product, "attributes": attributes, "variants": variants}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        logger.exception("Product attribute configuration could not be loaded for product %s", product_id)
+        raise HTTPException(status_code=503, detail="Product attribute configuration could not be loaded.") from exc
+
+
+@app.put("/api/admin/catalogue/products/{product_id}/attributes")
+def assign_catalogue_product_attributes(product_id: int, body: CatalogueAttributeAssignmentsInput,
+                                         authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _admin_catalogue_user(authorization)
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            if not conn.execute("SELECT id FROM products WHERE id=%s", (product_id,)).fetchone():
+                raise HTTPException(status_code=404, detail="Product not found.")
+            has_attributes, has_assignments, _ = _catalogue_attribute_tables(conn)
+            if not has_attributes or not has_assignments:
+                raise HTTPException(status_code=503, detail="The existing product-attribute assignment tables are missing. No database changes were made.")
+            ids = list(dict.fromkeys(body.attribute_ids))
+            if ids:
+                found = conn.execute("SELECT id FROM catalog_attributes WHERE id = ANY(%s)", (ids,)).fetchall()
+                if {int(row["id"]) for row in found} != set(ids):
+                    raise HTTPException(status_code=422, detail="One or more selected attributes do not exist.")
+            conn.execute("DELETE FROM product_attribute_assignments WHERE product_id=%s", (product_id,))
+            for attribute_id in ids:
+                conn.execute(
+                    "INSERT INTO product_attribute_assignments(product_id, attribute_id) VALUES(%s, %s) ON CONFLICT DO NOTHING",
+                    (product_id, attribute_id),
+                )
+            return {"product_id": product_id, "attribute_ids": ids, "saved": True}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        logger.exception("Product attribute assignment failed for product %s", product_id)
+        raise HTTPException(status_code=503, detail="Product attributes could not be assigned.") from exc
+
+
+@app.put("/api/admin/catalogue/variants/{variant_id}/attributes")
+def save_catalogue_variant_attributes(variant_id: int, body: CatalogueVariantAttributesInput,
+                                      authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _admin_catalogue_user(authorization)
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            has_attributes, _, has_values = _catalogue_attribute_tables(conn)
+            if not has_attributes or not has_values:
+                raise HTTPException(status_code=503, detail="The existing variant-attribute tables are missing. No database changes were made.")
+            variant = conn.execute("SELECT id, product_id FROM product_variants WHERE id=%s", (variant_id,)).fetchone()
+            if not variant:
+                raise HTTPException(status_code=404, detail="Variant not found.")
+            ids = list(body.values.keys())
+            if ids:
+                attributes = conn.execute("SELECT id, name, values_json FROM catalog_attributes WHERE id = ANY(%s)", (ids,)).fetchall()
+                by_id = {int(row["id"]): row for row in attributes}
+                if set(by_id) != set(ids):
+                    raise HTTPException(status_code=422, detail="One or more selected attributes do not exist.")
+                _, has_assignments, _ = _catalogue_attribute_tables(conn)
+                if has_assignments:
+                    assigned = conn.execute(
+                        "SELECT attribute_id FROM product_attribute_assignments WHERE product_id=%s AND attribute_id = ANY(%s)",
+                        (variant["product_id"], ids),
+                    ).fetchall()
+                    assigned_ids = {int(row["attribute_id"]) for row in assigned}
+                    if assigned_ids != set(ids):
+                        raise HTTPException(status_code=422, detail="Assign the selected attributes to this product before saving variant values.")
+                for attribute_id, raw_value in body.values.items():
+                    value = str(raw_value).strip()
+                    allowed = by_id[attribute_id].get("values_json") or []
+                    if not value or (isinstance(allowed, list) and value not in allowed):
+                        raise HTTPException(status_code=422, detail=f"Choose an allowed value for {by_id[attribute_id]['name']}.")
+                    conn.execute(
+                        """INSERT INTO variant_attribute_values(variant_id, attribute_id, value)
+                           VALUES(%s, %s, %s)
+                           ON CONFLICT(variant_id, attribute_id) DO UPDATE SET value=EXCLUDED.value""",
+                        (variant_id, attribute_id, value),
+                    )
+            return {"variant_id": variant_id, "values": body.values, "saved": True}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        logger.exception("Variant attributes could not be saved for variant %s", variant_id)
+        raise HTTPException(status_code=503, detail="Variant attribute values could not be saved.") from exc
+
+
+@app.post("/api/admin/catalogue/attributes/import-existing")
+def import_existing_catalogue_attributes(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _admin_catalogue_user(authorization)
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            has_attributes, has_assignments, has_values = _catalogue_attribute_tables(conn)
+            if not has_attributes or not has_values:
+                raise HTTPException(status_code=503, detail="The existing attribute tables are missing. No schema changes were made.")
+            found = conn.execute(
+                """SELECT a.id, a.name, a.values_json, COUNT(DISTINCT v.variant_id) AS variants_count
+                   FROM catalog_attributes a LEFT JOIN variant_attribute_values v ON v.attribute_id=a.id
+                   GROUP BY a.id, a.name, a.values_json ORDER BY a.name"""
+            ).fetchall()
+            imported = 0
+            assigned_products = set()
+            variants_updated = set()
+            for attr in found:
+                values = conn.execute(
+                    """SELECT DISTINCT value FROM variant_attribute_values
+                       WHERE attribute_id=%s AND value IS NOT NULL AND btrim(value) <> '' ORDER BY value""",
+                    (attr["id"],),
+                ).fetchall()
+                current = attr.get("values_json") or []
+                merged = list(dict.fromkeys((current if isinstance(current, list) else []) + [row["value"] for row in values]))
+                if merged != current:
+                    conn.execute("UPDATE catalog_attributes SET values_json=%s WHERE id=%s", (Jsonb(merged), attr["id"]))
+                    imported += 1
+                variant_rows = conn.execute(
+                    """SELECT DISTINCT v.id AS variant_id, v.product_id
+                       FROM variant_attribute_values av JOIN product_variants v ON v.id=av.variant_id
+                       WHERE av.attribute_id=%s""", (attr["id"],)
+                ).fetchall()
+                for row in variant_rows:
+                    variants_updated.add(int(row["variant_id"]))
+                    assigned_products.add(int(row["product_id"]))
+                    if has_assignments:
+                        conn.execute(
+                            "INSERT INTO product_attribute_assignments(product_id, attribute_id) VALUES(%s, %s) ON CONFLICT DO NOTHING",
+                            (row["product_id"], attr["id"]),
+                        )
+            return {"imported_attributes": imported, "variants_updated": len(variants_updated), "assigned_products": len(assigned_products)}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        logger.exception("Existing catalogue attribute import failed")
+        raise HTTPException(status_code=503, detail="Existing catalogue attributes could not be imported.") from exc
+
+
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
