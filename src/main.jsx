@@ -15,9 +15,9 @@ const CATEGORY_IMAGES = {
 'Beauty & Wellness':'https://images.unsplash.com/photo-1596462502278-27bfdc403348?auto=format&fit=crop&w=320&q=80',
 'Toys & Baby Care':'https://images.unsplash.com/photo-1566576912321-d58ddd7a6088?auto=format&fit=crop&w=320&q=80',
 'Sports & Fitness':'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?auto=format&fit=crop&w=320&q=80',
-'Stationery':'https://images.unsplash.com/photo-1455390582262-044cdead277a?auto=format&fit=crop&w=320&q=80',
+'Stationery':'https://images.unsplash.com/photo-1513364776144-60967b0f800f?auto=format&fit=crop&w=320&q=80',
 'Insurance':'https://images.unsplash.com/photo-1450101499163-c8848c66ca85?auto=format&fit=crop&w=320&q=80',
-'Pooja Essentials':'https://images.unsplash.com/photo-1604608672516-8c5f1e1e4d10?auto=format&fit=crop&w=320&q=80',
+'Pooja Essentials':'https://commons.wikimedia.org/wiki/Special:FilePath/Diwali_Pooja_Thali_with_Diya_Decoration.jpg?width=320',
 'Gifting':'https://images.unsplash.com/photo-1513201099705-a9746e1e201f?auto=format&fit=crop&w=320&q=80'
 };
 const API_PATH = path => API.endsWith('/api') ? API + path : API + '/api' + path;
