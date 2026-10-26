@@ -3,6 +3,7 @@ import logging
 import re
 import hmac
 import uuid
+import itertools
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -41,7 +42,7 @@ app.add_middleware(
     allow_origins=origins,
     allow_origin_regex=r"https://.*\.app\.github\.dev",
     allow_credentials=False,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Accept", "Content-Type", "Authorization", "X-Review-Moderation-Token"],
 )
 
@@ -91,9 +92,12 @@ def attach_catalogue_media_and_attributes(conn: psycopg.Connection, rows: list[d
                 """SELECT id, image_url, alt_text, sort_order FROM product_variant_images
                    WHERE variant_id=%s ORDER BY sort_order, id""", (variant_id,)
             ).fetchall()
+            cover = next((im["image_url"] for im in gallery if im.get("image_url") and int(im.get("sort_order") or 0) == 0), None) or row.get("image_url")
+            if cover and not any(im.get("image_url") == cover for im in gallery):
+                gallery = [{"id": None, "image_url": cover, "alt_text": (row.get("name") or "Product") + " cover", "sort_order": 0}] + gallery
             if gallery:
                 row["gallery_images"] = gallery
-                row["image_url"] = next((im["image_url"] for im in gallery if im.get("image_url")), row.get("image_url"))
+                row["image_url"] = cover or next((im["image_url"] for im in gallery if im.get("image_url")), None)
         # Prefer a saved variant image; if absent, use the product's saved cover image.
         if product_id and product_columns:
             candidates = [c for c in ("cover_image_url", "main_image_url", "image_url", "image", "image_1920") if c in product_columns]
@@ -112,6 +116,10 @@ def attach_catalogue_media_and_attributes(conn: psycopg.Connection, rows: list[d
                     detail = conn.execute(f'SELECT "{col}" FROM products WHERE id=%s', (product_id,)).fetchone()
                     if detail and detail.get(col) is not None:
                         row[col] = detail[col]
+        if product_id and conn.execute("SELECT to_regclass('public.catalog_product_tax') AS t").fetchone()["t"]:
+            tax_row = conn.execute("SELECT hsn_code FROM catalog_product_tax WHERE product_id=%s", (product_id,)).fetchone()
+            if tax_row:
+                row["hsn_code"] = tax_row.get("hsn_code") or ""
         # Convert legacy Odoo binary/base64 image fields to browser-loadable data URLs.
         import base64
         for key in ("image_url", "image", "image_1920"):
@@ -145,6 +153,113 @@ def attach_catalogue_media_and_attributes(conn: psycopg.Connection, rows: list[d
                     pass
     return rows
 
+
+
+
+@app.delete("/api/admin/products/{product_id}/variants/{variant_id}/images/{image_id}")
+def delete_variant_image(product_id: int, variant_id: int, image_id: int, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    """Remove a gallery image using the existing product_variant_images table."""
+    _admin_catalogue_user(authorization)
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            row = conn.execute(
+                """DELETE FROM product_variant_images
+                   WHERE id=%s AND variant_id=%s AND variant_id IN
+                     (SELECT id FROM product_variants WHERE product_id=%s)
+                   RETURNING id""",
+                (image_id, variant_id, product_id),
+            ).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Variant image not found.")
+            return {"deleted": True, "image_id": row["id"]}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        logger.exception("Variant image delete failed")
+        raise HTTPException(status_code=503, detail="Variant image could not be removed.") from exc
+
+
+
+
+class ProductAvailabilityRuleInput(BaseModel):
+    variant_id: int | None = Field(default=None, gt=0)
+    region_ids: list[int] = Field(default_factory=list, max_length=200)
+    pincodes: list[str] = Field(default_factory=list, max_length=2000)
+    warehouse_ids: list[int] = Field(default_factory=list, max_length=200)
+
+
+@app.get("/api/admin/products/{product_id}/availability")
+def get_product_availability(product_id: int, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _admin_catalogue_user(authorization)
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            if not conn.execute("SELECT id FROM products WHERE id=%s", (product_id,)).fetchone():
+                raise HTTPException(status_code=404, detail="Product not found.")
+            return {"rules": [], "unrestricted": True, "uses_existing_delivery_network": True}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        logger.exception("Product availability lookup failed")
+        raise HTTPException(status_code=503, detail="Product availability could not be loaded.") from exc
+
+
+@app.put("/api/admin/products/{product_id}/availability")
+def set_product_availability(product_id: int, body: ProductAvailabilityRuleInput,
+                              authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _admin_catalogue_user(authorization)
+    if body.region_ids or body.pincodes or body.warehouse_ids:
+        raise HTTPException(status_code=422, detail="Custom product delivery restrictions are not supported by the existing schema. Configure serviceable PIN codes under Warehouses.")
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            if not conn.execute("SELECT id FROM products WHERE id=%s", (product_id,)).fetchone():
+                raise HTTPException(status_code=404, detail="Product not found.")
+            if body.variant_id and not conn.execute("SELECT id FROM product_variants WHERE id=%s AND product_id=%s", (body.variant_id, product_id)).fetchone():
+                raise HTTPException(status_code=422, detail="Variant does not belong to this product.")
+            return {"saved": True, "unrestricted": True, "uses_existing_delivery_network": True}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        logger.exception("Product availability save failed")
+        raise HTTPException(status_code=503, detail="Product availability could not be saved.") from exc
+
+
+class ProductRegionWriteInput(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    code: str = Field(min_length=2, max_length=40)
+    pincodes: list[str] = Field(default_factory=list, max_length=2000)
+
+
+@app.post("/api/admin/product-creation/regions", status_code=501)
+def create_product_region(body: ProductRegionWriteInput, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _admin_catalogue_user(authorization)
+    raise HTTPException(status_code=501, detail="Custom regions require a database schema change, which is disabled. Configure serviceable PIN codes under Warehouses.")
+
+
+@app.get("/api/admin/product-creation/references")
+def product_creation_references(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    """Read existing tax and warehouse references without creating or altering schema."""
+    _admin_catalogue_user(authorization)
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            tables = {
+                name: bool(conn.execute("SELECT to_regclass(%s) AS t", (f"public.{name}",)).fetchone()["t"])
+                for name in ("sb_tax_config", "sb_warehouses")
+            }
+            result: dict[str, Any] = {"tax_rates": {}, "warehouses": []}
+            if tables["sb_tax_config"]:
+                row = conn.execute("SELECT seller_state_code, rates_json FROM sb_tax_config WHERE id=1").fetchone()
+                if row:
+                    result["seller_state_code"] = row.get("seller_state_code") or ""
+                    rates = row.get("rates_json") or {}
+                    result["tax_rates"] = rates if isinstance(rates, dict) else {}
+            result["regions"] = []
+            result["region_pincodes"] = []
+            return result
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        logger.exception("Product creation references could not be loaded")
+        raise HTTPException(status_code=503, detail="Existing tax and warehouse references could not be loaded.") from exc
 
 @app.get("/api/health")
 def health() -> dict[str, str]:
@@ -199,6 +314,7 @@ def operational_readiness(authorization: str | None = Header(default=None)) -> d
 def list_products(
     search: str = Query(default="", max_length=120),
     category: str = Query(default="", max_length=80),
+    pincode: str = Query(default="", max_length=6),
     limit: int = Query(default=24, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
@@ -224,6 +340,11 @@ def list_products(
             specification_select = "p.specifications AS specifications" if "specifications" in product_columns else "'[]'::jsonb AS specifications"
             manufacturer_select = "p.manufacturer_details AS manufacturer_details" if "manufacturer_details" in product_columns else "'[]'::jsonb AS manufacturer_details"
             seller_select = "p.seller_details AS seller_details" if "seller_details" in product_columns else "'[]'::jsonb AS seller_details"
+            tax_category_select = "p.tax_category AS tax_category" if "tax_category" in product_columns else "''::text AS tax_category"
+            gst_rate_select = "p.gst_rate AS gst_rate" if "gst_rate" in product_columns else "NULL::numeric AS gst_rate"
+            tax_inclusive_select = "p.tax_inclusive AS tax_inclusive" if "tax_inclusive" in product_columns else "TRUE AS tax_inclusive"
+            sale_badge_select = "p.sale_badge AS sale_badge" if "sale_badge" in product_columns else "''::text AS sale_badge"
+            sale_badge_active_select = "p.sale_badge_active AS sale_badge_active" if "sale_badge_active" in product_columns else "FALSE AS sale_badge_active"
             currency_select = "v.currency AS currency" if "currency" in variant_columns else "'INR'::text AS currency"
             product_status_select = "p.status AS status" if "status" in product_columns else "'active'::text AS status"
             variant_status_select = "v.status AS variant_status" if "status" in variant_columns else "'active'::text AS variant_status"
@@ -256,6 +377,32 @@ def list_products(
             if category.strip():
                 where.append("c.name = %s")
                 params.append(category.strip())
+            if pincode.strip():
+                clean_pin = pincode.strip()
+                if not re.fullmatch(r"[0-9]{6}", clean_pin):
+                    raise HTTPException(status_code=422, detail="PIN code must contain exactly six digits.")
+                availability_exists = conn.execute("SELECT to_regclass('public.sb_product_availability_rules') AS t").fetchone()["t"]
+                if availability_exists:
+                    where.append("""(
+                      NOT EXISTS (SELECT 1 FROM sb_product_availability_rules ar
+                                  WHERE ar.product_id=p.id AND (ar.variant_id IS NULL OR ar.variant_id=v.id))
+                      OR (
+                        (NOT EXISTS (SELECT 1 FROM sb_product_availability_rules ar WHERE ar.product_id=p.id AND (ar.variant_id IS NULL OR ar.variant_id=v.id) AND ar.scope_type='region')
+                         OR EXISTS (SELECT 1 FROM sb_product_availability_rules ar JOIN sb_region_pincodes rp ON rp.region_id=ar.region_id
+                                    WHERE ar.product_id=p.id AND (ar.variant_id IS NULL OR ar.variant_id=v.id) AND ar.scope_type='region' AND rp.pincode=%s AND rp.active=TRUE))
+                        AND
+                        (NOT EXISTS (SELECT 1 FROM sb_product_availability_rules ar WHERE ar.product_id=p.id AND (ar.variant_id IS NULL OR ar.variant_id=v.id) AND ar.scope_type='pincode')
+                         OR EXISTS (SELECT 1 FROM sb_product_availability_rules ar
+                                    WHERE ar.product_id=p.id AND (ar.variant_id IS NULL OR ar.variant_id=v.id) AND ar.scope_type='pincode' AND ar.pincode=%s))
+                        AND
+                        (NOT EXISTS (SELECT 1 FROM sb_product_availability_rules ar WHERE ar.product_id=p.id AND (ar.variant_id IS NULL OR ar.variant_id=v.id) AND ar.scope_type='warehouse')
+                         OR EXISTS (SELECT 1 FROM sb_product_availability_rules ar JOIN sb_warehouses w ON w.id=ar.warehouse_id
+                                    WHERE ar.product_id=p.id AND (ar.variant_id IS NULL OR ar.variant_id=v.id) AND ar.scope_type='warehouse' AND w.active=TRUE
+                                      AND (w.pincode=%s OR w.serviceable_pincodes @> %s::jsonb)
+                                      AND (w.region_id IS NULL OR NOT EXISTS (SELECT 1 FROM sb_product_availability_rules rr WHERE rr.product_id=p.id AND (rr.variant_id IS NULL OR rr.variant_id=v.id) AND rr.scope_type='region') OR EXISTS (SELECT 1 FROM sb_product_availability_rules rr JOIN sb_region_pincodes rrp ON rrp.region_id=rr.region_id WHERE rr.product_id=p.id AND (rr.variant_id IS NULL OR rr.variant_id=v.id) AND rr.scope_type='region' AND rr.region_id=w.region_id AND rrp.pincode=%s AND rrp.active=TRUE)))
+                      )
+                    )""")
+                    params.extend([clean_pin, clean_pin, clean_pin, Jsonb([clean_pin]), clean_pin])
             params.extend([limit, offset])
             query = f"""SELECT p.id AS product_id, p.name, {description_select}, {brand_select},
                               {category_id_select}, {product_status_select}, {variant_status_select},
@@ -263,7 +410,7 @@ def list_products(
                               {('v.sku' if 'sku' in variant_columns else 'NULL::text AS sku')},
                               {('v.mrp' if 'mrp' in variant_columns else 'NULL::numeric AS mrp')},
                               {('v.selling_price' if 'selling_price' in variant_columns else 'NULL::numeric AS selling_price')},
-                              {currency_select}, {image_select}, {specification_select}, {manufacturer_select}, {seller_select}, {review_select}{attribute_select}
+                              {currency_select}, {image_select}, {specification_select}, {manufacturer_select}, {seller_select}, {tax_category_select}, {gst_rate_select}, {tax_inclusive_select}, {sale_badge_select}, {sale_badge_active_select}, {review_select}{attribute_select}
                        FROM products p
                        JOIN product_variants v ON v.product_id = p.id
                        {category_join}
@@ -305,6 +452,11 @@ def get_product_by_variant(variant_id: int) -> dict[str, Any]:
             specification_select = "p.specifications AS specifications" if "specifications" in product_columns else "'[]'::jsonb AS specifications"
             manufacturer_select = "p.manufacturer_details AS manufacturer_details" if "manufacturer_details" in product_columns else "'[]'::jsonb AS manufacturer_details"
             seller_select = "p.seller_details AS seller_details" if "seller_details" in product_columns else "'[]'::jsonb AS seller_details"
+            tax_category_select = "p.tax_category AS tax_category" if "tax_category" in product_columns else "''::text AS tax_category"
+            gst_rate_select = "p.gst_rate AS gst_rate" if "gst_rate" in product_columns else "NULL::numeric AS gst_rate"
+            tax_inclusive_select = "p.tax_inclusive AS tax_inclusive" if "tax_inclusive" in product_columns else "TRUE AS tax_inclusive"
+            sale_badge_select = "p.sale_badge AS sale_badge" if "sale_badge" in product_columns else "''::text AS sale_badge"
+            sale_badge_active_select = "p.sale_badge_active AS sale_badge_active" if "sale_badge_active" in product_columns else "FALSE AS sale_badge_active"
             currency_select = "v.currency AS currency" if "currency" in variant_columns else "'INR'::text AS currency"
             category_join = "LEFT JOIN product_categories c ON c.id = p.category_id" if "category_id" in product_columns else "LEFT JOIN product_categories c ON FALSE"
             sku_select = "v.sku AS sku" if "sku" in variant_columns else "NULL::text AS sku"
@@ -320,6 +472,7 @@ def get_product_by_variant(variant_id: int) -> dict[str, Any]:
             attribute_select = (", " + attribute_select) if attribute_select else ""
             row = conn.execute(f"""SELECT p.id AS product_id, p.name, {description_select}, {brand_select},
                 {specification_select}, {manufacturer_select}, {seller_select},
+                {tax_category_select}, {gst_rate_select}, {tax_inclusive_select}, {sale_badge_select}, {sale_badge_active_select},
                 c.name AS category, v.id AS variant_id, {sku_select}, {mrp_select},
                 {price_select}, {currency_select}, {image_select}{attribute_select}
                 FROM products p JOIN product_variants v ON v.product_id = p.id
@@ -331,6 +484,7 @@ def get_product_by_variant(variant_id: int) -> dict[str, Any]:
             # attribute even when a customer opens a product URL directly.
             sibling_variants = conn.execute(f"""SELECT p.id AS product_id, p.name, {description_select}, {brand_select},
                 {specification_select}, {manufacturer_select}, {seller_select},
+                {tax_category_select}, {gst_rate_select}, {tax_inclusive_select}, {sale_badge_select}, {sale_badge_active_select},
                 c.name AS category, v.id AS variant_id, {sku_select}, {mrp_select},
                 {price_select}, {currency_select}, {image_select}{attribute_select}
                 FROM products p JOIN product_variants v ON v.product_id = p.id
@@ -533,12 +687,22 @@ class ProductWriteInput(BaseModel):
     specifications: list[dict[str, str]] = Field(default_factory=list, max_length=100)
     manufacturer_details: list[dict[str, str]] = Field(default_factory=list, max_length=100)
     seller_details: list[dict[str, str]] = Field(default_factory=list, max_length=100)
+    attributes: list[dict[str, Any]] = Field(default_factory=list, max_length=12)
+    variant_covers: list[str] = Field(default_factory=list, max_length=100)
+    variant_prices: list[dict[str, Any]] = Field(default_factory=list, max_length=100)
+    editing_variant_id: int | None = Field(default=None, gt=0)
+    variant_id: int | None = Field(default=None, gt=0)
+    shared_gallery: list[str] = Field(default_factory=list, max_length=100)
+    variant_galleries: list[list[str]] = Field(default_factory=list, max_length=100)
     category_id: int | None = Field(default=None, gt=0)
     sku: str = Field(default="", max_length=120)
-    # Image data URLs for 4 MB uploads are much longer than ordinary HTTP URLs.
     image_url: str = Field(default="", max_length=6000000)
-    # When editing a product row, target the selected variant instead of silently changing the first one.
-    variant_id: int | None = Field(default=None, gt=0)
+    tax_category: str = Field(default="", max_length=120)
+    hsn_code: str = Field(default="", max_length=20)
+    gst_rate: float | None = Field(default=None, ge=0, le=100)
+    tax_inclusive: bool = True
+    sale_badge: str = Field(default="", max_length=80)
+    sale_badge_active: bool = False
     status: str = Field(default="active", pattern="^(active|inactive|draft)$")
 
 
@@ -594,13 +758,94 @@ def create_catalogue_product(
                               "description": body.description.strip(), "specifications": Jsonb(body.specifications),
                               "manufacturer_details": Jsonb(body.manufacturer_details), "seller_details": Jsonb(body.seller_details),
                               "category_id": body.category_id, "status": body.status,
+                              "tax_category": body.tax_category.strip(), "gst_rate": body.gst_rate, "tax_inclusive": body.tax_inclusive,
+                              "sale_badge": body.sale_badge.strip(), "sale_badge_active": body.sale_badge_active,
                               "cover_image_url": cover_url, "main_image_url": cover_url, "image_url": cover_url}
+            product_values = {k: v for k, v in product_values.items() if k in product_columns}
             product = _catalogue_insert(conn, "products", product_values)
-            variant_values = {"product_id": product["id"], "selling_price": body.selling_price,
-                              "mrp": body.mrp, "sku": body.sku.strip() or None,
-                              "image_url": body.image_url.strip() or None, "status": body.status}
-            variant = _catalogue_insert(conn, "product_variants", variant_values)
-            return {"product": product, "variant": variant}
+            if body.hsn_code.strip() and conn.execute("SELECT to_regclass('public.catalog_product_tax') AS t").fetchone()["t"]:
+                conn.execute(
+                    """INSERT INTO catalog_product_tax(product_id,hsn_code) VALUES(%s,%s)
+                       ON CONFLICT(product_id) DO UPDATE SET hsn_code=EXCLUDED.hsn_code,updated_at=now()""",
+                    (product["id"], body.hsn_code.strip()),
+                )
+            normalized_attributes: list[tuple[int, str, list[str]]] = []
+            for item in body.attributes:
+                attr_name = str(item.get("name") or "").strip()
+                raw_values = item.get("values", [])
+                if not attr_name or not isinstance(raw_values, list):
+                    continue
+                values = list(dict.fromkeys(str(value).strip() for value in raw_values if str(value).strip()))
+                if not values:
+                    continue
+                if not conn.execute("SELECT to_regclass('public.catalog_attributes') AS t").fetchone()["t"]:
+                    raise HTTPException(status_code=503, detail="Existing product attribute tables are unavailable.")
+                attr = conn.execute(
+                    """INSERT INTO catalog_attributes(name, values_json)
+                       VALUES(%s, %s) ON CONFLICT(name) DO UPDATE SET values_json=EXCLUDED.values_json
+                       RETURNING id""", (attr_name, Jsonb(values))
+                ).fetchone()
+                normalized_attributes.append((attr["id"], attr_name, values))
+            combos = list(itertools.product(*(item[2] for item in normalized_attributes))) if normalized_attributes else [()]
+            if len(combos) > 100:
+                raise HTTPException(status_code=422, detail="A product can generate at most 100 variants.")
+            variants = []
+            for index, combo in enumerate(combos):
+                suffix = "-".join(re.sub(r"[^A-Za-z0-9]+", "-", value).strip("-").upper()[:18] for value in combo if value)
+                sku = body.sku.strip() or None
+                if sku and len(combos) > 1:
+                    sku = (sku[:max(1, 119-len(suffix))] + "-" + suffix)[:120]
+                requested_cover = body.variant_covers[index].strip() if index < len(body.variant_covers) else ""
+                variant_cover = requested_cover or body.image_url.strip() or None
+                price_spec = body.variant_prices[index] if index < len(body.variant_prices) else {}
+                try:
+                    variant_price = float(price_spec.get("selling_price") or body.selling_price)
+                    mrp_raw = price_spec.get("mrp", body.mrp)
+                    variant_mrp = float(mrp_raw) if mrp_raw not in (None, "") else None
+                except (TypeError, ValueError):
+                    raise HTTPException(status_code=422, detail="Variant prices must be valid numbers.")
+                if variant_price <= 0 or (variant_mrp is not None and variant_mrp <= 0):
+                    raise HTTPException(status_code=422, detail="Variant selling price and MRP must be positive.")
+                if variant_mrp is not None and variant_mrp < variant_price:
+                    raise HTTPException(status_code=422, detail="Variant MRP cannot be lower than its selling price.")
+                if variant_cover and not variant_cover.startswith(("https://", "http://", "data:image/")):
+                    raise HTTPException(status_code=422, detail="Variant cover must be an HTTP(S) URL or image upload.")
+                if variant_cover and variant_cover.startswith("data:image/") and ";base64," not in variant_cover:
+                    raise HTTPException(status_code=422, detail="Variant cover upload must be a valid image data URL.")
+                variant_values = {"product_id": product["id"], "selling_price": variant_price,
+                                  "mrp": variant_mrp, "sku": sku,
+                                  "image_url": variant_cover, "status": body.status}
+                variant = _catalogue_insert(conn, "product_variants", variant_values)
+                for (attribute_id, _attribute_name, _values), value in zip(normalized_attributes, combo):
+                    if not conn.execute("SELECT to_regclass('public.variant_attribute_values') AS t").fetchone()["t"]:
+                        raise HTTPException(status_code=503, detail="Existing variant attribute value table is unavailable.")
+                    conn.execute(
+                        """INSERT INTO variant_attribute_values(variant_id,attribute_id,value)
+                           VALUES(%s,%s,%s) ON CONFLICT(variant_id,attribute_id) DO UPDATE SET value=EXCLUDED.value""",
+                        (variant["id"], attribute_id, value),
+                    )
+                shared_gallery = [str(url).strip() for url in body.shared_gallery if str(url).strip()]
+                specific_gallery = body.variant_galleries[index] if index < len(body.variant_galleries) else []
+                gallery = shared_gallery + [str(url).strip() for url in specific_gallery if str(url).strip()]
+                if gallery:
+                    if not conn.execute("SELECT to_regclass('public.product_variant_images') AS t").fetchone()["t"]:
+                        raise HTTPException(status_code=503, detail="Existing variant image table is unavailable.")
+                    for image_index, image_url in enumerate(gallery, start=1):
+                        if not image_url.startswith(("https://", "http://", "data:image/")) or (image_url.startswith("data:image/") and ";base64," not in image_url):
+                            raise HTTPException(status_code=422, detail="Gallery images must be HTTP(S) URLs or valid image data URLs.")
+                        conn.execute(
+                            """INSERT INTO product_variant_images(variant_id,image_url,alt_text,sort_order)
+                               VALUES(%s,%s,%s,%s)""",
+                            (variant["id"], image_url, body.name.strip(), image_index),
+                        )
+                variants.append(variant)
+            if normalized_attributes and conn.execute("SELECT to_regclass('public.product_attribute_assignments') AS t").fetchone()["t"]:
+                for attribute_id, _attribute_name, _values in normalized_attributes:
+                    conn.execute(
+                        "INSERT INTO product_attribute_assignments(product_id,attribute_id) VALUES(%s,%s) ON CONFLICT DO NOTHING",
+                        (product["id"], attribute_id),
+                    )
+            return {"product": product, "variant": variants[0], "variants": variants}
     except HTTPException:
         raise
     except psycopg.Error as exc:
@@ -615,6 +860,8 @@ def update_catalogue_product(
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
     _admin_catalogue_user(authorization)
+    if body.mrp is not None and body.mrp < body.selling_price:
+        raise HTTPException(status_code=422, detail="MRP cannot be lower than selling price.")
     try:
         with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
             product_columns = _catalogue_columns(conn, "products")
@@ -629,6 +876,8 @@ def update_catalogue_product(
                               "description": body.description.strip(), "specifications": Jsonb(body.specifications),
                               "manufacturer_details": Jsonb(body.manufacturer_details), "seller_details": Jsonb(body.seller_details),
                               "category_id": body.category_id, "status": body.status,
+                              "tax_category": body.tax_category.strip(), "gst_rate": body.gst_rate, "tax_inclusive": body.tax_inclusive,
+                              "sale_badge": body.sale_badge.strip(), "sale_badge_active": body.sale_badge_active,
                               "cover_image_url": cover_url, "main_image_url": cover_url, "image_url": cover_url}
             product_values = {k: v for k, v in product_values.items() if k in product_columns}
             if not product_values:
@@ -640,27 +889,35 @@ def update_catalogue_product(
             ).fetchone()
             if not product:
                 raise HTTPException(status_code=404, detail="Product not found.")
+            if conn.execute("SELECT to_regclass('public.catalog_product_tax') AS t").fetchone()["t"]:
+                if body.hsn_code.strip():
+                    conn.execute(
+                        """INSERT INTO catalog_product_tax(product_id,hsn_code) VALUES(%s,%s)
+                           ON CONFLICT(product_id) DO UPDATE SET hsn_code=EXCLUDED.hsn_code,updated_at=now()""",
+                        (product_id, body.hsn_code.strip()),
+                    )
+                else:
+                    conn.execute("DELETE FROM catalog_product_tax WHERE product_id=%s", (product_id,))
             variant_values = {"selling_price": body.selling_price, "mrp": body.mrp,
                               "sku": body.sku.strip() or None, "image_url": body.image_url.strip() or None,
                               "status": body.status}
             variant_values = {k: v for k, v in variant_values.items() if k in variant_columns and v is not None}
-            if body.variant_id is not None:
-                variant = conn.execute(
-                    "SELECT id FROM product_variants WHERE id=%s AND product_id=%s",
-                    (body.variant_id, product_id),
-                ).fetchone()
-                if not variant:
-                    raise HTTPException(status_code=404, detail="Selected variant does not belong to this product.")
-            else:
-                # Backward compatibility for older clients that only send product_id.
-                variant = conn.execute(
-                    "SELECT id FROM product_variants WHERE product_id=%s ORDER BY id LIMIT 1", (product_id,)
-                ).fetchone()
+            variant = conn.execute(
+                "SELECT id FROM product_variants WHERE product_id=%s AND (%s IS NULL OR id=%s) ORDER BY id LIMIT 1",
+                (product_id, (body.variant_id or body.editing_variant_id), (body.variant_id or body.editing_variant_id))
+            ).fetchone()
+            if (body.variant_id or body.editing_variant_id) and not variant:
+                raise HTTPException(status_code=422, detail="Selected variant does not belong to this product.")
             if variant and variant_values:
+                requested_cover = body.variant_covers[0].strip() if body.variant_covers else ""
+                if body.variant_covers:
+                    if requested_cover and (not requested_cover.startswith(("https://", "http://", "data:image/")) or (requested_cover.startswith("data:image/") and ";base64," not in requested_cover)):
+                        raise HTTPException(status_code=422, detail="Variant cover must be an HTTP(S) URL or valid image data URL.")
+                    variant_values["image_url"] = requested_cover
                 assignments = ", ".join(f"{k}=%s" for k in variant_values)
                 variant = conn.execute(
-                    f"UPDATE product_variants SET {assignments} WHERE id=%s AND product_id=%s RETURNING *",
-                    [*variant_values.values(), variant["id"], product_id]
+                    f"UPDATE product_variants SET {assignments} WHERE id=%s RETURNING *",
+                    [*variant_values.values(), variant["id"]]
                 ).fetchone()
             else:
                 raise HTTPException(status_code=404, detail="No variant exists for this product.")
