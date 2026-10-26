@@ -92,7 +92,7 @@ function ProductDeliveryCheck() {
   <form className="product-delivery-form" onSubmit={check}>
    <label htmlFor="product-delivery-pincode">PIN code</label>
    <div className="product-delivery-input-row">
-    <input id="product-delivery-pincode" inputMode="numeric" autoComplete="postal-code" maxLength={6} pattern="[0-9]{6}" value={pincode} onChange={event=>{setPincode(event.target.value.replace(/\\D/g,'').slice(0,6));setResult(null);setError('')}} placeholder="Enter 6-digit PIN" aria-describedby="product-delivery-feedback"/>
+    <input id="product-delivery-pincode" inputMode="numeric" autoComplete="postal-code" maxLength={6} pattern="[0-9]{6}" value={pincode} onChange={event=>{setPincode(event.target.value.replace(/\D/g,'').slice(0,6));setResult(null);setError('')}} placeholder="Enter 6-digit PIN" aria-describedby="product-delivery-feedback"/>
     <button type="submit" className="outline-action" disabled={busy}>{busy?'Checking…':'Check'}</button>
    </div>
   </form>
