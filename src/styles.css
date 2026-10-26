@@ -372,3 +372,16 @@
  .admin-shell .inventory-product-modal .product-basic-grid,.admin-shell .inventory-product-modal .product-tax-section,.admin-shell .inventory-product-modal .product-variants-section>div.wide-field{grid-template-columns:minmax(0,1fr)}
  .admin-shell .inventory-product-modal .product-tax-section h5,.admin-shell .inventory-product-modal .product-tax-section>p,.admin-shell .inventory-product-modal .product-variants-section>div.wide-field>label:first-child{grid-column:auto}
 }
+
+
+/* Product-detail delivery lookup: additive styling, using existing theme tokens. */
+.product-delivery-check{margin-top:1rem;padding:1rem;border:1px solid var(--border-color,rgba(128,128,128,.28));border-radius:var(--card-radius,12px);background:var(--card-bg,transparent)}
+.product-delivery-check h3{margin:0 0 .75rem;font-size:1rem}
+.product-delivery-form label{display:block;margin-bottom:.35rem;font-size:.875rem;font-weight:600}
+.product-delivery-input-row{display:flex;gap:.5rem;align-items:stretch}
+.product-delivery-input-row input{flex:1;min-width:0;width:100%;border:1px solid var(--border-color,rgba(128,128,128,.35));border-radius:var(--input-radius,8px);padding:.7rem .8rem;background:var(--input-bg,transparent);color:inherit}
+.product-delivery-input-row button{white-space:nowrap}
+.product-delivery-message{margin:.65rem 0 0;font-size:.875rem;line-height:1.45;color:var(--muted-text,currentColor)}
+.product-delivery-message.error{color:var(--danger-color,#b42318)}
+.product-delivery-check>small{display:block;margin-top:.35rem}
+@media(max-width:420px){.product-delivery-input-row{flex-wrap:wrap}.product-delivery-input-row input{flex-basis:100%}}
