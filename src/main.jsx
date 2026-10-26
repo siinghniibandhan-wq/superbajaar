@@ -700,6 +700,38 @@ function POSDesk(){
 }
 
 function Dashboard({goStore}) {
+ const [adminAuthenticated,setAdminAuthenticated]=useState(false);
+ const [adminChecking,setAdminChecking]=useState(true);
+ const [adminEmail,setAdminEmail]=useState('');
+ const [adminPassword,setAdminPassword]=useState('');
+ const [adminLoginBusy,setAdminLoginBusy]=useState(false);
+ const [adminLoginError,setAdminLoginError]=useState('');
+ const [adminUser,setAdminUser]=useState(null);
+ useEffect(()=>{
+  let active=true;
+  const token=localStorage.getItem('sb_admin_token')||'';
+  if(!token){setAdminChecking(false);return ()=>{active=false}}
+  fetch(API_PATH('/auth/me'),{headers:{Authorization:'Bearer '+token}})
+   .then(async response=>{const payload=await response.json().catch(()=>({}));if(!response.ok)throw Error(payload.detail||'Your session has expired. Please sign in again.');const user=payload.user||payload;if(!['admin','super_admin'].includes(user.role))throw Error('This account does not have administrator access.');if(active){setAdminUser(user);setAdminAuthenticated(true)}})
+   .catch(()=>{localStorage.removeItem('sb_admin_token');if(active){setAdminAuthenticated(false);setAdminUser(null)}})
+   .finally(()=>{if(active)setAdminChecking(false)});
+  return ()=>{active=false};
+ },[]);
+ async function submitAdminLogin(event){
+  event.preventDefault();setAdminLoginError('');setAdminLoginBusy(true);
+  try{
+   const response=await fetch(API_PATH('/auth/login'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:adminEmail.trim(),password:adminPassword})});
+   const payload=await response.json().catch(()=>({}));
+   if(!response.ok)throw Error(payload.detail||'Sign in failed.');
+   const user=payload.user||{};
+   if(!['admin','super_admin'].includes(user.role))throw Error('This account is not an administrator. Contact your Super Admin to grant the correct role.');
+   if(!payload.access_token)throw Error('Sign-in succeeded but the server did not return an access token.');
+   localStorage.setItem('sb_admin_token',payload.access_token);
+   setAdminUser(user);setAdminAuthenticated(true);setAdminPassword('');
+   window.dispatchEvent(new Event('sb-admin-auth-changed'));
+  }catch(error){setAdminLoginError(error.message||'Unable to sign in. Please try again.')}
+  finally{setAdminLoginBusy(false)}
+ }
  const [activeModule,setActiveModule]=useState(null);
  const [inventoryTab,setInventoryTab]=useState('Overview');
  const [inventoryMenu,setInventoryMenu]=useState(null);
@@ -1019,6 +1051,8 @@ function Dashboard({goStore}) {
    </section>
   </main>
  }
+ if(adminChecking) return <main style={{minHeight:'100vh',display:'grid',placeItems:'center',background:'#17171d',color:'#f6f3fa',fontFamily:'inherit'}}><p>Checking administrator session…</p></main>;
+ if(!adminAuthenticated) return <main style={{minHeight:'100vh',display:'grid',placeItems:'center',padding:20,background:'linear-gradient(145deg,#17171d,#251c32)',color:'#f6f3fa',fontFamily:'inherit'}}><section style={{width:'min(100%,420px)',boxSizing:'border-box',padding:28,border:'1px solid #40364f',borderRadius:18,background:'#202027',boxShadow:'0 20px 60px #0005'}}><div style={{display:'flex',alignItems:'center',gap:12,marginBottom:24}}><div style={{width:42,height:42,display:'grid',placeItems:'center',borderRadius:12,background:'linear-gradient(135deg,#7028d8,#e65acb)',fontWeight:900,fontSize:22}}>S</div><div><strong style={{fontSize:18}}>Super Bajaar</strong><div style={{fontSize:12,color:'#b9b3c1',marginTop:3}}>Administrator sign in</div></div></div><h1 style={{fontSize:25,margin:'0 0 8px'}}>Welcome back</h1><p style={{color:'#b9b3c1',fontSize:13,lineHeight:1.6,margin:'0 0 22px'}}>Sign in with your authorised administrator account to open the management workspace.</p><form onSubmit={submitAdminLogin} style={{display:'grid',gap:14}}><label style={{display:'grid',gap:7,fontSize:13}}>Email address<input type="email" autoComplete="username" required value={adminEmail} onChange={e=>setAdminEmail(e.target.value)} placeholder="admin@example.com" style={{boxSizing:'border-box',width:'100%',padding:'12px 13px',border:'1px solid #51495c',borderRadius:9,background:'#17171d',color:'#fff',font:'inherit'}}/></label><label style={{display:'grid',gap:7,fontSize:13}}>Password<input type="password" autoComplete="current-password" required value={adminPassword} onChange={e=>setAdminPassword(e.target.value)} placeholder="Enter your password" style={{boxSizing:'border-box',width:'100%',padding:'12px 13px',border:'1px solid #51495c',borderRadius:9,background:'#17171d',color:'#fff',font:'inherit'}}/></label>{adminLoginError&&<p role="alert" style={{margin:0,color:'#ff9b9b',fontSize:13,lineHeight:1.5}}>{adminLoginError}</p>}<button type="submit" disabled={adminLoginBusy} style={{marginTop:4,padding:13,border:0,borderRadius:9,background:adminLoginBusy?'#65527e':'linear-gradient(110deg,#7028d8,#c34ecb)',color:'#fff',fontWeight:750,fontSize:14,cursor:adminLoginBusy?'wait':'pointer'}}>{adminLoginBusy?'Signing in…':'Sign in to Admin →'}</button></form><button type="button" onClick={goStore} style={{width:'100%',marginTop:15,padding:11,border:'1px solid #51495c',borderRadius:9,background:'transparent',color:'#ded8e7',fontSize:13,cursor:'pointer'}}>← Back to storefront</button></section></main>;
  if(activeModule) {
   const selected=modules.find(m=>m.id===activeModule);
   return <main style={{minHeight:'100vh',background:'#17171d',color:'#f6f3fa',fontFamily:'inherit'}}>
