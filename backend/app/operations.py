@@ -445,6 +445,24 @@ def purchases(authorization: str | None = Header(default=None),limit:int=Query(1
             return {"items":conn.execute("""SELECT p.*,v.name AS vendor_name FROM sb_purchase_orders p JOIN sb_vendors v ON v.id=p.vendor_id ORDER BY p.id DESC LIMIT %s""",(limit,)).fetchall()}
     except Exception as exc: raise HTTPException(status_code=503,detail="Purchase orders unavailable") from exc
 
+@router.get("/purchase-receipts")
+def purchase_receipts(authorization: str | None = Header(default=None), limit: int = Query(100, ge=1, le=500)) -> dict[str, Any]:
+    _admin(authorization)
+    try:
+        with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
+            _ensure(conn)
+            rows = conn.execute("""SELECT r.id AS receipt_id, r.purchase_id, r.received_value,
+                    r.received_by, r.created_at, p.order_date, p.status AS purchase_status,
+                    v.name AS vendor_name
+                FROM sb_purchase_receipts r
+                JOIN sb_purchase_orders p ON p.id = r.purchase_id
+                JOIN sb_vendors v ON v.id = p.vendor_id
+                ORDER BY r.id DESC LIMIT %s""", (limit,)).fetchall()
+            return {"items": rows}
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Purchase receipts unavailable") from exc
+
+
 @router.get("/purchases/{purchase_id}")
 def purchase_detail(purchase_id:int,authorization:str|None=Header(default=None))->dict[str,Any]:
     _admin(authorization)
