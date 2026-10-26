@@ -586,6 +586,12 @@ def list_my_orders(authorization: str | None = Header(default=None)) -> dict[str
                     """SELECT variant_id,product_id,sku,product_name,quantity,unit_price,line_total
                        FROM store_order_items WHERE order_id=%s ORDER BY id""", (row["id"],)
                 ).fetchall()
+                shipment_table = conn.execute("SELECT to_regclass('public.sb_shipments') AS table_name").fetchone()
+                row["shipment"] = conn.execute(
+                    """SELECT carrier,tracking_number,tracking_url,status,estimated_delivery,dispatched_at,delivered_at
+                       FROM sb_shipments WHERE order_type='website' AND order_id=%s ORDER BY id DESC LIMIT 1""",
+                    (row["id"],),
+                ).fetchone() if shipment_table and shipment_table.get("table_name") else None
             return {"items": rows}
     except psycopg.Error as exc:
         raise HTTPException(status_code=503, detail="Order history is temporarily unavailable.") from exc
