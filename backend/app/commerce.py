@@ -520,7 +520,9 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
                      product["igst_amount"], product["tax_amount"], product["tax_inclusive"])
                 )
                 stock=conn.execute("SELECT quantity FROM sb_stock WHERE variant_id=%s AND warehouse='Main' FOR UPDATE",(product["variant_id"],)).fetchone()
-                # Reserve stock atomically when the website order is placed.
+                # Require tracked stock and reserve it atomically at order placement.
+                if not stock:
+                    raise HTTPException(status_code=409, detail=f"Stock is not configured for {product['name']}; contact the store before ordering.")
                 if stock:
                     available=Decimal(str(stock["quantity"]))
                     if available < product["quantity"]:
