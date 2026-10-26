@@ -624,6 +624,14 @@ def vendor_dispatch(procurement_id: int, body: VendorDispatchInput, authorizatio
         if not p: raise HTTPException(404,"Purchase order not found for this supplier.")
         if p["status"] not in {"purchase_order","partially_received"}: raise HTTPException(409,"Only an open purchase order can be dispatched.")
         expected={int(x["variant_id"]):int(x["quantity"]) for x in p["items"]}
+        if len(expected) != len(p["items"]):
+            raise HTTPException(409,"Purchase order contains duplicate variant lines; correct the PO before dispatch.")
+        # Rejected units create replacement entitlement; dispatched quantities remain cumulative.
+        rejected={}
+        for receipt in c.execute("SELECT items FROM sb_receipts WHERE procurement_id=%s AND status='accepted'",(procurement_id,)).fetchall():
+            for line in receipt["items"]:
+                vid=int(line["variant_id"])
+                rejected[vid]=rejected.get(vid,0)+int(line.get("rejected_quantity",0))
         dispatched={}
         for prev in c.execute("SELECT items FROM sb_vendor_dispatches WHERE procurement_id=%s AND status<>'cancelled'",(procurement_id,)).fetchall():
             for line in prev["items"]:
@@ -634,7 +642,9 @@ def vendor_dispatch(procurement_id: int, body: VendorDispatchInput, authorizatio
             if vid not in expected or qty<1: raise HTTPException(422,"Dispatch lines must match PO variants and positive quantities.")
             incoming[vid]=incoming.get(vid,0)+qty
         for vid,qty in incoming.items():
-            if dispatched.get(vid,0)+qty>expected[vid]: raise HTTPException(422,"Dispatch quantity exceeds the outstanding PO quantity.")
+            dispatch_limit=expected[vid]+rejected.get(vid,0)
+            if dispatched.get(vid,0)+qty>dispatch_limit:
+                raise HTTPException(422,"Dispatch quantity exceeds the PO quantity plus quality-rejected replacement allowance.")
         ref=_ref("DSP")
         row=c.execute("""INSERT INTO sb_vendor_dispatches(reference,procurement_id,vendor_id,items,carrier,tracking_reference)
           VALUES(%s,%s,%s,%s::jsonb,%s,%s) RETURNING *""",(ref,procurement_id,p["vendor_id"],json.dumps(body.items),body.carrier,body.tracking_reference)).fetchone()
@@ -666,11 +676,18 @@ def create_receipt(procurement_id: int, body: ReceiptInput, authorization: str |
         pending=c.execute("SELECT id FROM sb_receipts WHERE procurement_id=%s AND status='inspection' LIMIT 1",(procurement_id,)).fetchone()
         if pending: raise HTTPException(409,"Finish quality inspection for the pending GRN before recording another receipt.")
         expected={int(i["variant_id"]):int(i["quantity"]) for i in p["items"]}
+        if len(expected) != len(p["items"]):
+            raise HTTPException(409,"Purchase order contains duplicate variant lines; correct the PO before receiving goods.")
         already=c.execute("SELECT COALESCE(jsonb_agg(items),'[]'::jsonb) x FROM sb_receipts WHERE procurement_id=%s AND status='accepted'",(procurement_id,)).fetchone()["x"]
         received={}
+        physical_received={}
+        rejected={}
         for receipt in already:
             for line in receipt:
-                received[int(line["variant_id"])]=received.get(int(line["variant_id"]),0)+int(line.get("accepted_quantity",line.get("quantity",0)))
+                vid=int(line["variant_id"])
+                received[vid]=received.get(vid,0)+int(line.get("accepted_quantity",line.get("quantity",0)))
+                physical_received[vid]=physical_received.get(vid,0)+int(line.get("quantity",0))
+                rejected[vid]=rejected.get(vid,0)+int(line.get("rejected_quantity",0))
         incoming={}
         for line in body.items:
             vid=int(line.get("variant_id",0)); qty=int(line.get("quantity",0))
@@ -685,8 +702,13 @@ def create_receipt(procurement_id: int, body: ReceiptInput, authorization: str |
             for line in dispatch["items"]:
                 vid=int(line["variant_id"]); dispatched[vid]=dispatched.get(vid,0)+int(line["quantity"])
         for vid,qty in incoming.items():
-            if qty+received.get(vid,0)>expected[vid]: raise HTTPException(422,"Receipt quantities must not exceed outstanding PO quantities.")
-            if qty+received.get(vid,0)>dispatched.get(vid,0): raise HTTPException(409,"Goods receipt cannot exceed quantities dispatched by the vendor.")
+            # Physical receipts include rejected goods; only rejected, inspected units permit replacement.
+            if qty+physical_received.get(vid,0)>expected[vid]+rejected.get(vid,0):
+                raise HTTPException(422,"Receipt quantity exceeds the PO quantity plus quality-rejected replacement allowance.")
+            if qty+physical_received.get(vid,0)>dispatched.get(vid,0):
+                raise HTTPException(409,"Goods receipt cannot exceed quantities dispatched by the vendor.")
+            if received.get(vid,0)>expected[vid]:
+                raise HTTPException(409,"Accepted quantity already exceeds the purchase order quantity.")
         row=c.execute("""INSERT INTO sb_receipts(reference,procurement_id,warehouse_id,status,items,note,received_by)
           VALUES(%s,%s,%s,'inspection',%s::jsonb,%s,%s) RETURNING *""",(ref,procurement_id,body.warehouse_id,json.dumps(body.items),body.note,actor["id"])).fetchone()
         _event(c,ref,"goods_received_for_inspection",actor["id"],new="inspection",details={"po_reference":p["reference"]})
