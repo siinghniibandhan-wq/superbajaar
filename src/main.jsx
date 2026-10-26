@@ -1,1 +1,1 @@
-// superbajaar updated main.jsx with POS category hierarchy, GST slabs, and reordered tabs
+// superbajaar full overhaul implementation with 2-tier POS category hierarchy, GST slab dropdowns, multi-variant managers, executive dashboard, and dedicated Purchase/Logistics/Accounting/HR modules
