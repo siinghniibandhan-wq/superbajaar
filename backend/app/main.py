@@ -684,12 +684,19 @@ def _build_catalogue_sku(conn: Any, product_id: int, product_name: str, brand: s
     def code(value: Any, limit: int = 4) -> str:
         words = re.findall(r"[A-Za-z0-9]+", str(value or "").upper())
         return (("".join(word[0] for word in words) if len(words) > 1 else words[0])[:limit]) if words else ""
-    row = conn.execute(
-        """SELECT c.name AS category_name, parent.name AS parent_name
-           FROM products p LEFT JOIN product_categories c ON c.id=p.category_id
-           LEFT JOIN product_categories parent ON parent.id=c.parent_id WHERE p.id=%s""",
-        (product_id,)
-    ).fetchone() or {}
+    # SKU generation must never make an otherwise valid product impossible to save.
+    # Older/live databases may temporarily be missing the optional category hierarchy
+    # migration, so fall back to product-name-based codes if category lookup is unavailable.
+    row = {}
+    try:
+        row = conn.execute(
+            """SELECT c.name AS category_name, parent.name AS parent_name
+               FROM products p LEFT JOIN product_categories c ON c.id=p.category_id
+               LEFT JOIN product_categories parent ON parent.id=c.parent_id WHERE p.id=%s""",
+            (product_id,)
+        ).fetchone() or {}
+    except (psycopg.Error, KeyError, TypeError):
+        logger.warning("SKU category lookup failed for product %s; using a safe fallback SKU", product_id, exc_info=True)
     cat = str(row.get("category_name") or "")
     text = (cat + " " + str(row.get("parent_name") or "")).lower()
     attrs = {str(k).strip().lower(): str(v).strip() for k,v in attributes.items() if str(v).strip()}
