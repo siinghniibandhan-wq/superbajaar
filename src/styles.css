@@ -461,3 +461,79 @@
  .category-strip .category-card{flex-basis:75px;font-size:9px}
  .category-strip .category-card img{width:56px;height:56px;flex-basis:56px}
 }
+
+
+/* Fix storefront hero carousel controls */
+.shop-hero{position:relative}
+.shop-hero .hero-carousel-controls{
+  position:absolute;
+  right:24px;
+  bottom:22px;
+  z-index:5;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  width:auto;
+  margin:0;
+}
+.shop-hero .hero-arrow{
+  display:grid;
+  place-items:center;
+  width:36px;
+  height:36px;
+  min-width:36px;
+  padding:0;
+  border:1px solid #e8dff0;
+  border-radius:10px;
+  background:rgba(255,255,255,.92);
+  color:#6428d9;
+  font:600 22px/1 inherit;
+  box-shadow:0 3px 10px rgba(53,25,76,.08);
+  cursor:pointer;
+}
+.shop-hero .hero-dots{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:5px;
+}
+.shop-hero .hero-dots button{
+  display:block;
+  width:7px;
+  height:7px;
+  min-width:7px;
+  min-height:7px;
+  padding:0;
+  margin:0;
+  border:0;
+  border-radius:999px;
+  background:#d8c9e8;
+  box-shadow:none;
+  cursor:pointer;
+}
+.shop-hero .hero-dots button.active{
+  width:18px;
+  background:#6428d9;
+}
+.shop-hero .hero-arrow:focus-visible,
+.shop-hero .hero-dots button:focus-visible{
+  outline:2px solid #6428d9;
+  outline-offset:3px;
+}
+@media(max-width:760px){
+  .shop-hero .hero-carousel-controls{
+    right:14px;
+    bottom:14px;
+    gap:6px;
+  }
+  .shop-hero .hero-arrow{
+    width:32px;
+    height:32px;
+    min-width:32px;
+    border-radius:9px;
+  }
+  .shop-hero .hero-dots{gap:4px}
+  .shop-hero .hero-dots button{width:6px;height:6px;min-width:6px;min-height:6px}
+  .shop-hero .hero-dots button.active{width:15px}
+}
