@@ -952,23 +952,21 @@ def inspect_receipt(receipt_id: int, body: ReceiptInspectionInput, authorization
             if accepted.get(vid,0)<0 or rejected.get(vid,0)<0 or accepted.get(vid,0)+rejected.get(vid,0)!=received.get(vid,0):
                 raise HTTPException(422,"Accepted plus rejected quantity must equal the received quantity for each variant.")
         receipt_id=int(r["id"])
-        # Website checkout still consumes sb_stock; mirror accepted stock from the
-        # integrated ledger when receiving into the Main warehouse.
-        if warehouse_name.casefold() == "main":
-            from .operations import _ensure as ensure_operations
-            ensure_operations(c)
+        # Mirror accepted receipts into the shared multi-warehouse stock ledger
+        # so website reservations can use any active serviceable warehouse.
+        from .operations import _ensure as ensure_operations
+        ensure_operations(c)
         for vid,qty in accepted.items():
             if qty:
                 line=next(x for x in r["items"] if int(x["variant_id"])==vid)
                 c.execute("""INSERT INTO sb_inventory_ledger(warehouse_id,variant_id,quantity_delta,movement_type,reference,location,note,actor_id)
                   VALUES(%s,%s,%s,'goods_receipt',%s,%s,%s,%s)""",(r["warehouse_id"],vid,qty,r["reference"],line.get("location",""),body.note,actor["id"]))
-                if warehouse_name.casefold() == "main":
-                    c.execute("""INSERT INTO sb_stock(variant_id,warehouse,quantity) VALUES(%s,'Main',%s)
-                      ON CONFLICT(variant_id,warehouse) DO UPDATE
-                      SET quantity=sb_stock.quantity+EXCLUDED.quantity,updated_at=now()""",(vid,qty))
-                    c.execute("""INSERT INTO sb_stock_movements(variant_id,warehouse,movement_type,quantity,reference_type,reference_id,created_by,note)
-                      VALUES(%s,'Main','purchase_receipt',%s,'integrated_receipt',%s,%s,%s)""",
-                      (vid,qty,receipt_id,actor["id"],body.note))
+                c.execute("""INSERT INTO sb_stock(variant_id,warehouse,quantity) VALUES(%s,%s,%s)
+                  ON CONFLICT(variant_id,warehouse) DO UPDATE
+                  SET quantity=sb_stock.quantity+EXCLUDED.quantity,updated_at=now()""",(vid,warehouse_name,qty))
+                c.execute("""INSERT INTO sb_stock_movements(variant_id,warehouse,movement_type,quantity,reference_type,reference_id,created_by,note)
+                  VALUES(%s,%s,'purchase_receipt',%s,'integrated_receipt',%s,%s,%s)""",
+                  (vid,warehouse_name,qty,receipt_id,actor["id"],body.note))
         final=[{"variant_id":vid,"quantity":received[vid],"accepted_quantity":accepted.get(vid,0),"rejected_quantity":rejected.get(vid,0),"location":next((x.get("location","") for x in r["items"] if int(x["variant_id"])==vid),"")} for vid in received]
         c.execute("UPDATE sb_receipts SET status='accepted',items=%s::jsonb,note=%s WHERE id=%s",(json.dumps(final),body.note,receipt_id))
         remaining=c.execute("""SELECT p.items FROM sb_procurements p WHERE p.id=%s""",(r["procurement_id"],)).fetchone()["items"]
