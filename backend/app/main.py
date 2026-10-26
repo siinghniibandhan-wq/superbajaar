@@ -688,6 +688,7 @@ def _build_catalogue_sku(conn: Any, product_id: int, product_name: str, brand: s
     # Older/live databases may temporarily be missing the optional category hierarchy
     # migration, so fall back to product-name-based codes if category lookup is unavailable.
     row = {}
+    conn.execute("SAVEPOINT sku_category_lookup")
     try:
         row = conn.execute(
             """SELECT c.name AS category_name, parent.name AS parent_name
@@ -695,7 +696,11 @@ def _build_catalogue_sku(conn: Any, product_id: int, product_name: str, brand: s
                LEFT JOIN product_categories parent ON parent.id=c.parent_id WHERE p.id=%s""",
             (product_id,)
         ).fetchone() or {}
+        conn.execute("RELEASE SAVEPOINT sku_category_lookup")
     except (psycopg.Error, KeyError, TypeError):
+        # Roll back only the failed lookup; preserve the product insert transaction.
+        conn.execute("ROLLBACK TO SAVEPOINT sku_category_lookup")
+        conn.execute("RELEASE SAVEPOINT sku_category_lookup")
         logger.warning("SKU category lookup failed for product %s; using a safe fallback SKU", product_id, exc_info=True)
     cat = str(row.get("category_name") or "")
     text = (cat + " " + str(row.get("parent_name") or "")).lower()
