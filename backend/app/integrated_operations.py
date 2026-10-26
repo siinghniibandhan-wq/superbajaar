@@ -79,7 +79,7 @@ class VariantValuesInput(BaseModel):
 
 class GenerateVariantsInput(BaseModel):
     combinations: list[dict[str, str]] = Field(min_length=1, max_length=500)
-    sku_prefix: str = Field(min_length=1, max_length=50)
+    sku_prefix: str = Field(default="", max_length=50)
     selling_price: Decimal = Field(gt=0)
     mrp: Decimal | None = None
 
@@ -391,9 +391,15 @@ def generate_variants(product_id: int, body: GenerateVariantsInput, authorizatio
             for aid,value in combo.items():
                 if value not in assigned[aid]["values_json"]:
                     raise HTTPException(422,f"Invalid value for attribute {assigned[aid]['name']}.")
-            sku=(body.sku_prefix.strip().upper()+"-"+str(index).zfill(3))
-            if "sku" in columns and c.execute("SELECT id FROM product_variants WHERE sku=%s",(sku,)).fetchone():
-                raise HTTPException(409,f"SKU {sku} already exists; choose another prefix.")
+            base_sku = re.sub(r"[^A-Za-z0-9-]+", "-", body.sku_prefix.strip()).strip("-").upper() or f"SB-{product_id:06d}"
+            sku = f"{base_sku[:100]}-V{index:02d}"
+            if "sku" in columns:
+                candidate = sku
+                collision = 1
+                while c.execute("SELECT id FROM product_variants WHERE sku=%s",(candidate,)).fetchone():
+                    collision += 1
+                    candidate = f"{sku[:max(1, 114-len(str(collision)))]}-{collision}"
+                sku = candidate[:120]
             names=["product_id","selling_price"]; vals=[product_id,body.selling_price]
             if "sku" in columns: names.append("sku"); vals.append(sku)
             if "mrp" in columns and body.mrp is not None: names.append("mrp"); vals.append(body.mrp)
