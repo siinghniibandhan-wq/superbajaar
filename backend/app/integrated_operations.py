@@ -5,6 +5,7 @@ idempotently and do not require an Odoo migration or payment gateway.
 """
 import json
 import secrets
+import re
 from decimal import Decimal
 from typing import Any
 
