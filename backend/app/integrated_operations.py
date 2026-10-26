@@ -622,6 +622,36 @@ def approve_procurement(procurement_id: int, body: dict[str, Any], authorization
         return {"id":procurement_id,"reference":p["reference"],"status":new_status}
 
 
+@router.post("/admin/procurements/{procurement_id}/quotation")
+def record_supplier_quotation(procurement_id: int, body: QuoteResponseInput, authorization: str | None = Header(default=None)):
+    actor=_require(authorization, {"super_admin","admin"})
+    if body.status!="quoted" or not body.items:
+        raise HTTPException(422,"Submit a quoted line for every requested item.")
+    try:
+        incoming={}
+        for line in body.items:
+            vid=int(line.get("variant_id",0)); qty=int(line.get("quantity",0)); price=Decimal(str(line.get("unit_price",-1)))
+            if vid<1 or qty<1 or price<0 or vid in incoming:
+                raise ValueError()
+            incoming[vid]={"variant_id":vid,"quantity":qty,"unit_price":str(price)}
+    except (ValueError,TypeError,ArithmeticError):
+        raise HTTPException(422,"Every quotation line needs a unique variant, positive quantity and non-negative unit price.")
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c)
+        p=c.execute("SELECT * FROM sb_procurements WHERE id=%s FOR UPDATE",(procurement_id,)).fetchone()
+        if not p: raise HTTPException(404,"Procurement record not found.")
+        if p["status"]!="quotation_requested":
+            raise HTTPException(409,"A quotation can only be recorded after the requisition is approved and sent for quotation.")
+        original={int(x["variant_id"]):int(x["quantity"]) for x in p["items"]}
+        if set(incoming)!=set(original) or any(incoming[k]["quantity"]!=q for k,q in original.items()):
+            raise HTTPException(422,"Quoted variants and quantities must exactly match the approved requisition.")
+        quoted_items=list(incoming.values())
+        c.execute("UPDATE sb_procurements SET status='quoted',items=%s::jsonb,updated_at=now() WHERE id=%s",(json.dumps(quoted_items),procurement_id))
+        total=sum((Decimal(x["unit_price"])*x["quantity"] for x in quoted_items),Decimal("0"))
+        _event(c,p["reference"],"supplier_quotation_recorded",actor["id"],p["status"],"quoted",details={"total":str(total),"items":quoted_items})
+        return {"id":procurement_id,"reference":p["reference"],"status":"quoted","total":str(total),"items":quoted_items}
+
+
 @router.patch("/vendor/procurements/{procurement_id}")
 def vendor_quote_response(procurement_id: int, body: QuoteResponseInput, authorization: str | None = Header(default=None)):
     user=_current(authorization)
