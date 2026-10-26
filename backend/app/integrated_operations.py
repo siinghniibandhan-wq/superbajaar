@@ -1186,8 +1186,8 @@ def create_inventory_transfer(body: InventoryTransferInput, authorization: str |
         raise HTTPException(422, "Source and destination warehouses must be different.")
     # Merge duplicate variant/location lines so the same SKU cannot be accidentally dispatched twice.
     items = [line.model_dump() for line in body.items]
-    if len({(x["variant_id"], x["source_location"], x["destination_location"]) for x in items}) != len(items):
-        raise HTTPException(422, "Combine duplicate variant/location lines into one line.")
+    if len({x["variant_id"] for x in items}) != len(items):
+        raise HTTPException(422, "Use one transfer line per product variant to keep partial-receipt quantities unambiguous.")
     ref = _ref("TRF")
     with psycopg.connect(_db(), row_factory=dict_row) as c:
         _schema(c); _transfer_tables_ready(c)
@@ -1239,9 +1239,10 @@ def dispatch_inventory_transfer(transfer_id: int, authorization: str | None = He
         t = c.execute("SELECT * FROM sb_inventory_transfers WHERE id=%s FOR UPDATE", (transfer_id,)).fetchone()
         if not t: raise HTTPException(404, "Transfer not found.")
         if t["status"] != "approved": raise HTTPException(409, "Approve the transfer before dispatch.")
+        c.execute("SELECT id FROM sb_warehouses WHERE id=%s FOR UPDATE", (t["source_warehouse_id"],))
         for line in t["items"]:
             balance = c.execute("""SELECT COALESCE(SUM(quantity_delta),0) qty FROM sb_inventory_ledger
-              WHERE warehouse_id=%s AND variant_id=%s AND location=%s FOR UPDATE""",
+              WHERE warehouse_id=%s AND variant_id=%s AND location=%s""",
               (t["source_warehouse_id"],line["variant_id"],line.get("source_location",""))).fetchone()["qty"]
             if balance < int(line["quantity"]):
                 raise HTTPException(409, f"Insufficient source stock for variant {line['variant_id']} at dispatch.")
