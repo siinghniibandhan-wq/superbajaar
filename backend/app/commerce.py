@@ -159,6 +159,21 @@ def _validated_delivery_setting(value: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+
+def _validated_gst_setting(value: dict[str, Any]) -> dict[str, str]:
+    """Validate the store's dispatch state used to distinguish CGST/SGST from IGST."""
+    allowed = {"origin_state", "gstin"}
+    if set(value) - allowed:
+        raise HTTPException(status_code=422, detail="GST settings accept only origin_state and gstin.")
+    state = value.get("origin_state")
+    if not isinstance(state, str) or not state.strip() or len(state.strip()) > 100:
+        raise HTTPException(status_code=422, detail="GST settings require the store's origin_state.")
+    gstin = value.get("gstin", "")
+    if not isinstance(gstin, str) or (gstin and not re.fullmatch(r"[0-9A-Z]{15}", gstin.strip().upper())):
+        raise HTTPException(status_code=422, detail="GSTIN must contain 15 alphanumeric uppercase characters.")
+    return {"origin_state": state.strip(), "gstin": gstin.strip().upper()}
+
+
 def _delivery_quote(config: Any, pincode: str | None, subtotal: Decimal) -> dict[str, Any]:
     if not isinstance(config, dict) or config.get("enabled") is not True:
         return {"configured": False, "serviceable": None, "shipping_fee": None,
@@ -428,6 +443,17 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
                     "sgst_amount": item_tax - (item_tax / 2).quantize(Decimal("0.01")) if item_tax else Decimal("0.00"),
                     "igst_amount": Decimal("0.00"), "tax_inclusive": inclusive,
                     "customer_line_total": customer_line_total})
+            gst_row = conn.execute("SELECT setting_value FROM store_settings WHERE setting_key='gst'").fetchone()
+            gst_setting = gst_row["setting_value"] if gst_row else None
+            if isinstance(gst_setting, dict) and gst_setting.get("origin_state"):
+                origin_state = re.sub(r"\\s+", " ", str(gst_setting["origin_state"])).strip().casefold()
+                destination_state = re.sub(r"\\s+", " ", body.shipping_address.state).strip().casefold()
+                if origin_state != destination_state:
+                    for product in products:
+                        product["cgst_amount"] = Decimal("0.00")
+                        product["sgst_amount"] = Decimal("0.00")
+                        product["igst_amount"] = product["tax_amount"]
+
             delivery_row = conn.execute(
                 "SELECT setting_value FROM store_settings WHERE setting_key='delivery'"
             ).fetchone()
@@ -672,10 +698,15 @@ def update_store_setting(
     authorization: str | None = Header(default=None)
 ) -> dict[str, Any]:
     actor = _require(authorization, {"super_admin", "admin"})
-    if setting_key not in {"brand", "catalogue", "checkout", "delivery", "policies"}:
+    if setting_key not in {"brand", "catalogue", "checkout", "delivery", "gst", "policies"}:
         raise HTTPException(status_code=422, detail="Unsupported store setting key.")
     # Settings are JSON objects with strict size limits; no executable templates or secrets.
-    value = _validated_delivery_setting(body.value) if setting_key == "delivery" else body.value
+    if setting_key == "delivery":
+        value = _validated_delivery_setting(body.value)
+    elif setting_key == "gst":
+        value = _validated_gst_setting(body.value)
+    else:
+        value = body.value
     encoded = json.dumps(value, separators=(",", ":"))
     if len(encoded) > 20000:
         raise HTTPException(status_code=413, detail="Setting payload is too large.")
