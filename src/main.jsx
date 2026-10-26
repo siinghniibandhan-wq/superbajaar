@@ -131,6 +131,8 @@ function ProductPriceHistory({variantId}) {
 
 function variantAttributeMap(p){
  const result={};
+ const internalKey=/^(id|.*_id|system|source_.*|template_.*|.*price.*|.*cost.*|.*barcode.*|.*sku.*|create_date|write_date|created_at|updated_at|__.*)$/i;
+ const internalName=/^(system|odoo|variant.?id|template.?id|product.?id|source.?weight|source.?list.?price|template.?list.?price|price|list.?price|cost|sku|barcode|id)$/i;
  const human=v=>{
   if(v==null)return '';
   if(typeof v==='string'||typeof v==='number')return String(v);
@@ -141,9 +143,8 @@ function variantAttributeMap(p){
  const clean=v=>{const value=human(v).trim();return /^ODOO[-_ ]?VAR[-_ ]?\d+$/i.test(value)?'':value};
  const put=(name,value)=>{
   const rawName=clean(name),val=clean(value);
-  if(!rawName||!val||rawName===val)return;
-  // Attribute names are catalogue data. Do not whitelist categories or attribute names.
-  // The backend should provide customer-facing attributes only, never internal IDs/prices.
+  if(!rawName||!val||rawName===val||internalName.test(rawName)||internalKey.test(rawName.replace(/[\s-]/g,'_')))return;
+  if(/^\d+$/.test(rawName))return;
   result[rawName]=val;
  };
  const parseText=value=>{
@@ -166,12 +167,7 @@ function variantAttributeMap(p){
   if(Array.isArray(field)){
    field.forEach(item=>{
     if(Array.isArray(item)){
-     if(item.length>1&&typeof item[0]==='string'&&String(item[0]).includes(':')){
-      const label=String(item[0]),match=label.match(/^([^:]{1,60})\s*:\s*(.*)$/);
-      if(match&&match[2].trim())parseText(label);
-      else if(match)put(match[1],item[1]);
-      if(typeof item[1]==='string'&&item[1].includes(':'))parseText(item[1]);
-     }
+     if(item.length>1&&typeof item[0]==='string'&&String(item[0]).includes(':'))parseText(item[0]);
      else if(item.length>1&&typeof item[1]==='string'&&String(item[1]).includes(':'))parseText(item[1]);
      else if(item.length>1&&typeof item[0]==='string'&&!/^\d+$/.test(item[0]))put(item[0],item[1]);
      else parseText(item.length>1?item[1]:item[0]);
@@ -183,7 +179,7 @@ function variantAttributeMap(p){
     const value=item.attribute_value_name||item.attribute_value||item.value_name||item.value?.name||item.value?.display_name||item.value||item.display_value||item.display_name||item.label||item.name;
     if(attribute&&value)put(attribute,value);
     else if(item.name)parseText(item.name);
-    else Object.entries(item).forEach(([key,val])=>{if(!['id','attribute_id','create_date','write_date'].includes(key)&&typeof val!=='object')put(key,val)});
+    else Object.entries(item).forEach(([key,val])=>{if(!internalKey.test(key)&&val!=null&&typeof val!=='object')put(key,val)});
    });
    return;
   }
@@ -191,21 +187,19 @@ function variantAttributeMap(p){
    const attribute=field.attribute_name||field.attribute?.name||field.attribute?.display_name||(typeof field.attribute==='string'?field.attribute:'')||field.attribute_id?.name||(Array.isArray(field.attribute_id)?field.attribute_id[1]:'')||(field.value!=null&&field.name?field.name:'');
    const value=field.attribute_value_name||field.value_name||field.value?.name||field.value?.display_name||field.value||field.display_value||field.display_name||field.label;
    if(attribute&&value){put(attribute,value);return}
-   Object.entries(field).forEach(([key,val])=>{if(!['id','create_date','write_date'].includes(key)&&val!=null){if(typeof val==='object')read(val);else put(key,val)}});
+   Object.entries(field).forEach(([key,val])=>{if(!internalKey.test(key)&&val!=null){if(typeof val==='object')read(val);else put(key,val)}});
   }
  };
  put(p.attribute_name||p.variant_type_name||p.variant_type,p.attribute_value||p.variant_value||p.variant_type_value);
  read(p.attributes);read(p.attribute_values);read(p.variant_attributes);read(p.attribute_lines);
  read(p.product_template_attribute_value_ids);read(p.product_template_variant_value_ids);
  read(p.product_variant_attributes);read(p.combination);read(p.attribute_value_ids);
- read(p.attributes);read(p.variant_attribute_values);read(p.attribute_values_ids);
+ read(p.variant_attribute_values);read(p.attribute_values_ids);
  parseText(p.variant_label);parseText(p.option_label);parseText(p.attributes_label);
  parseText(p.attribute_values_display);parseText(p.variant_description);parseText(p.variant_name);parseText(p.variant_title);
  if(p.quantity_label)put('Qty',p.quantity_label);
- // Do not expose generic weight, size, pack, volume, system, IDs or price fields.
  return result;
 }
-
 function variantLabel(p){
  const attributes=variantAttributeMap(p);
  const pairs=Object.entries(attributes);
