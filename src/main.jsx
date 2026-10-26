@@ -710,6 +710,13 @@ function Dashboard({goStore}) {
  const [inventoryError,setInventoryError]=useState('');
  const [inventorySearch,setInventorySearch]=useState('');
  const [receiptOrders,setReceiptOrders]=useState([]);
+ const [deliveryRows,setDeliveryRows]=useState([]);
+ const [deliveryPage,setDeliveryPage]=useState('list');
+ const [deliveryError,setDeliveryError]=useState('');
+ const [deliverySearch,setDeliverySearch]=useState('');
+ const [deliverySaving,setDeliverySaving]=useState(false);
+ const [deliveryForm,setDeliveryForm]=useState({order_type:'website',order_id:'',carrier:'',tracking_number:'',estimated_delivery:'',note:''});
+
  const [actualReceipts,setActualReceipts]=useState([]);
  const [receiptPage,setReceiptPage]=useState('list');
  const [receiptLoading,setReceiptLoading]=useState(false);
@@ -753,6 +760,44 @@ function Dashboard({goStore}) {
   loadInventory();
   return()=>{cancelled=true};
  },[activeModule]);
+ useEffect(()=>{
+  if(activeModule!=='inventory'||inventoryTab!=='Deliveries')return;
+  let cancelled=false;
+  (async()=>{
+   try{
+    const token=localStorage.getItem('sb_admin_token')||'';
+    const response=await fetch(API_PATH('/operations/shipments'),{headers:token?{Authorization:'Bearer '+token}:{}});
+    const payload=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(readableApiError(payload,'Unable to load deliveries'));
+    if(!cancelled)setDeliveryRows((Array.isArray(payload.items)?payload.items:[]).filter(row=>row.order_type!=='purchase'));
+    if(!cancelled)setDeliveryError('');
+   }catch(error){if(!cancelled)setDeliveryError(error.message||'Unable to load deliveries')}
+  })();
+  return()=>{cancelled=true};
+ },[activeModule,inventoryTab]);
+ async function createDelivery(){
+  if(!deliveryForm.order_id||!Number.isInteger(Number(deliveryForm.order_id))||Number(deliveryForm.order_id)<1){setDeliveryError('Enter a valid website or POS order ID.');return}
+  setDeliverySaving(true);setDeliveryError('');
+  try{
+   const token=localStorage.getItem('sb_admin_token')||'';
+   const response=await fetch(API_PATH('/operations/shipments'),{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:JSON.stringify({...deliveryForm,order_id:Number(deliveryForm.order_id),estimated_delivery:deliveryForm.estimated_delivery||null})});
+   const payload=await response.json().catch(()=>({}));
+   if(!response.ok)throw new Error(readableApiError(payload,'Delivery could not be created'));
+   setDeliveryRows(rows=>[payload.shipment,...rows].filter(row=>row.order_type!=='purchase'));
+   setDeliveryPage('list');setDeliveryForm({order_type:'website',order_id:'',carrier:'',tracking_number:'',estimated_delivery:'',note:''});
+  }catch(error){setDeliveryError(error.message||'Delivery could not be created')}
+  finally{setDeliverySaving(false)}
+ }
+ async function updateDeliveryStatus(row,status){
+  setDeliveryError('');
+  try{
+   const token=localStorage.getItem('sb_admin_token')||'';
+   const response=await fetch(API_PATH('/operations/shipments/'+row.id),{method:'PATCH',headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:JSON.stringify({status,note:''})});
+   const payload=await response.json().catch(()=>({}));
+   if(!response.ok)throw new Error(readableApiError(payload,'Delivery status could not be updated'));
+   setDeliveryRows(rows=>rows.map(item=>item.id===row.id?payload.shipment:item));
+  }catch(error){setDeliveryError(error.message||'Delivery status could not be updated')}
+ }
  useEffect(()=>{
   if(activeModule!=='inventory'||inventoryTab!=='Receipts')return;
   let cancelled=false;
@@ -820,6 +865,17 @@ function Dashboard({goStore}) {
   {id:'loyalty',name:'Loyalty & Rewards',icon:'🎁',color:'#bd58be',desc:'Points, rewards and gift cards'},
   {id:'settings',name:'Settings',icon:'⚙️',color:'#7d8da8',desc:'Store configuration and administration'}
  ];
+ if(activeModule==='inventory'&&inventoryTab==='Deliveries') {
+  const rows=deliveryRows.filter(row=>String(row.id).includes(deliverySearch)||String(row.order_id).includes(deliverySearch)||String(row.tracking_number||'').toLowerCase().includes(deliverySearch.toLowerCase())||String(row.status||'').toLowerCase().includes(deliverySearch.toLowerCase()));
+  const dateLabel=value=>value?new Date(value).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'—';
+  return <main style={{minHeight:'100vh',background:'#19191f',color:'#f4f1f8',fontFamily:'inherit'}}>
+   <header style={{display:'flex',alignItems:'center',gap:12,minHeight:54,padding:'8px 16px',background:'#23232b',borderBottom:'1px solid #393943',flexWrap:'wrap'}}><button type="button" onClick={()=>{setInventoryTab('Overview');setDeliveryPage('list')}} style={{border:0,background:'transparent',color:'#fff',fontSize:22}}>‹</button><span style={{fontSize:20}}>📦</span><strong>Inventory</strong><nav aria-label="Inventory navigation" style={{display:'flex',gap:4,flex:'1 1 100%',flexWrap:'wrap'}}>{['Overview','Operations','Products','Reporting','Configuration'].map(menu=><div key={menu} style={{position:'relative'}}><button type="button" onClick={()=>setInventoryMenu(inventoryMenu===menu?null:menu)} style={{border:0,borderRadius:5,padding:'9px 8px',background:inventoryMenu===menu?'#34343d':'transparent',color:inventoryMenu===menu?'#f4b3eb':'#d2ccd9',fontSize:12}}>{menu}{menu!=='Overview'?' ▾':''}</button>{inventoryMenu===menu&&menu!=='Overview'&&<div style={{position:'absolute',zIndex:9999,top:'100%',left:0,minWidth:190,maxHeight:'60vh',overflowY:'auto',padding:'7px 0',border:'1px solid #4a4652',borderRadius:8,background:'#393941'}}>{(menu==='Operations'?['Receipts','Deliveries','Physical Inventory','Scrap','Replenishment']:menu==='Products'?['Products']:menu==='Reporting'?['Stock','Moves History','Moves Analysis']:['Warehouses','Operations Types','Categories','Attributes','Reorder Rules']).map(item=><button className="sb-inventory-dropdown-item" key={item} type="button" onClick={()=>{setInventoryTab(({ 'Moves History':'Movements','Moves Analysis':'Movements','Stock':'Stock Levels','Operations Types':'Warehouses','Reorder Rules':'Stock Levels'})[item]||item);setInventoryMenu(null)}}>{item}</button>)}</div>}</div>)}</nav></header>
+   <section style={{padding:'14px 12px 36px',maxWidth:1200,margin:'0 auto'}}><div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14,flexWrap:'wrap'}}>{deliveryPage==='form'&&<button type="button" onClick={()=>{setDeliveryPage('list');setDeliveryError('')}} style={{border:'1px solid #45414e',borderRadius:7,background:'#292930',color:'#eee',padding:'8px 10px'}}>‹ Back</button>}<h1 style={{fontSize:18,fontWeight:650,margin:0,flex:1}}>{deliveryPage==='form'?'New Delivery':'Delivery Orders'}</h1>{deliveryPage==='list'&&<button type="button" onClick={()=>{setDeliveryError('');setDeliveryPage('form')}} style={{border:0,borderRadius:6,padding:'9px 14px',background:'#a34b91',color:'#fff',fontWeight:700}}>New</button>}</div>
+   {deliveryError&&<div role="alert" style={{padding:11,marginBottom:12,border:'1px solid #855248',borderRadius:7,background:'#342523',color:'#ffd1c4',fontSize:12}}>{deliveryError}</div>}
+   {deliveryPage==='form'&&<><div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap'}}><button type="button" onClick={()=>setDeliveryError('Delivery is saved as a draft only when you create it.')} style={{border:0,borderRadius:6,padding:'9px 12px',background:'#303038',color:'#fff'}}>Mark as To Do</button><button type="button" disabled={deliverySaving} onClick={createDelivery} style={{border:0,borderRadius:6,padding:'9px 12px',background:'#a34b91',color:'#fff'}}>{deliverySaving?'Saving…':'Create Delivery'}</button><button type="button" onClick={()=>setDeliveryPage('list')} style={{border:0,borderRadius:6,padding:'9px 12px',background:'#303038',color:'#fff'}}>Cancel</button></div><section style={{padding:16,background:'#292930',border:'1px solid #3a3943',borderRadius:9}}><h2 style={{fontSize:21,margin:'0 0 16px'}}>New Delivery</h2>{[['Delivery Address','Delivery is linked to the selected order'],['Operation Type','Delivery Orders'],['Scheduled Date',deliveryForm.estimated_delivery||'Not scheduled'],['Source Document',(deliveryForm.order_type==='website'?'Website order':'POS order')+' #'+(deliveryForm.order_id||'—')]].map(([a,b])=><div key={a} style={{display:'grid',gridTemplateColumns:'minmax(110px,135px) 1fr',gap:10,padding:'9px 0',borderBottom:'1px solid #3b3943',fontSize:12}}><span style={{color:'#b9b3c1'}}>{a}</span><span>{b}</span></div>)}<div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(210px,1fr))',gap:12,marginTop:18}}><label style={{fontSize:12,color:'#c8c1d0'}}>Order Source<select value={deliveryForm.order_type} onChange={e=>setDeliveryForm(f=>({...f,order_type:e.target.value}))} style={{display:'block',boxSizing:'border-box',width:'100%',padding:10,marginTop:6,borderRadius:6,border:'1px solid #484551',background:'#202027',color:'#fff'}}><option value="website">Website Order</option><option value="pos">POS Order</option></select></label><label style={{fontSize:12,color:'#c8c1d0'}}>Order ID *<input type="number" min="1" value={deliveryForm.order_id} onChange={e=>setDeliveryForm(f=>({...f,order_id:e.target.value}))} placeholder="Enter existing order ID" style={{display:'block',boxSizing:'border-box',width:'100%',padding:10,marginTop:6,borderRadius:6,border:'1px solid #484551',background:'#202027',color:'#fff'}}/></label><label style={{fontSize:12,color:'#c8c1d0'}}>Delivery Partner / Carrier<input value={deliveryForm.carrier} onChange={e=>setDeliveryForm(f=>({...f,carrier:e.target.value}))} placeholder="Carrier name" style={{display:'block',boxSizing:'border-box',width:'100%',padding:10,marginTop:6,borderRadius:6,border:'1px solid #484551',background:'#202027',color:'#fff'}}/></label><label style={{fontSize:12,color:'#c8c1d0'}}>Tracking Number<input value={deliveryForm.tracking_number} onChange={e=>setDeliveryForm(f=>({...f,tracking_number:e.target.value}))} placeholder="Tracking / AWB number" style={{display:'block',boxSizing:'border-box',width:'100%',padding:10,marginTop:6,borderRadius:6,border:'1px solid #484551',background:'#202027',color:'#fff'}}/></label><label style={{fontSize:12,color:'#c8c1d0'}}>Scheduled Delivery<input type="date" value={deliveryForm.estimated_delivery} onChange={e=>setDeliveryForm(f=>({...f,estimated_delivery:e.target.value}))} style={{display:'block',boxSizing:'border-box',width:'100%',padding:10,marginTop:6,borderRadius:6,border:'1px solid #484551',background:'#202027',color:'#fff'}}/></label><label style={{fontSize:12,color:'#c8c1d0'}}>Note<textarea value={deliveryForm.note} onChange={e=>setDeliveryForm(f=>({...f,note:e.target.value}))} rows={2} placeholder="Delivery instructions" style={{display:'block',boxSizing:'border-box',width:'100%',padding:10,marginTop:6,borderRadius:6,border:'1px solid #484551',background:'#202027',color:'#fff'}}/></label></div><p style={{fontSize:11,color:'#aaa3b6',marginTop:14}}>Use an existing website or POS order ID. Delivery creation and status updates use the live operations API.</p></section></>}
+   {deliveryPage==='list'&&<><input value={deliverySearch} onChange={e=>setDeliverySearch(e.target.value)} placeholder="⌕  Search deliveries, order ID, tracking or status…" style={{boxSizing:'border-box',width:'100%',padding:11,marginBottom:12,border:'1px solid #3d3b45',borderRadius:8,background:'#292930',color:'#fff'}}/><section style={{background:'#292930',border:'1px solid #3a3943',borderRadius:9,overflowX:'auto'}}><table style={{width:'100%',minWidth:650,borderCollapse:'collapse',fontSize:12}}><thead><tr>{['Reference','Source Document','Carrier / Tracking','Scheduled Date','Status','Update Status'].map(x=><th key={x} style={{textAlign:'left',padding:11,color:'#b9b3c1',borderBottom:'1px solid #3a3943'}}>{x}</th>)}</tr></thead><tbody>{rows.map(row=><tr key={row.id}>{['WH/OUT/'+row.id,(row.order_type==='website'?'Website':'POS')+' #'+row.order_id,[row.carrier,row.tracking_number].filter(Boolean).join(' · ')||'—',dateLabel(row.estimated_delivery),row.status||'created'].map((v,i)=><td key={i} style={{padding:11,borderBottom:'1px solid #373640'}}>{v}</td>)}<td style={{padding:8,borderBottom:'1px solid #373640'}}><select aria-label={'Update status for delivery '+row.id} value={row.status||'created'} onChange={e=>updateDeliveryStatus(row,e.target.value)} disabled={['delivered','cancelled'].includes(row.status)} style={{maxWidth:150,padding:7,borderRadius:6,border:'1px solid #484551',background:'#202027',color:'#fff'}}>{[['created','Draft'],['packed','Ready'],['in_transit','In Transit'],['out_for_delivery','Out for Delivery'],['delivered','Done'],['exception','Exception'],['cancelled','Cancel']].map(([v,label])=><option key={v} value={v}>{label}</option>)}</select></td></tr>)}{rows.length===0&&<tr><td colSpan={6} style={{padding:28,textAlign:'center',color:'#aaa3b6'}}><strong style={{display:'block',color:'#e2dce9',marginBottom:7}}>No delivery yet!</strong>Delivery orders will appear here when a shipment is created.<div style={{marginTop:8}}>Tap New to create a delivery for an existing website or POS order.</div></td></tr>}</tbody></table></section></>}
+   </section></main>
+ }
  if(activeModule==='inventory'&&inventoryTab==='Receipts') {
   const rows=actualReceipts.filter(receipt=>String(receipt.receipt_id).includes(receiptSearch)||String(receipt.vendor_name||'').toLowerCase().includes(receiptSearch.toLowerCase())||String(receipt.purchase_status||'').toLowerCase().includes(receiptSearch.toLowerCase()));
   const fmtDate=value=>value?new Date(value).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'—';
