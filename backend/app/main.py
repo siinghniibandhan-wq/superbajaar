@@ -678,6 +678,50 @@ def add_variant_image(product_id: int, variant_id: int, body: VariantImageInput,
         raise HTTPException(status_code=503, detail="Variant image could not be saved.") from exc
 
 
+
+def _build_catalogue_sku(conn: Any, product_id: int, product_name: str, brand: str, attributes: dict[str, str], supplied_prefix: str = "") -> str:
+    """Build category/department/brand/type/variant SKUs without changing existing SKUs."""
+    def code(value: Any, limit: int = 4) -> str:
+        words = re.findall(r"[A-Za-z0-9]+", str(value or "").upper())
+        return (("".join(word[0] for word in words) if len(words) > 1 else words[0])[:limit]) if words else ""
+    row = conn.execute(
+        """SELECT c.name AS category_name, parent.name AS parent_name
+           FROM products p LEFT JOIN product_categories c ON c.id=p.category_id
+           LEFT JOIN product_categories parent ON parent.id=c.parent_id WHERE p.id=%s""",
+        (product_id,)
+    ).fetchone() or {}
+    cat = str(row.get("category_name") or "")
+    text = (cat + " " + str(row.get("parent_name") or "")).lower()
+    attrs = {str(k).strip().lower(): str(v).strip() for k,v in attributes.items() if str(v).strip()}
+    if any(x in text for x in ("grocery","groceries","food","beverage")): category = "GR"
+    elif any(x in text for x in ("fashion","clothing","apparel","footwear","men","women","kids","baby")): category = "FS"
+    elif any(x in text for x in ("electronic","mobile","computer","appliance")): category = "EL"
+    elif any(x in text for x in ("personal care","beauty","cosmetic")): category = "PC"
+    elif any(x in text for x in ("pet","animal")): category = "PT"
+    else: category = code(cat,3) or "OT"
+    dept = ""
+    audience = " ".join([text, attrs.get("gender",""), attrs.get("department",""), attrs.get("audience",""), attrs.get("target audience","")])
+    if category == "FS":
+        if any(x in audience for x in ("women","woman","female","ladies","girl")): dept = "W"
+        elif any(x in audience for x in ("kids","kid","children","child","baby","boys","girls")): dept = "K"
+        elif any(x in audience for x in ("men","man","male","boys")): dept = "M"
+        else: dept = "U"
+    brand_code = code(brand,4) or "NB"
+    type_source = cat or product_name
+    if type_source.strip().lower() in {"fashion","clothing","apparel","men","women","kids"}: type_source = product_name
+    type_code = code(type_source,3) or "PRD"
+    parts = ["SB",category]
+    if dept: parts.append(dept)
+    parts += [brand_code,type_code,f"{product_id:06d}"]
+    for key,value in attrs.items():
+        if key in {"gender","department","audience","target audience"}: continue
+        if any(x in key for x in ("size","colour","color","pack","weight","volume","capacity")):
+            val = code(value,8)
+            if val and val not in parts: parts.append(val)
+    prefix = re.sub(r"[^A-Za-z0-9-]+","-",supplied_prefix.strip()).strip("-").upper()
+    if prefix: parts = [prefix] + parts[1:]
+    return "-".join(parts)
+
 class ProductWriteInput(BaseModel):
     name: str = Field(min_length=1, max_length=240)
     selling_price: float = Field(gt=0, le=9999999999)
@@ -827,22 +871,17 @@ def create_catalogue_product(
                 raise HTTPException(status_code=422, detail="A product can generate at most 100 variants.")
             variants = []
             for index, combo in enumerate(combos):
-                # Every sellable variant receives a stable, backend-generated SKU.
-                # A caller-supplied SKU remains an optional base/prefix; it is never stored
-                # unchanged on multiple variants. Product IDs make generated bases distinct,
-                # while the variant ordinal distinguishes options within the same product.
-                supplied_sku = re.sub(r"[^A-Za-z0-9-]+", "-", body.sku.strip()).strip("-").upper()
-                base_sku = supplied_sku or f"SB-{int(product['id']):06d}"
-                sku = f"{base_sku[:100]}-V{index + 1:02d}"
-                # Avoid collisions with legacy/manual SKUs as well as other generated SKUs.
-                # The unique database constraint remains the final concurrency guard.
+                attribute_values = {name: value for (_aid, name, _values), value in zip(normalized_attributes, combo)}
+                base_sku = _build_catalogue_sku(conn, int(product["id"]), body.name, body.brand, attribute_values, body.sku)
+                sku = f"{base_sku}-V{index + 1:02d}"
                 if "sku" in variant_columns:
                     candidate = sku
                     collision = 1
                     while conn.execute("SELECT id FROM product_variants WHERE sku=%s", (candidate,)).fetchone():
                         collision += 1
-                        candidate = f"{sku[:max(1, 114-len(str(collision)))]}-{collision}"
-                    sku = candidate[:120]
+                        tail = f"-{collision}"
+                        candidate = f"{sku[:180-len(tail)]}{tail}"
+                    sku = candidate
                 requested_cover = body.variant_covers[index].strip() if index < len(body.variant_covers) else ""
                 variant_cover = requested_cover or body.image_url.strip() or None
                 price_spec = body.variant_prices[index] if index < len(body.variant_prices) else {}
