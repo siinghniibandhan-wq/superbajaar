@@ -1,1 +1,1 @@
-// Restoring complete original src/main.jsx
+import React from 'react';
