@@ -523,9 +523,10 @@ def create_order(body: CheckoutInput, authorization: str | None = Header(default
                     LEFT JOIN sb_warehouses w ON lower(w.name)=lower(s.warehouse)
                     WHERE s.variant_id=%s AND (s.warehouse='Main' OR (w.active=TRUE AND
                       (w.pincode=%s OR w.serviceable_pincodes ? %s)))
-                    ORDER BY CASE WHEN w.pincode=%s THEN 0 WHEN lower(s.warehouse)='main' THEN 2 ELSE 1 END,s.warehouse
+                    ORDER BY CASE WHEN s.quantity >= %s THEN 0 ELSE 1 END,
+                      CASE WHEN w.pincode=%s THEN 0 WHEN lower(s.warehouse)='main' THEN 2 ELSE 1 END,s.warehouse
                     LIMIT 1 FOR UPDATE OF s""",
-                    (product["variant_id"],body.shipping_address.pincode,body.shipping_address.pincode,body.shipping_address.pincode)).fetchone()
+                    (product["variant_id"],body.shipping_address.pincode,body.shipping_address.pincode,product["quantity"],body.shipping_address.pincode)).fetchone()
                 # Require tracked stock and reserve it atomically at order placement.
                 if not stock:
                     raise HTTPException(status_code=409, detail=f"Stock is not configured for {product['name']}; contact the store before ordering.")
