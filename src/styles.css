@@ -592,3 +592,28 @@
  .product-bag-icon{width:22px;height:22px}
  .product-heart-icon{width:21px;height:21px}
 }
+
+/* Inventory Odoo-style dropdown: keep every menu item visually consistent */
+.sb-inventory-dropdown-item{
+ display:block;
+ width:100%;
+ box-sizing:border-box;
+ text-align:left;
+ border:0;
+ border-radius:0;
+ background:transparent;
+ color:#f0ecf5;
+ padding:10px 14px;
+ font-family:inherit;
+ font-size:12px;
+ font-weight:500;
+ line-height:1.45;
+ white-space:nowrap;
+ cursor:pointer;
+}
+.sb-inventory-dropdown-item:hover,
+.sb-inventory-dropdown-item:focus-visible{
+ background:#4a4653;
+ color:#fff;
+ outline:none;
+}
