@@ -687,9 +687,15 @@ def update_shipment(shipment_id:int,body:ShipmentUpdate,authorization:str|None=H
                 if not shipment: raise HTTPException(status_code=404,detail="Shipment not found")
                 if shipment["status"] in ("delivered","cancelled") and body.status != shipment["status"]:
                     raise HTTPException(status_code=409,detail=f"A {shipment['status']} shipment is closed and cannot change status.")
+                tracking_url = body.tracking_url.strip()
+                if tracking_url and not tracking_url.startswith(("https://", "http://")):
+                    raise HTTPException(status_code=422, detail="Tracking URL must start with http:// or https://")
                 row=conn.execute("""UPDATE sb_shipments SET status=%s,note=COALESCE(NULLIF(%s,''),note),
+                    carrier=COALESCE(NULLIF(%s,''),carrier),tracking_number=COALESCE(NULLIF(%s,''),tracking_number),
+                    tracking_url=COALESCE(NULLIF(%s,''),tracking_url),estimated_delivery=COALESCE(%s,estimated_delivery),
+                    dispatched_at=CASE WHEN %s='in_transit' AND dispatched_at IS NULL THEN now() ELSE dispatched_at END,
                     delivered_at=CASE WHEN %s='delivered' AND delivered_at IS NULL THEN now() ELSE delivered_at END WHERE id=%s RETURNING *""",
-                    (body.status,body.note,body.status,shipment_id)).fetchone()
+                    (body.status,body.note,body.carrier.strip(),body.tracking_number.strip(),tracking_url,body.estimated_delivery,body.status,body.status,shipment_id)).fetchone()
                 journal_id=None
                 target=None
                 if shipment["order_type"]=="website" and conn.execute("SELECT to_regclass('public.store_orders') AS name").fetchone()["name"]:
