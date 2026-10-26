@@ -751,7 +751,8 @@ function Dashboard({goStore}) {
   {id:'hr',name:'HR',icon:'👥',color:'#6d7fe8',desc:'Employees, attendance and leave'},
   {id:'payroll',name:'Payroll',icon:'💳',color:'#39b6a6',desc:'Salary and payslip processing'},
   {id:'crm',name:'CRM',icon:'🤝',color:'#e27d43',desc:'Customer relationships and follow-ups'},
-  {id:'loyalty',name:'Loyalty & Rewards',icon:'🎁',color:'#bd58be',desc:'Points, rewards and gift cards'}
+  {id:'loyalty',name:'Loyalty & Rewards',icon:'🎁',color:'#bd58be',desc:'Points, rewards and gift cards'},
+  {id:'settings',name:'Settings',icon:'⚙️',color:'#7d8da8',desc:'Store configuration and administration'}
  ];
  if(activeModule==='inventory') {
   const filteredProducts=inventoryProducts.filter(p=>String(p.name||p.title||p.product_name||'').toLowerCase().includes(inventorySearch.toLowerCase())||String(p.sku||p.default_code||'').toLowerCase().includes(inventorySearch.toLowerCase()));
