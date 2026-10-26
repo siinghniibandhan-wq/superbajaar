@@ -519,3 +519,84 @@ img,video,svg,canvas{
  .footer-main{grid-template-columns:repeat(2,minmax(0,1fr))}
  .footer-bottom{font-size:10px}
 }
+
+
+/* Account page layout refinement: balanced loyalty dashboard on desktop and mobile. */
+.account-page{
+  width:min(1120px,100%);
+  margin-inline:auto;
+  padding:clamp(22px,4vw,48px) clamp(14px,3vw,28px) 52px;
+  align-items:start;
+}
+.account-page .account-card{
+  width:min(960px,100%);
+  padding:clamp(22px,3.5vw,40px);
+  border-color:#eee7f5;
+  border-radius:24px;
+  box-shadow:0 18px 55px rgba(48,22,75,.06);
+}
+.account-page .account-card>p{max-width:680px;font-size:14px;overflow-wrap:anywhere}
+.account-page .account-card h1{font-size:clamp(27px,3vw,36px);line-height:1.2}
+.account-page .super-coin-wallet{
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  align-items:stretch;
+  gap:18px;
+  margin:26px 0;
+}
+.account-page .loyalty-card-visual{min-height:230px;height:100%;display:flex;flex-direction:column;justify-content:flex-start}
+.account-page .loyalty-card-visual>strong{font-size:38px;line-height:1.15;margin:7px 0 18px}
+.account-page .loyalty-card-bottom{margin-top:auto;flex-wrap:wrap;letter-spacing:.04em;overflow-wrap:anywhere}
+.account-page .loyalty-wallet-summary{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+  align-content:stretch;
+}
+.account-page .loyalty-wallet-summary>div{
+  min-width:0;
+  padding:16px;
+  border:1px solid #eee7f5;
+  border-radius:15px;
+  background:linear-gradient(145deg,#fff,#fbf9ff);
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  gap:7px;
+}
+.account-page .loyalty-wallet-summary small{font-size:12px;line-height:1.45;color:#81758d}
+.account-page .loyalty-wallet-summary b{font-size:clamp(14px,1.5vw,18px);line-height:1.35;overflow-wrap:anywhere;word-break:break-word}
+.account-page .loyalty-history{
+  grid-column:1/-1;
+  min-width:0;
+  margin:0;
+  padding:22px;
+  border:1px solid #eee7f5;
+  border-radius:18px;
+  background:#fff;
+}
+.account-page .loyalty-history h3{font-size:18px;margin:0 0 12px}
+.account-page .loyalty-transaction{gap:12px;padding:13px 0;border-bottom:1px solid #f0ebf5}
+.account-page .loyalty-transaction:last-child{border-bottom:0}
+.account-page .loyalty-transaction span{min-width:0}
+.account-page .loyalty-transaction b,.account-page .loyalty-transaction small{overflow-wrap:anywhere}
+.account-page .account-card>.primary-cta{min-height:44px}
+.account-page .continue-shopping{margin-left:12px}
+@media(max-width:700px){
+  .account-page{padding:20px 12px 34px}
+  .account-page .account-card{padding:22px 18px;border-radius:20px}
+  .account-page .super-coin-wallet{grid-template-columns:minmax(0,1fr);gap:14px;margin:20px 0}
+  .account-page .loyalty-card-visual{min-height:205px;padding:22px}
+  .account-page .loyalty-card-visual>strong{font-size:34px}
+  .account-page .loyalty-wallet-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+  .account-page .loyalty-wallet-summary>div{padding:13px 12px}
+  .account-page .loyalty-wallet-summary small{font-size:11px}
+  .account-page .loyalty-wallet-summary b{font-size:15px}
+  .account-page .loyalty-history{padding:17px 15px}
+  .account-page .continue-shopping{margin:12px 0 0;display:block}
+}
+@media(max-width:360px){
+  .account-page .account-card{padding:18px 13px}
+  .account-page .loyalty-wallet-summary>div{padding:11px 9px}
+  .account-page .loyalty-wallet-summary b{font-size:13px}
+  .account-page .loyalty-card-top,.account-page .loyalty-card-bottom{font-size:10px}
+}
