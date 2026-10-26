@@ -888,9 +888,10 @@ def create_receipt(procurement_id: int, body: ReceiptInput, authorization: str |
         _schema(c)
         p=c.execute("SELECT * FROM sb_procurements WHERE id=%s FOR UPDATE",(procurement_id,)).fetchone()
         if not p or p["status"] not in {"purchase_order","partially_received"}: raise HTTPException(409,"Only an open purchase order can receive goods.")
-        warehouse=c.execute("SELECT id,locations FROM sb_warehouses WHERE id=%s AND active",(body.warehouse_id,)).fetchone()
+        warehouse=c.execute("SELECT id,name,locations FROM sb_warehouses WHERE id=%s AND active",(body.warehouse_id,)).fetchone()
         if not warehouse: raise HTTPException(404,"Active warehouse not found.")
         allowed_locations=warehouse["locations"] if isinstance(warehouse["locations"],list) else []
+        warehouse_name=str(warehouse["name"] or "").strip()
         pending=c.execute("SELECT id FROM sb_receipts WHERE procurement_id=%s AND status='inspection' LIMIT 1",(procurement_id,)).fetchone()
         if pending: raise HTTPException(409,"Finish quality inspection for the pending GRN before recording another receipt.")
         expected={int(i["variant_id"]):int(i["quantity"]) for i in p["items"]}
@@ -948,11 +949,24 @@ def inspect_receipt(receipt_id: int, body: ReceiptInspectionInput, authorization
         for vid in set(accepted)|set(rejected):
             if accepted.get(vid,0)<0 or rejected.get(vid,0)<0 or accepted.get(vid,0)+rejected.get(vid,0)!=received.get(vid,0):
                 raise HTTPException(422,"Accepted plus rejected quantity must equal the received quantity for each variant.")
+        receipt_id=int(r["id"])
+        # Website checkout still consumes sb_stock; mirror accepted stock from the
+        # integrated ledger when receiving into the Main warehouse.
+        if warehouse_name.casefold() == "main":
+            from .operations import _ensure as ensure_operations
+            ensure_operations(c)
         for vid,qty in accepted.items():
             if qty:
                 line=next(x for x in r["items"] if int(x["variant_id"])==vid)
                 c.execute("""INSERT INTO sb_inventory_ledger(warehouse_id,variant_id,quantity_delta,movement_type,reference,location,note,actor_id)
                   VALUES(%s,%s,%s,'goods_receipt',%s,%s,%s,%s)""",(r["warehouse_id"],vid,qty,r["reference"],line.get("location",""),body.note,actor["id"]))
+                if warehouse_name.casefold() == "main":
+                    c.execute("""INSERT INTO sb_stock(variant_id,warehouse,quantity) VALUES(%s,'Main',%s)
+                      ON CONFLICT(variant_id,warehouse) DO UPDATE
+                      SET quantity=sb_stock.quantity+EXCLUDED.quantity,updated_at=now()""",(vid,qty))
+                    c.execute("""INSERT INTO sb_stock_movements(variant_id,warehouse,movement_type,quantity,reference_type,reference_id,created_by,note)
+                      VALUES(%s,'Main','purchase_receipt',%s,'integrated_receipt',%s,%s,%s)""",
+                      (vid,qty,receipt_id,actor["id"],body.note))
         final=[{"variant_id":vid,"quantity":received[vid],"accepted_quantity":accepted.get(vid,0),"rejected_quantity":rejected.get(vid,0),"location":next((x.get("location","") for x in r["items"] if int(x["variant_id"])==vid),"")} for vid in received]
         c.execute("UPDATE sb_receipts SET status='accepted',items=%s::jsonb,note=%s WHERE id=%s",(json.dumps(final),body.note,receipt_id))
         remaining=c.execute("""SELECT p.items FROM sb_procurements p WHERE p.id=%s""",(r["procurement_id"],)).fetchone()["items"]
