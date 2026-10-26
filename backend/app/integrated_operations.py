@@ -659,6 +659,71 @@ def record_supplier_quotation(procurement_id: int, body: QuoteResponseInput, aut
         return {"id":procurement_id,"reference":p["reference"],"status":"quoted","total":str(total),"items":quoted_items}
 
 
+@router.get("/admin/procurements/{procurement_id}/quotations")
+def list_supplier_quotations(procurement_id: int, authorization: str | None = Header(default=None)):
+    _require(authorization, {"super_admin","admin","staff"})
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c)
+        _blanket_schema(c)
+        p=c.execute("SELECT id,status FROM sb_procurements WHERE id=%s",(procurement_id,)).fetchone()
+        if not p: raise HTTPException(404,"Purchase requisition not found.")
+        exists=c.execute("SELECT to_regclass('public.sb_supplier_quotations') AS t").fetchone()["t"]
+        if not exists: raise HTTPException(503,"Quotation comparison schema is not deployed.")
+        rows=c.execute("""SELECT q.*,v.name AS vendor_name FROM sb_supplier_quotations q
+          JOIN sb_vendors v ON v.id=q.vendor_id WHERE q.procurement_id=%s ORDER BY q.total_value ASC,q.created_at""",(procurement_id,)).fetchall()
+        return {"items":rows}
+
+
+@router.post("/admin/procurements/{procurement_id}/quotations", status_code=201)
+def submit_supplier_quotation(procurement_id: int, body: dict[str, Any], authorization: str | None = Header(default=None)):
+    actor=_require(authorization, {"super_admin","admin","staff"})
+    try:
+        vendor_id=int(body.get("vendor_id",0)); lines=body.get("items") or []
+        if vendor_id<1 or not lines: raise ValueError()
+        quoted={}
+        for line in lines:
+            vid=int(line.get("variant_id",0)); qty=int(line.get("quantity",0)); price=Decimal(str(line.get("unit_price",-1)))
+            if vid<1 or qty<1 or price<0 or vid in quoted: raise ValueError()
+            quoted[vid]={"variant_id":vid,"quantity":qty,"unit_price":str(price),"line_total":str(price*qty)}
+    except (ValueError,TypeError,ArithmeticError,AttributeError):
+        raise HTTPException(422,"Provide a supplier and unique quotation lines with positive quantities and non-negative prices.")
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c)
+        if not c.execute("SELECT id FROM sb_vendors WHERE id=%s AND status='active'",(vendor_id,)).fetchone():
+            raise HTTPException(404,"Active supplier not found.")
+        p=c.execute("SELECT * FROM sb_procurements WHERE id=%s FOR UPDATE",(procurement_id,)).fetchone()
+        if not p: raise HTTPException(404,"Purchase requisition not found.")
+        if p["status"]!="quotation_requested": raise HTTPException(409,"Approve the requisition before collecting supplier quotations.")
+        original={int(x["variant_id"]):int(x["quantity"]) for x in p["items"]}
+        if set(quoted)!=set(original) or any(quoted[k]["quantity"]!=q for k,q in original.items()):
+            raise HTTPException(422,"Quotation products and quantities must exactly match the requisition.")
+        total=sum((Decimal(x["line_total"]) for x in quoted.values()),Decimal("0"))
+        ref=_ref("QUO")
+        row=c.execute("""INSERT INTO sb_supplier_quotations(reference,procurement_id,vendor_id,status,items,total_value,submitted_by)
+          VALUES(%s,%s,%s,'submitted',%s::jsonb,%s,%s) RETURNING *""",
+          (ref,procurement_id,vendor_id,json.dumps(list(quoted.values())),total,actor["id"])).fetchone()
+        _event(c,p["reference"],"supplier_quotation_submitted",actor["id"],p["status"],"quotation_requested",details={"quotation_reference":ref,"vendor_id":vendor_id,"total":str(total)})
+        return row
+
+
+@router.post("/admin/procurements/{procurement_id}/quotations/{quotation_id}/select")
+def select_supplier_quotation(procurement_id: int, quotation_id: int, authorization: str | None = Header(default=None)):
+    actor=_require(authorization, {"super_admin","admin"})
+    with psycopg.connect(_db(), row_factory=dict_row) as c:
+        _schema(c)
+        p=c.execute("SELECT * FROM sb_procurements WHERE id=%s FOR UPDATE",(procurement_id,)).fetchone()
+        if not p: raise HTTPException(404,"Purchase requisition not found.")
+        if p["status"]!="quotation_requested": raise HTTPException(409,"Quotation can only be selected while the requisition is awaiting quotation selection.")
+        q=c.execute("SELECT * FROM sb_supplier_quotations WHERE id=%s AND procurement_id=%s FOR UPDATE",(quotation_id,procurement_id)).fetchone()
+        if not q: raise HTTPException(404,"Supplier quotation not found.")
+        c.execute("UPDATE sb_supplier_quotations SET status=CASE WHEN id=%s THEN 'selected' ELSE 'rejected' END,selected_by=CASE WHEN id=%s THEN %s ELSE selected_by END,updated_at=now() WHERE procurement_id=%s",
+          (quotation_id,quotation_id,actor["id"],procurement_id))
+        c.execute("UPDATE sb_procurements SET vendor_id=%s,items=%s::jsonb,status='quoted',updated_at=now() WHERE id=%s",
+          (q["vendor_id"],json.dumps(q["items"]),procurement_id))
+        _event(c,p["reference"],"supplier_quotation_selected",actor["id"],p["status"],"quoted",details={"quotation_reference":q["reference"],"vendor_id":q["vendor_id"],"total":str(q["total_value"])})
+        return {"id":procurement_id,"quotation_id":quotation_id,"quotation_reference":q["reference"],"vendor_id":q["vendor_id"],"status":"quoted","total_value":q["total_value"]}
+
+
 @router.patch("/vendor/procurements/{procurement_id}")
 def vendor_quote_response(procurement_id: int, body: QuoteResponseInput, authorization: str | None = Header(default=None)):
     user=_current(authorization)
