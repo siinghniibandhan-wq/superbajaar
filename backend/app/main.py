@@ -737,6 +737,42 @@ def _catalogue_insert(conn: Any, table: str, values: dict[str, Any]) -> dict[str
     return conn.execute(sql, [chosen[k] for k in names]).fetchone()
 
 
+@app.post("/api/admin/products/backfill-skus")
+def backfill_missing_product_skus(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    """Assign stable SKUs only to existing variants that have no SKU; preserve all nonblank SKUs."""
+    _admin_catalogue_user(authorization)
+    try:
+        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
+            columns = _catalogue_columns(conn, "product_variants")
+            if not {"id", "product_id", "sku"}.issubset(columns):
+                raise HTTPException(status_code=503, detail="The existing variant schema does not support safe SKU backfill.")
+            # Serialize backfills so concurrent admin requests cannot allocate the same generated SKU.
+            conn.execute("SELECT pg_advisory_xact_lock(hashtext('superbajaar-sku-backfill'))")
+            rows = conn.execute(
+                """SELECT id, product_id FROM product_variants
+                   WHERE sku IS NULL OR btrim(sku) = '' ORDER BY product_id, id FOR UPDATE"""
+            ).fetchall()
+            assigned = []
+            for row in rows:
+                base = f"SB-{int(row['product_id']):06d}-V{int(row['id']):06d}"
+                candidate = base[:120]
+                suffix = 1
+                while conn.execute("SELECT id FROM product_variants WHERE sku=%s AND id<>%s",
+                                   (candidate, row["id"])).fetchone():
+                    suffix += 1
+                    tail = f"-{suffix}"
+                    candidate = base[:120-len(tail)] + tail
+                conn.execute("UPDATE product_variants SET sku=%s WHERE id=%s AND (sku IS NULL OR btrim(sku)='')",
+                             (candidate, row["id"]))
+                assigned.append({"variant_id": row["id"], "product_id": row["product_id"], "sku": candidate})
+            return {"updated": len(assigned), "items": assigned, "preserved_existing_skus": True}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        logger.exception("Existing product SKU backfill failed")
+        raise HTTPException(status_code=503, detail="Existing product SKUs could not be backfilled.") from exc
+
+
 @app.post("/api/admin/products", status_code=201)
 def create_catalogue_product(
     body: ProductWriteInput,
