@@ -113,4 +113,13 @@ def update_case(case_id:int,p:CaseUpdate):
             if not row:raise HTTPException(404,"Support case not found")
             return row
     except HTTPException:raise
-    except psycopg.Error as e:raise _error(e) from e
+    except psycopg.Error as e:raise _error(e) from e    @field_validator("email")
+    @classmethod
+    def valid_email(cls, v):
+        if v:
+            v = v.strip().lower()
+            if "@" not in v or "." not in v.rsplit("@", 1)[-1] or " " in v:
+                raise ValueError("Enter a valid email address")
+            return v
+        return v
+
