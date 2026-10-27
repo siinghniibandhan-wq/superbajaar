@@ -1,0 +1,149 @@
+"""Delivery management records. Carrier integrations are not enabled."""
+from datetime import datetime
+import uuid
+
+import psycopg
+from fastapi import APIRouter, HTTPException, Query
+from psycopg.rows import dict_row
+from pydantic import BaseModel, Field, field_validator
+
+from app.core.config import settings
+
+router = APIRouter(prefix="/delivery", tags=["delivery"])
+DELIVERY_STATUSES = {"pending", "packed", "assigned", "dispatched", "in_transit", "delivered", "failed", "returned", "cancelled"}
+
+
+def _connect():
+    if not settings.database_url:
+        raise HTTPException(status_code=503, detail="Delivery database is not configured")
+    try:
+        return psycopg.connect(settings.database_url, row_factory=dict_row)
+    except psycopg.Error as exc:
+        raise HTTPException(status_code=503, detail="Delivery database is unavailable") from exc
+
+
+def _db_error(exc):
+    if getattr(exc, "sqlstate", None) == "23503":
+        return HTTPException(status_code=422, detail="Referenced order or location does not exist")
+    return HTTPException(status_code=503, detail="Delivery storage is unavailable; verify the delivery migration")
+
+
+class DeliveryCreate(BaseModel):
+    order_id: int = Field(gt=0)
+    delivery_pin: str = Field(pattern=r"^[0-9]{6}$")
+    recipient_name: str = Field(min_length=1, max_length=200)
+    recipient_phone: str = Field(min_length=7, max_length=20)
+    address: str = Field(min_length=5, max_length=1000)
+    location_id: int | None = Field(default=None, gt=0)
+    delivery_notes: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("recipient_name", "address", "recipient_phone")
+    @classmethod
+    def trim_required(cls, value):
+        if not value.strip():
+            raise ValueError("Field cannot be blank")
+        return value.strip()
+
+
+class DeliveryStatusUpdate(BaseModel):
+    status: str
+    tracking_reference: str | None = Field(default=None, max_length=200)
+    assigned_to: str | None = Field(default=None, max_length=200)
+    note: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("status")
+    @classmethod
+    def valid_status(cls, value):
+        if value not in DELIVERY_STATUSES:
+            raise ValueError("Unsupported delivery status")
+        return value
+
+
+@router.get("/shipments")
+def list_shipments(
+    status: str | None = Query(default=None),
+    search: str | None = Query(default=None, max_length=200),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+):
+    if status and status not in DELIVERY_STATUSES:
+        raise HTTPException(status_code=422, detail="Unsupported delivery status")
+    clauses, params = [], []
+    if status:
+        clauses.append("d.status=%s"); params.append(status)
+    if search and search.strip():
+        term = "%" + search.strip() + "%"
+        clauses.append("(d.shipment_reference ILIKE %s OR o.order_number ILIKE %s OR d.recipient_name ILIKE %s OR d.delivery_pin ILIKE %s)")
+        params.extend([term, term, term, term])
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    try:
+        with _connect() as conn:
+            rows = conn.execute(
+                "SELECT d.id, d.shipment_reference, d.order_id, o.order_number, d.delivery_pin, d.recipient_name, "
+                "d.recipient_phone, d.address, d.location_id, d.status, d.tracking_reference, d.assigned_to, "
+                "d.delivery_notes, d.created_at, d.updated_at FROM deliveries d JOIN orders o ON o.id=d.order_id" +
+                where + " ORDER BY d.created_at DESC LIMIT %s OFFSET %s", (*params, limit, offset)
+            ).fetchall()
+            total = conn.execute("SELECT count(*) AS total FROM deliveries d JOIN orders o ON o.id=d.order_id" + where, params).fetchone()["total"]
+        return {"items": rows, "total": total, "limit": limit, "offset": offset}
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.post("/shipments", status_code=201)
+def create_shipment(payload: DeliveryCreate):
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                order = conn.execute("SELECT id, status, delivery_pin FROM orders WHERE id=%s FOR SHARE", (payload.order_id,)).fetchone()
+                if order is None:
+                    raise HTTPException(status_code=404, detail="Order not found")
+                if order["status"] in {"cancelled", "delivered"}:
+                    raise HTTPException(status_code=409, detail="Cannot create a shipment for a cancelled or delivered order")
+                existing = conn.execute("SELECT id FROM deliveries WHERE order_id=%s AND status NOT IN ('cancelled','returned','failed')", (payload.order_id,)).fetchone()
+                if existing:
+                    raise HTTPException(status_code=409, detail="An active shipment already exists for this order")
+                ref = "SBD-" + uuid.uuid4().hex[:10].upper()
+                row = conn.execute(
+                    "INSERT INTO deliveries (shipment_reference, order_id, delivery_pin, recipient_name, recipient_phone, address, location_id, status, delivery_notes) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,'pending',%s) RETURNING id, shipment_reference, order_id, delivery_pin, recipient_name, recipient_phone, address, location_id, status, delivery_notes, created_at, updated_at",
+                    (ref, payload.order_id, payload.delivery_pin, payload.recipient_name, payload.recipient_phone, payload.address, payload.location_id, payload.delivery_notes),
+                ).fetchone()
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.patch("/shipments/{shipment_id}/status")
+def update_shipment_status(shipment_id: int, payload: DeliveryStatusUpdate):
+    transitions = {
+        "pending": {"packed", "cancelled"}, "packed": {"assigned", "cancelled"},
+        "assigned": {"dispatched", "cancelled"}, "dispatched": {"in_transit", "delivered", "failed"},
+        "in_transit": {"delivered", "failed", "returned"}, "failed": {"assigned", "returned"},
+        "delivered": set(), "returned": set(), "cancelled": set(),
+    }
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                current = conn.execute("SELECT status FROM deliveries WHERE id=%s FOR UPDATE", (shipment_id,)).fetchone()
+                if current is None:
+                    raise HTTPException(status_code=404, detail="Shipment not found")
+                old = current["status"]
+                if old == payload.status:
+                    return {"id": shipment_id, "status": old}
+                if payload.status not in transitions[old]:
+                    raise HTTPException(status_code=409, detail=f"Cannot change shipment status from {old} to {payload.status}")
+                row = conn.execute(
+                    "UPDATE deliveries SET status=%s, tracking_reference=COALESCE(%s,tracking_reference), assigned_to=COALESCE(%s,assigned_to), updated_at=now() "
+                    "WHERE id=%s RETURNING id, shipment_reference, status, tracking_reference, assigned_to, updated_at",
+                    (payload.status, payload.tracking_reference, payload.assigned_to, shipment_id),
+                ).fetchone()
+                conn.execute("INSERT INTO delivery_status_history (delivery_id, from_status, to_status, note) VALUES (%s,%s,%s,%s)",
+                    (shipment_id, old, payload.status, payload.note))
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
