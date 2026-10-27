@@ -1,43 +1,61 @@
+import { useState } from "react";
 import { AppProviders } from "./providers.jsx";
 
 const workspaces = [
-  { id: "dashboard", label: "Dashboard" },
-  { id: "catalogue", label: "Catalogue" },
-  { id: "inventory", label: "Inventory" },
-  { id: "pricing", label: "Pricing & Promotions" },
-  { id: "orders", label: "Orders" },
-  { id: "payments", label: "Payments" },
-  { id: "delivery", label: "Delivery" },
-  { id: "customers", label: "Customers / CRM" },
-  { id: "pos", label: "POS & Stores" },
-  { id: "purchase", label: "Purchase" },
-  { id: "accounting", label: "Accounting & Tax" },
-  { id: "hr", label: "HR & Payroll" },
-  { id: "loyalty", label: "Loyalty & Rewards" },
-  { id: "reports", label: "Reports" },
-  { id: "settings", label: "Settings & Access" },
+  { id: "dashboard", label: "Dashboard", description: "Business overview and operational alerts" },
+  { id: "catalogue", label: "Catalogue", description: "Categories, attributes, products and variants" },
+  { id: "inventory", label: "Inventory", description: "Stock balances, movements and adjustments" },
+  { id: "pricing", label: "Pricing & Promotions", description: "Price lists, discounts and offer rules" },
+  { id: "orders", label: "Orders", description: "Website and POS order lifecycle" },
+  { id: "payments", label: "Payments", description: "Payment attempts, COD and refunds" },
+  { id: "delivery", label: "Delivery", description: "PIN serviceability, dispatch and tracking" },
+  { id: "customers", label: "Customers / CRM", description: "Customer profiles, enquiries and history" },
+  { id: "pos", label: "POS & Stores", description: "Walk-in sales, receipts and shift closing" },
+  { id: "purchase", label: "Purchase", description: "Suppliers, purchase orders and goods receipt" },
+  { id: "accounting", label: "Accounting & Tax", description: "Ledgers, journals, GST and financial reports" },
+  { id: "hr", label: "HR & Payroll", description: "Employees, attendance, salary and payslips" },
+  { id: "loyalty", label: "Loyalty & Rewards", description: "Points, rewards and customer benefits" },
+  { id: "reports", label: "Reports", description: "Sales, stock, margin and operational reporting" },
+  { id: "settings", label: "Settings & Access", description: "Users, roles, permissions and configuration" },
 ];
 
+function WorkspaceLauncher({ onOpen }) {
+  return <>
+    <section className="sb-intro">
+      <p className="sb-eyebrow">OPERATIONS PLATFORM</p>
+      <h1>Choose your workspace</h1>
+      <p>Choose a module to enter its workspace. These are navigation entry points; each module must be connected to real APIs and tests before it is considered complete.</p>
+    </section>
+    <section className="sb-grid" aria-label="Application workspaces">
+      {workspaces.map((item, index) => <button className="sb-tile" key={item.id} type="button" onClick={() => onOpen(item)}>
+        <span className={`sb-tile-icon sb-tone-${index % 5}`}>{item.label.slice(0, 1)}</span>
+        <span className="sb-tile-copy"><strong>{item.label}</strong><small>{item.description}</small></span>
+        <span className="sb-arrow" aria-hidden="true">↗</span>
+      </button>)}
+    </section>
+  </>;
+}
+
+function Workspace({ item, onBack }) {
+  return <section className="sb-workspace">
+    <button className="sb-back" type="button" onClick={onBack}>← All workspaces</button>
+    <p className="sb-eyebrow">WORKSPACE</p>
+    <h1>{item.label}</h1>
+    <p>{item.description}</p>
+    <div className="sb-notice"><strong>Workspace foundation created</strong><span>This module is not marked complete yet. Its screens, permission checks, database operations and API tests must be implemented before live use.</span></div>
+  </section>;
+}
+
 export function Router() {
+  const [selected, setSelected] = useState(null);
   return <AppProviders>
     <main className="sb-shell">
       <header className="sb-header">
         <div><span className="sb-mark">S</span><div><strong>Super Bajaar</strong><small>Commerce & ERP</small></div></div>
-        <span className="sb-status"><i /> Workspace launcher</span>
+        <span className="sb-status"><i /> API configured for port 8001</span>
       </header>
-      <section className="sb-intro">
-        <p className="sb-eyebrow">OPERATIONS PLATFORM</p>
-        <h1>Choose your workspace</h1>
-        <p>Each module will have its own screens, permissions, APIs and connected business records.</p>
-      </section>
-      <section className="sb-grid" aria-label="Application workspaces">
-        {workspaces.map((item, index) => <button className="sb-tile" key={item.id} type="button" onClick={() => window.dispatchEvent(new CustomEvent("sb-workspace-select", { detail: item.id }))}>
-          <span className={`sb-tile-icon sb-tone-${index % 5}`}>{item.label.slice(0, 1)}</span>
-          <span className="sb-tile-copy"><strong>{item.label}</strong><small>Workspace scaffold</small></span>
-          <span className="sb-arrow" aria-hidden="true">↗</span>
-        </button>)}
-      </section>
-      <footer>Clean-start interface scaffold · No module is opened automatically</footer>
+      {selected ? <Workspace item={selected} onBack={() => setSelected(null)} /> : <WorkspaceLauncher onOpen={setSelected} />}
+      <footer>Clean-start interface scaffold · Backend port 8001 · PostgreSQL port 5432</footer>
     </main>
   </AppProviders>;
 }
