@@ -19,3 +19,6 @@ export const updateAdminOrderStatus = (token, code, status) => request('/api/adm
 export const updateAdminStock = (token, id, quantity) => request('/api/admin/products/' + Number(id) + '/stock', { token, method: 'PATCH', body: JSON.stringify({ quantity }) });
 
 export const fetchPriceHistory = (id, days = 30) => request('/api/products/' + Number(id) + '/price-history?days=' + Number(days));
+
+export const fetchAdminSupport = token => request('/api/admin/support', { token });
+export const updateAdminSupportStatus = (token, id, status) => request('/api/admin/support/' + Number(id) + '/status', { token, method: 'PATCH', body: JSON.stringify({ status }) });
