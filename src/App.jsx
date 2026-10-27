@@ -102,8 +102,8 @@ function App() {
     else { setAppliedCoupon(''); setNotice('Coupon not valid. Try WELCOME10 on your order.'); }
   };
   const placeOrder = e => {
-    if (paymentMethod !== 'cod') { setNotice('Online payment is unavailable until a secure payment backend is connected.'); return; }
     e.preventDefault();
+    if (paymentMethod !== 'cod') { setNotice('Online payment is unavailable until a secure payment backend is connected.'); return; }
     if (!cart.length) { setNotice('Your bag is empty'); go('cart'); return; }
     if (!address.name.trim() || !address.phone.trim() || !address.line.trim() || !address.city.trim() || !address.state.trim() || !/^\d{6}$/.test(address.pin)) { setNotice('Please complete your delivery address and 6-digit PIN code'); return; }
     const order = { id: 'SB' + Date.now().toString().slice(-9), date: new Date().toISOString(), items: cart, subtotal, discount, delivery, total, address, paymentMethod, status: paymentMethod === 'cod' ? 'Confirmed — cash on delivery' : 'Payment pending', paymentStatus: paymentMethod === 'cod' ? 'Pay on delivery' : 'Not connected', coupon: appliedCoupon };
