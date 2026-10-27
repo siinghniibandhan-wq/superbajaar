@@ -40,6 +40,14 @@ def main():
     request("POST","/api/admin/products",{"sku":"   ","name":"Valid Name","category":"Testing","price_paise":100,"mrp_paise":100,"variants":[],"quantity":1},token=logged["token"],expected=422)
     request("POST","/api/admin/products",{"sku":"CUSTOMER-TEST","name":"Forbidden Product","category":"Testing","price_paise":100,"mrp_paise":100,"variants":[],"quantity":1},token=registered["token"],expected=403)
     request("GET","/api/admin/orders",expected=401)
+    request("GET","/api/admin/support",token=registered["token"],expected=403)
+    ticket=request("POST","/api/support",{"topic":"Smoke test support","message":"Please confirm the support workflow."},token=registered["token"],expected=201)
+    ticket_id=ticket.get("id")
+    assert ticket_id and ticket.get("status")=="open"
+    customer_tickets=request("GET","/api/admin/support",token=logged["token"])
+    assert any(item.get("id")==ticket_id and item.get("status")=="open" for item in customer_tickets.get("items",[]))
+    changed_ticket=request("PATCH",f"/api/admin/support/{ticket_id}/status",{"status":"resolved"},token=logged["token"])
+    assert changed_ticket=={"id":ticket_id,"status":"resolved"}
     product=request("POST","/api/admin/products",{"sku":f"SMOKE-{suffix}","name":"Smoke Test Product","category":"Testing","description":"Smoke-test item","image_url":"","price_paise":10000,"mrp_paise":12000,"variants":[],"quantity":5},token=logged["token"],expected=201)
     assert product.get("id") and product.get("quantity")==5
     assert product.get("variants")==["Standard"]
