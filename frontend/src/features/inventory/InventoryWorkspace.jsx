@@ -10,6 +10,7 @@ export default function InventoryWorkspace({ onBack }) {
   const [movements, setMovements] = useState([]);
   const [productId, setProductId] = useState("");
   const [form, setForm] = useState({ variant_id: "", location_id: "", quantity: "", note: "" });
+  const [locationForm, setLocationForm] = useState({ name: "", location_type: "warehouse", pin_code: "" });
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -32,6 +33,18 @@ export default function InventoryWorkspace({ onBack }) {
       .then(result => setVariants(result.items || []))
       .catch(e => setError(e.message || "Unable to load variants."));
   }, [productId]);
+
+  async function createLocation(event) {
+    event.preventDefault(); setBusy(true); setError(""); setMessage("");
+    try {
+      await apiRequest("/inventory/locations", { method: "POST", body: JSON.stringify({
+        name: locationForm.name, location_type: locationForm.location_type, pin_code: locationForm.pin_code || null,
+      })});
+      setLocationForm({ name: "", location_type: "warehouse", pin_code: "" });
+      setMessage("Stock location created."); await loadBase();
+    } catch (e) { setError(e.message || "Unable to create stock location."); }
+    finally { setBusy(false); }
+  }
 
   async function submit(event) {
     event.preventDefault(); setBusy(true); setError(""); setMessage("");
