@@ -109,6 +109,7 @@ CREATE TABLE IF NOT EXISTS inventory_movements (
 
 CREATE INDEX IF NOT EXISTS idx_products_category_status ON products(category_id, status);
 CREATE INDEX IF NOT EXISTS idx_variants_product ON product_variants(product_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_variant_unique_combination ON product_variants(product_id, attributes) WHERE is_active = TRUE;
 CREATE INDEX IF NOT EXISTS idx_inventory_movements_variant_time ON inventory_movements(variant_id, created_at DESC);
 
 COMMIT;
