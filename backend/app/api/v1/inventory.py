@@ -37,6 +37,17 @@ def _db_error(exc: psycopg.Error) -> HTTPException:
     return HTTPException(status_code=503, detail="Inventory database operation failed")
 
 
+@router.get("/locations")
+def list_locations(limit: int = Query(default=100, ge=1, le=500), offset: int = Query(default=0, ge=0)):
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT id, name, location_type, pin_code, is_active, created_at "
+            "FROM stock_locations WHERE is_active = TRUE ORDER BY name LIMIT %s OFFSET %s",
+            (limit, offset),
+        ).fetchall()
+    return {"items": rows, "limit": limit, "offset": offset}
+
+
 @router.get("/balances")
 def list_balances(
     location_id: int | None = Query(default=None, gt=0),
