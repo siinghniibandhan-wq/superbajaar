@@ -9,7 +9,8 @@ import PaymentsWorkspace from "../features/payments/PaymentsWorkspace.jsx";
 import DeliveryWorkspace from "../features/delivery/DeliveryWorkspace.jsx";
 import CustomersWorkspace from "../features/customers/CustomersWorkspace.jsx";
 import PurchasingWorkspace from "../features/purchasing/PurchasingWorkspace.jsx";
-import { healthApi } from "../services/api.js";
+import { apiRequest, healthApi } from "../services/api.js";
+import LoginScreen from "./LoginScreen.jsx";
 
 const groups = [
   { title: "Commerce", items: [
@@ -62,10 +63,23 @@ function Workspace({ item, onBack }) {
 function AppShell() {
   const [selected, setSelected] = useState(null);
   const [apiStatus, setApiStatus] = useState("checking");
+  const [user, setUser] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
   useEffect(() => {
     let active = true;
     healthApi.check().then(result => { if (active) setApiStatus(result?.status === "ok" ? "online" : "offline"); })
       .catch(() => { if (active) setApiStatus("offline"); });
+    return () => { active = false; };
+  }, []);
+  useEffect(() => {
+    let active = true;
+    let token = "";
+    try { token = window.localStorage.getItem("superbajaar.access_token") || ""; } catch {}
+    if (!token) { setAuthChecked(true); return () => { active = false; }; }
+    apiRequest("/auth/me").then(result => { if (active) setUser(result.user); }).catch(() => {
+      try { window.localStorage.removeItem("superbajaar.access_token"); } catch {}
+      if (active) setUser(null);
+    }).finally(() => { if (active) setAuthChecked(true); });
     return () => { active = false; };
   }, []);
   const statusText = { checking: "Checking API…", online: "Backend connected", offline: "Backend unavailable" };
@@ -73,10 +87,12 @@ function AppShell() {
   const back = () => setSelected(null);
   const activeModule = selected?.id;
   const openById = id => { const found = allItems.find(item => item.id === id); if (found) setSelected(found); };
+  if (!authChecked) return <main className="sb-login-page"><p>Checking sign-in…</p></main>;
+  if (!user) return <LoginScreen onSignedIn={setUser} />;
   return <main className="sb-shell">
     <header className="sb-header">
       <button className="sb-brand" type="button" onClick={back} aria-label="Back to workspaces"><span className="sb-mark">S</span><span><strong>Super Bajaar</strong><small>Commerce & ERP</small></span></button>
-      <span className={`sb-status sb-status-${apiStatus}`} role="status"><i />{statusText[apiStatus]}</span>
+      <div className="sb-header-actions"><span className={`sb-status sb-status-${apiStatus}`} role="status"><i />{statusText[apiStatus]}</span><span className="sb-user-label">{user.full_name || user.email}</span><button className="sb-signout" type="button" onClick={async () => { try { await apiRequest("/auth/logout", { method: "POST" }); } catch {} try { window.localStorage.removeItem("superbajaar.access_token"); } catch {} setUser(null); setSelected(null); }}>Sign out</button></div>
     </header>
     <div className="sb-app-layout">
       <aside className="sb-sidebar" aria-label="Module navigation">
