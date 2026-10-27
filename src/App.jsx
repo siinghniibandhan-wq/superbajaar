@@ -40,14 +40,20 @@ const products = [
 const money = n => '₹' + Number(n || 0).toLocaleString('en-IN');
 const imageUrl = (id, w=600) => 'https://images.unsplash.com/' + id + '?auto=format&fit=crop&w=' + w + '&q=85';
 const readStore = (key, fallback) => { try { const value = localStorage.getItem(key); return value ? JSON.parse(value) : fallback; } catch { return fallback; } };
+const readList = key => { const value = readStore(key, []); return Array.isArray(value) ? value : []; };
+const readAddress = () => {
+  const value = readStore('sb-address', {});
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return { name: '', phone: '', line: '', city: '', state: '', pin: '' };
+  return { name: '', phone: '', line: '', city: '', state: '', pin: '', ...value };
+};
 const writeStore = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* Storage may be unavailable or full; keep the storefront usable for this session. */ } };
 
 function App() {
   const [query, setQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('All');
-  const [cart, setCart] = useState(() => readStore('sb-cart', []));
-  const [wishlist, setWishlist] = useState(() => readStore('sb-wishlist', []));
-  const [orders, setOrders] = useState(() => readStore('sb-orders', []));
+  const [cart, setCart] = useState(() => readList('sb-cart'));
+  const [wishlist, setWishlist] = useState(() => readList('sb-wishlist'));
+  const [orders, setOrders] = useState(() => readList('sb-orders'));
   const [view, setView] = useState('home');
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [selectedVariant, setSelectedVariant] = useState('');
@@ -57,14 +63,14 @@ function App() {
   const [pin, setPin] = useState(() => readStore('sb-pin', ''));
   const [sortBy, setSortBy] = useState('featured');
   const [checkoutStep, setCheckoutStep] = useState(1);
-  const [address, setAddress] = useState(() => readStore('sb-address', { name: '', phone: '', line: '', city: '', state: '', pin: '' }));
+  const [address, setAddress] = useState(() => readAddress());
   const [coupon, setCoupon] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('cod');
   const [lastOrder, setLastOrder] = useState(null);
   const [supportTopic, setSupportTopic] = useState('Order or delivery');
   const [supportMessage, setSupportMessage] = useState('');
-  const [supportTickets, setSupportTickets] = useState(() => readStore('sb-support-tickets', []));
+  const [supportTickets, setSupportTickets] = useState(() => readList('sb-support-tickets'));
   const [orderLookup, setOrderLookup] = useState('');
 
   useEffect(() => { writeStore('sb-cart', cart); }, [cart]);
