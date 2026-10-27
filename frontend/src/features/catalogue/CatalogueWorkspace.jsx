@@ -68,6 +68,8 @@ export default function CatalogueWorkspace({ onBack }) {
       {categories.length ? <ul>{categories.map(item => <li key={item.id}>{item.name} <small>({item.slug})</small></li>)}</ul> : <p className="sb-empty">No categories loaded.</p>}
     </div>
     <div className="sb-data-card">
+      <CatalogueVariantsPanel products={products} />
+      <ProductImagesPanel products={products} />
       <h2>Products ({products.length})</h2>
       {products.length ? <ul>{products.map(item => <li key={item.id}>{item.name} <small>— {item.status}</small></li>)}</ul> : <p className="sb-empty">No products loaded.</p>}
     </div>
