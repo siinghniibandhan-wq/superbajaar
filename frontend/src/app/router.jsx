@@ -4,6 +4,7 @@ import CatalogueWorkspace from "../features/catalogue/CatalogueWorkspace.jsx";
 import InventoryWorkspace from "../features/inventory/InventoryWorkspace.jsx";
 import PricingWorkspace from "../features/pricing/PricingWorkspace.jsx";
 import DashboardWorkspace from "../features/dashboard/DashboardWorkspace.jsx";
+import OrdersWorkspace from "../features/orders/OrdersWorkspace.jsx";
 import { healthApi } from "../services/api.js";
 
 const groups = [
@@ -79,7 +80,7 @@ function AppShell() {
         {groups.map(group => <div className="sb-nav-group" key={group.title}><p>{group.title}</p>{group.items.map(item => <button key={item.id} type="button" className={`sb-nav-item ${activeModule === item.id ? "is-active" : ""}`} onClick={() => open(item)}><span>{item.label}</span></button>)}</div>)}
       </aside>
       <div className="sb-main-content">
-        {selected?.id === "dashboard" ? <DashboardWorkspace onOpen={openById} /> : selected?.id === "catalogue" ? <CatalogueWorkspace onBack={back} /> : selected?.id === "inventory" ? <InventoryWorkspace onBack={back} /> : selected?.id === "pricing" ? <PricingWorkspace onBack={back} /> : selected ? <Workspace item={selected} onBack={back} /> : <ModuleLauncher onOpen={open} />}
+        {selected?.id === "dashboard" ? <DashboardWorkspace onOpen={openById} /> : selected?.id === "orders" ? <OrdersWorkspace onBack={back} /> : selected?.id === "catalogue" ? <CatalogueWorkspace onBack={back} /> : selected?.id === "inventory" ? <InventoryWorkspace onBack={back} /> : selected?.id === "pricing" ? <PricingWorkspace onBack={back} /> : selected ? <Workspace item={selected} onBack={back} /> : <ModuleLauncher onOpen={open} />}
       </div>
     </div>
     <footer>Super Bajaar · Separate module workspaces · Backend port 8001 · PostgreSQL port 5432</footer>
