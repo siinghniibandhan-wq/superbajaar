@@ -17,3 +17,5 @@ export const fetchAdminOrders = token => request('/api/admin/orders', { token })
 export const updateAdminOrderStatus = (token, code, status) => request('/api/admin/orders/' + encodeURIComponent(code) + '/status', { token, method: 'PATCH', body: JSON.stringify({ status }) });
 
 export const updateAdminStock = (token, id, quantity) => request('/api/admin/products/' + Number(id) + '/stock', { token, method: 'PATCH', body: JSON.stringify({ quantity }) });
+
+export const fetchPriceHistory = (id, days = 30) => request('/api/products/' + Number(id) + '/price-history?days=' + Number(days));
