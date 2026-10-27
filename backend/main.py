@@ -271,8 +271,17 @@ def my_orders(u=Depends(auth)):
 
 @app.get("/api/admin/orders")
 def admin_orders(u=Depends(admin)):
-    with connect() as c: rows=c.execute("SELECT o.code,o.status,o.payment_status,o.total,o.created_at,u.email,u.name FROM orders o JOIN users u ON u.id=o.user_id ORDER BY o.id DESC").fetchall()
-    return {"items":[{**dict(x),"total":x["total"]/100} for x in rows]}
+    with connect() as c:
+        rows=c.execute("SELECT o.id,o.code,o.status,o.payment_status,o.subtotal,o.delivery,o.discount,o.total,o.address,o.created_at,u.email,u.name FROM orders o JOIN users u ON u.id=o.user_id ORDER BY o.id DESC").fetchall()
+        items=[]
+        for order in rows:
+            lines=c.execute("SELECT product_id,sku,name,variant,quantity,unit_price FROM order_items WHERE order_id=%s ORDER BY id",(order["id"],)).fetchall()
+            item=dict(order); item.pop("id",None)
+            for key in ("subtotal","delivery","discount","total"): item[key]=item[key]/100
+            item["items"]=[{**dict(line),"price":line["unit_price"]/100} for line in lines]
+            for line in item["items"]: line.pop("unit_price",None)
+            items.append(item)
+    return {"items":items}
 
 def restock_cancelled_order(c, order_id, now):
     items=c.execute("SELECT product_id,quantity FROM order_items WHERE order_id=%s",(order_id,)).fetchall()
