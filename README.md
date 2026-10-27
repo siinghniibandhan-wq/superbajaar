@@ -20,6 +20,7 @@ npm run preview
 
 - Home page, department browsing, search, sorting, and offer filtering
 - Product detail pages with selectable variants and SKU identifiers
+- Branded fallback artwork when an external product image cannot load
 - Wishlist, shopping bag, quantity controls, and order summary
 - `WELCOME10` demo coupon (10% off, capped at ₹300)
 - Delivery PIN entry and address form validation
