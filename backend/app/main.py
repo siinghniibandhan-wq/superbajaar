@@ -8,5 +8,5 @@ app.include_router(health_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/")
-def root() -> dict[str, str]:
-    return {"name": settings.app_name, "status": "running"}
+def root() -> dict[str, str | int]:
+    return {"name": settings.app_name, "status": "running", "port": settings.port}
