@@ -69,13 +69,16 @@ def create_location(payload: StockLocationCreate):
 
 @router.get("/locations")
 def list_locations(limit: int = Query(default=100, ge=1, le=500), offset: int = Query(default=0, ge=0)):
-    with _connect() as conn:
-        rows = conn.execute(
-            "SELECT id, name, location_type, pin_code, is_active, created_at "
-            "FROM stock_locations WHERE is_active = TRUE ORDER BY name LIMIT %s OFFSET %s",
-            (limit, offset),
-        ).fetchall()
-    return {"items": rows, "limit": limit, "offset": offset}
+    try:
+        with _connect() as conn:
+            rows = conn.execute(
+                "SELECT id, name, location_type, pin_code, is_active, created_at "
+                "FROM stock_locations WHERE is_active = TRUE ORDER BY name LIMIT %s OFFSET %s",
+                (limit, offset),
+            ).fetchall()
+        return {"items": rows, "limit": limit, "offset": offset}
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
 
 
 @router.get("/balances")
@@ -95,16 +98,19 @@ def list_balances(
         params.append(variant_id)
     where = "WHERE " + " AND ".join(clauses) if clauses else ""
     params.extend([limit, offset])
-    with _connect() as conn:
-        rows = conn.execute(
-            "SELECT ib.variant_id, pv.sku, pv.product_id, ib.location_id, sl.name AS location_name, "
-            "ib.on_hand, ib.reserved, (ib.on_hand - ib.reserved) AS available, ib.updated_at "
-            "FROM inventory_balances ib JOIN product_variants pv ON pv.id = ib.variant_id "
-            "JOIN stock_locations sl ON sl.id = ib.location_id "
-            f"{where} ORDER BY sl.name, pv.sku LIMIT %s OFFSET %s",
-            tuple(params),
-        ).fetchall()
-    return {"items": rows, "limit": limit, "offset": offset}
+    try:
+        with _connect() as conn:
+            rows = conn.execute(
+                "SELECT ib.variant_id, pv.sku, pv.product_id, ib.location_id, sl.name AS location_name, "
+                "ib.on_hand, ib.reserved, (ib.on_hand - ib.reserved) AS available, ib.updated_at "
+                "FROM inventory_balances ib JOIN product_variants pv ON pv.id = ib.variant_id "
+                "JOIN stock_locations sl ON sl.id = ib.location_id "
+                f"{where} ORDER BY sl.name, pv.sku LIMIT %s OFFSET %s",
+                tuple(params),
+            ).fetchall()
+        return {"items": rows, "limit": limit, "offset": offset}
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
 
 
 @router.get("/movements")
@@ -124,13 +130,16 @@ def list_movements(
         params.append(location_id)
     where = "WHERE " + " AND ".join(clauses) if clauses else ""
     params.extend([limit, offset])
-    with _connect() as conn:
-        rows = conn.execute(
-            "SELECT id, variant_id, location_id, movement_type, quantity, reference_type, reference_id, note, created_at "
-            f"FROM inventory_movements {where} ORDER BY created_at DESC, id DESC LIMIT %s OFFSET %s",
-            tuple(params),
-        ).fetchall()
-    return {"items": rows, "limit": limit, "offset": offset}
+    try:
+        with _connect() as conn:
+            rows = conn.execute(
+                "SELECT id, variant_id, location_id, movement_type, quantity, reference_type, reference_id, note, created_at "
+                f"FROM inventory_movements {where} ORDER BY created_at DESC, id DESC LIMIT %s OFFSET %s",
+                tuple(params),
+            ).fetchall()
+        return {"items": rows, "limit": limit, "offset": offset}
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
 
 
 @router.post("/adjustments", status_code=201)
