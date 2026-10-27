@@ -37,3 +37,5 @@ export const updateAdminSupportStatus = (token, id, status) => request('/api/adm
 
 export const updateAdminProduct = (token, id, product) => request('/api/admin/products/' + Number(id), { token, method: 'PATCH', body: JSON.stringify(product) });
 export const checkDeliveryAvailability = pin => request('/api/delivery/availability?pin=' + encodeURIComponent(pin));
+
+export const fetchAdminCustomers = token => request('/api/admin/customers', { token });

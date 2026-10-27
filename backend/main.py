@@ -332,6 +332,21 @@ def admin_orders(u=Depends(admin)):
             items.append(item)
     return {"items":items}
 
+
+@app.get("/api/admin/customers")
+def admin_customers(u=Depends(admin)):
+    with connect() as c:
+        rows=c.execute("""
+            SELECT u.id,u.name,u.email,u.phone,u.created_at,
+                   COUNT(o.id)::INTEGER AS order_count
+            FROM users u
+            LEFT JOIN orders o ON o.user_id=u.id
+            WHERE u.role='customer'
+            GROUP BY u.id,u.name,u.email,u.phone,u.created_at
+            ORDER BY u.created_at DESC,u.id DESC
+        """).fetchall()
+    return {"items":[dict(row) for row in rows]}
+
 def restock_cancelled_order(c, order_id, now):
     items=c.execute("SELECT product_id,quantity FROM order_items WHERE order_id=%s",(order_id,)).fetchall()
     for item in items:
