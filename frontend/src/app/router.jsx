@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AppProviders } from "./providers.jsx";
 import CatalogueWorkspace from "../features/catalogue/CatalogueWorkspace.jsx";
+import InventoryWorkspace from "../features/inventory/InventoryWorkspace.jsx";
 import { healthApi } from "../services/api.js";
 
 const workspaces = [
