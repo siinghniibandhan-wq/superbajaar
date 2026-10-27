@@ -105,6 +105,11 @@ function App() {
   const go = next => { setView(next); setMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }); };
   const chooseCategory = name => { setActiveCategory(name); setQuery(''); setSortBy('featured'); go('shop'); };
   const addToCart = (product, variant = product.variants?.[0] || 'Standard') => {
+    const existing = cart.find(item => item.id === product.id && item.variant === variant);
+    if (existing?.qty >= 99) {
+      setNotice('Maximum quantity of 99 reached for ' + product.name);
+      return;
+    }
     setCart(prev => {
       const found = prev.find(item => item.id === product.id && item.variant === variant);
       return found ? prev.map(item => item.id === product.id && item.variant === variant ? {...item, qty: Math.min(99, item.qty + 1)} : item) : [...prev, {...product, variant, qty: 1}];
