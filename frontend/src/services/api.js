@@ -1,10 +1,19 @@
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8001/api/v1").replace(/\/$/, "");
+const configuredBase = import.meta.env.VITE_API_BASE_URL?.trim();
+const API_BASE_URL = (configuredBase || (import.meta.env.DEV ? "http://127.0.0.1:8001/api/v1" : "")).replace(/\/$/, "");
 
 export async function apiRequest(path, options = {}) {
-  const response = await fetch(`${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`, {
-    ...options,
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
-  });
+  if (!API_BASE_URL) {
+    throw new Error("Backend URL is not configured. Set VITE_API_BASE_URL in the frontend hosting environment.");
+  }
+  let response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`, {
+      ...options,
+      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    });
+  } catch {
+    throw new Error("Cannot reach the Super Bajaar backend. Check VITE_API_BASE_URL, server health and CORS settings.");
+  }
   const contentType = response.headers.get("content-type") || "";
   const body = contentType.includes("application/json") ? await response.json() : await response.text();
   if (!response.ok) {
