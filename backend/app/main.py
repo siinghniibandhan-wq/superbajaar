@@ -7,6 +7,7 @@ from app.api.v1.inventory import router as inventory_router
 from app.api.v1.orders import router as orders_router
 from app.api.v1.payments import router as payments_router
 from app.api.v1.delivery import router as delivery_router
+from app.api.v1.customers import router as customers_router
 from app.core.config import settings
 
 app = FastAPI(title=settings.app_name)
@@ -26,6 +27,7 @@ app.include_router(inventory_router, prefix=settings.api_v1_prefix)
 app.include_router(orders_router, prefix=settings.api_v1_prefix)
 app.include_router(payments_router, prefix=settings.api_v1_prefix)
 app.include_router(delivery_router, prefix=settings.api_v1_prefix)
+app.include_router(customers_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/")
