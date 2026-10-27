@@ -372,3 +372,56 @@ def create_product_image(product_id: int, payload: ProductImageCreate):
         raise
     except psycopg.Error as exc:
         raise _db_error(exc) from exc
+
+
+class VariantPriceUpdate(BaseModel):
+    selling_price: float = Field(ge=0, le=1000000000)
+    mrp: float = Field(ge=0, le=1000000000)
+    cost_price: float | None = Field(default=None, ge=0, le=1000000000)
+
+    @field_validator("mrp")
+    @classmethod
+    def mrp_not_below_selling_price(cls, value: float, info):
+        selling_price = info.data.get("selling_price")
+        if selling_price is not None and value < selling_price:
+            raise ValueError("MRP cannot be lower than selling price")
+        return value
+
+
+@router.get("/variants")
+def list_all_variants(limit: int = Query(default=200, ge=1, le=500), offset: int = Query(default=0, ge=0)):
+    try:
+        with _connection() as conn:
+            rows = conn.execute(
+                "SELECT v.id, v.product_id, p.name AS product_name, v.sku, v.barcode, v.attributes, "
+                "v.selling_price, v.mrp, v.cost_price, v.is_active "
+                "FROM product_variants v JOIN products p ON p.id = v.product_id "
+                "WHERE v.is_active = TRUE ORDER BY p.name, v.sku LIMIT %s OFFSET %s",
+                (limit, offset),
+            ).fetchall()
+        return {"items": rows, "limit": limit, "offset": offset}
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.put("/variants/{variant_id}/price")
+def update_variant_price(variant_id: int, payload: VariantPriceUpdate):
+    try:
+        with _connection() as conn:
+            current = conn.execute(
+                "SELECT id FROM product_variants WHERE id = %s AND is_active = TRUE FOR UPDATE",
+                (variant_id,),
+            ).fetchone()
+            if current is None:
+                raise HTTPException(status_code=404, detail="Active variant not found")
+            row = conn.execute(
+                "UPDATE product_variants SET selling_price = %s, mrp = %s, cost_price = %s, updated_at = now() "
+                "WHERE id = %s "
+                "RETURNING id, product_id, sku, selling_price, mrp, cost_price, updated_at",
+                (payload.selling_price, payload.mrp, payload.cost_price, variant_id),
+            ).fetchone()
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
