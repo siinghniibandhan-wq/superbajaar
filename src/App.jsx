@@ -152,7 +152,7 @@ function App() {
     if (paymentMethod !== 'cod') { setNotice('Online payment is unavailable until the final Razorpay stage.'); return; }
     if (!cart.length) { setNotice('Your bag is empty'); go('cart'); return; }
     if (!currentUser || !authToken) { setNotice('Please sign in before placing an order'); go('account'); return; }
-    if (!address.name.trim() || !address.phone.trim() || !address.line.trim() || !address.city.trim() || !address.state.trim() || !/^\\d{6}$/.test(address.pin)) { setNotice('Please complete your delivery address and 6-digit PIN code'); return; }
+    if (!address.name.trim() || !address.phone.trim() || !address.line.trim() || !address.city.trim() || !address.state.trim() || !/^\d{6}$/.test(address.pin)) { setNotice('Please complete your delivery address and 6-digit PIN code'); return; }
     try {
       setAuthBusy(true);
       const result = await submitOrder(authToken, cart, address, appliedCoupon);
