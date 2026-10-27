@@ -26,8 +26,7 @@ def test_customer_rejects_invalid_pin_before_database_access():
 
 def test_customer_rejects_invalid_email_format_before_database_access():
     response = client.post("/api/v1/customers", json={"name": "Test Customer", "email": "not-an-email"})
-    # The current API treats email as a bounded string; email syntax validation is not implemented yet.
-    assert response.status_code in (201, 503)
+    assert response.status_code == 422
 
 
 def test_support_case_rejects_invalid_priority_before_database_access():
