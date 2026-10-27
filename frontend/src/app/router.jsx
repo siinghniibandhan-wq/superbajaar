@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AppProviders } from "./providers.jsx";
+import { healthApi } from "../services/api.js";
 
 const workspaces = [
   { id: "dashboard", label: "Dashboard", description: "Business overview and operational alerts" },
@@ -46,16 +47,40 @@ function Workspace({ item, onBack }) {
   </section>;
 }
 
-export function Router() {
+function AppShell() {
   const [selected, setSelected] = useState(null);
-  return <AppProviders>
-    <main className="sb-shell">
-      <header className="sb-header">
-        <div><span className="sb-mark">S</span><div><strong>Super Bajaar</strong><small>Commerce & ERP</small></div></div>
-        <span className="sb-status"><i /> API configured for port 8001</span>
-      </header>
-      {selected ? <Workspace item={selected} onBack={() => setSelected(null)} /> : <WorkspaceLauncher onOpen={setSelected} />}
-      <footer>Clean-start interface scaffold · Backend port 8001 · PostgreSQL port 5432</footer>
-    </main>
-  </AppProviders>;
+  const [apiStatus, setApiStatus] = useState("checking");
+
+  useEffect(() => {
+    let active = true;
+    const check = async () => {
+      try {
+        const result = await healthApi.check();
+        if (active) setApiStatus(result?.status === "ok" ? "online" : "offline");
+      } catch {
+        if (active) setApiStatus("offline");
+      }
+    };
+    check();
+    return () => { active = false; };
+  }, []);
+
+  const labels = {
+    checking: "Checking API…",
+    online: "Backend connected",
+    offline: "Backend unavailable",
+  };
+
+  return <main className="sb-shell">
+    <header className="sb-header">
+      <div><span className="sb-mark">S</span><div><strong>Super Bajaar</strong><small>Commerce & ERP</small></div></div>
+      <span className={`sb-status sb-status-${apiStatus}`} role="status"><i />{labels[apiStatus]}</span>
+    </header>
+    {selected ? <Workspace item={selected} onBack={() => setSelected(null)} /> : <WorkspaceLauncher onOpen={setSelected} />}
+    <footer>Clean-start interface scaffold · Backend port 8001 · PostgreSQL port 5432</footer>
+  </main>;
+}
+
+export function Router() {
+  return <AppProviders><AppShell /></AppProviders>;
 }
