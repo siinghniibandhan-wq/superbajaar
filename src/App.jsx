@@ -141,7 +141,7 @@ function App() {
     const headers = ['Order reference','Date','Status','Payment status','Subtotal','Discount','Delivery','Total','Customer','Phone','Address','City','State','PIN','Items'];
     const rows = orders.map(order => [order.id,order.date,order.status,order.paymentStatus,order.subtotal,order.discount,order.delivery,order.total,order.address?.name,order.address?.phone,order.address?.line,order.address?.city,order.address?.state,order.address?.pin,order.items.map(item => item.name + ' (' + item.variant + ') x' + item.qty).join('; ')]);
     const cell = value => '"' + String(value ?? '').replace(/"/g, '""') + '"';
-    const csv = '\\uFEFF' + [headers, ...rows].map(row => row.map(cell).join(',')).join('\\r\\n');
+    const csv = '\uFEFF' + [headers, ...rows].map(row => row.map(cell).join(',')).join('\r\n');
     const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
