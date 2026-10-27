@@ -29,22 +29,21 @@ npm run preview
 - Delivery PIN entry and address form validation
 - Local demo order history and responsive mobile layout
 
-## Backend API foundation
+## Integrated storefront and API
 
-A FastAPI service is available under `backend/` for customer registration/login, catalogue management, stock, server-priced COD orders, order status, support requests and recorded price observations. See `backend/README.md` for setup. Set `VITE_API_BASE_URL` to the deployed API origin in the frontend build environment; if the API is unavailable or returns no products, the storefront retains its built-in demo catalogue.
+The React storefront now calls the FastAPI service for the live catalogue, customer registration/sign-in, authenticated cash-on-delivery checkout, order-history refresh, and support requests. If the API cannot be reached, the storefront keeps its sample catalogue available for browsing; when the API responds successfully with an empty catalogue, it shows no products rather than pretending the samples are live inventory.
 
-## Important implementation status
+Set `VITE_API_BASE_URL` in the frontend build environment to the deployed backend origin. Both an origin such as `https://api.example.com` and an origin ending in `/api` are accepted. The API uses `SB_CORS_ORIGINS`, `SB_SECRET_KEY`, `SB_ADMIN_EMAIL`, `SB_ADMIN_PASSWORD`, and a persistent `SB_DATABASE_PATH`; see `backend/README.md`.
 
-This repository currently contains a **front-end storefront only**. Product catalogue/prices and ratings are sample data; cart, wishlist, address, and demo orders are stored in the browser when storage is available.
+## Remaining before live launch
 
-The following are **not connected** and must not be treated as live commerce functions:
-- Customer authentication and server-side customer accounts
-- Live catalogue, inventory, SKU/variant management, and delivery serviceability
-- Verified 30-day product price history
-- Server-backed orders, fulfilment, and notifications
-- Razorpay or any other online payment processing
+- Admin product/order management UI and full operational workflows
+- Production build and end-to-end tests against the deployed API
+- Verify persistent database storage, backup/restore, and production security controls
+- Confirm live catalogue data, stock, tax, PIN-code serviceability, delivery rules, and published policies
+- Razorpay integration and payment verification (intentionally deferred to the final stage)
 
-Cash-on-delivery checkout creates a local demo record only. Online payment is intentionally blocked until a secure backend is configured. Never place secret payment credentials in frontend code.
+COD orders are submitted to the server for signed-in customers; the server recalculates the order total and checks available stock. Online payment remains disabled. Never place secret payment credentials in frontend code.
 
 ## Stack
 
