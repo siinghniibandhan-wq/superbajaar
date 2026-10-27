@@ -55,3 +55,17 @@ def test_product_image_rejects_invalid_sort_order_before_database_access():
         "image_url": "https://example.com/product.jpg", "sort_order": -1,
     })
     assert response.status_code == 422
+
+
+def test_variant_price_update_rejects_mrp_below_selling_price():
+    response = client.put("/api/v1/catalogue/variants/1/price", json={
+        "selling_price": 100, "mrp": 99, "cost_price": 50,
+    })
+    assert response.status_code == 422
+
+
+def test_variant_price_update_rejects_negative_cost_price():
+    response = client.put("/api/v1/catalogue/variants/1/price", json={
+        "selling_price": 50, "mrp": 50, "cost_price": -1,
+    })
+    assert response.status_code == 422
