@@ -106,6 +106,21 @@ class Product(BaseModel):
     mrp_paise:int=Field(ge=0)
     variants:list[str]=Field(default_factory=list,max_length=100)
     quantity:int=Field(default=0,ge=0)
+    @field_validator("variants", mode="before")
+    @classmethod
+    def normalize_variants(cls, value):
+        if value is None or value == []:
+            return ["Standard"]
+        if not isinstance(value, list):
+            raise ValueError("Variants must be a list")
+        normalized = []
+        for variant in value:
+            if not isinstance(variant, str) or not variant.strip():
+                raise ValueError("Variants cannot be blank")
+            cleaned = variant.strip()
+            if cleaned not in normalized:
+                normalized.append(cleaned)
+        return normalized or ["Standard"]
     @field_validator("sku", "name", "category", mode="before")
     @classmethod
     def required_product_text(cls, value):

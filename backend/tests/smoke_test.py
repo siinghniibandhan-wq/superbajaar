@@ -40,6 +40,7 @@ def main():
     request("POST","/api/admin/products",{"sku":"   ","name":"Valid Name","category":"Testing","price_paise":100,"mrp_paise":100,"variants":[],"quantity":1},token=logged["token"],expected=422)
     product=request("POST","/api/admin/products",{"sku":f"SMOKE-{suffix}","name":"Smoke Test Product","category":"Testing","description":"Smoke-test item","image_url":"","price_paise":10000,"mrp_paise":12000,"variants":["Standard"],"quantity":5},token=logged["token"],expected=201)
     assert product.get("id") and product.get("quantity")==5
+    assert product.get("variants")==["Standard"]
     duplicate=request("POST","/api/admin/products",{"sku":f"SMOKE-{suffix}","name":"Duplicate SKU","category":"Testing","description":"","image_url":"","price_paise":10000,"mrp_paise":12000,"variants":["Standard"],"quantity":1},token=logged["token"],expected=409)
     history=request("GET",f"/api/products/{product['id']}/price-history?days=30")
     assert len(history.get("observations",[]))==1 and history["observations"][0].get("price")==100.0
