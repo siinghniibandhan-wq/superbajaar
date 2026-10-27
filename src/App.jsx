@@ -73,7 +73,7 @@ function App() {
   const visibleProducts = useMemo(() => {
     let result = products.filter(p =>
       (activeCategory === 'All' || p.category === activeCategory || (activeCategory === 'Grocery & Staples' && p.category === 'Fresh Produce') || (activeCategory === 'Deals & Offers' && p.off >= 30)) &&
-      (p.name.toLowerCase().includes(query.toLowerCase()) || p.category.toLowerCase().includes(query.toLowerCase()) || p.description.toLowerCase().includes(query.toLowerCase()))
+      (p.name.toLowerCase().includes(query.toLowerCase()) || p.sku.toLowerCase().includes(query.toLowerCase()) || p.category.toLowerCase().includes(query.toLowerCase()) || p.description.toLowerCase().includes(query.toLowerCase()))
     );
     if (sortBy === 'price-low') result = [...result].sort((a,b)=>a.price-b.price);
     if (sortBy === 'price-high') result = [...result].sort((a,b)=>b.price-a.price);
@@ -95,7 +95,7 @@ function App() {
     });
     setNotice(product.name + ' added to your bag');
   };
-  const updateQty = (id, variant, delta) => setCart(prev => prev.map(item => item.id === id && item.variant === variant ? {...item, qty: item.qty + delta} : item).filter(item => item.qty > 0));
+  const updateQty = (id, variant, delta) => setCart(prev => prev.map(item => item.id === id && item.variant === variant ? {...item, qty: Math.min(99, item.qty + delta)} : item).filter(item => item.qty > 0));
   const toggleWishlist = product => setWishlist(prev => prev.some(item => item.id === product.id) ? prev.filter(item => item.id !== product.id) : [...prev, product]);
   const openProduct = product => { setSelectedProduct(product); setSelectedVariant(product.variants?.[0] || 'Standard'); go('product'); };
   const applyCoupon = () => {
