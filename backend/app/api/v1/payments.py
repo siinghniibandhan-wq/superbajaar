@@ -49,8 +49,8 @@ class PaymentCreate(BaseModel):
     @field_validator("status")
     @classmethod
     def status_allowed(cls, value):
-        if value not in PAYMENT_STATUSES:
-            raise ValueError("Unsupported payment status")
+        if value != "pending":
+            raise ValueError("New payment records must start as pending; gateway confirmation is not configured")
         return value
 
 
@@ -139,6 +139,8 @@ def update_payment_status(payment_id: int, payload: PaymentStatusUpdate):
                 old = current["status"]
                 if old == payload.status:
                     return {"id": payment_id, "status": old}
+                if payload.status == "captured" or payload.status == "refunded":
+                    raise HTTPException(status_code=409, detail="Captured/refunded status requires verified provider confirmation; gateway integration is not configured")
                 if payload.status not in transitions[old]:
                     raise HTTPException(status_code=409, detail=f"Cannot change payment status from {old} to {payload.status}")
                 row = conn.execute(
