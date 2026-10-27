@@ -26,3 +26,14 @@ def test_me_requires_bearer_token():
 def test_invalid_bearer_token_is_rejected():
     response = client.get("/api/v1/auth/me", headers={"Authorization": "Bearer not-a-token"})
     assert response.status_code in (401, 503)
+
+
+def test_protected_api_returns_service_unavailable_when_jwt_secret_missing(monkeypatch):
+    from app.api.v1 import auth
+
+    monkeypatch.setattr(auth.settings, "jwt_secret_key", "")
+    response = client.get(
+        "/api/v1/catalogue/categories",
+        headers={"Authorization": "Bearer invalid"},
+    )
+    assert response.status_code == 503
