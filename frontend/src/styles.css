@@ -33,3 +33,34 @@
 .sb-delivery-form{margin:20px 0;padding:18px;border:1px solid #eae5f1;border-radius:16px;background:#fff}.sb-delivery-form h2{margin:0 0 14px;font:800 14px Manrope,sans-serif}.sb-delivery-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:14px}.sb-delivery-fields label,.sb-delivery-edit label{display:grid;gap:6px;color:#777087;font-size:10px;font-weight:600}.sb-delivery-fields input,.sb-delivery-fields select,.sb-delivery-fields textarea,.sb-delivery-edit input,.sb-delivery-edit select{width:100%;min-width:0;border:1px solid #e5deed;border-radius:9px;padding:10px;background:#fff;color:#29243b;font:12px 'DM Sans',sans-serif}.sb-delivery-fields .sb-span-all{grid-column:1/-1}.sb-delivery-form .sb-primary{border:0;border-radius:10px;background:#7134bb;color:#fff;padding:10px 14px;font:600 11px 'DM Sans',sans-serif;cursor:pointer}.sb-delivery-form>small{display:block;margin-top:9px;color:#9a90a6;font-size:10px}.sb-delivery-toolbar{display:grid;grid-template-columns:minmax(180px,1fr) 170px auto;gap:9px;margin:22px 0 12px}.sb-delivery-toolbar input,.sb-delivery-toolbar select{min-width:0;border:1px solid #e5deed;border-radius:10px;padding:10px 11px;background:#fff;color:#51465f;font:11px 'DM Sans',sans-serif}.sb-delivery-toolbar button{border:1px solid #e7dff0;border-radius:10px;background:#fff;color:#6e35bb;padding:10px 13px;font:600 11px 'DM Sans',sans-serif;cursor:pointer}.sb-delivery-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:start;padding:15px}.sb-delivery-row>div{display:grid;gap:6px;min-width:0}.sb-delivery-row strong{font-size:12px}.sb-delivery-row small{font-size:10px;color:#92899e;overflow-wrap:anywhere;line-height:1.5}.sb-delivery-edit{display:grid;grid-template-columns:1fr 1fr minmax(150px,.8fr);gap:10px;border-top:1px solid #f0ebf5;padding:12px 15px}.sb-delivery-edit input,.sb-delivery-edit select{padding:9px;font-size:11px}
 @media(max-width:850px){.sb-delivery-toolbar{grid-template-columns:1fr 1fr}.sb-delivery-toolbar input{grid-column:1/-1}.sb-delivery-edit{grid-template-columns:1fr 1fr}.sb-delivery-edit label:last-child{grid-column:1/-1}}
 @media(max-width:520px){.sb-delivery-fields,.sb-delivery-toolbar,.sb-delivery-edit{grid-template-columns:1fr}.sb-delivery-fields .sb-span-all,.sb-delivery-toolbar input,.sb-delivery-edit label:last-child{grid-column:auto}.sb-delivery-row{grid-template-columns:1fr}}
+
+
+/* Customer and support-case workspace */
+.sb-customer-tabs{display:flex;gap:8px;margin:22px 0 14px;border-bottom:1px solid #eae5f1}
+.sb-customer-tabs button{display:flex;align-items:center;gap:8px;padding:12px 14px;border:0;border-bottom:2px solid transparent;background:transparent;color:#81778f;font:600 12px 'DM Sans',sans-serif;cursor:pointer}
+.sb-customer-tabs button.is-active{border-bottom-color:#7139b7;color:#7139b7}
+.sb-customer-tabs button span{padding:3px 7px;border-radius:99px;background:#f1e6ff;color:#7139b7;font-size:10px}
+.sb-customer-form,.sb-case-card{margin:14px 0;padding:17px;border:1px solid #eae5f1;border-radius:16px;background:#fff}
+.sb-customer-form h2{margin:0 0 14px;font:800 14px Manrope,sans-serif}
+.sb-customer-fields,.sb-case-edit{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.sb-customer-fields label,.sb-case-edit label{display:grid;gap:6px;color:#777087;font-size:10px;font-weight:700}
+.sb-customer-fields input,.sb-customer-fields select,.sb-customer-fields textarea,.sb-case-edit input,.sb-case-edit select,.sb-case-edit textarea,.sb-customer-toolbar input,.sb-customer-toolbar select{width:100%;min-width:0;border:1px solid #e5deed;border-radius:9px;padding:10px;background:#fff;color:#29243b;font:12px 'DM Sans',sans-serif}
+.sb-span-all{grid-column:1/-1}
+.sb-customer-check{display:flex!important;align-items:center;gap:8px!important}.sb-customer-check input{width:auto}
+.sb-customer-actions,.sb-customer-toolbar{display:flex;gap:9px;margin:14px 0}
+.sb-customer-toolbar input{flex:1}
+.sb-customer-actions>button:not(.sb-primary),.sb-customer-toolbar button,.sb-customer-row-actions button{border:1px solid #e7dff0;border-radius:9px;background:#fff;color:#6e35bb;padding:9px 12px;font:600 11px 'DM Sans',sans-serif;cursor:pointer}
+.sb-customer-list{display:grid;gap:10px}
+.sb-customer-card{display:grid;grid-template-columns:40px minmax(0,1fr) auto;align-items:center;gap:12px;padding:15px;border:1px solid #eae5f1;border-radius:15px;background:#fff}
+.sb-customer-avatar{display:grid;place-items:center;width:40px;height:40px;border-radius:13px;background:#f0e6ff;color:#7139b7;font:800 16px Manrope,sans-serif}
+.sb-customer-info{display:grid;gap:5px;min-width:0}.sb-customer-info>strong,.sb-case-heading strong{font-size:12px;overflow-wrap:anywhere}
+.sb-customer-info>small,.sb-case-heading small{font-size:10px;color:#92899e;line-height:1.5;overflow-wrap:anywhere}
+.sb-customer-info .sb-order-status{justify-self:start;margin-top:3px}
+.sb-customer-row-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px}.sb-customer-row-actions button{padding:8px 9px}
+.sb-case-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.sb-case-heading>div{display:grid;gap:6px;min-width:0}
+.sb-case-card>p{font-size:11px;color:#777087;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
+.sb-case-edit{margin-top:14px;padding-top:14px;border-top:1px solid #f0ebf5}.sb-case-edit>.sb-primary{justify-self:start}
+.sb-alert,.sb-success{padding:11px 13px;border-radius:10px;font-size:11px;line-height:1.5}
+.sb-alert{background:#fff1f2;border:1px solid #f2cbd2;color:#a82f45}.sb-success{background:#eaf8f1;border:1px solid #c8ecda;color:#20734f}
+.sb-empty{padding:20px;border:1px dashed #e2d8ed;border-radius:12px;color:#92899e;font-size:12px;text-align:center}
+@media(max-width:650px){.sb-customer-fields,.sb-case-edit{grid-template-columns:1fr}.sb-span-all{grid-column:auto}.sb-customer-card{grid-template-columns:36px minmax(0,1fr)}.sb-customer-avatar{width:36px;height:36px}.sb-customer-row-actions{grid-column:1/-1;justify-content:flex-start}.sb-case-heading{flex-direction:column}.sb-customer-form{padding:14px}}
