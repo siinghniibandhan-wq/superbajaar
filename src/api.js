@@ -4,7 +4,18 @@ async function request(path, { token, ...options } = {}) {
  const response = await fetch(API_BASE + path, { ...options, headers: { Accept: 'application/json', ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: 'Bearer ' + token } : {}), ...(options.headers || {}) } });
  const payload = await response.json().catch(() => ({})); if (!response.ok) { const detail = payload?.detail ?? payload?.message ?? payload?.error; const message = typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map(item => typeof item === 'string' ? item : item?.msg || JSON.stringify(item)).join('; ') : detail && typeof detail === 'object' ? (detail.message || detail.msg || JSON.stringify(detail)) : 'Request failed (' + response.status + ')'; throw new Error(message); } return payload;
 }
-export async function fetchCatalogue() { const payload = await request('/api/products'); if (!Array.isArray(payload.items)) throw new Error('Catalogue response format is invalid'); return payload.items.map(item => ({ id:Number(item.id),sku:item.sku,name:item.name,category:item.category,description:item.description||'',image:item.image_url||'/product-placeholder.svg',price:Number(item.price)||0,mrp:Number(item.mrp)||Number(item.price)||0,off:Number(item.mrp)>0?Math.max(0,Math.round((1-Number(item.price)/Number(item.mrp))*100)):0,tag:item.in_stock?'In stock':'Out of stock',rating:0,reviews:0,variants:Array.isArray(item.variants)&&item.variants.length?item.variants:['Standard'],stockQuantity:Number(item.quantity)||0 })); }
+export async function fetchCatalogue() {
+ const limit=200; let offset=0; let total=Infinity; const records=[];
+ while(offset<total) {
+  const payload=await request('/api/products?limit='+limit+'&offset='+offset);
+  if(!Array.isArray(payload.items)) throw new Error('Catalogue response format is invalid');
+  records.push(...payload.items);
+  total=Number.isFinite(Number(payload.total))?Number(payload.total):offset+payload.items.length;
+  if(!payload.items.length) break;
+  offset+=payload.items.length;
+ }
+ return records.map(item => ({ id:Number(item.id),sku:item.sku,name:item.name,category:item.category,description:item.description||'',image:item.image_url||'/product-placeholder.svg',price:Number(item.price)||0,mrp:Number(item.mrp)||Number(item.price)||0,off:Number(item.mrp)>0?Math.max(0,Math.round((1-Number(item.price)/Number(item.mrp))*100)):0,tag:item.in_stock?'In stock':'Out of stock',rating:0,reviews:0,variants:Array.isArray(item.variants)&&item.variants.length?item.variants:['Standard'],stockQuantity:Number(item.quantity)||0 }));
+}
 export const signIn=(email,password)=>request('/api/auth/login',{method:'POST',body:JSON.stringify({email,password})});
 export const signUp=(name,email,phone,password)=>request('/api/auth/register',{method:'POST',body:JSON.stringify({name,email,phone,password})});
 export const fetchCurrentUser=token=>request('/api/auth/me',{token});
