@@ -41,29 +41,6 @@ def _ensure(conn: Any) -> None:
         variant_id BIGINT PRIMARY KEY, hsn_sac TEXT, gst_rate NUMERIC(5,2) NOT NULL DEFAULT 0 CHECK(gst_rate>=0 AND gst_rate<=100),
         classification TEXT NOT NULL DEFAULT 'taxable' CHECK(classification IN ('taxable','nil_rated','exempt','non_gst')),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_by BIGINT)""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS sb_physical_counts (
-        id BIGSERIAL PRIMARY KEY, status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','applied','cancelled')),
-        scheduled_date DATE NOT NULL DEFAULT CURRENT_DATE, note TEXT, created_by BIGINT,
-        applied_by BIGINT, applied_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS sb_physical_count_lines (
-        id BIGSERIAL PRIMARY KEY, count_id BIGINT NOT NULL REFERENCES sb_physical_counts(id) ON DELETE CASCADE,
-        variant_id BIGINT NOT NULL, warehouse TEXT NOT NULL DEFAULT 'Main',
-        on_hand NUMERIC(14,3) NOT NULL DEFAULT 0, counted NUMERIC(14,3),
-        UNIQUE(count_id,variant_id,warehouse))""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS sb_replenishment_rules (
-        id BIGSERIAL PRIMARY KEY, variant_id BIGINT NOT NULL, warehouse TEXT NOT NULL DEFAULT 'Main',
-        min_quantity NUMERIC(14,3) NOT NULL DEFAULT 0 CHECK(min_quantity>=0),
-        max_quantity NUMERIC(14,3) NOT NULL DEFAULT 0 CHECK(max_quantity>=0),
-        snoozed_until DATE, active BOOLEAN NOT NULL DEFAULT TRUE, auto_order BOOLEAN NOT NULL DEFAULT FALSE, vendor_id BIGINT REFERENCES sb_vendors(id), created_by BIGINT,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-        UNIQUE(variant_id,warehouse), CHECK(max_quantity>=min_quantity))""")
-    conn.execute("ALTER TABLE sb_replenishment_rules ADD COLUMN IF NOT EXISTS auto_order BOOLEAN NOT NULL DEFAULT FALSE")
-    conn.execute("ALTER TABLE sb_replenishment_rules ADD COLUMN IF NOT EXISTS vendor_id BIGINT REFERENCES sb_vendors(id)")
-    conn.execute("""CREATE TABLE IF NOT EXISTS sb_inventory_scraps (
-        id BIGSERIAL PRIMARY KEY, variant_id BIGINT NOT NULL, warehouse TEXT NOT NULL DEFAULT 'Main',
-        quantity NUMERIC(14,3) NOT NULL CHECK(quantity>0), reason TEXT NOT NULL,
-        should_replenish BOOLEAN NOT NULL DEFAULT FALSE, status TEXT NOT NULL DEFAULT 'done',
-        created_by BIGINT, created_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
     conn.execute("""CREATE TABLE IF NOT EXISTS sb_stock_movements (
         id BIGSERIAL PRIMARY KEY, variant_id BIGINT NOT NULL, warehouse TEXT NOT NULL DEFAULT 'Main',
         movement_type TEXT NOT NULL, quantity NUMERIC(14,3) NOT NULL CHECK(quantity>0),
@@ -126,25 +103,10 @@ def _ensure(conn: Any) -> None:
         UNIQUE(run_id,employee_id))""")
 
 def _post_journal(conn: Any, entry_date: date, reference: str, description: str, source_module: str, source_id: int, lines: list[tuple[str, Decimal, Decimal]], user_id: int) -> int:
-    """Post a balanced journal using seeded account detail types."""
-    from .accounting import _ensure as ensure_accounting
-    ensure_accounting(conn)
-    resolved=[]
-    for detail_type,debit,credit in lines:
-        if debit == 0 and credit == 0:
-            continue
-        account=conn.execute("SELECT id FROM sb_accounts WHERE detail_type=%s AND is_active=TRUE ORDER BY id LIMIT 1",(detail_type,)).fetchone()
-        if not account:
-            raise HTTPException(status_code=503,detail=f"Accounting account is missing: {detail_type}")
-        resolved.append((account["id"],debit,credit,detail_type))
-    if sum((x[1] for x in resolved),Decimal("0")) != sum((x[2] for x in resolved),Decimal("0")):
-        raise HTTPException(status_code=422,detail="Generated accounting journal is not balanced")
-    journal=conn.execute("""INSERT INTO sb_journals(entry_date,reference,description,source_module,source_id,status,created_by)
-        VALUES(%s,%s,%s,%s,%s,'posted',%s) RETURNING id""",(entry_date,reference,description,source_module,str(source_id),user_id)).fetchone()
-    for account_id,debit,credit,detail in resolved:
-        conn.execute("""INSERT INTO sb_journal_lines(journal_id,account_id,debit,credit,description)
-            VALUES(%s,%s,%s,%s,%s)""",(journal["id"],account_id,debit,credit,detail.replace("_"," ")))
-    return journal["id"]
+    """Post a balanced journal to the single ledger (see erp_core.post_journal)."""
+    from . import erp_core
+    return erp_core.post_journal(conn,reference=reference,source_module=source_module,source_id=source_id,memo=description,
+        lines=lines,actor_id=user_id,entry_date=entry_date)
 
 class PartyInput(BaseModel):
     name: str = Field(min_length=1, max_length=200)
@@ -391,271 +353,14 @@ def inventory(authorization: str | None = Header(default=None), warehouse: str |
     try:
         with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
             _ensure(conn)
-            rows=conn.execute("SELECT variant_id,warehouse,quantity,updated_at FROM sb_stock WHERE (%s::text IS NULL OR warehouse=%s) ORDER BY warehouse,variant_id",(warehouse,warehouse)).fetchall()
-            return {"items":rows,"source":"stock_ledger"}
+            rows=conn.execute("""SELECT l.variant_id,w.name AS warehouse,SUM(l.quantity_delta)::int AS quantity,
+                COALESCE((SELECT SUM(r.quantity) FROM sb_stock_reservations r WHERE r.variant_id=l.variant_id AND r.warehouse_id=w.id AND r.status='reserved'),0)::int AS reserved,
+                SUM(l.quantity_delta)::int - COALESCE((SELECT SUM(r.quantity) FROM sb_stock_reservations r WHERE r.variant_id=l.variant_id AND r.warehouse_id=w.id AND r.status='reserved'),0)::int AS available,
+                MAX(l.created_at) AS updated_at
+                FROM sb_inventory_ledger l JOIN sb_warehouses w ON w.id=l.warehouse_id
+                WHERE (%s::text IS NULL OR w.name=%s OR w.code=%s) GROUP BY l.variant_id,w.id,w.name ORDER BY w.name,l.variant_id""",(warehouse,warehouse,warehouse)).fetchall()
+            return {"items":rows,"source":"inventory_ledger"}
     except Exception as exc: raise HTTPException(status_code=503,detail="Inventory unavailable") from exc
-
-class PhysicalCountCreate(BaseModel):
-    scheduled_date: date | None = None
-    note: str = Field(default="", max_length=1000)
-    lines: list[dict[str, Any]] = Field(default_factory=list, max_length=500)
-
-
-@router.get("/inventory/physical-counts")
-def list_physical_counts(authorization: str | None = Header(default=None), limit: int = Query(100, ge=1, le=500)) -> dict[str, Any]:
-    _admin(authorization)
-    try:
-        with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
-            _ensure(conn)
-            counts=conn.execute("""SELECT c.*, COUNT(l.id) AS line_count,
-                COALESCE(SUM(CASE WHEN l.counted IS NOT NULL THEN 1 ELSE 0 END),0) AS counted_lines
-                FROM sb_physical_counts c LEFT JOIN sb_physical_count_lines l ON l.count_id=c.id
-                GROUP BY c.id ORDER BY c.id DESC LIMIT %s""",(limit,)).fetchall()
-            return {"items":counts}
-    except Exception as exc:
-        raise HTTPException(status_code=503, detail="Physical inventory counts unavailable") from exc
-
-
-@router.post("/inventory/physical-counts", status_code=201)
-def create_physical_count(body: PhysicalCountCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    user=_admin(authorization)
-    try:
-        with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
-            _ensure(conn)
-            with conn.transaction():
-                count=conn.execute("""INSERT INTO sb_physical_counts(scheduled_date,note,created_by)
-                    VALUES(COALESCE(%s,CURRENT_DATE),%s,%s) RETURNING *""",(body.scheduled_date,body.note.strip() or None,user["id"])).fetchone()
-                for line in body.lines:
-                    variant_id=int(line.get("variant_id") or 0)
-                    warehouse=str(line.get("warehouse") or "Main").strip() or "Main"
-                    if variant_id<1 or not conn.execute("SELECT id FROM product_variants WHERE id=%s",(variant_id,)).fetchone():
-                        raise HTTPException(status_code=422,detail="Select a valid product variant for every count line.")
-                    stock=conn.execute("SELECT quantity FROM sb_stock WHERE variant_id=%s AND warehouse=%s FOR UPDATE",(variant_id,warehouse)).fetchone()
-                    on_hand=Decimal(str(stock["quantity"] if stock else 0))
-                    counted=line.get("counted")
-                    conn.execute("""INSERT INTO sb_physical_count_lines(count_id,variant_id,warehouse,on_hand,counted)
-                        VALUES(%s,%s,%s,%s,%s)""",(count["id"],variant_id,warehouse,on_hand,Decimal(str(counted)) if counted not in (None,"") else None))
-                lines=conn.execute("SELECT * FROM sb_physical_count_lines WHERE count_id=%s ORDER BY id",(count["id"],)).fetchall()
-                return {"count":count,"lines":lines}
-    except HTTPException: raise
-    except Exception as exc:
-        raise HTTPException(status_code=503,detail="Physical inventory count could not be created") from exc
-
-
-@router.get("/inventory/physical-counts/{count_id}")
-def get_physical_count(count_id: int, authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    _admin(authorization)
-    try:
-        with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
-            _ensure(conn)
-            count=conn.execute("SELECT * FROM sb_physical_counts WHERE id=%s",(count_id,)).fetchone()
-            if not count: raise HTTPException(status_code=404,detail="Physical inventory count not found")
-            lines=conn.execute("""SELECT l.*, COALESCE(pv.sku,'') AS sku,
-                COALESCE(pv.name,'') AS product_name
-                FROM sb_physical_count_lines l LEFT JOIN product_variants pv ON pv.id=l.variant_id
-                WHERE l.count_id=%s ORDER BY l.id""",(count_id,)).fetchall()
-            return {"count":count,"lines":lines}
-    except HTTPException: raise
-    except Exception as exc:
-        raise HTTPException(status_code=503,detail="Physical inventory count could not be loaded") from exc
-
-
-@router.patch("/inventory/physical-counts/{count_id}/lines/{line_id}")
-def update_physical_count_line(count_id: int, line_id: int, body: dict[str, Any], authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    _admin(authorization)
-    try:
-        counted=Decimal(str(body.get("counted")))
-        if not counted.is_finite() or counted<0: raise HTTPException(status_code=422,detail="Counted quantity must be zero or greater.")
-        with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
-            _ensure(conn)
-            with conn.transaction():
-                count=conn.execute("SELECT status FROM sb_physical_counts WHERE id=%s FOR UPDATE",(count_id,)).fetchone()
-                if not count: raise HTTPException(status_code=404,detail="Physical inventory count not found")
-                if count["status"]!="draft": raise HTTPException(status_code=409,detail="Only draft physical counts can be edited.")
-                line=conn.execute("UPDATE sb_physical_count_lines SET counted=%s WHERE id=%s AND count_id=%s RETURNING *",(counted,line_id,count_id)).fetchone()
-                if not line: raise HTTPException(status_code=404,detail="Physical inventory line not found")
-                return {"line":line}
-    except HTTPException: raise
-    except Exception as exc: raise HTTPException(status_code=503,detail="Physical inventory line could not be saved") from exc
-
-
-@router.post("/inventory/physical-counts/{count_id}/apply")
-def apply_physical_count(count_id: int, authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    user=_admin(authorization)
-    try:
-        with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
-            _ensure(conn)
-            with conn.transaction():
-                count=conn.execute("SELECT * FROM sb_physical_counts WHERE id=%s FOR UPDATE",(count_id,)).fetchone()
-                if not count: raise HTTPException(status_code=404,detail="Physical inventory count not found")
-                if count["status"]=="applied": return {"count":count,"already_applied":True}
-                if count["status"]!="draft": raise HTTPException(status_code=409,detail="This physical count is not editable.")
-                lines=conn.execute("SELECT * FROM sb_physical_count_lines WHERE count_id=%s ORDER BY id FOR UPDATE",(count_id,)).fetchall()
-                if not lines or any(line["counted"] is None for line in lines):
-                    raise HTTPException(status_code=422,detail="Save a counted quantity for every line before applying.")
-                for line in lines:
-                    conn.execute("""INSERT INTO sb_stock(variant_id,warehouse,quantity) VALUES(%s,%s,0)
-                        ON CONFLICT(variant_id,warehouse) DO NOTHING""",(line["variant_id"],line["warehouse"]))
-                    stock=conn.execute("SELECT quantity FROM sb_stock WHERE variant_id=%s AND warehouse=%s FOR UPDATE",(line["variant_id"],line["warehouse"])).fetchone()
-                    old=Decimal(str(stock["quantity"])); target=Decimal(str(line["counted"])); delta=target-old
-                    if delta:
-                        conn.execute("UPDATE sb_stock SET quantity=%s,updated_at=now() WHERE variant_id=%s AND warehouse=%s",(target,line["variant_id"],line["warehouse"]))
-                        conn.execute("""INSERT INTO sb_stock_movements(variant_id,warehouse,movement_type,quantity,reference_type,reference_id,note,created_by)
-                            VALUES(%s,%s,%s,%s,'physical_count',%s,%s,%s)""",(line["variant_id"],line["warehouse"],"adjustment_in" if delta>0 else "adjustment_out",abs(delta),count_id,"Physical inventory count #"+str(count_id),user["id"]))
-                updated=conn.execute("""UPDATE sb_physical_counts SET status='applied',applied_by=%s,applied_at=now()
-                    WHERE id=%s RETURNING *""",(user["id"],count_id)).fetchone()
-                return {"count":updated,"already_applied":False}
-    except HTTPException: raise
-    except Exception as exc:
-        raise HTTPException(status_code=503,detail="Physical inventory count could not be applied") from exc
-
-
-class ScrapInput(BaseModel):
-    variant_id: int = Field(gt=0)
-    quantity: Decimal = Field(gt=0, max_digits=14, decimal_places=3)
-    reason: str = Field(min_length=1, max_length=300)
-    should_replenish: bool = False
-    warehouse: str = Field(default="Main", max_length=120)
-
-
-@router.get("/inventory/scraps")
-def list_scraps(authorization: str | None = Header(default=None), limit: int = Query(100,ge=1,le=500)) -> dict[str,Any]:
-    _admin(authorization)
-    try:
-        with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
-            _ensure(conn)
-            return {"items":conn.execute("""SELECT s.*,COALESCE(pv.name,'') AS product_name,COALESCE(pv.sku,'') AS sku
-                FROM sb_inventory_scraps s LEFT JOIN product_variants pv ON pv.id=s.variant_id
-                ORDER BY s.id DESC LIMIT %s""",(limit,)).fetchall()}
-    except Exception as exc: raise HTTPException(status_code=503,detail="Scrap records unavailable") from exc
-
-
-@router.post("/inventory/scraps",status_code=201)
-def create_scrap(body: ScrapInput, authorization: str | None = Header(default=None)) -> dict[str,Any]:
-    user=_admin(authorization)
-    try:
-        with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
-            _ensure(conn)
-            with conn.transaction():
-                if not conn.execute("SELECT id FROM product_variants WHERE id=%s",(body.variant_id,)).fetchone():
-                    raise HTTPException(status_code=404,detail="Product variant not found")
-                warehouse=body.warehouse.strip() or "Main"
-                conn.execute("""INSERT INTO sb_stock(variant_id,warehouse,quantity) VALUES(%s,%s,0)
-                    ON CONFLICT(variant_id,warehouse) DO NOTHING""",(body.variant_id,warehouse))
-                stock=conn.execute("SELECT quantity FROM sb_stock WHERE variant_id=%s AND warehouse=%s FOR UPDATE",(body.variant_id,warehouse)).fetchone()
-                old=Decimal(str(stock["quantity"]))
-                if body.quantity>old: raise HTTPException(status_code=422,detail=f"Scrap quantity exceeds available stock ({old}).")
-                conn.execute("UPDATE sb_stock SET quantity=%s,updated_at=now() WHERE variant_id=%s AND warehouse=%s",(old-body.quantity,body.variant_id,warehouse))
-                row=conn.execute("""INSERT INTO sb_inventory_scraps(variant_id,warehouse,quantity,reason,should_replenish,status,created_by)
-                    VALUES(%s,%s,%s,%s,%s,'done',%s) RETURNING *""",(body.variant_id,warehouse,body.quantity,body.reason.strip(),body.should_replenish,user["id"])).fetchone()
-                conn.execute("""INSERT INTO sb_stock_movements(variant_id,warehouse,movement_type,quantity,reference_type,reference_id,note,created_by)
-                    VALUES(%s,%s,'scrap_out',%s,'scrap',%s,%s,%s)""",(body.variant_id,warehouse,body.quantity,row["id"],body.reason.strip(),user["id"]))
-                return {"item":row,"balance":old-body.quantity}
-    except HTTPException: raise
-    except Exception as exc: raise HTTPException(status_code=503,detail="Scrap could not be recorded") from exc
-
-
-class ReplenishmentRuleInput(BaseModel):
-    variant_id: int = Field(gt=0)
-    warehouse: str = Field(default="Main", max_length=120)
-    min_quantity: Decimal = Field(ge=0, max_digits=14, decimal_places=3)
-    max_quantity: Decimal = Field(ge=0, max_digits=14, decimal_places=3)
-    vendor_id: int | None = Field(default=None, gt=0)
-    auto_order: bool = False
-
-
-@router.get("/inventory/replenishment")
-def list_replenishment(authorization: str | None = Header(default=None)) -> dict[str,Any]:
-    _admin(authorization)
-    try:
-        with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
-            _ensure(conn)
-            rows=conn.execute("""SELECT r.*,COALESCE(pv.name,'') AS product_name,COALESCE(pv.sku,'') AS sku,
-                COALESCE(s.quantity,0) AS on_hand,COALESCE(s.quantity,0) AS forecast,
-                GREATEST(r.max_quantity-COALESCE(s.quantity,0),0) AS to_order
-                FROM sb_replenishment_rules r LEFT JOIN product_variants pv ON pv.id=r.variant_id
-                LEFT JOIN sb_stock s ON s.variant_id=r.variant_id AND s.warehouse=r.warehouse
-                WHERE r.active=TRUE ORDER BY (COALESCE(s.quantity,0)<r.min_quantity) DESC,r.id DESC""").fetchall()
-            return {"items":rows}
-    except Exception as exc: raise HTTPException(status_code=503,detail="Replenishment rules unavailable") from exc
-
-
-@router.post("/inventory/replenishment",status_code=201)
-def save_replenishment(body: ReplenishmentRuleInput, authorization: str | None = Header(default=None)) -> dict[str,Any]:
-    user=_admin(authorization)
-    if body.max_quantity<body.min_quantity: raise HTTPException(status_code=422,detail="Maximum quantity must be at least the minimum.")
-    try:
-        with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
-            _ensure(conn)
-            if not conn.execute("SELECT id FROM product_variants WHERE id=%s",(body.variant_id,)).fetchone():
-                raise HTTPException(status_code=404,detail="Product variant not found")
-            warehouse=body.warehouse.strip() or "Main"
-            row=conn.execute("""INSERT INTO sb_replenishment_rules(variant_id,warehouse,min_quantity,max_quantity,vendor_id,auto_order,created_by)
-                VALUES(%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(variant_id,warehouse) DO UPDATE SET
-                min_quantity=EXCLUDED.min_quantity,max_quantity=EXCLUDED.max_quantity,vendor_id=EXCLUDED.vendor_id,
-                auto_order=EXCLUDED.auto_order,active=TRUE,updated_at=now()
-                RETURNING *""",(body.variant_id,warehouse,body.min_quantity,body.max_quantity,body.vendor_id,body.auto_order,user["id"])).fetchone()
-            return {"item":row}
-    except HTTPException: raise
-    except Exception as exc: raise HTTPException(status_code=503,detail="Replenishment rule could not be saved") from exc
-
-
-@router.post("/inventory/replenishment/{rule_id}/order", status_code=201)
-def order_replenishment(rule_id: int, authorization: str | None = Header(default=None)) -> dict[str,Any]:
-    user=_admin(authorization)
-    try:
-        with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
-            _ensure(conn)
-            with conn.transaction():
-                rule=conn.execute("""SELECT r.*,COALESCE(s.quantity,0) AS on_hand FROM sb_replenishment_rules r
-                    LEFT JOIN sb_stock s ON s.variant_id=r.variant_id AND s.warehouse=r.warehouse
-                    WHERE r.id=%s AND r.active=TRUE FOR UPDATE OF r""",(rule_id,)).fetchone()
-                if not rule: raise HTTPException(status_code=404,detail="Replenishment rule not found")
-                if not rule["vendor_id"]: raise HTTPException(status_code=422,detail="Choose a supplier in the replenishment rule before creating an order.")
-                quantity=max(Decimal("0"),Decimal(str(rule["max_quantity"]))-Decimal(str(rule["on_hand"])))
-                if quantity<=0: raise HTTPException(status_code=422,detail="Current stock is already at or above the maximum level.")
-                if not conn.execute("SELECT id FROM sb_vendors WHERE id=%s",(rule["vendor_id"],)).fetchone():
-                    raise HTTPException(status_code=422,detail="The selected supplier no longer exists.")
-                po=conn.execute("""INSERT INTO sb_purchase_orders(vendor_id,order_date,total,note,created_by)
-                    VALUES(%s,CURRENT_DATE,0,%s,%s) RETURNING *""",
-                    (rule["vendor_id"],f"Replenishment rule #{rule_id}; warehouse {rule['warehouse']}",user["id"])).fetchone()
-                line=conn.execute("""INSERT INTO sb_purchase_lines(purchase_id,variant_id,quantity,unit_cost)
-                    VALUES(%s,%s,%s,0) RETURNING *""",(po["id"],rule["variant_id"],quantity)).fetchone()
-                return {"purchase":po,"lines":[line],"suggested_quantity":quantity}
-    except HTTPException: raise
-    except Exception as exc: raise HTTPException(status_code=503,detail="Replenishment purchase order could not be created") from exc
-
-
-@router.post("/inventory/replenishment/{rule_id}/automate")
-def automate_replenishment(rule_id: int, authorization: str | None = Header(default=None)) -> dict[str,Any]:
-    _admin(authorization)
-    try:
-        with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
-            _ensure(conn)
-            row=conn.execute("""UPDATE sb_replenishment_rules SET auto_order=NOT auto_order,updated_at=now()
-                WHERE id=%s AND active=TRUE RETURNING *""",(rule_id,)).fetchone()
-            if not row: raise HTTPException(status_code=404,detail="Replenishment rule not found")
-            if row["auto_order"] and not row["vendor_id"]:
-                conn.execute("UPDATE sb_replenishment_rules SET auto_order=FALSE WHERE id=%s",(rule_id,))
-                raise HTTPException(status_code=422,detail="Choose a supplier before enabling automation.")
-            return {"item":row}
-    except HTTPException: raise
-    except Exception as exc: raise HTTPException(status_code=503,detail="Automation setting could not be updated") from exc
-
-
-@router.post("/inventory/replenishment/{rule_id}/snooze")
-def snooze_replenishment(rule_id: int, authorization: str | None = Header(default=None)) -> dict[str,Any]:
-    _admin(authorization)
-    try:
-        with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
-            _ensure(conn)
-            row=conn.execute("""UPDATE sb_replenishment_rules SET snoozed_until=CURRENT_DATE+7,updated_at=now()
-                WHERE id=%s AND active=TRUE RETURNING *""",(rule_id,)).fetchone()
-            if not row: raise HTTPException(status_code=404,detail="Replenishment rule not found")
-            return {"item":row}
-    except HTTPException: raise
-    except Exception as exc: raise HTTPException(status_code=503,detail="Replenishment rule could not be snoozed") from exc
-
 
 @router.post("/inventory/movements",status_code=201)
 def stock_movement(body: StockInput, authorization: str | None = Header(default=None)) -> dict[str,Any]:
@@ -666,21 +371,15 @@ def stock_movement(body: StockInput, authorization: str | None = Header(default=
             with conn.transaction():
                 if not conn.execute("SELECT id FROM product_variants WHERE id=%s",(body.variant_id,)).fetchone():
                     raise HTTPException(status_code=404,detail="Product variant not found")
-                # Ensure a row exists before locking it. SELECT ... FOR UPDATE does not
-                # lock a missing row, so concurrent first movements could otherwise
-                # both read zero and overwrite each other's stock balance.
-                conn.execute("""INSERT INTO sb_stock(variant_id,warehouse,quantity)
-                    VALUES(%s,%s,0) ON CONFLICT(variant_id,warehouse) DO NOTHING""",
-                    (body.variant_id,body.warehouse))
-                current=conn.execute("SELECT quantity FROM sb_stock WHERE variant_id=%s AND warehouse=%s FOR UPDATE",(body.variant_id,body.warehouse)).fetchone()
-                old=Decimal(str(current["quantity"]))
-                delta=body.quantity if body.movement_type in {"opening","adjustment_in","return_in","transfer_in"} else -body.quantity
-                if old+delta<0: raise HTTPException(status_code=422,detail="Insufficient stock for this movement")
-                conn.execute("""UPDATE sb_stock SET quantity=%s,updated_at=now()
-                    WHERE variant_id=%s AND warehouse=%s""",(old+delta,body.variant_id,body.warehouse))
-                row=conn.execute("""INSERT INTO sb_stock_movements(variant_id,warehouse,movement_type,quantity,note,created_by)
-                    VALUES(%s,%s,%s,%s,%s,%s) RETURNING *""",(body.variant_id,body.warehouse,body.movement_type,body.quantity,body.note.strip() or None,user["id"])).fetchone()
-                return {"movement":row,"balance":old+delta}
+                from . import erp_core
+                wh=conn.execute("SELECT id FROM sb_warehouses WHERE active AND (lower(name)=lower(%s) OR lower(code)=lower(%s)) ORDER BY id LIMIT 1",(body.warehouse,body.warehouse)).fetchone()
+                wid=int(wh["id"]) if wh else erp_core.default_warehouse_id(conn)
+                delta=int(body.quantity) if body.movement_type in {"opening","adjustment_in","return_in","transfer_in"} else -int(body.quantity)
+                if Decimal(body.quantity)!=Decimal(int(body.quantity)): raise HTTPException(status_code=422,detail="Stock quantities must be whole units")
+                mtype={"opening":"opening_balance","adjustment_in":"adjustment","adjustment_out":"adjustment","damage_out":"adjustment","return_in":"return","transfer_in":"transfer_in","transfer_out":"transfer_out"}[body.movement_type]
+                mid=erp_core.post_stock(conn,body.variant_id,delta,mtype,"STK-"+__import__("secrets").token_hex(5).upper(),warehouse_id=wid,note=(body.note.strip() or body.movement_type),actor_id=user["id"])
+                row=conn.execute("SELECT * FROM sb_inventory_ledger WHERE id=%s",(mid,)).fetchone()
+                return {"movement":row,"balance":erp_core.on_hand(conn,body.variant_id,wid)}
     except HTTPException: raise
     except Exception as exc: raise HTTPException(status_code=503,detail="Stock movement could not be saved") from exc
 
@@ -690,13 +389,15 @@ def stock_movements(authorization: str | None = Header(default=None), variant_id
     try:
         with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
             _ensure(conn)
-            return {"items":conn.execute("""SELECT * FROM sb_stock_movements WHERE (%s::bigint IS NULL OR variant_id=%s)
-                ORDER BY id DESC LIMIT %s""",(variant_id,variant_id,limit)).fetchall()}
+            return {"items":conn.execute("""SELECT l.id,l.variant_id,w.name AS warehouse,l.movement_type,ABS(l.quantity_delta) AS quantity,
+                l.quantity_delta,l.reference,l.location,l.note,l.created_at FROM sb_inventory_ledger l JOIN sb_warehouses w ON w.id=l.warehouse_id
+                WHERE (%s::bigint IS NULL OR l.variant_id=%s) ORDER BY l.id DESC LIMIT %s""",(variant_id,variant_id,limit)).fetchall()}
     except Exception as exc: raise HTTPException(status_code=503,detail="Stock movement history unavailable") from exc
 
 @router.post("/purchases",status_code=201)
 def create_purchase(body: PurchaseInput,authorization: str | None = Header(default=None))->dict[str,Any]:
     user=_admin(authorization)
+    raise HTTPException(status_code=410,detail="Retired: purchasing now runs through requisition > quotation > purchase order > GRN > inspection > bill (Purchase module). This keeps stock and accounts consistent.")
     try:
         with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
             _ensure(conn)
@@ -730,24 +431,6 @@ def purchases(authorization: str | None = Header(default=None),limit:int=Query(1
             return {"items":conn.execute("""SELECT p.*,v.name AS vendor_name FROM sb_purchase_orders p JOIN sb_vendors v ON v.id=p.vendor_id ORDER BY p.id DESC LIMIT %s""",(limit,)).fetchall()}
     except Exception as exc: raise HTTPException(status_code=503,detail="Purchase orders unavailable") from exc
 
-@router.get("/purchase-receipts")
-def purchase_receipts(authorization: str | None = Header(default=None), limit: int = Query(100, ge=1, le=500)) -> dict[str, Any]:
-    _admin(authorization)
-    try:
-        with psycopg.connect(_db(), row_factory=dict_row, connect_timeout=8) as conn:
-            _ensure(conn)
-            rows = conn.execute("""SELECT r.id AS receipt_id, r.purchase_id, r.received_value,
-                    r.received_by, r.created_at, p.order_date, p.status AS purchase_status,
-                    v.name AS vendor_name
-                FROM sb_purchase_receipts r
-                JOIN sb_purchase_orders p ON p.id = r.purchase_id
-                JOIN sb_vendors v ON v.id = p.vendor_id
-                ORDER BY r.id DESC LIMIT %s""", (limit,)).fetchall()
-            return {"items": rows}
-    except Exception as exc:
-        raise HTTPException(status_code=503, detail="Purchase receipts unavailable") from exc
-
-
 @router.get("/purchases/{purchase_id}")
 def purchase_detail(purchase_id:int,authorization:str|None=Header(default=None))->dict[str,Any]:
     _admin(authorization)
@@ -774,6 +457,7 @@ def receive_purchase(
     authorization:str|None=Header(default=None)
 )->dict[str,Any]:
     user=_admin(authorization)
+    raise HTTPException(status_code=410,detail="Retired: purchasing now runs through requisition > quotation > purchase order > GRN > inspection > bill (Purchase module). This keeps stock and accounts consistent.")
     try:
         with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
             _ensure(conn)
@@ -804,12 +488,9 @@ def receive_purchase(
                 for line_id,qty in requested.items():
                     line=by_id[line_id]
                     received_value+=(qty*Decimal(str(line["unit_cost"]))).quantize(Decimal("0.01"))
-                    conn.execute("""INSERT INTO sb_stock(variant_id,warehouse,quantity) VALUES(%s,'Main',%s)
-                        ON CONFLICT(variant_id,warehouse) DO UPDATE SET quantity=sb_stock.quantity+EXCLUDED.quantity,updated_at=now()""",
-                        (line["variant_id"],qty))
-                    conn.execute("""INSERT INTO sb_stock_movements(variant_id,warehouse,movement_type,quantity,reference_type,reference_id,created_by)
-                        VALUES(%s,'Main','purchase_receipt',%s,'purchase',%s,%s)""",
-                        (line["variant_id"],qty,purchase_id,user["id"]))
+                    from . import erp_core
+                    erp_core.post_stock(conn,int(line["variant_id"]),int(qty),"purchase_receipt",f"PO-{purchase_id}",
+                        note=f"Direct receipt against purchase order {purchase_id}",actor_id=user["id"])
                     conn.execute("UPDATE sb_purchase_lines SET received_qty=received_qty+%s WHERE id=%s",(qty,line_id))
                     received_lines.append({"line_id":line_id,"variant_id":int(line["variant_id"]),"received_quantity":qty})
                 updated=conn.execute("""SELECT COUNT(*) FILTER(WHERE received_qty<quantity) AS outstanding
@@ -841,8 +522,10 @@ def pos_sale(body:POSInput,authorization:str|None=Header(default=None))->dict[st
                 if len(variant_ids)!=len(set(variant_ids)): raise HTTPException(status_code=422,detail="Each product variant can appear only once per POS sale; combine its quantity.")
                 subtotal=Decimal("0"); tax_total=Decimal("0"); cogs_total=Decimal("0"); resolved=[]
                 for line in body.lines:
-                    stock=conn.execute("SELECT quantity FROM sb_stock WHERE variant_id=%s AND warehouse='Main' FOR UPDATE",(line.variant_id,)).fetchone()
-                    available=Decimal(str(stock["quantity"])) if stock else Decimal("0")
+                    from . import erp_core
+                    pos_wid=erp_core.default_warehouse_id(conn)
+                    erp_core.lock_variant(conn,line.variant_id)
+                    available=Decimal(erp_core.available(conn,line.variant_id,pos_wid))
                     if available<line.quantity: raise HTTPException(status_code=422,detail=f"Insufficient stock for variant {line.variant_id}; available {available}")
                     product=conn.execute("""SELECT selling_price FROM product_variants WHERE id=%s""",(line.variant_id,)).fetchone()
                     if not product: raise HTTPException(status_code=404,detail=f"Product variant {line.variant_id} not found")
@@ -850,10 +533,7 @@ def pos_sale(body:POSInput,authorization:str|None=Header(default=None))->dict[st
                     tax_mapping=conn.execute("SELECT gst_rate,classification FROM sb_product_tax WHERE variant_id=%s",(line.variant_id,)).fetchone()
                     applied_rate=Decimal(str(tax_mapping["gst_rate"])) if tax_mapping and tax_mapping["classification"]=="taxable" else (Decimal("0") if tax_mapping else line.tax_rate)
                     base=price*line.quantity; tax=(base*applied_rate/Decimal("100")).quantize(Decimal("0.01"))
-                    cost_row=conn.execute("""SELECT COALESCE(SUM(pl.unit_cost*pl.received_qty)/NULLIF(SUM(pl.received_qty),0),0) AS avg_cost
-                        FROM sb_purchase_lines pl JOIN sb_purchase_orders po ON po.id=pl.purchase_id
-                        WHERE pl.variant_id=%s AND po.status IN ('part_received','received')""",(line.variant_id,)).fetchone()
-                    avg_cost=Decimal(str(cost_row["avg_cost"] or 0))
+                    avg_cost=erp_core.avg_cost(conn,line.variant_id)
                     cogs_total+=(avg_cost*line.quantity).quantize(Decimal("0.01"))
                     subtotal+=base; tax_total+=tax; resolved.append((line,price,applied_rate,base+tax))
                 total=subtotal+tax_total
@@ -863,9 +543,7 @@ def pos_sale(body:POSInput,authorization:str|None=Header(default=None))->dict[st
                 for line,price,applied_rate,line_total in resolved:
                     conn.execute("""INSERT INTO sb_pos_sale_lines(sale_id,variant_id,quantity,unit_price,tax_rate,line_total)
                         VALUES(%s,%s,%s,%s,%s,%s)""",(sale["id"],line.variant_id,line.quantity,price,applied_rate,line_total))
-                    conn.execute("UPDATE sb_stock SET quantity=quantity-%s,updated_at=now() WHERE variant_id=%s AND warehouse='Main'",(line.quantity,line.variant_id))
-                    conn.execute("""INSERT INTO sb_stock_movements(variant_id,warehouse,movement_type,quantity,reference_type,reference_id,created_by)
-                        VALUES(%s,'Main','pos_sale',%s,'pos',%s,%s)""",(line.variant_id,line.quantity,sale["id"],user["id"]))
+                    erp_core.post_stock(conn,line.variant_id,-int(line.quantity),"sale",receipt,warehouse_id=erp_core.default_warehouse_id(conn),note="POS sale",actor_id=user["id"])
                 from .invoices import create_invoice
                 customer=conn.execute("SELECT name,email,phone FROM sb_customers WHERE id=%s",(body.customer_id,)).fetchone() if body.customer_id else None
                 invoice_lines=[]
@@ -970,39 +648,11 @@ def update_shipment(shipment_id:int,body:ShipmentUpdate,authorization:str|None=H
                 journal_id=None
                 target=None
                 if shipment["order_type"]=="website" and conn.execute("SELECT to_regclass('public.store_orders') AS name").fetchone()["name"]:
-                    order=conn.execute("SELECT * FROM store_orders WHERE id=%s FOR UPDATE",(shipment["order_id"],)).fetchone()
-                    mapped={"packed":"packed","in_transit":"shipped","out_for_delivery":"shipped","delivered":"delivered","cancelled":"cancelled"}
-                    target=mapped.get(body.status)
-                    if order and target and order["status"] not in ("delivered","cancelled"):
-                        if target=="cancelled":
-                            order_lines=conn.execute("SELECT variant_id,quantity FROM store_order_items WHERE order_id=%s",(order["id"],)).fetchall()
-                            for line in order_lines:
-                                reserved=conn.execute("""SELECT id FROM sb_stock_movements WHERE variant_id=%s AND reference_type='website_order'
-                                    AND reference_id=%s AND movement_type='website_sale' LIMIT 1""",(line["variant_id"],order["id"])).fetchone()
-                                stock=conn.execute("SELECT quantity FROM sb_stock WHERE variant_id=%s AND warehouse='Main' FOR UPDATE",(line["variant_id"],)).fetchone()
-                                if reserved and stock:
-                                    conn.execute("UPDATE sb_stock SET quantity=quantity+%s,updated_at=now() WHERE variant_id=%s AND warehouse='Main'",(line["quantity"],line["variant_id"]))
-                                    conn.execute("""INSERT INTO sb_stock_movements(variant_id,warehouse,movement_type,quantity,reference_type,reference_id,created_by)
-                                        VALUES(%s,'Main','return_in',%s,'website_order_cancel',%s,%s)""",(line["variant_id"],line["quantity"],order["id"],user["id"]))
-                        conn.execute("UPDATE store_orders SET status=%s,updated_at=now() WHERE id=%s",(target,order["id"]))
-                        if target=="delivered":
-                            from .accounting import _ensure as ensure_accounting
-                            ensure_accounting(conn)
-                            subtotal=Decimal(str(order["subtotal"])); total=Decimal(str(order["total"])); shipping=Decimal(str(order["shipping_fee"]))
-                            discount=Decimal(str(order.get("loyalty_discount") or 0))
-                            journal_lines=[("accounts_receivable",total,Decimal("0")),("sales",Decimal("0"),subtotal-discount)]
-                            if shipping: journal_lines.append(("other_income",Decimal("0"),shipping))
-                            cost_rows=conn.execute("""SELECT oi.variant_id,oi.quantity,
-                                COALESCE(SUM(CASE WHEN po.id IS NOT NULL THEN pl.unit_cost*pl.received_qty ELSE 0 END)/
-                                NULLIF(SUM(CASE WHEN po.id IS NOT NULL THEN pl.received_qty ELSE 0 END),0),0) AS avg_cost
-                                FROM store_order_items oi LEFT JOIN sb_purchase_lines pl ON pl.variant_id=oi.variant_id
-                                LEFT JOIN sb_purchase_orders po ON po.id=pl.purchase_id AND po.status IN ('part_received','received')
-                                WHERE oi.order_id=%s GROUP BY oi.variant_id,oi.quantity""",(order["id"],)).fetchall()
-                            cogs=sum((Decimal(str(x["avg_cost"] or 0))*Decimal(str(x["quantity"])) for x in cost_rows),Decimal("0")).quantize(Decimal("0.01"))
-                            if cogs: journal_lines.extend([("cost_of_goods_sold",cogs,Decimal("0")),("inventory",Decimal("0"),cogs)])
-                            journal_id=_post_journal(conn,date.today(),order["order_number"],"Website sale "+order["order_number"],"website",order["id"],journal_lines,user["id"])
-                            from .loyalty import award_order_coins
-                            award_order_coins(conn,int(order["user_id"]),int(order["id"]),subtotal-discount,total)
+                    from .order_flow import advance_website_order, SHIPMENT_TO_ORDER, ORDER_FLOW
+                    target=SHIPMENT_TO_ORDER.get(body.status)
+                    order=conn.execute("SELECT status FROM store_orders WHERE id=%s",(shipment["order_id"],)).fetchone()
+                    if order and target and order["status"] not in ("delivered","cancelled") and (target=="cancelled" or ORDER_FLOW.index(target)>ORDER_FLOW.index(order["status"])):
+                        journal_id=advance_website_order(conn,int(shipment["order_id"]),target,user["id"])["journal_id"]
                 return {"shipment":row,"linked_order_status":target if shipment["order_type"]=="website" else None,"journal_id":journal_id}
     except HTTPException: raise
     except Exception as exc: raise HTTPException(status_code=503,detail="Shipment could not be updated") from exc
@@ -1127,6 +777,7 @@ def mark_payroll_paid(run_id:int,payment_account:str=Query(default="bank",patter
 @router.post("/purchases/{purchase_id}/pay")
 def pay_supplier_purchase(purchase_id:int,payment_account:str=Query(default="bank",pattern="^(bank|cash)$"),reference:str=Query(default="",max_length=120),authorization:str|None=Header(default=None))->dict[str,Any]:
     user=_admin(authorization)
+    raise HTTPException(status_code=410,detail="Retired: purchasing now runs through requisition > quotation > purchase order > GRN > inspection > bill (Purchase module). This keeps stock and accounts consistent.")
     try:
         with psycopg.connect(_db(),row_factory=dict_row,connect_timeout=8) as conn:
             _ensure(conn)

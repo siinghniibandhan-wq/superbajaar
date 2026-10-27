@@ -261,297 +261,6 @@ def product_creation_references(authorization: str | None = Header(default=None)
         logger.exception("Product creation references could not be loaded")
         raise HTTPException(status_code=503, detail="Existing tax and warehouse references could not be loaded.") from exc
 
-
-
-class CatalogueAttributeInput(BaseModel):
-    name: str = Field(min_length=1, max_length=100)
-    values: list[str] = Field(min_length=1, max_length=200)
-    display_type: str = Field(default="button", pattern="^(text|color|dropdown|button|image)$")
-
-
-class CatalogueAttributeDisplayInput(BaseModel):
-    display_type: str = Field(pattern="^(text|color|dropdown|button|image)$")
-
-
-class CatalogueAttributeAssignmentsInput(BaseModel):
-    attribute_ids: list[int] = Field(default_factory=list, max_length=100)
-
-
-class CatalogueVariantAttributesInput(BaseModel):
-    values: dict[int, str] = Field(default_factory=dict, max_length=100)
-
-
-def _catalogue_attribute_tables(conn: Any) -> tuple[bool, bool, bool]:
-    found = {}
-    for table in ("catalog_attributes", "product_attribute_assignments", "variant_attribute_values"):
-        found[table] = bool(conn.execute("SELECT to_regclass(%s) AS t", (f"public.{table}",)).fetchone()["t"])
-    return found["catalog_attributes"], found["product_attribute_assignments"], found["variant_attribute_values"]
-
-
-@app.get("/api/admin/catalogue/attributes")
-def list_catalogue_attributes(authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    _admin_catalogue_user(authorization)
-    try:
-        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
-            has_attributes, _, _ = _catalogue_attribute_tables(conn)
-            if not has_attributes:
-                raise HTTPException(status_code=503, detail="The existing catalogue attribute table is missing. Code-only checks are complete; database setup may be required.")
-            columns = get_columns(conn, "catalog_attributes")
-            select = ["id", "name"]
-            if "values_json" in columns:
-                select.append("values_json")
-            else:
-                raise HTTPException(status_code=503, detail="catalog_attributes.values_json is missing; database schema needs review.")
-            if "display_type" in columns:
-                select.append("display_type")
-            rows = conn.execute("SELECT " + ", ".join(select) + " FROM catalog_attributes ORDER BY name, id").fetchall()
-            for row in rows:
-                row["values_json"] = row.get("values_json") or []
-                row["display_type"] = row.get("display_type") or "button"
-            return {"items": rows}
-    except HTTPException:
-        raise
-    except psycopg.Error as exc:
-        logger.exception("Catalogue attributes could not be listed")
-        raise HTTPException(status_code=503, detail="Catalogue attributes could not be loaded.") from exc
-
-
-@app.post("/api/admin/catalogue/attributes", status_code=201)
-def create_catalogue_attribute(body: CatalogueAttributeInput, authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    _admin_catalogue_user(authorization)
-    name = body.name.strip()
-    values = list(dict.fromkeys(v.strip() for v in body.values if v and v.strip()))
-    if not name or not values:
-        raise HTTPException(status_code=422, detail="Enter an attribute name and at least one allowed value.")
-    try:
-        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
-            has_attributes, _, _ = _catalogue_attribute_tables(conn)
-            if not has_attributes:
-                raise HTTPException(status_code=503, detail="The existing catalogue attribute table is missing. Database setup may be required; no schema changes were made.")
-            columns = get_columns(conn, "catalog_attributes")
-            if not {"name", "values_json"}.issubset(columns):
-                raise HTTPException(status_code=503, detail="catalog_attributes is missing required columns; database schema needs review.")
-            if "display_type" in columns:
-                row = conn.execute(
-                    """INSERT INTO catalog_attributes(name, values_json, display_type)
-                       VALUES(%s, %s, %s)
-                       ON CONFLICT(name) DO UPDATE SET values_json=EXCLUDED.values_json, display_type=EXCLUDED.display_type
-                       RETURNING id, name, values_json, display_type""",
-                    (name, Jsonb(values), body.display_type),
-                ).fetchone()
-            else:
-                row = conn.execute(
-                    """INSERT INTO catalog_attributes(name, values_json)
-                       VALUES(%s, %s) ON CONFLICT(name) DO UPDATE SET values_json=EXCLUDED.values_json
-                       RETURNING id, name, values_json""",
-                    (name, Jsonb(values)),
-                ).fetchone()
-                row["display_type"] = body.display_type
-            row["values_json"] = row.get("values_json") or []
-            return row
-    except HTTPException:
-        raise
-    except psycopg.errors.UndefinedColumn as exc:
-        logger.exception("Catalogue attribute schema mismatch while creating attribute")
-        raise HTTPException(status_code=503, detail="The existing attribute table does not match the API fields. Database schema review may be needed.") from exc
-    except psycopg.Error as exc:
-        logger.exception("Catalogue attribute could not be created")
-        raise HTTPException(status_code=503, detail="Attribute could not be saved. Check whether the existing attribute table has a unique constraint on name.") from exc
-
-
-@app.put("/api/admin/catalogue/attributes/{attribute_id}/display-type")
-def update_catalogue_attribute_display_type(attribute_id: int, body: CatalogueAttributeDisplayInput,
-                                            authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    _admin_catalogue_user(authorization)
-    try:
-        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
-            has_attributes, _, _ = _catalogue_attribute_tables(conn)
-            if not has_attributes:
-                raise HTTPException(status_code=503, detail="The existing catalogue attribute table is missing.")
-            columns = get_columns(conn, "catalog_attributes")
-            if "display_type" not in columns:
-                raise HTTPException(status_code=503, detail="catalog_attributes.display_type is missing; database schema review may be needed.")
-            row = conn.execute(
-                "UPDATE catalog_attributes SET display_type=%s WHERE id=%s RETURNING id, name, values_json, display_type",
-                (body.display_type, attribute_id),
-            ).fetchone()
-            if not row:
-                raise HTTPException(status_code=404, detail="Attribute not found.")
-            row["values_json"] = row.get("values_json") or []
-            return row
-    except HTTPException:
-        raise
-    except psycopg.Error as exc:
-        logger.exception("Catalogue attribute display type could not be updated")
-        raise HTTPException(status_code=503, detail="Attribute display type could not be saved.") from exc
-
-
-@app.get("/api/products/{product_id}/configuration")
-def get_product_attribute_configuration(product_id: int) -> dict[str, Any]:
-    try:
-        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
-            product = conn.execute("SELECT id, name FROM products WHERE id=%s", (product_id,)).fetchone()
-            if not product:
-                raise HTTPException(status_code=404, detail="Product not found.")
-            has_attributes, has_assignments, has_values = _catalogue_attribute_tables(conn)
-            if not has_attributes:
-                raise HTTPException(status_code=503, detail="The existing catalogue attribute table is missing.")
-            if has_assignments:
-                attributes = conn.execute(
-                    """SELECT a.id, a.name, a.values_json, COALESCE(a.display_type, 'button') AS display_type
-                       FROM product_attribute_assignments pa
-                       JOIN catalog_attributes a ON a.id=pa.attribute_id
-                       WHERE pa.product_id=%s ORDER BY a.name, a.id""", (product_id,)
-                ).fetchall()
-            else:
-                attributes = []
-            variants = conn.execute(
-                """SELECT id AS variant_id, sku, selling_price, mrp
-                   FROM product_variants
-                   WHERE product_id=%s AND (status IS NULL OR status <> 'inactive')
-                   ORDER BY id""", (product_id,)
-            ).fetchall()
-            for variant in variants:
-                value_map = {}
-                if has_values:
-                    saved = conn.execute(
-                        """SELECT attribute_id, value FROM variant_attribute_values
-                           WHERE variant_id=%s ORDER BY attribute_id""", (variant["variant_id"],)
-                    ).fetchall()
-                    value_map = {str(row["attribute_id"]): row["value"] for row in saved}
-                variant["attributes"] = value_map
-            return {"product": product, "attributes": attributes, "variants": variants}
-    except HTTPException:
-        raise
-    except psycopg.Error as exc:
-        logger.exception("Product attribute configuration could not be loaded for product %s", product_id)
-        raise HTTPException(status_code=503, detail="Product attribute configuration could not be loaded.") from exc
-
-
-@app.put("/api/admin/catalogue/products/{product_id}/attributes")
-def assign_catalogue_product_attributes(product_id: int, body: CatalogueAttributeAssignmentsInput,
-                                         authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    _admin_catalogue_user(authorization)
-    try:
-        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
-            if not conn.execute("SELECT id FROM products WHERE id=%s", (product_id,)).fetchone():
-                raise HTTPException(status_code=404, detail="Product not found.")
-            has_attributes, has_assignments, _ = _catalogue_attribute_tables(conn)
-            if not has_attributes or not has_assignments:
-                raise HTTPException(status_code=503, detail="The existing product-attribute assignment tables are missing. No database changes were made.")
-            ids = list(dict.fromkeys(body.attribute_ids))
-            if ids:
-                found = conn.execute("SELECT id FROM catalog_attributes WHERE id = ANY(%s)", (ids,)).fetchall()
-                if {int(row["id"]) for row in found} != set(ids):
-                    raise HTTPException(status_code=422, detail="One or more selected attributes do not exist.")
-            conn.execute("DELETE FROM product_attribute_assignments WHERE product_id=%s", (product_id,))
-            for attribute_id in ids:
-                conn.execute(
-                    "INSERT INTO product_attribute_assignments(product_id, attribute_id) VALUES(%s, %s) ON CONFLICT DO NOTHING",
-                    (product_id, attribute_id),
-                )
-            return {"product_id": product_id, "attribute_ids": ids, "saved": True}
-    except HTTPException:
-        raise
-    except psycopg.Error as exc:
-        logger.exception("Product attribute assignment failed for product %s", product_id)
-        raise HTTPException(status_code=503, detail="Product attributes could not be assigned.") from exc
-
-
-@app.put("/api/admin/catalogue/variants/{variant_id}/attributes")
-def save_catalogue_variant_attributes(variant_id: int, body: CatalogueVariantAttributesInput,
-                                      authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    _admin_catalogue_user(authorization)
-    try:
-        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
-            has_attributes, _, has_values = _catalogue_attribute_tables(conn)
-            if not has_attributes or not has_values:
-                raise HTTPException(status_code=503, detail="The existing variant-attribute tables are missing. No database changes were made.")
-            variant = conn.execute("SELECT id, product_id FROM product_variants WHERE id=%s", (variant_id,)).fetchone()
-            if not variant:
-                raise HTTPException(status_code=404, detail="Variant not found.")
-            ids = list(body.values.keys())
-            if ids:
-                attributes = conn.execute("SELECT id, name, values_json FROM catalog_attributes WHERE id = ANY(%s)", (ids,)).fetchall()
-                by_id = {int(row["id"]): row for row in attributes}
-                if set(by_id) != set(ids):
-                    raise HTTPException(status_code=422, detail="One or more selected attributes do not exist.")
-                _, has_assignments, _ = _catalogue_attribute_tables(conn)
-                if has_assignments:
-                    assigned = conn.execute(
-                        "SELECT attribute_id FROM product_attribute_assignments WHERE product_id=%s AND attribute_id = ANY(%s)",
-                        (variant["product_id"], ids),
-                    ).fetchall()
-                    assigned_ids = {int(row["attribute_id"]) for row in assigned}
-                    if assigned_ids != set(ids):
-                        raise HTTPException(status_code=422, detail="Assign the selected attributes to this product before saving variant values.")
-                for attribute_id, raw_value in body.values.items():
-                    value = str(raw_value).strip()
-                    allowed = by_id[attribute_id].get("values_json") or []
-                    if not value or (isinstance(allowed, list) and value not in allowed):
-                        raise HTTPException(status_code=422, detail=f"Choose an allowed value for {by_id[attribute_id]['name']}.")
-                    conn.execute(
-                        """INSERT INTO variant_attribute_values(variant_id, attribute_id, value)
-                           VALUES(%s, %s, %s)
-                           ON CONFLICT(variant_id, attribute_id) DO UPDATE SET value=EXCLUDED.value""",
-                        (variant_id, attribute_id, value),
-                    )
-            return {"variant_id": variant_id, "values": body.values, "saved": True}
-    except HTTPException:
-        raise
-    except psycopg.Error as exc:
-        logger.exception("Variant attributes could not be saved for variant %s", variant_id)
-        raise HTTPException(status_code=503, detail="Variant attribute values could not be saved.") from exc
-
-
-@app.post("/api/admin/catalogue/attributes/import-existing")
-def import_existing_catalogue_attributes(authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    _admin_catalogue_user(authorization)
-    try:
-        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
-            has_attributes, has_assignments, has_values = _catalogue_attribute_tables(conn)
-            if not has_attributes or not has_values:
-                raise HTTPException(status_code=503, detail="The existing attribute tables are missing. No schema changes were made.")
-            found = conn.execute(
-                """SELECT a.id, a.name, a.values_json, COUNT(DISTINCT v.variant_id) AS variants_count
-                   FROM catalog_attributes a LEFT JOIN variant_attribute_values v ON v.attribute_id=a.id
-                   GROUP BY a.id, a.name, a.values_json ORDER BY a.name"""
-            ).fetchall()
-            imported = 0
-            assigned_products = set()
-            variants_updated = set()
-            for attr in found:
-                values = conn.execute(
-                    """SELECT DISTINCT value FROM variant_attribute_values
-                       WHERE attribute_id=%s AND value IS NOT NULL AND btrim(value) <> '' ORDER BY value""",
-                    (attr["id"],),
-                ).fetchall()
-                current = attr.get("values_json") or []
-                merged = list(dict.fromkeys((current if isinstance(current, list) else []) + [row["value"] for row in values]))
-                if merged != current:
-                    conn.execute("UPDATE catalog_attributes SET values_json=%s WHERE id=%s", (Jsonb(merged), attr["id"]))
-                    imported += 1
-                variant_rows = conn.execute(
-                    """SELECT DISTINCT v.id AS variant_id, v.product_id
-                       FROM variant_attribute_values av JOIN product_variants v ON v.id=av.variant_id
-                       WHERE av.attribute_id=%s""", (attr["id"],)
-                ).fetchall()
-                for row in variant_rows:
-                    variants_updated.add(int(row["variant_id"]))
-                    assigned_products.add(int(row["product_id"]))
-                    if has_assignments:
-                        conn.execute(
-                            "INSERT INTO product_attribute_assignments(product_id, attribute_id) VALUES(%s, %s) ON CONFLICT DO NOTHING",
-                            (row["product_id"], attr["id"]),
-                        )
-            return {"imported_attributes": imported, "variants_updated": len(variants_updated), "assigned_products": len(assigned_products)}
-    except HTTPException:
-        raise
-    except psycopg.Error as exc:
-        logger.exception("Existing catalogue attribute import failed")
-        raise HTTPException(status_code=503, detail="Existing catalogue attributes could not be imported.") from exc
-
-
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -570,7 +279,8 @@ def operational_readiness(authorization: str | None = Header(default=None)) -> d
                     "products", "product_variants", "catalog_attributes", "variant_attribute_values",
                     "sb_stock", "sb_stock_movements", "sb_inventory_ledger", "sb_warehouses",
                     "sb_purchase_orders", "sb_procurements", "sb_pos_sales", "sb_invoices",
-                    "sb_accounts", "sb_journal_entries", "sb_employees", "sb_attendance",
+                    "sb_accounts", "sb_journal_entries", "sb_journals", "sb_journal_lines", "sb_stock_reservations",
+                    "sb_vendor_returns", "sb_debit_notes", "sb_customers", "sb_employees", "sb_attendance",
                     "sb_payroll_runs", "sb_shipments", "orders",
                 )
             }
@@ -584,11 +294,11 @@ def operational_readiness(authorization: str | None = Header(default=None)) -> d
                 }
             return {
                 "catalogue": item("Catalogue", ("products", "product_variants"), "Product and variant tables are available."),
-                "inventory": item("Inventory", ("sb_stock", "sb_stock_movements"), "Inventory ledger tables are available."),
+                "inventory": item("Inventory", ("sb_inventory_ledger", "sb_stock_reservations"), "Single stock ledger and reservations are available."),
                 "delivery": item("Delivery", ("sb_shipments",), "Shipment table is available."),
                 "payments": item("Payments", ("sb_invoices",), "Invoice/payment foundation is available."),
-                "purchasing": item("Purchasing", ("sb_purchase_orders",), "Purchase-order table is available."),
-                "accounting": item("Accounting", ("sb_accounts", "sb_journal_entries"), "Accounting tables are available."),
+                "purchasing": item("Purchasing", ("sb_procurements", "sb_vendor_returns", "sb_debit_notes"), "Requisition, PO, vendor return and debit note tables are available."),
+                "accounting": item("Accounting", ("sb_accounts", "sb_journals", "sb_journal_lines"), "Single journal tables are available."),
                 "logistics": item("Logistics", ("sb_shipments",), "Shipment table is available."),
                 "people": item("People", ("sb_employees", "sb_attendance", "sb_payroll_runs"), "HR and payroll tables are available."),
             }
@@ -969,62 +679,6 @@ def add_variant_image(product_id: int, variant_id: int, body: VariantImageInput,
         raise HTTPException(status_code=503, detail="Variant image could not be saved.") from exc
 
 
-
-def _build_catalogue_sku(conn: Any, product_id: int, product_name: str, brand: str, attributes: dict[str, str], supplied_prefix: str = "") -> str:
-    """Build category/department/brand/type/variant SKUs without changing existing SKUs."""
-    def code(value: Any, limit: int = 4) -> str:
-        words = re.findall(r"[A-Za-z0-9]+", str(value or "").upper())
-        return (("".join(word[0] for word in words) if len(words) > 1 else words[0])[:limit]) if words else ""
-    # SKU generation must never make an otherwise valid product impossible to save.
-    # Older/live databases may temporarily be missing the optional category hierarchy
-    # migration, so fall back to product-name-based codes if category lookup is unavailable.
-    row = {}
-    conn.execute("SAVEPOINT sku_category_lookup")
-    try:
-        row = conn.execute(
-            """SELECT c.name AS category_name, parent.name AS parent_name
-               FROM products p LEFT JOIN product_categories c ON c.id=p.category_id
-               LEFT JOIN product_categories parent ON parent.id=c.parent_id WHERE p.id=%s""",
-            (product_id,)
-        ).fetchone() or {}
-        conn.execute("RELEASE SAVEPOINT sku_category_lookup")
-    except (psycopg.Error, KeyError, TypeError):
-        # Roll back only the failed lookup; preserve the product insert transaction.
-        conn.execute("ROLLBACK TO SAVEPOINT sku_category_lookup")
-        conn.execute("RELEASE SAVEPOINT sku_category_lookup")
-        logger.warning("SKU category lookup failed for product %s; using a safe fallback SKU", product_id, exc_info=True)
-    cat = str(row.get("category_name") or "")
-    text = (cat + " " + str(row.get("parent_name") or "")).lower()
-    attrs = {str(k).strip().lower(): str(v).strip() for k,v in attributes.items() if str(v).strip()}
-    if any(x in text for x in ("grocery","groceries","food","beverage")): category = "GR"
-    elif any(x in text for x in ("fashion","clothing","apparel","footwear","men","women","kids","baby")): category = "FS"
-    elif any(x in text for x in ("electronic","mobile","computer","appliance")): category = "EL"
-    elif any(x in text for x in ("personal care","beauty","cosmetic")): category = "PC"
-    elif any(x in text for x in ("pet","animal")): category = "PT"
-    else: category = code(cat,3) or "OT"
-    dept = ""
-    audience = " ".join([text, attrs.get("gender",""), attrs.get("department",""), attrs.get("audience",""), attrs.get("target audience","")])
-    if category == "FS":
-        if any(x in audience for x in ("women","woman","female","ladies","girl")): dept = "W"
-        elif any(x in audience for x in ("kids","kid","children","child","baby","boys","girls")): dept = "K"
-        elif any(x in audience for x in ("men","man","male","boys")): dept = "M"
-        else: dept = "U"
-    brand_code = code(brand,4) or "NB"
-    type_source = cat or product_name
-    if type_source.strip().lower() in {"fashion","clothing","apparel","men","women","kids"}: type_source = product_name
-    type_code = code(type_source,3) or "PRD"
-    parts = ["SB",category]
-    if dept: parts.append(dept)
-    parts += [brand_code,type_code,f"{product_id:06d}"]
-    for key,value in attrs.items():
-        if key in {"gender","department","audience","target audience"}: continue
-        if any(x in key for x in ("size","colour","color","pack","weight","volume","capacity")):
-            val = code(value,8)
-            if val and val not in parts: parts.append(val)
-    prefix = re.sub(r"[^A-Za-z0-9-]+","-",supplied_prefix.strip()).strip("-").upper()
-    if prefix: parts = [prefix] + parts[1:]
-    return "-".join(parts)
-
 class ProductWriteInput(BaseModel):
     name: str = Field(min_length=1, max_length=240)
     selling_price: float = Field(gt=0, le=9999999999)
@@ -1084,42 +738,6 @@ def _catalogue_insert(conn: Any, table: str, values: dict[str, Any]) -> dict[str
     return conn.execute(sql, [chosen[k] for k in names]).fetchone()
 
 
-@app.post("/api/admin/products/backfill-skus")
-def backfill_missing_product_skus(authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    """Assign stable SKUs only to existing variants that have no SKU; preserve all nonblank SKUs."""
-    _admin_catalogue_user(authorization)
-    try:
-        with psycopg.connect(database_url(), row_factory=dict_row, connect_timeout=8) as conn:
-            columns = _catalogue_columns(conn, "product_variants")
-            if not {"id", "product_id", "sku"}.issubset(columns):
-                raise HTTPException(status_code=503, detail="The existing variant schema does not support safe SKU backfill.")
-            # Serialize backfills so concurrent admin requests cannot allocate the same generated SKU.
-            conn.execute("SELECT pg_advisory_xact_lock(hashtext('superbajaar-sku-backfill'))")
-            rows = conn.execute(
-                """SELECT id, product_id FROM product_variants
-                   WHERE sku IS NULL OR btrim(sku) = '' ORDER BY product_id, id FOR UPDATE"""
-            ).fetchall()
-            assigned = []
-            for row in rows:
-                base = f"SB-{int(row['product_id']):06d}-V{int(row['id']):06d}"
-                candidate = base[:120]
-                suffix = 1
-                while conn.execute("SELECT id FROM product_variants WHERE sku=%s AND id<>%s",
-                                   (candidate, row["id"])).fetchone():
-                    suffix += 1
-                    tail = f"-{suffix}"
-                    candidate = base[:120-len(tail)] + tail
-                conn.execute("UPDATE product_variants SET sku=%s WHERE id=%s AND (sku IS NULL OR btrim(sku)='')",
-                             (candidate, row["id"]))
-                assigned.append({"variant_id": row["id"], "product_id": row["product_id"], "sku": candidate})
-            return {"updated": len(assigned), "items": assigned, "preserved_existing_skus": True}
-    except HTTPException:
-        raise
-    except psycopg.Error as exc:
-        logger.exception("Existing product SKU backfill failed")
-        raise HTTPException(status_code=503, detail="Existing product SKUs could not be backfilled.") from exc
-
-
 @app.post("/api/admin/products", status_code=201)
 def create_catalogue_product(
     body: ProductWriteInput,
@@ -1174,17 +792,10 @@ def create_catalogue_product(
                 raise HTTPException(status_code=422, detail="A product can generate at most 100 variants.")
             variants = []
             for index, combo in enumerate(combos):
-                attribute_values = {name: value for (_aid, name, _values), value in zip(normalized_attributes, combo)}
-                base_sku = _build_catalogue_sku(conn, int(product["id"]), body.name, body.brand, attribute_values, body.sku)
-                sku = f"{base_sku}-V{index + 1:02d}"
-                if "sku" in variant_columns:
-                    candidate = sku
-                    collision = 1
-                    while conn.execute("SELECT id FROM product_variants WHERE sku=%s", (candidate,)).fetchone():
-                        collision += 1
-                        tail = f"-{collision}"
-                        candidate = f"{sku[:180-len(tail)]}{tail}"
-                    sku = candidate
+                suffix = "-".join(re.sub(r"[^A-Za-z0-9]+", "-", value).strip("-").upper()[:18] for value in combo if value)
+                sku = body.sku.strip() or None
+                if sku and len(combos) > 1:
+                    sku = (sku[:max(1, 119-len(suffix))] + "-" + suffix)[:120]
                 requested_cover = body.variant_covers[index].strip() if index < len(body.variant_covers) else ""
                 variant_cover = requested_cover or body.image_url.strip() or None
                 price_spec = body.variant_prices[index] if index < len(body.variant_prices) else {}
@@ -1311,104 +922,6 @@ def update_catalogue_product(
                 ).fetchone()
             else:
                 raise HTTPException(status_code=404, detail="No variant exists for this product.")
-            # Editing a product must use the same attribute/variant persistence model
-            # as creation. Previously the PUT endpoint silently ignored body.attributes.
-            normalized_attributes: list[tuple[int, str, list[str]]] = []
-            for item in body.attributes:
-                attr_name = str(item.get("name") or "").strip()
-                raw_values = item.get("values", [])
-                if not attr_name or not isinstance(raw_values, list):
-                    continue
-                values = list(dict.fromkeys(str(value).strip() for value in raw_values if str(value).strip()))
-                if not values:
-                    continue
-                if not conn.execute("SELECT to_regclass('public.catalog_attributes') AS t").fetchone()["t"]:
-                    raise HTTPException(status_code=503, detail="Product attribute tables are unavailable; apply the catalogue schema before adding attributes.")
-                attr = conn.execute(
-                    """INSERT INTO catalog_attributes(name, values_json)
-                       VALUES(%s, %s) ON CONFLICT(name) DO UPDATE SET values_json=EXCLUDED.values_json
-                       RETURNING id""", (attr_name, Jsonb(values))
-                ).fetchone()
-                normalized_attributes.append((attr["id"], attr_name, values))
-
-            if normalized_attributes:
-                if not conn.execute("SELECT to_regclass('public.variant_attribute_values') AS t").fetchone()["t"]:
-                    raise HTTPException(status_code=503, detail="Variant attribute value table is unavailable; apply the catalogue schema before adding attributes.")
-                combinations = list(itertools.product(*(item[2] for item in normalized_attributes)))
-                if len(combinations) > 100:
-                    raise HTTPException(status_code=422, detail="A product can generate at most 100 variants.")
-                all_variants = conn.execute(
-                    "SELECT * FROM product_variants WHERE product_id=%s ORDER BY id FOR UPDATE",
-                    (product_id,),
-                ).fetchall()
-                if not all_variants:
-                    raise HTTPException(status_code=404, detail="No variant exists for this product.")
-                selected_id = int(variant["id"])
-                ordered_variants = [next((v for v in all_variants if int(v["id"]) == selected_id), all_variants[0])]
-                ordered_variants.extend(v for v in all_variants if int(v["id"]) != int(ordered_variants[0]["id"]))
-                for index, combo in enumerate(combinations):
-                    attribute_values = {name: value for (_aid, name, _values), value in zip(normalized_attributes, combo)}
-                    if index < len(ordered_variants):
-                        target = ordered_variants[index]
-                        target_id = int(target["id"])
-                        if index > 0:
-                            price_spec = body.variant_prices[index] if index < len(body.variant_prices) else {}
-                            price = float(price_spec.get("selling_price") or body.selling_price)
-                            mrp_raw = price_spec.get("mrp", body.mrp)
-                            mrp = float(mrp_raw) if mrp_raw not in (None, "") else None
-                            if price <= 0 or (mrp is not None and mrp < price):
-                                raise HTTPException(status_code=422, detail="Each variant must have a positive selling price and MRP not lower than selling price.")
-                            updates = {"selling_price": price, "mrp": mrp}
-                            updates = {k: v for k, v in updates.items() if k in variant_columns}
-                            if updates:
-                                conn.execute("UPDATE product_variants SET " + ", ".join(f"{k}=%s" for k in updates) + " WHERE id=%s",
-                                             [*updates.values(), target_id])
-                    else:
-                        price_spec = body.variant_prices[index] if index < len(body.variant_prices) else {}
-                        price = float(price_spec.get("selling_price") or body.selling_price)
-                        mrp_raw = price_spec.get("mrp", body.mrp)
-                        mrp = float(mrp_raw) if mrp_raw not in (None, "") else None
-                        if price <= 0 or (mrp is not None and mrp < price):
-                            raise HTTPException(status_code=422, detail="Each variant must have a positive selling price and MRP not lower than selling price.")
-                        base_sku = _build_catalogue_sku(conn, product_id, body.name, body.brand, attribute_values, body.sku)
-                        sku = f"{base_sku}-V{index + 1:02d}"
-                        if "sku" in variant_columns:
-                            candidate, suffix = sku, 1
-                            while conn.execute("SELECT id FROM product_variants WHERE sku=%s", (candidate,)).fetchone():
-                                suffix += 1
-                                tail = f"-{suffix}"
-                                candidate = f"{sku[:180-len(tail)]}{tail}"
-                            sku = candidate
-                        cover = body.variant_covers[index].strip() if index < len(body.variant_covers) else (body.image_url.strip() or None)
-                        new_values = {"product_id": product_id, "selling_price": price, "mrp": mrp, "sku": sku,
-                                      "image_url": cover, "status": body.status}
-                        target = _catalogue_insert(conn, "product_variants", new_values)
-                        target_id = int(target["id"])
-                    conn.execute("DELETE FROM variant_attribute_values WHERE variant_id=%s", (target_id,))
-                    for attribute_id, _attribute_name, _values in normalized_attributes:
-                        value = attribute_values[_attribute_name]
-                        conn.execute(
-                            """INSERT INTO variant_attribute_values(variant_id,attribute_id,value)
-                               VALUES(%s,%s,%s) ON CONFLICT(variant_id,attribute_id)
-                               DO UPDATE SET value=EXCLUDED.value""",
-                            (target_id, attribute_id, value),
-                        )
-                # If fewer combinations are requested than variants already exist, retire
-                # the surplus rather than leaving duplicate selectable variants active.
-                if "status" in variant_columns and len(ordered_variants) > len(combinations):
-                    for extra in ordered_variants[len(combinations):]:
-                        conn.execute("UPDATE product_variants SET status='inactive' WHERE id=%s", (extra["id"],))
-                if conn.execute("SELECT to_regclass('public.product_attribute_assignments') AS t").fetchone()["t"]:
-                    for attribute_id, _attribute_name, _values in normalized_attributes:
-                        conn.execute(
-                            "INSERT INTO product_attribute_assignments(product_id,attribute_id) VALUES(%s,%s) ON CONFLICT DO NOTHING",
-                            (product_id, attribute_id),
-                        )
-                variants_now = conn.execute(
-                    "SELECT * FROM product_variants WHERE product_id=%s AND (status IS NULL OR status <> 'inactive') ORDER BY id",
-                    (product_id,),
-                ).fetchall()
-                return {"product": product, "variant": variant, "variants": variants_now}
             return {"product": product, "variant": variant}
     except HTTPException:
         raise
@@ -1584,3 +1097,9 @@ app.include_router(loyalty_router)
 # Kept in a separate router so existing production operations endpoints remain intact.
 from .integrated_operations import router as integrated_operations_router
 app.include_router(integrated_operations_router)
+
+
+# Connected ERP workflow API: purchase documents, vendor returns/debit notes, masters, sales orders,
+# logistics and the receivable/payable dashboard. All of it runs on the shared erp_core ledger.
+from .erp_flow import router as erp_flow_router
+app.include_router(erp_flow_router)
