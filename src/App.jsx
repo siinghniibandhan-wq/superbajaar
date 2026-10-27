@@ -100,7 +100,13 @@ function App() {
     });
     setNotice(product.name + ' added to your bag');
   };
-  const updateQty = (id, variant, delta) => setCart(prev => prev.map(item => item.id === id && item.variant === variant ? {...item, qty: Math.min(99, item.qty + delta)} : item).filter(item => item.qty > 0));
+  const updateQty = (id, variant, delta) => {
+    if (delta < 0 && cart.length === 1 && cart[0].id === id && cart[0].variant === variant && cart[0].qty === 1) {
+      setAppliedCoupon('');
+      setCoupon('');
+    }
+    setCart(prev => prev.map(item => item.id === id && item.variant === variant ? {...item, qty: Math.min(99, item.qty + delta)} : item).filter(item => item.qty > 0));
+  };
   const toggleWishlist = product => {
     const alreadySaved = wishlist.some(item => item.id === product.id);
     setWishlist(prev => alreadySaved ? prev.filter(item => item.id !== product.id) : [...prev, product]);
