@@ -156,7 +156,7 @@ function App() {
   }, [catalogueProducts, query, activeCategory, sortBy]);
   const cartCount = cart.reduce((sum, item) => sum + item.qty, 0);
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
-  const discount = appliedCoupon === 'WELCOME10' ? Math.min(Math.round(subtotal * .1), 300) : 0;
+  const discount = appliedCoupon === 'WELCOME10' ? Math.min(Math.round(subtotal * 10) / 100, 300) : 0;
   const delivery = subtotal === 0 || subtotal >= 799 ? 0 : 49;
   const total = Math.max(0, subtotal - discount + delivery);
   const go = next => { setView(next); setMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }); };
