@@ -144,8 +144,16 @@ class Address(BaseModel):
         return value.strip()
 class Line(BaseModel):
     product_id:int=Field(gt=0)
-    variant:str=Field(default="",max_length=100)
+    variant:str=Field(default="Standard",max_length=100)
     quantity:int=Field(gt=0,le=99)
+    @field_validator("variant", mode="before")
+    @classmethod
+    def normalize_variant(cls, value):
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return "Standard"
+        if not isinstance(value, str):
+            raise ValueError("Variant must be text")
+        return value.strip()
 class NewOrder(BaseModel):
     items:list[Line]=Field(min_length=1,max_length=100)
     address:Address

@@ -48,7 +48,7 @@ def main():
     assert updated.get("name")=="Smoke Test Product Updated" and updated.get("price")==110.0
     history=request("GET",f"/api/products/{product['id']}/price-history?days=30")
     assert [point.get("price") for point in history.get("observations",[])]==[100.0,110.0]
-    order_payload={"items":[{"product_id":product["id"],"variant":"Standard","quantity":1}],"address":{"name":"Smoke Test Customer","phone":"9876543210","line":"1 Test Road","city":"Bengaluru","state":"Karnataka","pin":order_pin},"coupon":"WELCOME10"}
+    order_payload={"items":[{"product_id":product["id"],"quantity":1}],"address":{"name":"Smoke Test Customer","phone":"9876543210","line":"1 Test Road","city":"Bengaluru","state":"Karnataka","pin":order_pin},"coupon":"WELCOME10"}
     request("POST","/api/orders",{**order_payload,"items":[{"product_id":product["id"],"variant":"Not a real option","quantity":1}]},token=registered["token"],expected=422)
     request("POST","/api/orders",{**order_payload,"items":[{"product_id":product["id"],"variant":"Standard","quantity":6}]},token=registered["token"],expected=409)
     unsupported_payload={**order_payload,"address":{**order_payload["address"],"pin":unsupported_pin or "999999"}}
