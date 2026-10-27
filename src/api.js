@@ -15,3 +15,5 @@ export const submitTicket=(token,topic,message)=>request('/api/support',{token,m
 export const createAdminProduct = (token, product) => request('/api/admin/products', { token, method: 'POST', body: JSON.stringify(product) });
 export const fetchAdminOrders = token => request('/api/admin/orders', { token });
 export const updateAdminOrderStatus = (token, code, status) => request('/api/admin/orders/' + encodeURIComponent(code) + '/status', { token, method: 'PATCH', body: JSON.stringify({ status }) });
+
+export const updateAdminStock = (token, id, quantity) => request('/api/admin/products/' + Number(id) + '/stock', { token, method: 'PATCH', body: JSON.stringify({ quantity }) });
