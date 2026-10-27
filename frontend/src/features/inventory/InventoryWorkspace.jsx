@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiRequest } from "../../services/api.js";
+import "../catalogue/catalogue.css";
 
 export default function InventoryWorkspace({ onBack }) {
   const [locations, setLocations] = useState([]);
