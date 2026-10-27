@@ -102,6 +102,7 @@ function App() {
     else { setAppliedCoupon(''); setNotice('Coupon not valid. Try WELCOME10 on your order.'); }
   };
   const placeOrder = e => {
+    if (paymentMethod !== 'cod') { setNotice('Online payment is unavailable until a secure payment backend is connected.'); return; }
     e.preventDefault();
     if (!cart.length) { setNotice('Your bag is empty'); go('cart'); return; }
     if (!address.name.trim() || !address.phone.trim() || !address.line.trim() || !address.city.trim() || !address.state.trim() || !/^\d{6}$/.test(address.pin)) { setNotice('Please complete your delivery address and 6-digit PIN code'); return; }
