@@ -62,6 +62,8 @@ class PaymentStatusUpdate(BaseModel):
     def status_allowed(cls, value):
         if value not in PAYMENT_STATUSES:
             raise ValueError("Unsupported payment status")
+        if value == "captured" or value == "refunded":
+            raise ValueError("Captured/refunded status requires verified provider confirmation; gateway integration is not configured")
         return value
 
 
