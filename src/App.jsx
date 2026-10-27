@@ -141,9 +141,13 @@ function App() {
     const headers = ['Order reference','Date','Status','Payment status','Subtotal','Discount','Delivery','Total','Customer','Phone','Address','City','State','PIN','Items'];
     const rows = orders.map(order => [order.id,order.date,order.status,order.paymentStatus,order.subtotal,order.discount,order.delivery,order.total,order.address?.name,order.address?.phone,order.address?.line,order.address?.city,order.address?.state,order.address?.pin,order.items.map(item => item.name + ' (' + item.variant + ') x' + item.qty).join('; ')]);
     const cell = value => '"' + String(value ?? '').replace(/"/g, '""') + '"';
-    const csv = [headers, ...rows].map(row => row.map(cell).join(',')).join('\r\n');
-    const url = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8;'}));
-    const link = document.createElement('a'); link.href = url; link.download = 'super-bajaar-demo-orders.csv'; link.click(); URL.revokeObjectURL(url);
+    const csv = '\\uFEFF' + [headers, ...rows].map(row => row.map(cell).join(',')).join('\\r\\n');
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url; link.download = 'super-bajaar-demo-orders.csv'; link.style.display = 'none';
+    document.body.appendChild(link); link.click(); link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     setNotice('Local demo order export prepared');
   };
   const navCategories = ['Grocery & Staples','Fresh Produce','Fashion','Electronics','Home & Living','Beauty','Personal Care','Deals & Offers'];
