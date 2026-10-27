@@ -24,20 +24,6 @@ const categories = [
   { name: 'Automotive', short: 'Automotive', icon: Car, tint: 'blue', count: 'On the go' },
   { name: 'Deals & Offers', short: 'Deals', icon: Tag, tint: 'peach', count: 'More for less' },
 ];
-const products = [
-  { id: 1, sku: 'SB-0001', name: 'Wireless Earbuds', category: 'Electronics', price: 1799, mrp: 2999, off: 40, image: 'photo-1606220945770-b5b6c2c55bf1', tag: 'Bestseller', rating: 4.4, reviews: 128, description: 'Enjoy your everyday soundtrack with compact wireless earbuds, a comfortable fit and a charging case.', variants: ['Black', 'White'] },
-  { id: 2, sku: 'SB-0002', name: 'Fresh Fruits Basket', category: 'Fresh Produce', price: 149, mrp: 199, off: 25, image: 'photo-1610832958506-aa56368176cf', tag: 'Fresh pick', rating: 4.6, reviews: 86, description: 'A seasonal selection of everyday fruit favourites, packed for freshness.', variants: ['Small', 'Family pack'] },
-  { id: 3, sku: 'SB-0003', name: 'Cookware Set (5 pcs)', category: 'Kitchen & Dining', price: 2999, mrp: 4999, off: 40, image: 'photo-1584990347449-a4f6c3b0e8e2', tag: 'Top rated', rating: 4.5, reviews: 74, description: 'A versatile cookware set for everyday meals, designed for practical kitchens.', variants: ['5-piece set'] },
-  { id: 4, sku: 'SB-0004', name: 'Everyday Running Shoes', category: 'Fashion', price: 2499, mrp: 3999, off: 37, image: 'photo-1542291026-7eec264c27ff', tag: 'Popular', rating: 4.3, reviews: 203, description: 'Lightweight everyday trainers with a cushioned feel for walks and workouts.', variants: ['UK 7', 'UK 8', 'UK 9', 'UK 10'] },
-  { id: 5, sku: 'SB-0005', name: 'Signature Eau de Parfum', category: 'Beauty', price: 999, mrp: 1499, off: 33, image: 'photo-1541643600914-78b084683601', tag: 'Trending', rating: 4.2, reviews: 51, description: 'A versatile fragrance for everyday wear and special occasions.', variants: ['30 ml', '50 ml'] },
-  { id: 6, sku: 'SB-0006', name: 'Everyday Tote Bag', category: 'Fashion', price: 799, mrp: 1199, off: 33, image: 'photo-1548036328-c9fa89d128fa', tag: 'New arrival', rating: 4.1, reviews: 39, description: 'A practical carry-all tote for work, errands and everyday essentials.', variants: ['Tan', 'Black'] },
-  { id: 7, sku: 'SB-0007', name: 'Minimal Table Lamp', category: 'Home & Living', price: 1299, mrp: 1899, off: 32, image: 'photo-1507473885765-e6ed057f782c', tag: 'Editor’s pick', rating: 4.5, reviews: 62, description: 'A simple accent lamp to bring warm, comfortable light to your space.', variants: ['Warm white'] },
-  { id: 8, sku: 'SB-0008', name: 'Gentle Daily Care Set', category: 'Personal Care', price: 499, mrp: 699, off: 29, image: 'photo-1608248543803-ba4f8c70ae0b', tag: 'Everyday value', rating: 4.3, reviews: 94, description: 'A convenient daily-care set for a simple, consistent routine.', variants: ['Standard set'] },
-  { id: 9, sku: 'SB-0009', name: 'Pantry Essentials Pack', category: 'Grocery & Staples', price: 599, mrp: 749, off: 20, image: 'photo-1542838132-92c53300491e', tag: 'Everyday value', rating: 4.4, reviews: 112, description: 'Useful pantry staples bundled for everyday cooking.', variants: ['Standard pack', 'Family pack'] },
-  { id: 10, sku: 'SB-0010', name: 'Pet Comfort Bed', category: 'Pet Care', price: 899, mrp: 1299, off: 31, image: 'photo-1541599540903-216a46ca1dc0', tag: 'Pet favourite', rating: 4.2, reviews: 27, description: 'A soft resting spot for your furry companion.', variants: ['Small', 'Large'] },
-  { id: 11, sku: 'SB-0011', name: 'Kids Activity Kit', category: 'Baby & Kids', price: 449, mrp: 599, off: 25, image: 'photo-1516627145497-ae6968895b74', tag: 'Creative play', rating: 4.5, reviews: 42, description: 'An activity kit for creative play and curious minds.', variants: ['Starter kit'] },
-  { id: 12, sku: 'SB-0012', name: 'Fitness Resistance Bands', category: 'Sports & Fitness', price: 399, mrp: 599, off: 33, image: 'photo-1598289431512-b97b0917affc', tag: 'Workout pick', rating: 4.3, reviews: 67, description: 'A compact resistance-band set for home workouts and mobility.', variants: ['Set of 3'] },
-];
 const money = n => '₹' + Number(n || 0).toLocaleString('en-IN');
 const imageUrl = (id, w=600) => !id ? '/product-placeholder.svg' : (/^(https?:\/\/|\/)/.test(id) ? id : 'https://images.unsplash.com/' + id + '?auto=format&fit=crop&w=' + w + '&q=85');
 const readStore = (key, fallback) => { try { const value = localStorage.getItem(key); return value ? JSON.parse(value) : fallback; } catch { return fallback; } };
@@ -55,7 +41,7 @@ const readPin = () => {
 const writeStore = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* Storage may be unavailable or full; keep the storefront usable for this session. */ } };
 
 function App() {
-  const [catalogueProducts, setCatalogueProducts] = useState(products);
+  const [catalogueProducts, setCatalogueProducts] = useState([]);
   const [catalogueConnected, setCatalogueConnected] = useState(false);
   const [priceHistory, setPriceHistory] = useState([]);
   const [priceHistoryLoading, setPriceHistoryLoading] = useState(false);
@@ -96,7 +82,39 @@ function App() {
   const [adminStock, setAdminStock] = useState({});
   const [adminProduct, setAdminProduct] = useState({sku:'',name:'',category:'Grocery & Staples',description:'',image_url:'',price:'',mrp:'',quantity:'0',variants:'Standard'});
 
-  useEffect(() => { let active = true; fetchCatalogue().then(items => { if (active) { setCatalogueConnected(true); setCatalogueProducts(items); } }).catch(() => { if (active) setCatalogueConnected(false); /* Keep the built-in demo catalogue available while the API is offline. */ }); return () => { active = false; }; }, []);
+  useEffect(() => {
+    let active = true;
+    let requestPending = false;
+    const refreshCatalogue = () => {
+      if (requestPending) return;
+      requestPending = true;
+      fetchCatalogue()
+        .then(items => {
+          if (active) {
+            setCatalogueConnected(true);
+            setCatalogueProducts(items);
+          }
+        })
+        .catch(() => {
+          if (active) {
+            setCatalogueConnected(false);
+            setCatalogueProducts([]);
+          }
+        })
+        .finally(() => { requestPending = false; });
+    };
+    refreshCatalogue();
+    const interval = window.setInterval(refreshCatalogue, 120000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshCatalogue();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, []);
   useEffect(() => { if (!selectedProduct || !catalogueConnected) { setPriceHistory([]); setPriceHistoryLoading(false); return; } let active = true; setPriceHistory([]); setPriceHistoryLoading(true); fetchPriceHistory(selectedProduct.id,30).then(result => { if (active) setPriceHistory(Array.isArray(result.observations) ? result.observations : []); }).catch(() => { if (active) setPriceHistory([]); }).finally(() => { if (active) setPriceHistoryLoading(false); }); return () => { active = false; }; }, [selectedProduct?.id,catalogueConnected]);
   useEffect(() => { writeStore('sb-cart', cart); }, [cart]);
   useEffect(() => { writeStore('sb-wishlist', wishlist); }, [wishlist]);
