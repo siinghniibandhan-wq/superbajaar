@@ -49,6 +49,7 @@ function Workspace({ item, onBack }) {
 }
 
 function AppShell() {
+  const clearSelection = () => setSelected(null);
   const [selected, setSelected] = useState(null);
   const [apiStatus, setApiStatus] = useState("checking");
 
@@ -77,7 +78,7 @@ function AppShell() {
       <div><span className="sb-mark">S</span><div><strong>Super Bajaar</strong><small>Commerce & ERP</small></div></div>
       <span className={`sb-status sb-status-${apiStatus}`} role="status"><i />{labels[apiStatus]}</span>
     </header>
-    {selected ? <Workspace item={selected} onBack={() => setSelected(null)} /> : <WorkspaceLauncher onOpen={setSelected} />}
+    {selected && selected.id === "catalogue" ? <CatalogueWorkspace onBack={clearSelection} /> : selected ? <Workspace item={selected} onBack={clearSelection} /> : <WorkspaceLauncher onOpen={setSelected} />}
     <footer>Clean-start interface scaffold · Backend port 8001 · PostgreSQL port 5432</footer>
   </main>;
 }
