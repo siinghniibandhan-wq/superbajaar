@@ -298,7 +298,9 @@ def status(code:str,d:Status,u=Depends(admin)):
     with connect() as c:
         row=c.execute("SELECT id,status FROM orders WHERE code=%s FOR UPDATE",(code,)).fetchone()
         if not row: raise HTTPException(404,"Order not found")
-        if row["status"] in ("delivered","cancelled") and d.status!=row["status"]: raise HTTPException(409,"Final order status cannot be changed")
+        transitions={"placed":{"confirmed","cancelled"},"confirmed":{"packed","cancelled"},"packed":{"shipped","cancelled"},"shipped":{"out_for_delivery"},"out_for_delivery":{"delivered"},"delivered":set(),"cancelled":set()}
+        if d.status!=row["status"] and d.status not in transitions.get(row["status"],set()):
+            raise HTTPException(409,"Order cannot move from "+row["status"]+" to "+d.status)
         if d.status=="cancelled" and row["status"]!="cancelled": restock_cancelled_order(c,row["id"],now)
         c.execute("UPDATE orders SET status=%s,updated_at=%s WHERE id=%s",(d.status,now,row["id"]))
     return {"id":code,"status":d.status}

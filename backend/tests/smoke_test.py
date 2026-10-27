@@ -40,6 +40,7 @@ def main():
     order=request("POST","/api/orders",order_payload,token=registered["token"],expected=201)
     assert order.get("id") and order.get("status")=="placed"
     assert order.get("items")==[{"product_id":product["id"],"sku":f"SMOKE-{suffix}","name":"Smoke Test Product Updated","variant":"Standard","quantity":1,"price":110.0}]
+    request("PATCH",f"/api/admin/orders/{order['id']}/status",{"status":"shipped"},token=logged["token"],expected=409)
     changed=request("PATCH",f"/api/admin/orders/{order['id']}/status",{"status":"confirmed"},token=logged["token"])
     assert changed=={"id":order["id"],"status":"confirmed"}
     cancelled=request("PATCH",f"/api/orders/{order['id']}/cancel",token=registered["token"])
