@@ -54,6 +54,7 @@ def main():
     order_payload={"items":[{"product_id":product["id"],"quantity":1}],"address":{"name":"Smoke Test Customer","phone":"9876543210","line":"1 Test Road","city":"Bengaluru","state":"Karnataka","pin":order_pin},"coupon":"WELCOME10"}
     request("POST","/api/orders",{**order_payload,"items":[{"product_id":product["id"],"variant":"Not a real option","quantity":1}]},token=registered["token"],expected=422)
     request("POST","/api/orders",{**order_payload,"items":[{"product_id":product["id"],"variant":"Standard","quantity":6}]},token=registered["token"],expected=409)
+    request("POST","/api/orders",{**order_payload,"items":[{"product_id":product["id"],"variant":"Standard","quantity":3},{"product_id":product["id"],"variant":"Standard","quantity":3}]},token=registered["token"],expected=409)
     unsupported_payload={**order_payload,"address":{**order_payload["address"],"pin":unsupported_pin or "999999"}}
     request("POST","/api/orders",unsupported_payload,token=registered["token"],expected=422)
     order=request("POST","/api/orders",order_payload,token=registered["token"],expected=201)
