@@ -1,0 +1,31 @@
+# Architecture
+
+## Design goals
+
+1. Build a new modular application rather than extending the legacy single-file implementation.
+2. Keep the customer storefront and internal workspaces on a documented API contract.
+3. Keep domain logic in services and persistence in repositories; API handlers validate input and enforce access control.
+4. Use one canonical record per business entity and explicit transactions for cross-module workflows.
+5. Keep the database persistent. App startup must not drop tables, truncate data, or silently reset schemas.
+
+## Target layout
+
+- `frontend/src/app`: app shell, router and providers.
+- `frontend/src/pages`: page/workspace entry points.
+- `frontend/src/features`: domain-specific UI and client workflows.
+- `frontend/src/services`: API client and typed service wrappers.
+- `backend/app/api/v1`: versioned HTTP endpoints.
+- `backend/app/models`: persistence models.
+- `backend/app/schemas`: request/response validation.
+- `backend/app/services`: domain rules and orchestration.
+- `backend/app/repositories`: database access.
+- `backend/app/integrations`: external providers only.
+- `database`: reviewed SQL artifacts; never auto-executed at import/startup.
+
+## Domain boundaries
+
+Catalogue/attributes/variants, pricing/promotions, inventory, purchasing, orders, payments/refunds, delivery, customers/CRM/loyalty, POS, accounting/tax, HR/payroll, reporting and access control should have explicit ownership and API contracts. Cross-module operations must use database transactions and idempotency where retries are possible.
+
+## Deployment safety
+
+File moves can break imports, Vite build paths, service startup commands, health checks and deployment roots, but do not inherently change PostgreSQL data. Preserve the current environment values until the target database is verified. Do not run schema scripts during deployment without an explicit migration step.
