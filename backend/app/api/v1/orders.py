@@ -59,6 +59,14 @@ class OrderCreate(BaseModel):
             raise ValueError("Customer name cannot be blank")
         return value.strip()
 
+    @field_validator("lines")
+    @classmethod
+    def variants_must_be_unique(cls, value):
+        variant_ids = [line.variant_id for line in value]
+        if len(variant_ids) != len(set(variant_ids)):
+            raise ValueError("Each product variant can appear only once per order; combine quantities on its line")
+        return value
+
 
 class OrderStatusUpdate(BaseModel):
     status: str
