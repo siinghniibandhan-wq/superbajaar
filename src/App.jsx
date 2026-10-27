@@ -40,7 +40,7 @@ const products = [
 const money = n => '₹' + Number(n || 0).toLocaleString('en-IN');
 const imageUrl = (id, w=600) => 'https://images.unsplash.com/' + id + '?auto=format&fit=crop&w=' + w + '&q=85';
 const readStore = (key, fallback) => { try { const value = localStorage.getItem(key); return value ? JSON.parse(value) : fallback; } catch { return fallback; } };
-const readList = key => { const value = readStore(key, []); return Array.isArray(value) ? value : []; };
+const readList = key => { const value = readStore(key, []); return Array.isArray(value) ? value.filter(item => item && typeof item === 'object' && !Array.isArray(item)) : []; };
 const readAddress = () => {
   const value = readStore('sb-address', {});
   const fallback = { name: '', phone: '', line: '', city: '', state: '', pin: '' };
