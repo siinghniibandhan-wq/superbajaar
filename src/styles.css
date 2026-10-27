@@ -134,3 +134,20 @@
 .membership-benefit-grid .form-card p{line-height:1.65;color:var(--muted,#6b6475)}
 .membership-page-actions{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin:28px 0 12px}
 @media(max-width:680px){.membership-benefit-grid{grid-template-columns:1fr}.membership-benefit-grid .form-card{min-height:0}.membership-page-hero{padding:18px 4px 8px}}
+
+
+/* Help centre and local demo support requests */
+.support-layout{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(280px,.9fr);gap:20px;margin:26px 0}
+.support-layout .form-card{display:flex;flex-direction:column;gap:16px;align-items:stretch}
+.support-layout .form-card>label{display:flex;flex-direction:column;gap:8px;font-weight:600}
+.support-layout input,.support-layout select,.support-layout textarea{width:100%;border:1px solid var(--line,#e5deed);border-radius:12px;padding:12px 14px;background:var(--surface,#fff);color:inherit;font:inherit}
+.support-layout textarea{resize:vertical;min-height:120px}
+.support-shortcuts{display:grid;gap:8px;margin-top:8px}
+.support-shortcuts button{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px;border:1px solid var(--line,#e5deed);border-radius:10px;background:transparent;color:inherit;text-align:left}
+.support-ticket-list{margin-top:34px}
+.support-ticket-list>h2{margin-bottom:16px}
+.support-ticket{margin-bottom:12px}
+.support-ticket>div{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.support-ticket>div span,.support-ticket small{font-size:.82rem;color:var(--muted,#6b6475)}
+.support-ticket p{line-height:1.6;overflow-wrap:anywhere}
+@media(max-width:720px){.support-layout{grid-template-columns:1fr}.support-ticket>div{flex-direction:column;gap:5px}}
