@@ -65,6 +65,15 @@ export default function InventoryWorkspace({ onBack }) {
     <p>Balances, available stock, movement history and positive stock receipt adjustments.</p>
     {error && <p className="sb-alert" role="alert">{error}</p>}
     {message && <p className="sb-success" role="status">{message}</p>}
+    <form className="sb-form" onSubmit={createLocation}>
+      <h2>Add stock location</h2>
+      <div className="sb-form-grid">
+        <label>Location name<input required maxLength="160" value={locationForm.name} onChange={e=>setLocationForm(v=>({...v,name:e.target.value}))}/></label>
+        <label>Type<select value={locationForm.location_type} onChange={e=>setLocationForm(v=>({...v,location_type:e.target.value}))}><option value="warehouse">Warehouse</option><option value="store">Store</option><option value="dark_store">Dark store</option></select></label>
+        <label>PIN code (optional)<input inputMode="numeric" pattern="[0-9]{6}" maxLength="6" value={locationForm.pin_code} onChange={e=>setLocationForm(v=>({...v,pin_code:e.target.value}))}/></label>
+      </div>
+      <button className="sb-primary" disabled={busy} type="submit">{busy ? "Saving…" : "Create location"}</button>
+    </form>
     <form className="sb-form" onSubmit={submit}>
       <h2>Record stock receipt adjustment</h2>
       <p className="sb-muted">This operation only adds stock. It does not implement stock reduction, transfers, reservations or cycle counts.</p>
