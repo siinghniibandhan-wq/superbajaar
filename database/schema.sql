@@ -1,0 +1,3 @@
+-- Super Bajaar target schema placeholder.
+-- Intentionally no DDL yet: domain entities and migration strategy must be reviewed
+-- before this file can be applied to any database.
