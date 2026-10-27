@@ -31,3 +31,10 @@ The storefront uses customer registration/login, live catalogue retrieval, authe
 ## Smoke test
 
 With the API running and `SB_ADMIN_EMAIL` / `SB_ADMIN_PASSWORD` configured, run `python tests/smoke_test.py` from `backend`. The script creates a test customer, product and order; use a non-production database.
+
+
+## Delivery PIN coverage
+
+Set `SB_SERVICEABLE_PINS` to a comma-separated allowlist of six-digit PIN codes served by the store, for example `110001,110085,560001`. `GET /api/delivery/availability?pin=110085` returns `serviceable` or `not_serviceable`. If the variable is empty, the API returns `not_configured` and does not claim the PIN is serviceable. This is a store-configured allowlist, not a courier-provider lookup or delivery-time estimate.
+
+Order creation returns the final server-priced order items as well as the total, so the storefront receipt uses the prices actually recorded by the backend.

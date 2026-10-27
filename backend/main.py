@@ -134,6 +134,14 @@ def health():
     with connect() as c: c.execute("SELECT 1")
     return {"status":"ok","database":"connected"}
 
+@app.get("/api/delivery/availability")
+def delivery_availability(pin: str = Query(..., pattern=r"^[0-9]{6}$")):
+    configured = {value.strip() for value in os.getenv("SB_SERVICEABLE_PINS", "").split(",") if value.strip()}
+    if not configured:
+        return {"pin":pin,"status":"not_configured","serviceable":None,"message":"Delivery PIN coverage has not been configured."}
+    serviceable = pin in configured
+    return {"pin":pin,"status":"serviceable" if serviceable else "not_serviceable","serviceable":serviceable,"message":"Delivery is available for this PIN." if serviceable else "Delivery is not available for this PIN."}
+
 @app.post("/api/auth/register",status_code=201)
 def register(d:Register):
     if len(SECRET)<32: raise HTTPException(503,"Authentication is not configured")
@@ -243,7 +251,7 @@ def order(d:NewOrder,u=Depends(auth)):
             p=products_by_id[item.product_id]
             c.execute("INSERT INTO order_items(order_id,product_id,sku,name,variant,quantity,unit_price) VALUES(%s,%s,%s,%s,%s,%s,%s)",
                 (order_id,item.product_id,p["sku"],p["name"],item.variant,item.quantity,p["price_paise"]))
-    return {"id":code,"status":"placed","payment_status":"pending","subtotal":subtotal/100,"delivery":delivery/100,"discount":discount/100,"total":total/100,"created_at":now}
+    return {"id":code,"status":"placed","payment_status":"pending","subtotal":subtotal/100,"delivery":delivery/100,"discount":discount/100,"total":total/100,"created_at":now,"items":[{"product_id":item.product_id,"sku":products_by_id[item.product_id]["sku"],"name":products_by_id[item.product_id]["name"],"variant":item.variant,"quantity":item.quantity,"price":products_by_id[item.product_id]["price_paise"]/100} for item in d.items]}
 
 @app.get("/api/orders")
 def my_orders(u=Depends(auth)):

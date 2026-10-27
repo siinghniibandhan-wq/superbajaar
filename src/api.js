@@ -22,3 +22,6 @@ export const fetchPriceHistory = (id, days = 30) => request('/api/products/' + N
 
 export const fetchAdminSupport = token => request('/api/admin/support', { token });
 export const updateAdminSupportStatus = (token, id, status) => request('/api/admin/support/' + Number(id) + '/status', { token, method: 'PATCH', body: JSON.stringify({ status }) });
+
+export const updateAdminProduct = (token, id, product) => request('/api/admin/products/' + Number(id), { token, method: 'PATCH', body: JSON.stringify(product) });
+export const checkDeliveryAvailability = pin => request('/api/delivery/availability?pin=' + encodeURIComponent(pin));
