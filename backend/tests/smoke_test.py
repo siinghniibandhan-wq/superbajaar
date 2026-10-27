@@ -29,7 +29,8 @@ def main():
     availability=request("GET","/api/delivery/availability?pin=560001")
     assert availability.get("pin")=="560001" and availability.get("status") in ("not_configured","serviceable","not_serviceable")
     configured_pins=[value.strip() for value in os.getenv("SB_SERVICEABLE_PINS","").split(",") if value.strip()]
-    order_pin=configured_pins[0] if configured_pins else "560001"
+    if not configured_pins: raise RuntimeError("Set SB_SERVICEABLE_PINS to at least one six-digit PIN before running order smoke tests")
+    order_pin=configured_pins[0]
     product=request("POST","/api/admin/products",{"sku":f"SMOKE-{suffix}","name":"Smoke Test Product","category":"Testing","description":"Smoke-test item","image_url":"","price_paise":10000,"mrp_paise":12000,"variants":["Standard"],"quantity":5},token=logged["token"],expected=201)
     assert product.get("id") and product.get("quantity")==5
     duplicate=request("POST","/api/admin/products",{"sku":f"SMOKE-{suffix}","name":"Duplicate SKU","category":"Testing","description":"","image_url":"","price_paise":10000,"mrp_paise":12000,"variants":["Standard"],"quantity":1},token=logged["token"],expected=409)

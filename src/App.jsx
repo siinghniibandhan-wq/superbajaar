@@ -197,6 +197,9 @@ function App() {
     if (!address.name.trim() || !address.phone.trim() || !address.line.trim() || !address.city.trim() || !address.state.trim() || !/^\d{6}$/.test(address.pin)) { setNotice('Please complete your delivery address and 6-digit PIN code'); return; }
     try {
       setAuthBusy(true);
+      const deliveryCheck = await checkDeliveryAvailability(address.pin);
+      if (deliveryCheck.status === "not_configured") { setNotice("Delivery coverage is not configured yet. Please contact the store before placing an order."); return; }
+      if (!deliveryCheck.serviceable) { setNotice("Delivery is not available for PIN code "+address.pin+". Please check your address."); return; }
       const result = await submitOrder(authToken, cart, address, appliedCoupon);
       const confirmedItems=Array.isArray(result.items)?result.items.map(item=>{const previous=cart.find(entry=>Number(entry.id)===Number(item.product_id)&&entry.variant===item.variant);return {...(previous||{}),id:Number(item.product_id),sku:item.sku,name:item.name,variant:item.variant,qty:Number(item.quantity),price:Number(item.price)};}):cart;
       const order = { id: result.id, date: result.created_at || new Date().toISOString(), items: confirmedItems, subtotal: result.subtotal, discount: result.discount, delivery: result.delivery, total: result.total, address, paymentMethod: 'cod', status: result.status, paymentStatus: result.payment_status || 'pending', coupon: appliedCoupon, live: true };

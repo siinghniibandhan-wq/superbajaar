@@ -35,6 +35,6 @@ With the API running and `SB_ADMIN_EMAIL` / `SB_ADMIN_PASSWORD` configured, run 
 
 ## Delivery PIN coverage
 
-Set `SB_SERVICEABLE_PINS` to a comma-separated allowlist of six-digit PIN codes served by the store, for example `110001,110085,560001`. `GET /api/delivery/availability?pin=110085` returns `serviceable` or `not_serviceable`. If the variable is empty, the API returns `not_configured` and does not claim the PIN is serviceable. This is a store-configured allowlist, not a courier-provider lookup or delivery-time estimate.
+Set `SB_SERVICEABLE_PINS` to a comma-separated allowlist of six-digit PIN codes served by the store, for example `110001,110085,560001`. `GET /api/delivery/availability?pin=110085` returns `serviceable` or `not_serviceable`. If the variable is empty, the API returns `not_configured` and order creation is blocked with HTTP 503. Configure at least one six-digit PIN before accepting orders or running the order smoke test. This is a store-configured allowlist, not a courier-provider lookup or delivery-time estimate.
 
 Order creation returns the final server-priced order items as well as the total, so the storefront receipt uses the prices actually recorded by the backend.

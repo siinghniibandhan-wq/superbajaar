@@ -230,7 +230,9 @@ def history(pid:int,days:int=Query(30,ge=1,le=365)):
 @app.post("/api/orders",status_code=201)
 def order(d:NewOrder,u=Depends(auth)):
     configured_pins = {value.strip() for value in os.getenv("SB_SERVICEABLE_PINS", "").split(",") if value.strip()}
-    if configured_pins and d.address.pin not in configured_pins:
+    if not configured_pins:
+        raise HTTPException(503, "Delivery coverage is not configured. Please contact the store before placing an order.")
+    if d.address.pin not in configured_pins:
         raise HTTPException(422, "Delivery is not available for this PIN code")
     now=stamp()
     with connect() as c:
