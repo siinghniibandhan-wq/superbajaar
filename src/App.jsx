@@ -40,6 +40,7 @@ const products = [
 const money = n => '₹' + Number(n || 0).toLocaleString('en-IN');
 const imageUrl = (id, w=600) => 'https://images.unsplash.com/' + id + '?auto=format&fit=crop&w=' + w + '&q=85';
 const readStore = (key, fallback) => { try { const value = localStorage.getItem(key); return value ? JSON.parse(value) : fallback; } catch { return fallback; } };
+const writeStore = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* Storage may be unavailable or full; keep the storefront usable for this session. */ } };
 
 function App() {
   const [query, setQuery] = useState('');
@@ -62,11 +63,11 @@ function App() {
   const [paymentMethod, setPaymentMethod] = useState('cod');
   const [lastOrder, setLastOrder] = useState(null);
 
-  useEffect(() => { localStorage.setItem('sb-cart', JSON.stringify(cart)); }, [cart]);
-  useEffect(() => { localStorage.setItem('sb-wishlist', JSON.stringify(wishlist)); }, [wishlist]);
-  useEffect(() => { localStorage.setItem('sb-orders', JSON.stringify(orders)); }, [orders]);
-  useEffect(() => { localStorage.setItem('sb-pin', pin); }, [pin]);
-  useEffect(() => { localStorage.setItem('sb-address', JSON.stringify(address)); }, [address]);
+  useEffect(() => { writeStore('sb-cart', cart); }, [cart]);
+  useEffect(() => { writeStore('sb-wishlist', wishlist); }, [wishlist]);
+  useEffect(() => { writeStore('sb-orders', orders); }, [orders]);
+  useEffect(() => { writeStore('sb-pin', pin); }, [pin]);
+  useEffect(() => { writeStore('sb-address', address); }, [address]);
   useEffect(() => { if (!notice) return; const timer = window.setTimeout(() => setNotice(''), 2600); return () => window.clearTimeout(timer); }, [notice]);
 
   const visibleProducts = useMemo(() => {
