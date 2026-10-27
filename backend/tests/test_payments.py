@@ -45,3 +45,13 @@ def test_payment_cannot_be_created_as_refunded_without_gateway_confirmation():
         "order_id": 1, "method": "upi", "amount": 100, "status": "refunded",
     })
     assert response.status_code == 422
+
+
+def test_payment_status_cannot_be_marked_captured_without_provider_verification():
+    response = client.patch("/api/v1/payments/1/status", json={"status": "captured"})
+    assert response.status_code == 422
+
+
+def test_payment_status_cannot_be_marked_refunded_without_provider_verification():
+    response = client.patch("/api/v1/payments/1/status", json={"status": "refunded"})
+    assert response.status_code == 422
