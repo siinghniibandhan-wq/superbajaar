@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiRequest } from "../../services/api.js";
+import ProductCreateForm from "./ProductCreateForm.jsx";
 
 export default function CatalogueWorkspace({ onBack }) {
   const [categories, setCategories] = useState([]);
@@ -48,6 +49,7 @@ export default function CatalogueWorkspace({ onBack }) {
     <p className="sb-eyebrow">CATALOGUE MANAGEMENT</p>
     <h1>Catalogue</h1>
     <p>Categories and products loaded from the backend API.</p>
+    <ProductCreateForm categories={categories} onSaved={refresh} />
     {error && <p role="alert" className="sb-alert">{error}</p>}
     {message && <p role="status" className="sb-success">{message}</p>}
     <form className="sb-form" onSubmit={createCategory}>
