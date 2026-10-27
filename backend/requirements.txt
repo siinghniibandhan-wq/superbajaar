@@ -1,4 +1,7 @@
-fastapi==0.115.12
-uvicorn[standard]==0.34.0
-email-validator==2.2.0
-psycopg[binary,pool]==3.2.6
+fastapi
+uvicorn[standard]
+gunicorn
+pydantic-settings
+psycopg[binary]
+pytest
+httpx
