@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { apiRequest } from "../../services/api.js";
 import ProductCreateForm from "./ProductCreateForm.jsx";
+import "./catalogue.css";
 
 export default function CatalogueWorkspace({ onBack }) {
   const [categories, setCategories] = useState([]);
