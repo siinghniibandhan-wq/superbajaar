@@ -56,6 +56,7 @@ const writeStore = (key, value) => { try { localStorage.setItem(key, JSON.string
 
 function App() {
   const [catalogueProducts, setCatalogueProducts] = useState(products);
+  const [catalogueConnected, setCatalogueConnected] = useState(false);
   const [query, setQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('All');
   const [cart, setCart] = useState(() => readList('sb-cart'));
@@ -88,7 +89,7 @@ function App() {
   const [authPassword, setAuthPassword] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
 
-  useEffect(() => { let active = true; fetchCatalogue().then(items => { if (active && items.length) setCatalogueProducts(items); }).catch(() => { /* Keep the built-in demo catalogue available while the API is offline. */ }); return () => { active = false; }; }, []);
+  useEffect(() => { let active = true; fetchCatalogue().then(items => { if (active) { setCatalogueConnected(true); setCatalogueProducts(items); } }).catch(() => { if (active) setCatalogueConnected(false); /* Keep the built-in demo catalogue available while the API is offline. */ }); return () => { active = false; }; }, []);
   useEffect(() => { writeStore('sb-cart', cart); }, [cart]);
   useEffect(() => { writeStore('sb-wishlist', wishlist); }, [wishlist]);
   useEffect(() => { writeStore('sb-orders', orders); }, [orders]);
