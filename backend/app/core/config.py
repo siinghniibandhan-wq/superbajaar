@@ -8,12 +8,10 @@ class Settings(BaseSettings):
     database_url: str = ""
     cors_allowed_origins: str = "http://localhost:5173"
     jwt_secret_key: str = ""
+    # Match the confirmed AWS backend listener. The process manager must also bind this port.
+    port: int = 8001
 
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 
 settings = Settings()
