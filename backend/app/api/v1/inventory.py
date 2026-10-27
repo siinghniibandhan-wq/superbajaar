@@ -5,11 +5,24 @@ from typing import Any
 import psycopg
 from fastapi import APIRouter, HTTPException, Query
 from psycopg.rows import dict_row
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.core.config import settings
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
+
+
+class StockLocationCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    location_type: str = Field(pattern=r"^(warehouse|store|dark_store)$")
+    pin_code: str | None = Field(default=None, pattern=r"^[0-9]{6}$")
+
+    @field_validator("name")
+    @classmethod
+    def location_name_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Location name cannot be blank")
+        return value.strip()
 
 
 class StockAdjustment(BaseModel):
@@ -35,6 +48,23 @@ def _db_error(exc: psycopg.Error) -> HTTPException:
     if code == "23514":
         return HTTPException(status_code=422, detail="Stock adjustment violates an inventory constraint")
     return HTTPException(status_code=503, detail="Inventory database operation failed")
+
+
+@router.post("/locations", status_code=201)
+def create_location(payload: StockLocationCreate):
+    try:
+        with _connect() as conn:
+            row = conn.execute(
+                "INSERT INTO stock_locations (name, location_type, pin_code) VALUES (%s, %s, %s) "
+                "RETURNING id, name, location_type, pin_code, is_active, created_at",
+                (payload.name, payload.location_type, payload.pin_code),
+            ).fetchone()
+        return row
+    except psycopg.Error as exc:
+        code = getattr(exc, "sqlstate", None)
+        if code == "23505":
+            raise HTTPException(status_code=409, detail="A stock location with this name already exists") from exc
+        raise _db_error(exc) from exc
 
 
 @router.get("/locations")
