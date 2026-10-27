@@ -26,7 +26,7 @@ uvicorn main:app --reload --host 127.0.0.1 --port 8001
 - Price history records initial prices and later price changes only; the API never invents historic prices.
 - Online payment is not implemented yet.
 
-The storefront uses customer registration/login, live catalogue retrieval, authenticated COD checkout, order history and support requests. Changing `SB_ADMIN_EMAIL` or `SB_ADMIN_PASSWORD` does not reset an existing account. Do not commit `.env` or production secrets.
+The storefront uses customer registration/login, live catalogue retrieval, authenticated COD checkout, order history and support requests. When `SB_ADMIN_EMAIL` and `SB_ADMIN_PASSWORD` are configured, startup ensures that email has the admin role and resets its password hash to the configured password. Keep these values restricted to trusted deployment secrets; changing them changes the configured admin account on the next startup. Do not commit `.env` or production secrets.
 
 ## Smoke test
 

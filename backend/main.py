@@ -54,7 +54,7 @@ def setup():
         for statement in ddl:
             c.execute(statement)
         if ADMIN_EMAIL and ADMIN_PASSWORD:
-            c.execute("""INSERT INTO users(email,name,password_hash,role,created_at) VALUES(%s,%s,%s,%s,%s) ON CONFLICT(email) DO NOTHING""",
+            c.execute("""INSERT INTO users(email,name,password_hash,role,created_at) VALUES(%s,%s,%s,%s,%s) ON CONFLICT(email) DO UPDATE SET name=EXCLUDED.name,password_hash=EXCLUDED.password_hash,role='admin'""",
                       (ADMIN_EMAIL,"Super Bajaar Admin",pw_hash(ADMIN_PASSWORD),"admin",stamp()))
 
 
