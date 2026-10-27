@@ -10,6 +10,7 @@ export default function PurchasingWorkspace({ onBack }) {
   const [tab, setTab] = useState("orders");
   const [suppliers, setSuppliers] = useState([]);
   const [locations, setLocations] = useState([]);
+  const [variants, setVariants] = useState([]);
   const [orders, setOrders] = useState([]);
   const [supplierForm, setSupplierForm] = useState(emptySupplier);
   const [supplierId, setSupplierId] = useState("");
@@ -27,12 +28,13 @@ export default function PurchasingWorkspace({ onBack }) {
   const load = useCallback(async () => {
     setLoading(true); setError("");
     try {
-      const [s, l, p] = await Promise.all([
+      const [s, l, p, v] = await Promise.all([
         apiRequest("/purchasing/suppliers?limit=500"),
         apiRequest("/inventory/locations?limit=500"),
         apiRequest("/purchasing/orders?limit=200"),
+        apiRequest("/catalogue/variants?limit=500"),
       ]);
-      setSuppliers(s.items || []); setLocations(l.items || []); setOrders(p.items || []);
+      setSuppliers(s.items || []); setLocations(l.items || []); setOrders(p.items || []); setVariants(v.items || []);
     } catch (e) { setError(e.message || "Unable to load purchasing data."); }
     finally { setLoading(false); }
   }, []);
@@ -61,7 +63,7 @@ export default function PurchasingWorkspace({ onBack }) {
         lines: lines.map(line => ({ variant_id: Number(line.variant_id), quantity: Number(line.quantity), unit_cost: Number(line.unit_cost) })),
       };
       if (!payload.supplier_id || !payload.location_id || payload.lines.some(line => !line.variant_id || !Number.isFinite(line.quantity) || line.quantity <= 0 || !Number.isFinite(line.unit_cost) || line.unit_cost < 0)) {
-        throw new Error("Select a supplier and location; enter valid variant IDs, quantities and unit costs.");
+        throw new Error("Select a supplier, location, catalogue variant, quantity and valid unit cost for each line.");
       }
       const po = await apiRequest("/purchasing/orders", { method: "POST", body: JSON.stringify(payload) });
       setNotice("Purchase order " + po.purchase_number + " created."); setNotes(""); setLines([{ ...emptyLine }]); await load(); await openOrder(po.id);
@@ -124,7 +126,7 @@ export default function PurchasingWorkspace({ onBack }) {
         </div>
         <div className="sb-purchase-lines"><div className="sb-purchase-lines-head"><strong>Order lines</strong><button type="button" onClick={() => setLines(old => [...old, { ...emptyLine }])}>+ Add line</button></div>
           {lines.map((line, i) => <div className="sb-purchase-line" key={i}>
-            <label>Variant ID<input required type="number" min="1" value={line.variant_id} onChange={e => setLine(i, "variant_id", e.target.value)} placeholder="Catalogue variant ID" /></label>
+            <label>Product variant *<select required value={line.variant_id} onChange={e => setLine(i, "variant_id", e.target.value)}><option value="">Choose variant</option>{variants.map(v => <option key={v.id} value={v.id}>{v.product_name || v.name || ("Product " + v.product_id)} · {v.sku || ("Variant " + v.id)}</option>)}</select></label>
             <label>Quantity<input required type="number" min="0.001" step="0.001" value={line.quantity} onChange={e => setLine(i, "quantity", e.target.value)} /></label>
             <label>Unit cost ₹<input required type="number" min="0" step="0.01" value={line.unit_cost} onChange={e => setLine(i, "unit_cost", e.target.value)} /></label>
             {lines.length > 1 && <button type="button" className="sb-remove-line" onClick={() => setLines(old => old.filter((_, n) => n !== i))} aria-label={"Remove line " + (i + 1)}>×</button>}
