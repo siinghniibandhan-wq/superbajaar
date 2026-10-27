@@ -49,7 +49,7 @@ const readAddress = () => {
 };
 const readPin = () => {
   const value = readStore('sb-pin', '');
-  return typeof value === 'string' ? value.replace(/\\D/g, '').slice(0, 6) : '';
+  return typeof value === 'string' ? value.replace(/\D/g, '').slice(0, 6) : '';
 };
 const writeStore = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* Storage may be unavailable or full; keep the storefront usable for this session. */ } };
 
