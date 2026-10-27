@@ -1,16 +1,20 @@
 # Super Bajaar API
 
-FastAPI service for product catalogue, stock, customer accounts, server-priced orders, order status and support requests.
+FastAPI service for product catalogue, stock, customer accounts, server-priced orders, order status and support requests. PostgreSQL is the application's database; the service creates its required tables and index at startup with idempotent `CREATE TABLE IF NOT EXISTS` statements.
 
 ## Local setup
+
+1. Create a PostgreSQL database and a database user with permission to connect and create tables/indexes.
+2. Set `DATABASE_URL` to the PostgreSQL connection URL, for example `postgresql://USER:PASSWORD@HOST:5432/superbajaar`. URL-encode special characters in the username or password.
+3. Set a random `SB_SECRET_KEY` of at least 32 characters and a strong `SB_ADMIN_PASSWORD`. Configure `SB_ADMIN_EMAIL` before the first API startup to provision the admin if that email does not already exist.
+4. Install dependencies and start the API:
 
 ```bash
 cd backend
 python -m venv .venv
-# Activate the environment, then:
 pip install -r requirements.txt
 cp .env.example .env
-# Set a random SB_SECRET_KEY of 32+ characters and a strong admin password.
+# Export the variables from .env using your preferred environment loader.
 uvicorn main:app --reload --host 127.0.0.1 --port 8001
 ```
 
@@ -18,9 +22,12 @@ uvicorn main:app --reload --host 127.0.0.1 --port 8001
 - Interactive schema: `/docs`
 - Products: `GET /api/products`
 - Registration/login: `POST /api/auth/register`, `POST /api/auth/login`
-- Admin catalogue, stock and order status use Bearer-token administrator access.
-- Checkout requires a signed-in customer; the server recalculates prices, coupon and delivery, and checks stock.
-- 30-day history returns only recorded observations; it does not invent historic prices.
-- Online payment is deliberately not implemented yet.
+- Checkout locks inventory rows in a transaction to prevent concurrent overselling.
+- Price history records initial prices and later price changes only; the API never invents historic prices.
+- Online payment is not implemented yet.
 
-Set `SB_DATABASE_PATH` to a persistent writable path and `SB_CORS_ORIGINS` to the exact deployed storefront origin. The React storefront is connected to customer registration/login, live catalogue retrieval, authenticated COD checkout, customer order history and support requests. An admin console is available to authenticated users whose role is `admin`; configure `SB_ADMIN_EMAIL` and `SB_ADMIN_PASSWORD` before the first API startup to provision that account. If the database already exists, changing these variables does not automatically reset an existing account password or role. Before real traffic, run a production build and end-to-end tests, review security and rate limiting, verify backups and persistent storage, and confirm delivery/tax/legal requirements. SQLite is suitable for a single-instance pilot only; use a managed transactional database before multi-instance or high-volume deployment. Do not commit `.env` or production secrets.
+The storefront uses customer registration/login, live catalogue retrieval, authenticated COD checkout, order history and support requests. Changing `SB_ADMIN_EMAIL` or `SB_ADMIN_PASSWORD` does not reset an existing account. Do not commit `.env` or production secrets.
+
+## Smoke test
+
+With the API running and `SB_ADMIN_EMAIL` / `SB_ADMIN_PASSWORD` configured, run `python tests/smoke_test.py` from `backend`. The script creates a test customer, product and order; use a non-production database.
