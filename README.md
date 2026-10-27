@@ -1,52 +1,46 @@
-# Super Bajaar — Storefront
+# Super Bajaar
 
-Responsive React + Vite storefront using the original Super Bajaar purple-and-orange brand.
+Responsive React + Vite storefront for Super Bajaar, using the purple-first brand with orange accents. The FastAPI backend uses PostgreSQL for catalogue, inventory, customer accounts, orders, recorded price history, and support tickets.
 
 ## Run locally
 
+Frontend:
 ```bash
 npm install
 npm run dev
-```
-
-Create a production bundle with:
-
-```bash
 npm run build
-npm run preview
 ```
 
-## Storefront features
+Backend setup and environment variables are documented in [backend/README.md](backend/README.md). The API requires `DATABASE_URL`, a random `SB_SECRET_KEY` of at least 32 characters, and admin credentials. Configure `SB_CORS_ORIGINS` for the frontend origin and `SB_SERVICEABLE_PINS` with the store's comma-separated six-digit delivery PIN allowlist.
 
-- Home page, department browsing, search, sorting, and offer filtering
-- Product detail pages with selectable variants and SKU identifiers
-- Branded fallback artwork when an external product image cannot load
+Set `VITE_API_BASE_URL` in the frontend build environment to the backend origin. An origin with or without a trailing `/api` is accepted.
+
+## Current functionality
+
+- Department browsing, catalogue search, sorting, and offer filtering
+- Product details, selectable variants, SKU, and recorded 30-day price observations
 - Wishlist, shopping bag, quantity controls, and order summary
-- SB Plus membership preview with working navigation
-- Help centre with locally saved demo support requests and browser-local order lookup
-- `WELCOME10` demo coupon (10% off, capped at ₹300)
-- Product image fallback artwork and asynchronous image decoding
-- Delivery PIN entry and address form validation
-- Local demo order history and responsive mobile layout
+- Customer registration, sign-in, session validation, and order history
+- Server-priced cash-on-delivery checkout with inventory locking and stock validation
+- Delivery PIN availability check; checkout is blocked when coverage is missing or the PIN is not serviceable
+- Customer cancellation for eligible orders with inventory restoration
+- Admin product creation/editing, stock updates, order fulfilment status controls, and support-ticket status management
+- Server-side support requests and responsive mobile layout
+- Product-image fallback artwork
 
-## Integrated storefront and API
+## Before live launch
 
-The React storefront now calls the FastAPI service for the live catalogue, customer registration/sign-in, authenticated cash-on-delivery checkout, order-history refresh, and support requests. If the API cannot be reached, the storefront keeps its sample catalogue available for browsing; when the API responds successfully with an empty catalogue, it shows no products rather than pretending the samples are live inventory.
+- Configure and verify production PostgreSQL, persistent backups, and restore procedures
+- Set strong production secrets and restrict CORS to the deployed storefront
+- Configure the real delivery PIN allowlist and validate fulfilment operations
+- Verify product catalogue, variants, stock, prices, tax treatment, delivery charges, returns/refunds, and published policies
+- Run the backend smoke test against a **non-production** database with the API running and the required environment variables set
+- Complete Razorpay integration and verify payment webhooks before enabling online payment
 
-Set `VITE_API_BASE_URL` in the frontend build environment to the deployed backend origin. Both an origin such as `https://api.example.com` and an origin ending in `/api` are accepted. The API uses `SB_CORS_ORIGINS`, `SB_SECRET_KEY`, `SB_ADMIN_EMAIL`, `SB_ADMIN_PASSWORD`, and a persistent `SB_DATABASE_PATH`; see `backend/README.md`.
-
-## Remaining before live launch
-
-- Admin product/order management UI and full operational workflows
-- Production build and end-to-end tests against the deployed API
-- Verify persistent database storage, backup/restore, and production security controls
-- Confirm live catalogue data, stock, tax, PIN-code serviceability, delivery rules, and published policies
-- Razorpay integration and payment verification (intentionally deferred to the final stage)
-
-COD orders are submitted to the server for signed-in customers; the server recalculates the order total and checks available stock. Online payment remains disabled. Never place secret payment credentials in frontend code.
+Online payment is intentionally disabled; never place secret payment credentials in frontend code. The API records price observations only when a product is created or its selling price changes; it does not fabricate earlier prices.
 
 ## Stack
 
-- React 18
-- Vite 6
-- lucide-react
+- React 18 and Vite 6
+- FastAPI and PostgreSQL
+- Python API smoke test: `backend/tests/smoke_test.py`

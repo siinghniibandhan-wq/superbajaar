@@ -31,6 +31,12 @@ def main():
     configured_pins=[value.strip() for value in os.getenv("SB_SERVICEABLE_PINS","").split(",") if value.strip()]
     if not configured_pins: raise RuntimeError("Set SB_SERVICEABLE_PINS to at least one six-digit PIN before running order smoke tests")
     order_pin=configured_pins[0]
+    assert len(order_pin)==6 and order_pin.isdigit(), "SB_SERVICEABLE_PINS must contain six-digit PINs"
+    assert request("GET",f"/api/delivery/availability?pin={order_pin}").get("serviceable") is True
+    unsupported_pin=next((f"{number:06d}" for number in range(999999,-1,-1) if f"{number:06d}" not in configured_pins),None)
+    if unsupported_pin is not None:
+        unavailable=request("GET",f"/api/delivery/availability?pin={unsupported_pin}")
+        assert unavailable.get("serviceable") is False and unavailable.get("status")=="not_serviceable"
     product=request("POST","/api/admin/products",{"sku":f"SMOKE-{suffix}","name":"Smoke Test Product","category":"Testing","description":"Smoke-test item","image_url":"","price_paise":10000,"mrp_paise":12000,"variants":["Standard"],"quantity":5},token=logged["token"],expected=201)
     assert product.get("id") and product.get("quantity")==5
     duplicate=request("POST","/api/admin/products",{"sku":f"SMOKE-{suffix}","name":"Duplicate SKU","category":"Testing","description":"","image_url":"","price_paise":10000,"mrp_paise":12000,"variants":["Standard"],"quantity":1},token=logged["token"],expected=409)
@@ -43,6 +49,8 @@ def main():
     order_payload={"items":[{"product_id":product["id"],"variant":"Standard","quantity":1}],"address":{"name":"Smoke Test Customer","phone":"9876543210","line":"1 Test Road","city":"Bengaluru","state":"Karnataka","pin":order_pin},"coupon":""}
     request("POST","/api/orders",{**order_payload,"items":[{"product_id":product["id"],"variant":"Not a real option","quantity":1}]},token=registered["token"],expected=422)
     request("POST","/api/orders",{**order_payload,"items":[{"product_id":product["id"],"variant":"Standard","quantity":6}]},token=registered["token"],expected=409)
+    unsupported_payload={**order_payload,"address":{**order_payload["address"],"pin":unsupported_pin or "999999"}}
+    request("POST","/api/orders",unsupported_payload,token=registered["token"],expected=422)
     order=request("POST","/api/orders",order_payload,token=registered["token"],expected=201)
     assert order.get("id") and order.get("status")=="placed"
     assert order.get("items")==[{"product_id":product["id"],"sku":f"SMOKE-{suffix}","name":"Smoke Test Product Updated","variant":"Standard","quantity":1,"price":110.0}]
