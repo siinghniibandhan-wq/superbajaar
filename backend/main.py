@@ -113,6 +113,8 @@ class Status(BaseModel):
 class Ticket(BaseModel):
     topic:str=Field(min_length=2,max_length=100)
     message:str=Field(min_length=5,max_length=4000)
+class TicketStatus(BaseModel):
+    status:str=Field(pattern=r"^(open|in_progress|resolved|closed)$")
 
 @app.on_event("startup")
 def startup(): setup()
@@ -249,3 +251,12 @@ def support(d:Ticket,u=Depends(auth)):
 def support_queue(u=Depends(admin)):
     with connect() as c: rows=c.execute("SELECT t.id,t.topic,t.message,t.status,t.created_at,u.email FROM tickets t JOIN users u ON u.id=t.user_id ORDER BY t.id DESC").fetchall()
     return {"items":[dict(x) for x in rows]}
+
+
+@app.patch("/api/admin/support/{ticket_id}/status")
+def update_support_status(ticket_id:int,d:TicketStatus,u=Depends(admin)):
+    with connect() as c:
+        row=c.execute("SELECT id FROM tickets WHERE id=?",(ticket_id,)).fetchone()
+        if not row: raise HTTPException(404,"Support ticket not found")
+        c.execute("UPDATE tickets SET status=? WHERE id=?",(d.status,ticket_id))
+    return {"id":ticket_id,"status":d.status}
