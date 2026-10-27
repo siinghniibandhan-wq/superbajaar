@@ -79,7 +79,7 @@ function AppShell() {
       <div><span className="sb-mark">S</span><div><strong>Super Bajaar</strong><small>Commerce & ERP</small></div></div>
       <span className={`sb-status sb-status-${apiStatus}`} role="status"><i />{labels[apiStatus]}</span>
     </header>
-    {selected && selected.id === "catalogue" ? <CatalogueWorkspace onBack={clearSelection} /> : selected ? <Workspace item={selected} onBack={clearSelection} /> : <WorkspaceLauncher onOpen={setSelected} />}
+    {selected?.id === "catalogue" ? <CatalogueWorkspace onBack={clearSelection} /> : selected?.id === "inventory" ? <InventoryWorkspace onBack={clearSelection} /> : selected ? <Workspace item={selected} onBack={clearSelection} /> : <WorkspaceLauncher onOpen={setSelected} />}
     <footer>Clean-start interface scaffold · Backend port 8001 · PostgreSQL port 5432</footer>
   </main>;
 }
