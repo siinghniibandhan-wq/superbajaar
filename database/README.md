@@ -9,4 +9,4 @@ Before applying a schema change:
 4. Apply through an explicit migration procedure.
 5. Verify schema and application health afterwards.
 
-Do not put credentials in SQL files.
+Do not put credentials in SQL files. This scaffold has not connected to or modified any database.
