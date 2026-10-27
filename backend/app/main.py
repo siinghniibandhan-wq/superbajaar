@@ -1099,7 +1099,5 @@ from .integrated_operations import router as integrated_operations_router
 app.include_router(integrated_operations_router)
 
 
-# Connected ERP workflow API: purchase documents, vendor returns/debit notes, masters, sales orders,
-# logistics and the receivable/payable dashboard. All of it runs on the shared erp_core ledger.
-from .erp_flow import router as erp_flow_router
-app.include_router(erp_flow_router)
+# NOTE: erp_flow.py is not present in this branch. Avoid importing a missing module
+# during application startup; ERP-specific endpoints need a valid router implementation.
