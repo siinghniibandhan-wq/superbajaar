@@ -40,3 +40,14 @@ def test_order_requires_at_least_one_line():
 def test_order_status_rejects_unknown_value():
     response = client.patch("/api/v1/orders/1/status", json={"status": "refunded"})
     assert response.status_code == 422
+
+def test_order_rejects_duplicate_variant_lines():
+    response = client.post("/api/v1/orders", json={
+        "channel": "website", "customer_name": "Test customer",
+        "lines": [
+            {"variant_id": 7, "quantity": 1},
+            {"variant_id": 7, "quantity": 2},
+        ],
+    })
+    assert response.status_code == 422
+    assert "only once per order" in str(response.json())
