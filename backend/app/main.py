@@ -11,8 +11,10 @@ from app.api.v1.customers import router as customers_router
 from app.api.v1.purchasing import router as purchasing_router
 from app.api.v1.auth import router as auth_router
 from app.core.config import settings
+from app.core.auth_middleware import require_active_session
 
 app = FastAPI(title=settings.app_name)
+app.middleware("http")(require_active_session)
 
 allowed_origins = [origin.strip() for origin in settings.cors_allowed_origins.split(",") if origin.strip()]
 app.add_middleware(
