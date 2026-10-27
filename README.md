@@ -14,7 +14,7 @@ This branch establishes the target architecture for a new modular commerce and E
 
 - Vite development: `5173`.
 - Existing backend deployment has historically used `127.0.0.1:8001`; preserve it until the server service, reverse proxy, health checks and frontend API URL are verified together.
-- PostgreSQL often uses `5432`, but the actual database endpoint/port is determined by `DATABASE_URL` and has not been verified here.
+- PostgreSQL was reported by the user's terminal as listening on `127.0.0.1:5432`; preserve it. The actual database name and credentials must be taken from the active service environment, not guessed.
 
 ## Database safety
 
