@@ -239,8 +239,12 @@ def order(d:NewOrder,u=Depends(auth)):
         products_by_id={}
         # Lock inventory rows in stable ID order so concurrent checkouts cannot oversell stock.
         for pid in sorted(required):
-            p=c.execute("SELECT id,sku,name,price_paise FROM products WHERE id=%s AND active IS TRUE",(pid,)).fetchone()
+            p=c.execute("SELECT id,sku,name,price_paise,variants FROM products WHERE id=%s AND active IS TRUE",(pid,)).fetchone()
             if not p: raise HTTPException(404,"Product unavailable")
+            requested_variants={item.variant.strip() for item in d.items if item.product_id==pid}
+            allowed_variants=p["variants"] if isinstance(p["variants"],list) else []
+            if allowed_variants and any(variant not in allowed_variants for variant in requested_variants):
+                raise HTTPException(422,"Selected product option is no longer available for "+p["name"])
             inv=c.execute("SELECT quantity FROM inventory WHERE product_id=%s FOR UPDATE",(pid,)).fetchone()
             if (inv["quantity"] if inv else 0)<required[pid]: raise HTTPException(409,"Insufficient stock for "+p["name"])
             products_by_id[pid]=p

@@ -34,12 +34,15 @@ def main():
     assert product.get("id") and product.get("quantity")==5
     updated=request("PATCH",f"/api/admin/products/{product['id']}",{"sku":f"SMOKE-{suffix}","name":"Smoke Test Product Updated","category":"Testing","description":"Updated smoke-test item","image_url":"","price_paise":11000,"mrp_paise":12000,"variants":["Standard"],"quantity":5},token=logged["token"])
     assert updated.get("name")=="Smoke Test Product Updated" and updated.get("price")==110.0
-    order=request("POST","/api/orders",{"items":[{"product_id":product["id"],"variant":"Standard","quantity":1}],"address":{"name":"Smoke Test Customer","phone":"9876543210","line":"1 Test Road","city":"Bengaluru","state":"Karnataka","pin":order_pin},"coupon":""},token=registered["token"],expected=201)
+    order_payload={"items":[{"product_id":product["id"],"variant":"Standard","quantity":1}],"address":{"name":"Smoke Test Customer","phone":"9876543210","line":"1 Test Road","city":"Bengaluru","state":"Karnataka","pin":order_pin},"coupon":""}
+    request("POST","/api/orders",{**order_payload,"items":[{"product_id":product["id"],"variant":"Not a real option","quantity":1}]},token=registered["token"],expected=422)
+    request("POST","/api/orders",{**order_payload,"items":[{"product_id":product["id"],"variant":"Standard","quantity":6}]},token=registered["token"],expected=409)
+    order=request("POST","/api/orders",order_payload,token=registered["token"],expected=201)
     assert order.get("id") and order.get("status")=="placed"
     assert order.get("items")==[{"product_id":product["id"],"sku":f"SMOKE-{suffix}","name":"Smoke Test Product Updated","variant":"Standard","quantity":1,"price":110.0}]
     changed=request("PATCH",f"/api/admin/orders/{order['id']}/status",{"status":"confirmed"},token=logged["token"])
     assert changed=={"id":order["id"],"status":"confirmed"}
-    print("PASS: health, PIN availability, register, bad login (401), admin login, product create/edit, server-priced order items, order status change")
+    print("PASS: health, PIN availability, register, bad login (401), admin login, product create/edit, invalid variant rejection, stock oversell rejection, server-priced order items, order status change")
 
 
 if __name__=="__main__": main()
