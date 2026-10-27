@@ -43,8 +43,13 @@ const readStore = (key, fallback) => { try { const value = localStorage.getItem(
 const readList = key => { const value = readStore(key, []); return Array.isArray(value) ? value : []; };
 const readAddress = () => {
   const value = readStore('sb-address', {});
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return { name: '', phone: '', line: '', city: '', state: '', pin: '' };
-  return { name: '', phone: '', line: '', city: '', state: '', pin: '', ...value };
+  const fallback = { name: '', phone: '', line: '', city: '', state: '', pin: '' };
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return fallback;
+  return Object.fromEntries(Object.keys(fallback).map(key => [key, typeof value[key] === 'string' ? value[key] : '']));
+};
+const readPin = () => {
+  const value = readStore('sb-pin', '');
+  return typeof value === 'string' ? value.replace(/\\D/g, '').slice(0, 6) : '';
 };
 const writeStore = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* Storage may be unavailable or full; keep the storefront usable for this session. */ } };
 
@@ -60,7 +65,7 @@ function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [showAllCategories, setShowAllCategories] = useState(false);
   const [notice, setNotice] = useState('');
-  const [pin, setPin] = useState(() => readStore('sb-pin', ''));
+  const [pin, setPin] = useState(() => readPin());
   const [sortBy, setSortBy] = useState('featured');
   const [checkoutStep, setCheckoutStep] = useState(1);
   const [address, setAddress] = useState(() => readAddress());
