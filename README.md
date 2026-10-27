@@ -1,46 +1,31 @@
-# Super Bajaar
+# Super Bajaar — clean architecture branch
 
-Responsive React + Vite storefront for Super Bajaar, using the purple-first brand with orange accents. The FastAPI backend uses PostgreSQL for catalogue, inventory, customer accounts, orders, recorded price history, and support tickets.
+This branch establishes the target architecture for a new modular commerce and ERP application. The current production-oriented legacy files are intentionally retained for reference during the transition; they are not the foundation for new modules.
 
-## Run locally
+## Target layout
 
-Frontend:
-```bash
-npm install
-npm run dev
-npm run build
-```
+- `frontend/` — new React + Vite application structure.
+- `backend/app/` — modular FastAPI application, versioned routes and configuration.
+- `database/` — reviewed schema/seed assets; never auto-run.
+- `docs/` — architecture, database safety and API contracts.
+- `scripts/` — explicit safe operational scripts.
 
-Backend setup and environment variables are documented in [backend/README.md](backend/README.md). The API requires `DATABASE_URL`, a random `SB_SECRET_KEY` of at least 32 characters, and admin credentials. Configure `SB_CORS_ORIGINS` for the frontend origin and `SB_SERVICEABLE_PINS` with the store's comma-separated six-digit delivery PIN allowlist.
+## Ports
 
-Set `VITE_API_BASE_URL` in the frontend build environment to the backend origin. An origin with or without a trailing `/api` is accepted.
+- Vite development: `5173`.
+- Existing backend deployment has historically used `127.0.0.1:8001`; preserve it until the server service, reverse proxy, health checks and frontend API URL are verified together.
+- PostgreSQL often uses `5432`, but the actual database endpoint/port is determined by `DATABASE_URL` and has not been verified here.
 
-## Current functionality
+## Database safety
 
-- Department browsing, catalogue search, sorting, and offer filtering
-- Product details, selectable variants, SKU, and recorded 30-day price observations
-- Wishlist, shopping bag, quantity controls, and order summary
-- Customer registration, sign-in, session validation, and order history
-- Server-priced cash-on-delivery checkout with inventory locking and stock validation
-- Delivery PIN availability check; checkout is blocked when coverage is missing or the PIN is not serviceable
-- Customer cancellation for eligible orders with inventory restoration
-- Admin product creation/editing, stock updates, order fulfilment status controls, and support-ticket status management
-- Server-side support requests and responsive mobile layout
-- Product-image fallback artwork
+Creating this structure does not modify the database. Do not run reset/drop/truncate commands. The target schema is deliberately a placeholder until entities and versioned migrations are reviewed. Preserve the current database URL and secrets during the transition; never commit real credentials.
 
-## Before live launch
+## Next implementation steps
 
-- Configure and verify production PostgreSQL, persistent backups, and restore procedures
-- Set strong production secrets and restrict CORS to the deployed storefront
-- Configure the real delivery PIN allowlist and validate fulfilment operations
-- Verify product catalogue, variants, stock, prices, tax treatment, delivery charges, returns/refunds, and published policies
-- Run the backend smoke test against a **non-production** database with the API running and the required environment variables set
-- Complete Razorpay integration and verify payment webhooks before enabling online payment
+1. Confirm deployment/runtime settings and database target without changing them.
+2. Implement the frontend app shell, router, providers and API client in `frontend/`.
+3. Implement backend domain modules and migrations under `backend/app/`.
+4. Add tests against a dedicated test database and verify each end-to-end workflow.
+5. Switch deployment entrypoints only after build and smoke tests pass.
 
-Online payment is intentionally disabled; never place secret payment credentials in frontend code. The API records price observations only when a product is created or its selling price changes; it does not fabricate earlier prices.
-
-## Stack
-
-- React 18 and Vite 6
-- FastAPI and PostgreSQL
-- Python API smoke test: `backend/tests/smoke_test.py`
+See `docs/architecture.md`, `docs/database-design.md` and `docs/api-contracts.md`.
