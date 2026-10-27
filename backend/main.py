@@ -290,7 +290,7 @@ def order(d:NewOrder,u=Depends(auth)):
             if (inv["quantity"] if inv else 0)<required[pid]: raise HTTPException(409,"Insufficient stock for "+p["name"])
             products_by_id[pid]=p
         subtotal=sum(products_by_id[x.product_id]["price_paise"]*x.quantity for x in d.items)
-        discount=min(round(subtotal*.1),30000) if d.coupon.strip().upper()=="WELCOME10" else 0
+        discount=min((subtotal+5)//10,30000) if d.coupon.strip().upper()=="WELCOME10" else 0
         delivery=0 if subtotal>=79900 else 4900; total=max(0,subtotal-discount+delivery); code="SB"+secrets.token_hex(5).upper()
         order_id=c.execute("INSERT INTO orders(code,user_id,status,payment_status,subtotal,delivery,discount,total,address,created_at,updated_at) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
             (code,u["id"],"placed","pending",subtotal,delivery,discount,total,Jsonb(d.address.model_dump()),now,now)).fetchone()["id"]
