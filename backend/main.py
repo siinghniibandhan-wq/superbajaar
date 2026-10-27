@@ -274,13 +274,33 @@ def admin_orders(u=Depends(admin)):
     with connect() as c: rows=c.execute("SELECT o.code,o.status,o.payment_status,o.total,o.created_at,u.email,u.name FROM orders o JOIN users u ON u.id=o.user_id ORDER BY o.id DESC").fetchall()
     return {"items":[{**dict(x),"total":x["total"]/100} for x in rows]}
 
+def restock_cancelled_order(c, order_id, now):
+    items=c.execute("SELECT product_id,quantity FROM order_items WHERE order_id=%s",(order_id,)).fetchall()
+    for item in items:
+        c.execute("INSERT INTO inventory(product_id,quantity,updated_at) VALUES(%s,%s,%s) ON CONFLICT(product_id) DO UPDATE SET quantity=inventory.quantity+EXCLUDED.quantity,updated_at=EXCLUDED.updated_at",(item["product_id"],item["quantity"],now))
+
+
+@app.patch("/api/orders/{code}/cancel")
+def cancel_my_order(code:str,u=Depends(auth)):
+    now=stamp()
+    with connect() as c:
+        row=c.execute("SELECT id,status FROM orders WHERE code=%s AND user_id=%s FOR UPDATE",(code,u["id"])).fetchone()
+        if not row: raise HTTPException(404,"Order not found")
+        if row["status"] not in ("placed","confirmed"): raise HTTPException(409,"This order can no longer be cancelled")
+        restock_cancelled_order(c,row["id"],now)
+        c.execute("UPDATE orders SET status=%s,updated_at=%s WHERE id=%s",("cancelled",now,row["id"]))
+    return {"id":code,"status":"cancelled"}
+
+
 @app.patch("/api/admin/orders/{code}/status")
 def status(code:str,d:Status,u=Depends(admin)):
+    now=stamp()
     with connect() as c:
-        row=c.execute("SELECT id,status FROM orders WHERE code=%s",(code,)).fetchone()
+        row=c.execute("SELECT id,status FROM orders WHERE code=%s FOR UPDATE",(code,)).fetchone()
         if not row: raise HTTPException(404,"Order not found")
         if row["status"] in ("delivered","cancelled") and d.status!=row["status"]: raise HTTPException(409,"Final order status cannot be changed")
-        c.execute("UPDATE orders SET status=%s,updated_at=%s WHERE id=%s",(d.status,stamp(),row["id"]))
+        if d.status=="cancelled" and row["status"]!="cancelled": restock_cancelled_order(c,row["id"],now)
+        c.execute("UPDATE orders SET status=%s,updated_at=%s WHERE id=%s",(d.status,now,row["id"]))
     return {"id":code,"status":d.status}
 
 @app.post("/api/support",status_code=201)

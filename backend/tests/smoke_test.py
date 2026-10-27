@@ -42,7 +42,12 @@ def main():
     assert order.get("items")==[{"product_id":product["id"],"sku":f"SMOKE-{suffix}","name":"Smoke Test Product Updated","variant":"Standard","quantity":1,"price":110.0}]
     changed=request("PATCH",f"/api/admin/orders/{order['id']}/status",{"status":"confirmed"},token=logged["token"])
     assert changed=={"id":order["id"],"status":"confirmed"}
-    print("PASS: health, PIN availability, register, bad login (401), admin login, product create/edit, invalid variant rejection, stock oversell rejection, server-priced order items, order status change")
+    cancelled=request("PATCH",f"/api/orders/{order['id']}/cancel",token=registered["token"])
+    assert cancelled=={"id":order["id"],"status":"cancelled"}
+    remaining=request("GET",f"/api/products?q=SMOKE-{suffix}")
+    assert remaining.get("items") and remaining["items"][0].get("quantity")==5
+    request("PATCH",f"/api/orders/{order['id']}/cancel",token=registered["token"],expected=409)
+    print("PASS: health, PIN availability, register, bad login (401), admin login, product create/edit, invalid variant rejection, stock oversell rejection, server-priced order items, cancellation and stock restoration")
 
 
 if __name__=="__main__": main()

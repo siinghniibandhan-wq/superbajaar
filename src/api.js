@@ -21,6 +21,7 @@ export const signUp=(name,email,phone,password)=>request('/api/auth/register',{m
 export const fetchCurrentUser=token=>request('/api/auth/me',{token});
 export const submitOrder=(token,cart,address,coupon)=>request('/api/orders',{token,method:'POST',body:JSON.stringify({items:cart.map(item=>({product_id:Number(item.id),variant:item.variant||'Standard',quantity:Number(item.qty)})),address,coupon:coupon||''})});
 export const fetchOrders=token=>request('/api/orders',{token});
+export const cancelOrder=(token,code)=>request('/api/orders/'+encodeURIComponent(code)+'/cancel',{token,method:'PATCH'});
 export const submitTicket=(token,topic,message)=>request('/api/support',{token,method:'POST',body:JSON.stringify({topic,message})});
 
 export const createAdminProduct = (token, product) => request('/api/admin/products', { token, method: 'POST', body: JSON.stringify(product) });
