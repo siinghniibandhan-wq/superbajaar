@@ -26,3 +26,17 @@ def test_inventory_adjustment_requires_note():
         "variant_id": 1, "location_id": 1, "quantity": 2,
     })
     assert response.status_code == 422
+
+
+def test_stock_location_rejects_invalid_type_before_database_access():
+    response = client.post("/api/v1/inventory/locations", json={
+        "name": "Main store", "location_type": "office",
+    })
+    assert response.status_code == 422
+
+
+def test_stock_location_rejects_invalid_pin_code_before_database_access():
+    response = client.post("/api/v1/inventory/locations", json={
+        "name": "Main store", "location_type": "store", "pin_code": "123",
+    })
+    assert response.status_code == 422
