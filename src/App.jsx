@@ -101,7 +101,11 @@ function App() {
     setNotice(product.name + ' added to your bag');
   };
   const updateQty = (id, variant, delta) => setCart(prev => prev.map(item => item.id === id && item.variant === variant ? {...item, qty: Math.min(99, item.qty + delta)} : item).filter(item => item.qty > 0));
-  const toggleWishlist = product => setWishlist(prev => prev.some(item => item.id === product.id) ? prev.filter(item => item.id !== product.id) : [...prev, product]);
+  const toggleWishlist = product => {
+    const alreadySaved = wishlist.some(item => item.id === product.id);
+    setWishlist(prev => alreadySaved ? prev.filter(item => item.id !== product.id) : [...prev, product]);
+    setNotice(alreadySaved ? product.name + ' removed from wishlist' : product.name + ' saved to wishlist');
+  };
   const openProduct = product => { setSelectedProduct(product); setSelectedVariant(product.variants?.[0] || 'Standard'); go('product'); };
   const applyCoupon = () => {
     if (coupon.trim().toUpperCase() === 'WELCOME10' && subtotal > 0) { setAppliedCoupon('WELCOME10'); setNotice('WELCOME10 applied — 10% off up to ₹300'); }
