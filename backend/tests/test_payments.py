@@ -31,3 +31,17 @@ def test_payment_rejects_zero_amount_before_database_access():
 def test_payment_rejects_unknown_status():
     response = client.patch("/api/v1/payments/1/status", json={"status": "settled_forever"})
     assert response.status_code == 422
+
+
+def test_payment_cannot_be_created_as_captured_without_gateway_confirmation():
+    response = client.post("/api/v1/payments", json={
+        "order_id": 1, "method": "upi", "amount": 100, "status": "captured",
+    })
+    assert response.status_code == 422
+
+
+def test_payment_cannot_be_created_as_refunded_without_gateway_confirmation():
+    response = client.post("/api/v1/payments", json={
+        "order_id": 1, "method": "upi", "amount": 100, "status": "refunded",
+    })
+    assert response.status_code == 422
