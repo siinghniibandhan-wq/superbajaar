@@ -22,7 +22,10 @@ npm run preview
 - Product detail pages with selectable variants and SKU identifiers
 - Branded fallback artwork when an external product image cannot load
 - Wishlist, shopping bag, quantity controls, and order summary
+- SB Plus membership preview with working navigation
+- Help centre with locally saved demo support requests and browser-local order lookup
 - `WELCOME10` demo coupon (10% off, capped at ₹300)
+- Product image fallback artwork and asynchronous image decoding
 - Delivery PIN entry and address form validation
 - Local demo order history and responsive mobile layout
 
