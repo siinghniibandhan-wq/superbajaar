@@ -41,3 +41,17 @@ def test_variant_requires_nonnegative_price_and_valid_mrp():
         "sku": "SKU-1", "selling_price": 100, "mrp": 90,
     })
     assert response.status_code == 422
+
+
+def test_product_image_rejects_non_http_url_before_database_access():
+    response = client.post("/api/v1/catalogue/products/1/images", json={
+        "image_url": "javascript:alert(1)",
+    })
+    assert response.status_code == 422
+
+
+def test_product_image_rejects_invalid_sort_order_before_database_access():
+    response = client.post("/api/v1/catalogue/products/1/images", json={
+        "image_url": "https://example.com/product.jpg", "sort_order": -1,
+    })
+    assert response.status_code == 422
