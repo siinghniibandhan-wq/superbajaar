@@ -107,7 +107,7 @@ function App() {
   const addToCart = (product, variant = product.variants?.[0] || 'Standard') => {
     setCart(prev => {
       const found = prev.find(item => item.id === product.id && item.variant === variant);
-      return found ? prev.map(item => item.id === product.id && item.variant === variant ? {...item, qty: item.qty + 1} : item) : [...prev, {...product, variant, qty: 1}];
+      return found ? prev.map(item => item.id === product.id && item.variant === variant ? {...item, qty: Math.min(99, item.qty + 1)} : item) : [...prev, {...product, variant, qty: 1}];
     });
     setNotice(product.name + ' added to your bag');
   };
