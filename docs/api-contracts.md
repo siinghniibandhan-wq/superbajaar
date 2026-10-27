@@ -1,24 +1,25 @@
 # API contracts
 
-All new endpoints should be versioned under `/api/v1`, return validated response schemas, enforce authentication/permissions, and document error responses.
+All new endpoints are versioned under `/api/v1`. Responses are validated, list endpoints are paginated, and database writes use parameterized SQL.
 
-## Implemented foundation
+## Health
+- `GET /api/v1/health`
 
-- `GET /api/v1/health` — process health check; no database dependency.
-- `GET /api/v1/catalogue/categories` — paginated category list.
-- `POST /api/v1/catalogue/categories` — create a category; slug conflicts return 409.
-- `GET /api/v1/catalogue/products` — paginated product list; optional category and status filters.
-- `POST /api/v1/catalogue/products` — create a draft product with optional category and tax metadata.
+## Categories and products
+- `GET /api/v1/catalogue/categories?limit=100&offset=0`
+- `POST /api/v1/catalogue/categories`
+- `GET /api/v1/catalogue/products?category_id=&status=active&limit=100&offset=0`
+- `POST /api/v1/catalogue/products`
 
-Catalogue endpoints require `DATABASE_URL` and the target schema to exist. They do not run migrations automatically. Authentication and permission enforcement are not yet implemented, so do not expose write endpoints publicly.
+## Attributes and variants
+- `GET /api/v1/catalogue/attributes`
+- `POST /api/v1/catalogue/attributes`
+- `GET /api/v1/catalogue/products/{product_id}/attributes`
+- `PUT /api/v1/catalogue/products/{product_id}/attributes/{attribute_id}`
+- `GET /api/v1/catalogue/products/{product_id}/variants`
+- `POST /api/v1/catalogue/products/{product_id}/variants`
 
-## Planned endpoint domains
+Attribute definitions support text, number, boolean, date, select, multi-select, colour and size values. Variant creation accepts only active attributes marked as variant attributes, validates required attributes and allowed options, enforces non-negative prices and unique SKUs through database constraints.
 
-- authentication, users and access control
-- attributes, valid variants and variant images/SKUs
-- inventory and pricing
-- serviceability, cart and checkout
-- orders, payments and refunds
-- delivery and admin operations
-
-Contracts must be written before wiring each frontend feature. Payment webhooks must verify provider signatures and be idempotent.
+## Important limitations
+These endpoints require `DATABASE_URL` and the reviewed target schema. They do not migrate the database. Authentication, roles, image upload/storage, variant-combination uniqueness, stock transactions and end-to-end integration tests are still pending. Do not expose write endpoints publicly until authentication and permissions are implemented.
