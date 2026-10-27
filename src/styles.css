@@ -151,3 +151,6 @@
 .support-ticket>div span,.support-ticket small{font-size:.82rem;color:var(--muted,#6b6475)}
 .support-ticket p{line-height:1.6;overflow-wrap:anywhere}
 @media(max-width:720px){.support-layout{grid-template-columns:1fr}.support-ticket>div{flex-direction:column;gap:5px}}
+
+/* Keyboard accessibility */
+.skip-link{position:fixed;top:10px;left:10px;z-index:1000;padding:12px 16px;border-radius:10px;background:#4d1684;color:#fff;font-weight:700;transform:translateY(-160%);transition:transform .15s ease}.skip-link:focus{transform:translateY(0);outline:3px solid #f28a22;outline-offset:3px}
