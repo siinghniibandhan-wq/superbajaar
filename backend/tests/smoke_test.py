@@ -37,6 +37,7 @@ def main():
     if unsupported_pin is not None:
         unavailable=request("GET",f"/api/delivery/availability?pin={unsupported_pin}")
         assert unavailable.get("serviceable") is False and unavailable.get("status")=="not_serviceable"
+    request("POST","/api/admin/products",{"sku":"   ","name":"Valid Name","category":"Testing","price_paise":100,"mrp_paise":100,"variants":[],"quantity":1},token=logged["token"],expected=422)
     product=request("POST","/api/admin/products",{"sku":f"SMOKE-{suffix}","name":"Smoke Test Product","category":"Testing","description":"Smoke-test item","image_url":"","price_paise":10000,"mrp_paise":12000,"variants":["Standard"],"quantity":5},token=logged["token"],expected=201)
     assert product.get("id") and product.get("quantity")==5
     duplicate=request("POST","/api/admin/products",{"sku":f"SMOKE-{suffix}","name":"Duplicate SKU","category":"Testing","description":"","image_url":"","price_paise":10000,"mrp_paise":12000,"variants":["Standard"],"quantity":1},token=logged["token"],expected=409)

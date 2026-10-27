@@ -6,7 +6,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from fastapi import FastAPI, Depends, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 SECRET = os.getenv("SB_SECRET_KEY", "")
@@ -87,6 +87,12 @@ class Register(BaseModel):
     email:EmailStr
     phone:str=Field(default="",max_length=15)
     password:str=Field(min_length=10,max_length=128)
+    @field_validator("name", mode="before")
+    @classmethod
+    def nonblank_name(cls, value):
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("Name cannot be blank")
+        return value.strip()
 class Login(BaseModel):
     email:EmailStr
     password:str=Field(min_length=1,max_length=128)
@@ -100,6 +106,12 @@ class Product(BaseModel):
     mrp_paise:int=Field(ge=0)
     variants:list[str]=Field(default_factory=list,max_length=100)
     quantity:int=Field(default=0,ge=0)
+    @field_validator("sku", "name", "category", mode="before")
+    @classmethod
+    def required_product_text(cls, value):
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("This product field cannot be blank")
+        return value.strip()
 class Stock(BaseModel):
     quantity:int=Field(ge=0)
 class Address(BaseModel):
@@ -109,6 +121,12 @@ class Address(BaseModel):
     city:str=Field(min_length=2,max_length=100)
     state:str=Field(min_length=2,max_length=100)
     pin:str=Field(pattern=r"^[0-9]{6}$")
+    @field_validator("name", "line", "city", "state", mode="before")
+    @classmethod
+    def required_address_text(cls, value):
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("This address field cannot be blank")
+        return value.strip()
 class Line(BaseModel):
     product_id:int=Field(gt=0)
     variant:str=Field(default="",max_length=100)
@@ -122,6 +140,12 @@ class Status(BaseModel):
 class Ticket(BaseModel):
     topic:str=Field(min_length=2,max_length=100)
     message:str=Field(min_length=5,max_length=4000)
+    @field_validator("topic", "message", mode="before")
+    @classmethod
+    def required_ticket_text(cls, value):
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("Support topic and message cannot be blank")
+        return value.strip()
 class TicketStatus(BaseModel):
     status:str=Field(pattern=r"^(open|in_progress|resolved|closed)$")
 
