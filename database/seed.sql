@@ -1,0 +1,3 @@
+-- Safe seed-data placeholder.
+-- Add only deterministic reference data; never customer, payment or credential data.
+-- This file is not executed automatically.
