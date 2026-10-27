@@ -1,14 +1,10 @@
-"""Catalogue endpoints backed by PostgreSQL.
-
-These routes require DATABASE_URL and the reviewed target schema. They do not
-connect to or migrate a database during import/startup.
-"""
+"""PostgreSQL-backed catalogue, attribute and variant API foundation."""
 from typing import Any
 
 import psycopg
 from fastapi import APIRouter, HTTPException, Query
 from psycopg.rows import dict_row
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.core.config import settings
 
@@ -21,6 +17,13 @@ class CategoryCreate(BaseModel):
     description: str | None = None
     parent_id: int | None = Field(default=None, gt=0)
 
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Category name cannot be blank")
+        return value.strip()
+
 
 class ProductCreate(BaseModel):
     name: str = Field(min_length=1, max_length=240)
@@ -30,6 +33,71 @@ class ProductCreate(BaseModel):
     brand: str | None = Field(default=None, max_length=160)
     tax_code: str | None = Field(default=None, max_length=32)
     tax_rate: float | None = Field(default=None, ge=0, le=100)
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Product name cannot be blank")
+        return value.strip()
+
+
+class AttributeCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    code: str = Field(min_length=1, max_length=120, pattern=r"^[a-z][a-z0-9_]*$")
+    value_type: str = Field(pattern=r"^(text|number|boolean|date|select|multi_select|colour|size)$")
+    is_variant_attribute: bool = False
+    is_required: bool = False
+    options: list[Any] = Field(default_factory=list, max_length=200)
+
+    @field_validator("name")
+    @classmethod
+    def attribute_name_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Attribute name cannot be blank")
+        return value.strip()
+
+    @field_validator("options")
+    @classmethod
+    def options_for_select_types(cls, value: list[Any], info):
+        value_type = info.data.get("value_type")
+        if value_type in {"select", "multi_select", "colour", "size"} and not value:
+            raise ValueError("This attribute type requires at least one option")
+        if value_type not in {"select", "multi_select", "colour", "size"} and value:
+            raise ValueError("Options are only supported for select, multi_select, colour and size attributes")
+        if any(not isinstance(option, (str, int, float, bool)) for option in value):
+            raise ValueError("Attribute options must be simple scalar values")
+        if len({str(option) for option in value}) != len(value):
+            raise ValueError("Attribute options must be unique")
+        return value
+
+
+class AttributeValueCreate(BaseModel):
+    value: Any
+
+
+class VariantCreate(BaseModel):
+    sku: str = Field(min_length=1, max_length=100)
+    barcode: str | None = Field(default=None, max_length=100)
+    attributes: dict[str, Any] = Field(default_factory=dict)
+    selling_price: float = Field(ge=0)
+    mrp: float | None = Field(default=None, ge=0)
+    cost_price: float | None = Field(default=None, ge=0)
+
+    @field_validator("sku")
+    @classmethod
+    def sku_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("SKU cannot be blank")
+        return value.strip()
+
+    @field_validator("mrp")
+    @classmethod
+    def mrp_not_below_selling_price(cls, value, info):
+        selling = info.data.get("selling_price")
+        if value is not None and selling is not None and value < selling:
+            raise ValueError("MRP cannot be below selling price")
+        return value
 
 
 def _connection():
@@ -41,16 +109,46 @@ def _connection():
         raise HTTPException(status_code=503, detail="Catalogue database is unavailable") from exc
 
 
-def _duplicate_or_database_error(exc: psycopg.Error) -> HTTPException:
-    if getattr(exc, "sqlstate", None) == "23505":
-        return HTTPException(status_code=409, detail="A record with this slug or unique value already exists")
-    if getattr(exc, "sqlstate", None) == "23503":
-        return HTTPException(status_code=422, detail="The referenced category or parent does not exist")
+def _db_error(exc: psycopg.Error) -> HTTPException:
+    code = getattr(exc, "sqlstate", None)
+    if code == "23505":
+        return HTTPException(status_code=409, detail="A record with this unique value already exists")
+    if code == "23503":
+        return HTTPException(status_code=422, detail="A referenced record does not exist")
+    if code == "23514":
+        return HTTPException(status_code=422, detail="The value violates a catalogue validation rule")
     return HTTPException(status_code=503, detail="Catalogue database operation failed")
 
 
+def _require_product(conn, product_id: int) -> dict[str, Any]:
+    row = conn.execute("SELECT id, status FROM products WHERE id = %s", (product_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return row
+
+
+def _validate_attribute_value(conn, attribute: dict[str, Any], value: Any) -> None:
+    kind = attribute["value_type"]
+    options = attribute["options"] or []
+    valid = True
+    if kind in {"select", "colour", "size"}:
+        valid = value in options
+    elif kind == "multi_select":
+        valid = isinstance(value, list) and all(item in options for item in value) and len(value) == len(set(map(str, value)))
+    elif kind == "text":
+        valid = isinstance(value, str)
+    elif kind == "number":
+        valid = isinstance(value, (int, float)) and not isinstance(value, bool)
+    elif kind == "boolean":
+        valid = isinstance(value, bool)
+    elif kind == "date":
+        valid = isinstance(value, str) and len(value) == 10 and value[4:5] == "-" and value[7:8] == "-"
+    if not valid:
+        raise HTTPException(status_code=422, detail=f"Invalid value for attribute '{attribute['name']}'")
+
+
 @router.get("/categories")
-def list_categories(limit: int = Query(default=100, ge=1, le=500), offset: int = Query(default=0, ge=0)) -> dict[str, Any]:
+def list_categories(limit: int = Query(default=100, ge=1, le=500), offset: int = Query(default=0, ge=0)):
     with _connection() as conn:
         rows = conn.execute(
             "SELECT id, parent_id, name, slug, description, is_active, created_at, updated_at "
@@ -60,21 +158,17 @@ def list_categories(limit: int = Query(default=100, ge=1, le=500), offset: int =
 
 
 @router.post("/categories", status_code=201)
-def create_category(payload: CategoryCreate) -> dict[str, Any]:
-    name = payload.name.strip()
-    if not name:
-        raise HTTPException(status_code=422, detail="Category name cannot be blank")
+def create_category(payload: CategoryCreate):
     try:
         with _connection() as conn:
             row = conn.execute(
-                "INSERT INTO categories (parent_id, name, slug, description) "
-                "VALUES (%s, %s, %s, %s) "
+                "INSERT INTO categories (parent_id, name, slug, description) VALUES (%s, %s, %s, %s) "
                 "RETURNING id, parent_id, name, slug, description, is_active, created_at, updated_at",
-                (payload.parent_id, name, payload.slug, payload.description),
+                (payload.parent_id, payload.name, payload.slug, payload.description),
             ).fetchone()
         return row
     except psycopg.Error as exc:
-        raise _duplicate_or_database_error(exc) from exc
+        raise _db_error(exc) from exc
 
 
 @router.get("/products")
@@ -83,7 +177,7 @@ def list_products(
     status: str = Query(default="active", pattern="^(draft|active|archived|all)$"),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
-) -> dict[str, Any]:
+):
     clauses: list[str] = []
     params: list[Any] = []
     if category_id is not None:
@@ -103,18 +197,119 @@ def list_products(
 
 
 @router.post("/products", status_code=201)
-def create_product(payload: ProductCreate) -> dict[str, Any]:
-    name = payload.name.strip()
-    if not name:
-        raise HTTPException(status_code=422, detail="Product name cannot be blank")
+def create_product(payload: ProductCreate):
     try:
         with _connection() as conn:
             row = conn.execute(
                 "INSERT INTO products (category_id, name, slug, description, brand, tax_code, tax_rate) "
                 "VALUES (%s, %s, %s, %s, %s, %s, %s) "
                 "RETURNING id, category_id, name, slug, description, brand, status, tax_code, tax_rate, created_at, updated_at",
-                (payload.category_id, name, payload.slug, payload.description, payload.brand, payload.tax_code, payload.tax_rate),
+                (payload.category_id, payload.name, payload.slug, payload.description, payload.brand, payload.tax_code, payload.tax_rate),
             ).fetchone()
         return row
     except psycopg.Error as exc:
-        raise _duplicate_or_database_error(exc) from exc
+        raise _db_error(exc) from exc
+
+
+@router.get("/products/{product_id}/attributes")
+def list_product_attributes(product_id: int):
+    with _connection() as conn:
+        _require_product(conn, product_id)
+        rows = conn.execute(
+            "SELECT a.id, a.name, a.code, a.value_type, a.is_variant_attribute, a.is_required, a.options, pav.value "
+            "FROM product_attributes a LEFT JOIN product_attribute_values pav "
+            "ON pav.attribute_id = a.id AND pav.product_id = %s "
+            "WHERE a.is_active = TRUE ORDER BY a.name", (product_id,)
+        ).fetchall()
+    return {"product_id": product_id, "items": rows}
+
+
+@router.post("/attributes", status_code=201)
+def create_attribute(payload: AttributeCreate):
+    try:
+        with _connection() as conn:
+            row = conn.execute(
+                "INSERT INTO product_attributes (name, code, value_type, is_variant_attribute, is_required, options) "
+                "VALUES (%s, %s, %s, %s, %s, %s::jsonb) "
+                "RETURNING id, name, code, value_type, is_variant_attribute, is_required, options, is_active, created_at",
+                (payload.name, payload.code, payload.value_type, payload.is_variant_attribute, payload.is_required, __import__("json").dumps(payload.options)),
+            ).fetchone()
+        return row
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.get("/attributes")
+def list_attributes(limit: int = Query(default=100, ge=1, le=500), offset: int = Query(default=0, ge=0)):
+    with _connection() as conn:
+        rows = conn.execute(
+            "SELECT id, name, code, value_type, is_variant_attribute, is_required, options, is_active, created_at "
+            "FROM product_attributes WHERE is_active = TRUE ORDER BY name LIMIT %s OFFSET %s", (limit, offset)
+        ).fetchall()
+    return {"items": rows, "limit": limit, "offset": offset}
+
+
+@router.put("/products/{product_id}/attributes/{attribute_id}")
+def set_product_attribute_value(product_id: int, attribute_id: int, payload: AttributeValueCreate):
+    try:
+        with _connection() as conn:
+            _require_product(conn, product_id)
+            attribute = conn.execute(
+                "SELECT id, name, value_type, options, is_active FROM product_attributes WHERE id = %s",
+                (attribute_id,),
+            ).fetchone()
+            if attribute is None or not attribute["is_active"]:
+                raise HTTPException(status_code=404, detail="Active attribute not found")
+            _validate_attribute_value(conn, attribute, payload.value)
+            row = conn.execute(
+                "INSERT INTO product_attribute_values (product_id, attribute_id, value) VALUES (%s, %s, %s::jsonb) "
+                "ON CONFLICT (product_id, attribute_id) DO UPDATE SET value = EXCLUDED.value "
+                "RETURNING id, product_id, attribute_id, value",
+                (product_id, attribute_id, __import__("json").dumps(payload.value)),
+            ).fetchone()
+        return row
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.get("/products/{product_id}/variants")
+def list_variants(product_id: int, limit: int = Query(default=100, ge=1, le=500), offset: int = Query(default=0, ge=0)):
+    with _connection() as conn:
+        _require_product(conn, product_id)
+        rows = conn.execute(
+            "SELECT id, product_id, sku, barcode, attributes, selling_price, mrp, cost_price, is_active, created_at, updated_at "
+            "FROM product_variants WHERE product_id = %s ORDER BY sku LIMIT %s OFFSET %s",
+            (product_id, limit, offset),
+        ).fetchall()
+    return {"product_id": product_id, "items": rows, "limit": limit, "offset": offset}
+
+
+@router.post("/products/{product_id}/variants", status_code=201)
+def create_variant(product_id: int, payload: VariantCreate):
+    try:
+        with _connection() as conn:
+            _require_product(conn, product_id)
+            attributes = conn.execute(
+                "SELECT code, name, value_type, options, is_required FROM product_attributes "
+                "WHERE is_active = TRUE AND is_variant_attribute = TRUE"
+            ).fetchall()
+            by_code = {row["code"]: row for row in attributes}
+            unknown = sorted(set(payload.attributes) - set(by_code))
+            if unknown:
+                raise HTTPException(status_code=422, detail=f"Unknown or non-variant attributes: {', '.join(unknown)}")
+            for code, definition in by_code.items():
+                if definition["is_required"] and code not in payload.attributes:
+                    raise HTTPException(status_code=422, detail=f"Required variant attribute '{code}' is missing")
+            for code, value in payload.attributes.items():
+                _validate_attribute_value(conn, by_code[code], value)
+            row = conn.execute(
+                "INSERT INTO product_variants (product_id, sku, barcode, attributes, selling_price, mrp, cost_price) "
+                "VALUES (%s, %s, %s, %s::jsonb, %s, %s, %s) "
+                "RETURNING id, product_id, sku, barcode, attributes, selling_price, mrp, cost_price, is_active, created_at, updated_at",
+                (product_id, payload.sku, payload.barcode, __import__("json").dumps(payload.attributes), payload.selling_price, payload.mrp, payload.cost_price),
+            ).fetchone()
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
