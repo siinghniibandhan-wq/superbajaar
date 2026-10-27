@@ -72,6 +72,23 @@ class AttributeCreate(BaseModel):
         return value
 
 
+
+class ProductImageCreate(BaseModel):
+    image_url: str = Field(min_length=8, max_length=2048)
+    alt_text: str | None = Field(default=None, max_length=300)
+    variant_id: int | None = Field(default=None, gt=0)
+    sort_order: int = Field(default=0, ge=0, le=10000)
+
+    @field_validator("image_url")
+    @classmethod
+    def image_url_must_be_http(cls, value: str) -> str:
+        from urllib.parse import urlparse
+        parsed = urlparse(value.strip())
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("Image URL must be an absolute HTTP or HTTPS URL")
+        return value.strip()
+
+
 class AttributeValueCreate(BaseModel):
     value: Any
 
@@ -307,6 +324,48 @@ def create_variant(product_id: int, payload: VariantCreate):
                 "VALUES (%s, %s, %s, %s::jsonb, %s, %s, %s) "
                 "RETURNING id, product_id, sku, barcode, attributes, selling_price, mrp, cost_price, is_active, created_at, updated_at",
                 (product_id, payload.sku, payload.barcode, __import__("json").dumps(payload.attributes), payload.selling_price, payload.mrp, payload.cost_price),
+            ).fetchone()
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.get("/products/{product_id}/images")
+def list_product_images(product_id: int):
+    try:
+        with _connection() as conn:
+            _require_product(conn, product_id)
+            rows = conn.execute(
+                "SELECT id, product_id, variant_id, image_url, alt_text, sort_order, created_at "
+                "FROM product_images WHERE product_id = %s ORDER BY sort_order, id",
+                (product_id,),
+            ).fetchall()
+        return {"items": rows}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.post("/products/{product_id}/images", status_code=201)
+def create_product_image(product_id: int, payload: ProductImageCreate):
+    try:
+        with _connection() as conn:
+            _require_product(conn, product_id)
+            if payload.variant_id is not None:
+                variant = conn.execute(
+                    "SELECT id FROM product_variants WHERE id = %s AND product_id = %s",
+                    (payload.variant_id, product_id),
+                ).fetchone()
+                if variant is None:
+                    raise HTTPException(status_code=422, detail="Image variant must belong to the selected product")
+            row = conn.execute(
+                "INSERT INTO product_images (product_id, variant_id, image_url, alt_text, sort_order) "
+                "VALUES (%s, %s, %s, %s, %s) "
+                "RETURNING id, product_id, variant_id, image_url, alt_text, sort_order, created_at",
+                (product_id, payload.variant_id, payload.image_url, payload.alt_text, payload.sort_order),
             ).fetchone()
         return row
     except HTTPException:
