@@ -29,6 +29,10 @@ npm run preview
 - Delivery PIN entry and address form validation
 - Local demo order history and responsive mobile layout
 
+## Backend API foundation
+
+A FastAPI service is available under `backend/` for customer registration/login, catalogue management, stock, server-priced COD orders, order status, support requests and recorded price observations. See `backend/README.md` for setup. Set `VITE_API_BASE_URL` to the deployed API origin in the frontend build environment; if the API is unavailable or returns no products, the storefront retains its built-in demo catalogue.
+
 ## Important implementation status
 
 This repository currently contains a **front-end storefront only**. Product catalogue/prices and ratings are sample data; cart, wishlist, address, and demo orders are stored in the browser when storage is available.
