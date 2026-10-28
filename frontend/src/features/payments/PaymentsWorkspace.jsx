@@ -6,15 +6,15 @@ const next={pending:["authorized","failed","cancelled"],authorized:["failed","ca
 const label=s=>String(s||"").replaceAll("_"," ").replace(/\b\w/g,c=>c.toUpperCase());
 const money=v=>new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR"}).format(Number(v||0));
 export default function PaymentsWorkspace({onBack}){
- const [items,setItems]=useState([]),[total,setTotal]=useState(0),[orders,setOrders]=useState([]);
+ const [items,setItems]=useState([]),[total,setTotal]=useState(0),[orders,setOrders]=useState([]),[reconciliation,setReconciliation]=useState(null);
  const [status,setStatus]=useState(""),[method,setMethod]=useState(""),[search,setSearch]=useState("");
  const [orderId,setOrderId]=useState(""),[payMethod,setPayMethod]=useState("upi"),[amount,setAmount]=useState(""),[providerRef,setProviderRef]=useState("");
  const [loading,setLoading]=useState(false),[saving,setSaving]=useState(false),[busy,setBusy]=useState(null),[error,setError]=useState(""),[notice,setNotice]=useState("");
  const load=useCallback(async()=>{
   setLoading(true);setError("");
   try{const q=new URLSearchParams({limit:"200"});if(status)q.set("status",status);if(method)q.set("method",method);if(search.trim())q.set("search",search.trim());
-   const [p,o]=await Promise.all([apiRequest("/payments?"+q.toString()),apiRequest("/orders?limit=200")]);
-   setItems(p.items||[]);setTotal(p.total||0);setOrders((o.items||[]).filter(x=>x.status!=="cancelled"));
+   const [p,o,r]=await Promise.all([apiRequest("/payments?"+q.toString()),apiRequest("/orders?limit=200"),apiRequest("/payments/reconciliation")]);
+   setItems(p.items||[]);setTotal(p.total||0);setOrders((o.items||[]).filter(x=>x.status!=="cancelled"));setReconciliation(r);
   }catch(e){setError(e.message||"Unable to load payment records.");}finally{setLoading(false);}
  },[status,method,search]);
  useEffect(()=>{load();},[load]);
@@ -33,6 +33,18 @@ export default function PaymentsWorkspace({onBack}){
   <p className="sb-eyebrow">COMMERCE · PAYMENTS</p><h1>Payments & Refunds</h1>
   <p>Record and reconcile payment states against orders. This workspace does not charge cards or connect to Razorpay or another gateway.</p>
   {error&&<p className="sb-alert" role="alert">{error}</p>}{notice&&<p className="sb-success" role="status">{notice}</p>}
+  {reconciliation&&<section className="sb-payment-reconciliation" aria-label="Recorded payment reconciliation summary">
+   <h2>Recorded payment summary</h2>
+   <p className="sb-muted">Application records only — bank and gateway settlement are not verified.</p>
+   <div className="sb-payment-fields">
+    <div><small>Non-cancelled order value</small><strong>{money(reconciliation.orders?.value)}</strong><small>{reconciliation.orders?.count||0} orders</small></div>
+    <div><small>Pending</small><strong>{money(reconciliation.payments_by_status?.pending?.amount)}</strong><small>{reconciliation.payments_by_status?.pending?.count||0} records</small></div>
+    <div><small>Authorised</small><strong>{money(reconciliation.payments_by_status?.authorized?.amount)}</strong><small>{reconciliation.payments_by_status?.authorized?.count||0} records</small></div>
+    <div><small>Captured (recorded)</small><strong>{money(reconciliation.captured_amount_recorded)}</strong><small>Not provider-verified</small></div>
+    <div><small>Refunded (recorded)</small><strong>{money(reconciliation.refunded_amount_recorded)}</strong><small>Not provider-verified</small></div>
+    <div><small>Net captured (recorded)</small><strong>{money(reconciliation.net_captured_amount_recorded)}</strong><small>Not bank-reconciled</small></div>
+   </div>
+  </section>}
   <form className="sb-payment-form" onSubmit={create}><h2>Record payment</h2>
    <div className="sb-payment-fields">
     <label>Order<select required value={orderId} onChange={e=>{setOrderId(e.target.value);const o=orders.find(x=>String(x.id)===e.target.value);if(o)setAmount(String(o.total));}}><option value="">Choose order</option>{orders.map(o=><option key={o.id} value={o.id}>{o.order_number} · {o.customer_name} · {money(o.total)}</option>)}</select></label>
