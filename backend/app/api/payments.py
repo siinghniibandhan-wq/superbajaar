@@ -111,6 +111,13 @@ def create_payment(payload: PaymentCreate):
                     raise HTTPException(status_code=404, detail="Order not found")
                 if order["status"] == "cancelled":
                     raise HTTPException(status_code=409, detail="Cannot record payment for a cancelled order")
+                already_recorded = conn.execute(
+                    "SELECT COALESCE(sum(amount), 0) AS amount FROM payments "
+                    "WHERE order_id=%s AND status IN ('pending','authorized','captured')",
+                    (payload.order_id,),
+                ).fetchone()["amount"]
+                if Decimal(str(already_recorded)) + payload.amount > Decimal(str(order["total"])):
+                    raise HTTPException(status_code=409, detail="Payment amount exceeds the remaining order balance")
                 reference = "PAY-" + uuid.uuid4().hex[:12].upper()
                 row = conn.execute(
                     "INSERT INTO payments (payment_reference, order_id, method, amount, status, provider_reference, note) "
