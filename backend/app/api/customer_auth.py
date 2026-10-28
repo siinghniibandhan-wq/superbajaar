@@ -148,7 +148,7 @@ def register(payload: CustomerRegister):
                         expression = sql.SQL("lower(trim({})) = %s").format(sql.Identifier(col))
                     else:
                         value = phone_digits
-                        expression = sql.SQL("CASE WHEN length(regexp_replace(coalesce({}, ''), '[^0-9]', '', 'g'))=12 AND left(regexp_replace(coalesce({}, ''), '[^0-9]', '', 'g'),2)='91' THEN right(regexp_replace(coalesce({}, ''), '[^0-9]', '', 'g'),10) WHEN length(regexp_replace(coalesce({}, ''), '[^0-9]', '', 'g'))=11 AND left(regexp_replace(coalesce({}, ''), '[^0-9]', '', 'g'),1)='0' THEN right(regexp_replace(coalesce({}, ''), '[^0-9]', '', 'g'),10) ELSE regexp_replace(coalesce({}, ''), '[^0-9]', '', 'g') END = %s").format(*[sql.Identifier(col)]*6)
+                        expression = sql.SQL("CASE WHEN length(regexp_replace(coalesce({}, ''), '[^0-9]', '', 'g'))=12 AND left(regexp_replace(coalesce({}, ''), '[^0-9]', '', 'g'),2)='91' THEN right(regexp_replace(coalesce({}, ''), '[^0-9]', '', 'g'),10) WHEN length(regexp_replace(coalesce({}, ''), '[^0-9]', '', 'g'))=11 AND left(regexp_replace(coalesce({}, ''), '[^0-9]', '', 'g'),1)='0' THEN right(regexp_replace(coalesce({}, ''), '[^0-9]', '', 'g'),10) ELSE regexp_replace(coalesce({}, ''), '[^0-9]', '', 'g') END = %s").format(*[sql.Identifier(col)]*7)
                     if not value:
                         continue
                     found = conn.execute(
