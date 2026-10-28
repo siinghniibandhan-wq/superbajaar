@@ -1,4 +1,4 @@
-name: Frontend build
+name: Frontend build and backend tests
 
 on:
   pull_request:
@@ -20,7 +20,24 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Install dependencies
+      - name: Install frontend dependencies
         run: npm install
       - name: Build Amplify frontend
         run: npm run build
+
+  backend-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install backend dependencies
+        run: pip install -r requirements.txt
+      - name: Run backend tests
+        run: pytest -q
