@@ -96,6 +96,7 @@ function AppShell() {
   const openById = id => { const found = allItems.find(item => item.id === id); if (found) setSelected(found); };
   if (!authChecked) return <main className="sb-login-page"><p>Checking sign-in…</p></main>;
   if (!user) return <LoginScreen onSignedIn={setUser} />;
+  if (!["owner", "admin"].includes(String(user.role || "").toLowerCase())) return <main className="sb-login-page"><section className="sb-login-card"><div className="sb-login-mark">S</div><p className="sb-eyebrow">SUPER BAJAAR · ACCESS CONTROL</p><h1>Admin access required</h1><p>Your account does not have permission to open the Admin Console.</p><button className="sb-primary" type="button" onClick={() => { window.location.assign("/"); }}>Return to storefront</button></section></main>;
   return <main className="sb-shell">
     <header className="sb-header">
       <button className="sb-brand" type="button" onClick={back} aria-label="Back to workspaces"><span className="sb-mark">S</span><span><strong>Super Bajaar</strong><small>Commerce & ERP</small></span></button>
