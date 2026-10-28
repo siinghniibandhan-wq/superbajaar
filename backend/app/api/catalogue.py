@@ -48,7 +48,7 @@ class AttributeCreate(BaseModel):
     value_type: str = Field(pattern=r"^(text|number|boolean|date|select|multi_select|colour|size)$")
     is_variant_attribute: bool = False
     is_required: bool = False
-    options: list[Any] = Field(default_factory=list, max_length=200)
+    options: list[Any] = Field(default_factory=list, max_length=200, validate_default=True)
 
     @field_validator("name")
     @classmethod
