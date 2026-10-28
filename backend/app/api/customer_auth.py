@@ -34,7 +34,7 @@ def _new_referral_code(conn) -> str:
 class CustomerRegister(BaseModel):
     full_name: str = Field(min_length=2, max_length=200)
     email: EmailStr
-    phone: str | None = Field(default=None, max_length=20)
+    phone: str = Field(min_length=7, max_length=20)
     password: str = Field(min_length=10, max_length=1024)
     referral_code: str | None = Field(default=None, max_length=24)
 
@@ -54,10 +54,11 @@ class CustomerRegister(BaseModel):
     @field_validator("phone")
     @classmethod
     def clean_phone(cls, value):
-        if value is None:
-            return None
-        value = value.strip()
-        return value or None
+        value = " ".join(value.split())
+        digits = "".join(ch for ch in value if ch.isdigit())
+        if len(digits) < 7 or len(digits) > 15:
+            raise ValueError("Enter a valid mobile number")
+        return value
 
     @field_validator("referral_code")
     @classmethod
@@ -107,9 +108,40 @@ def register(payload: CustomerRegister):
     try:
         with _connect() as conn:
             with conn.transaction():
-                existing = conn.execute("SELECT id FROM customer_accounts WHERE email=%s", (email,)).fetchone()
+                phone = payload.phone.strip()
+                phone_digits = "".join(ch for ch in phone if ch.isdigit())
+                existing = conn.execute(
+                    "SELECT id FROM customer_accounts WHERE lower(email)=lower(%s) "
+                    "OR regexp_replace(phone, '[^0-9]', '', 'g')=%s LIMIT 1",
+                    (email, phone_digits),
+                ).fetchone()
                 if existing:
-                    raise HTTPException(status_code=409, detail="An account with this email already exists. Please sign in.")
+                    raise HTTPException(status_code=409, detail="An account with this email or mobile number already exists. Please sign in or use your own contact details.")
+                # Reject returning buyers by checking legacy customer/order/loyalty records
+                # only where the expected contact columns exist in this deployment.
+                legacy_columns = conn.execute(
+                    "SELECT table_name, column_name FROM information_schema.columns "
+                    "WHERE table_schema='public' AND table_name IN ('customers','orders','loyalty_accounts') "
+                    "AND column_name IN ('email','customer_email','phone','customer_phone','mobile','mobile_number')"
+                ).fetchall()
+                from psycopg import sql
+                for item in legacy_columns:
+                    col = item["column_name"]
+                    if col in ("email", "customer_email"):
+                        value = email
+                        expression = sql.SQL("lower(trim({})) = %s").format(sql.Identifier(col))
+                    else:
+                        value = phone_digits
+                        expression = sql.SQL("regexp_replace(coalesce({}, ''), '[^0-9]', '', 'g') = %s").format(sql.Identifier(col))
+                    if not value:
+                        continue
+                    found = conn.execute(
+                        sql.SQL("SELECT 1 FROM {} WHERE ").format(sql.Identifier(item["table_name"])) + expression + sql.SQL(" LIMIT 1"),
+                        (value,),
+                    ).fetchone()
+                    if found:
+                        label = "email address" if col in ("email", "customer_email") else "mobile number"
+                        raise HTTPException(status_code=409, detail=f"This {label} is already associated with an existing Super Bajaar customer record.")
                 referrer = None
                 referral_code = payload.referral_code
                 if referral_code:
@@ -119,8 +151,9 @@ def register(payload: CustomerRegister):
                     ).fetchone()
                     if referrer is None:
                         raise HTTPException(status_code=422, detail="Referral code is invalid")
+                    referrer_phone_digits = "".join(ch for ch in (referrer["phone"] or "") if ch.isdigit())
                     if referrer["email"].strip().lower() == email or (
-                        payload.phone and referrer["phone"] and payload.phone.strip() == referrer["phone"].strip()
+                        referrer_phone_digits and phone_digits == referrer_phone_digits
                     ):
                         raise HTTPException(status_code=422, detail="You cannot use your own referral details")
                 own_code = _new_referral_code(conn)
@@ -128,7 +161,7 @@ def register(payload: CustomerRegister):
                     "INSERT INTO customer_accounts (email,full_name,phone,password_hash,referral_code,referred_by_customer_id) "
                     "VALUES (%s,%s,%s,%s,%s,%s) "
                     "RETURNING id,email,full_name,phone,referral_code",
-                    (email, payload.full_name, payload.phone, _password_hash(payload.password), own_code,
+                    (email, payload.full_name, phone, _password_hash(payload.password), own_code,
                      referrer["id"] if referrer else None),
                 ).fetchone()
                 # Track the referral only; no reward is issued until reward rules are confirmed.
@@ -152,7 +185,7 @@ def register(payload: CustomerRegister):
     except psycopg.errors.UniqueViolation as exc:
         raise HTTPException(status_code=409, detail="An account with this email or referral code already exists") from exc
     except psycopg.Error as exc:
-        raise HTTPException(status_code=503, detail="Could not create customer account; verify migration 010") from exc
+        raise HTTPException(status_code=503, detail="Could not create customer account; verify customer-account migrations") from exc
 
 
 @router.post("/login")
