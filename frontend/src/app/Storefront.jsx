@@ -47,7 +47,7 @@ export default function Storefront() {
   }, []);
 
   useEffect(() => {
-    const syncPath = () => setRoutePath(window.location.pathname.replace(/\\/+$/, "") || "/");
+    const syncPath = () => setRoutePath(window.location.pathname.replace(/\/+$/, "") || "/");
     window.addEventListener("popstate", syncPath);
     return () => window.removeEventListener("popstate", syncPath);
   }, []);
