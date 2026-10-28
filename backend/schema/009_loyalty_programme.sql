@@ -1,5 +1,7 @@
 -- Super Bajaar loyalty programme and partner enquiries.
--- Idempotent: safe to apply more than once; does not modify existing tables.
+-- Idempotent: safe to apply more than once; adds only the optional order email field to an existing table.
+ALTER TABLE IF EXISTS orders ADD COLUMN IF NOT EXISTS customer_email TEXT;
+
 CREATE TABLE IF NOT EXISTS loyalty_rules (
     id BIGSERIAL PRIMARY KEY,
     scope_type TEXT NOT NULL CHECK (scope_type IN ('default', 'category', 'product')),
