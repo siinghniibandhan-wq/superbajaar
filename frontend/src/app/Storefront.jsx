@@ -28,19 +28,29 @@ export default function Storefront() {
 
   useEffect(() => {
     let active = true;
-    Promise.all([
-      // Public storefront reads must not inherit a stale admin session token.
-      apiRequest("/catalogue/categories", { skipAuth: true }),
-      apiRequest("/catalogue/products", { skipAuth: true }),
-      apiRequest("/catalogue/variants?limit=500", { skipAuth: true }),
-    ]).then(([c, p, v]) => {
+    const endpoints = [
+      ["categories", () => apiRequest("/catalogue/categories", { skipAuth: true })],
+      ["products", () => apiRequest("/catalogue/products", { skipAuth: true })],
+      ["variants", () => apiRequest("/catalogue/variants?limit=500", { skipAuth: true })],
+    ];
+    // Load each resource independently: one failing request must not discard
+    // successful catalogue data or hide which endpoint actually failed.
+    Promise.allSettled(endpoints.map(([, load]) => load())).then(results => {
       if (!active) return;
-      setCategories(c.items || []);
-      setProducts(p.items || []);
-      setVariants(v.items || []);
-      setError("");
-    }).catch(e => { if (active) setError(e.message || "Unable to load the live catalogue."); })
-      .finally(() => { if (active) setLoading(false); });
+      const failures = [];
+      results.forEach((result, index) => {
+        const [name] = endpoints[index];
+        if (result.status === "rejected") {
+          failures.push(`${name}: ${result.reason?.message || "request failed"}`);
+          return;
+        }
+        const items = Array.isArray(result.value?.items) ? result.value.items : [];
+        if (name === "categories") setCategories(items);
+        if (name === "products") setProducts(items);
+        if (name === "variants") setVariants(items);
+      });
+      setError(failures.length ? `Catalogue API issue — ${failures.join(" | ")}` : "");
+    }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, []);
 

@@ -42,8 +42,11 @@ export async function apiRequest(path, options = {}) {
         ...(fetchOptions.headers || {}),
       },
     });
-  } catch {
-    throw new Error(`Cannot reach the Super Bajaar API at ${API_BASE_URL}. Check backend availability and CORS.`);
+  } catch (cause) {
+    // Fetch failures are commonly caused by CORS, TLS, DNS, or a stale frontend
+    // deployment. Include the exact endpoint so the failing request is identifiable.
+    const reason = cause instanceof Error && cause.name ? ` (${cause.name})` : "";
+    throw new Error(`Network request failed for ${requestUrl}${reason}. Check this endpoint's browser Network entry and CORS response.`);
   }
 
   const contentType = response.headers.get("content-type") || "";
