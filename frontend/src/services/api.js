@@ -1,5 +1,5 @@
 function normalizeApiBase(value) {
-  const base = value?.trim().replace(/\\/+$/, "");
+  const base = value?.trim().replace(/\/+$/, "");
   if (!base) return "";
   if (base.endsWith("/api/v1")) return base;
   if (base.endsWith("/api")) return base + "/v1";
