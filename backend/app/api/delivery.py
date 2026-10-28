@@ -59,6 +59,28 @@ class DeliveryStatusUpdate(BaseModel):
         return value
 
 
+@router.get("/serviceability/{pin_code}")
+def check_serviceability(pin_code: str):
+    """Check whether an active stock location is configured for this exact PIN."""
+    if not pin_code.isdigit() or len(pin_code) != 6 or pin_code.startswith("0"):
+        raise HTTPException(status_code=422, detail="Enter a valid six-digit Indian PIN code")
+    try:
+        with _connect() as conn:
+            locations = conn.execute(
+                "SELECT id, name FROM stock_locations WHERE is_active=TRUE AND pin_code=%s ORDER BY name",
+                (pin_code,),
+            ).fetchall()
+        return {
+            "pin_code": pin_code,
+            "serviceable": bool(locations),
+            "status": "serviceable" if locations else "not_configured",
+            "locations": [{"id": row["id"], "name": row["name"]} for row in locations],
+            "message": "Delivery is configured for this PIN." if locations else "Delivery is not configured for this PIN yet.",
+        }
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
 @router.get("/shipments")
 def list_shipments(
     status: str | None = Query(default=None),
