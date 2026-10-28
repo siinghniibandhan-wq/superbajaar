@@ -24,6 +24,9 @@ export default function SettingsWorkspace({ onBack, user }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [updatedAt, setUpdatedAt] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [newUser, setNewUser] = useState({ full_name: "", email: "", password: "", role: "staff" });
 
   async function loadSettings() {
     setLoading(true);
@@ -41,6 +44,46 @@ export default function SettingsWorkspace({ onBack, user }) {
   }
 
   useEffect(() => { loadSettings(); }, []);
+
+  async function loadUsers() {
+    if (user?.role !== "owner") return;
+    setUsersLoading(true);
+    try {
+      const result = await apiRequest("/users");
+      setUsers(result.users || []);
+    } catch (reason) {
+      setError(reason.message || "Unable to load user accounts.");
+    } finally { setUsersLoading(false); }
+  }
+
+  useEffect(() => {
+    if (activeTab === "access" && user?.role === "owner") loadUsers();
+  }, [activeTab, user?.role]);
+
+  async function createUser(event) {
+    event.preventDefault();
+    setError(""); setNotice("");
+    try {
+      await apiRequest("/users", { method: "POST", body: JSON.stringify(newUser) });
+      setNewUser({ full_name: "", email: "", password: "", role: "staff" });
+      setNotice("User account created. Share the temporary password securely.");
+      await loadUsers();
+    } catch (reason) {
+      setError(reason.message || "Unable to create user account.");
+    }
+  }
+
+  async function updateUser(userId, patch) {
+    setError(""); setNotice("");
+    try {
+      await apiRequest("/users/" + userId, { method: "PATCH", body: JSON.stringify(patch) });
+      setNotice("User account updated.");
+      await loadUsers();
+    } catch (reason) {
+      setError(reason.message || "Unable to update user account.");
+      await loadUsers();
+    }
+  }
 
   function update(key, value) {
     setSettings(previous => ({ ...previous, [key]: value }));
@@ -149,7 +192,27 @@ export default function SettingsWorkspace({ onBack, user }) {
         {activeTab === "access" && <>
           <h2>Account & access</h2><p>Signed-in identity and current permissions.</p>
           <div className="sb-settings-account"><span className="sb-settings-avatar">{(user?.full_name || user?.email || "A").slice(0,1).toUpperCase()}</span><div><strong>{user?.full_name || "Signed-in user"}</strong><small>{user?.email || "Email not provided by authentication API"}</small><small>Role: {user?.role || "Not provided by API"}</small></div></div>
-          <div className="sb-settings-note"><strong>{canManage ? "Settings administrator" : "Read-only settings access"}</strong><p>{canManage ? "Your role can update shared business settings. User creation, role assignment and password reset remain separate security operations and are not exposed here." : "Only owners and admins can change shared business settings. Contact an owner or admin to request a change."}</p></div>
+          <div className="sb-settings-note"><strong>{user?.role === "owner" ? "Owner access" : canManage ? "Settings administrator" : "Read-only settings access"}</strong><p>{user?.role === "owner" ? "Create accounts, assign roles and deactivate access below. Deactivated users have their active sessions revoked. The last active owner cannot be removed." : canManage ? "Your role can update shared business settings. Only the store owner can manage user accounts and roles." : "Only owners and admins can change shared business settings. Contact an owner or admin to request a change."}</p></div>
+          {user?.role === "owner" && <>
+            <h3>User accounts</h3>
+            <form className="sb-settings-grid" onSubmit={createUser}>
+              <Field label="Full name *" value={newUser.full_name} onChange={v => setNewUser(previous => ({ ...previous, full_name: v }))} required maxLength={160} />
+              <Field label="Email address *" type="email" value={newUser.email} onChange={v => setNewUser(previous => ({ ...previous, email: v }))} required maxLength={254} />
+              <Field label="Temporary password * (12+ characters)" type="password" value={newUser.password} onChange={v => setNewUser(previous => ({ ...previous, password: v }))} required minLength={12} maxLength={128} autoComplete="new-password" />
+              <label className="sb-settings-field">Role<select value={newUser.role} onChange={e => setNewUser(previous => ({ ...previous, role: e.target.value }))}><option value="staff">Staff</option><option value="viewer">Viewer</option><option value="manager">Manager</option><option value="admin">Admin</option><option value="owner">Owner</option></select></label>
+              <button className="sb-primary" type="submit">Create user</button>
+            </form>
+            <div className="sb-settings-users">
+              <div className="sb-settings-users-heading"><h3>Existing accounts</h3><button type="button" onClick={loadUsers} disabled={usersLoading}>{usersLoading ? "Refreshing…" : "Refresh users"}</button></div>
+              {usersLoading && <p>Loading user accounts…</p>}
+              {!usersLoading && users.length === 0 && <p>No user accounts were returned.</p>}
+              {users.map(account => <div className="sb-settings-user-row" key={account.id}>
+                <div className="sb-settings-user-identity"><strong>{account.full_name}</strong><small>{account.email}</small><small>{account.is_active ? "Active" : "Deactivated"}</small></div>
+                <label className="sb-settings-field">Role<select value={account.role} onChange={e => updateUser(account.id, { role: e.target.value })} disabled={account.id === user?.id}><option value="owner">Owner</option><option value="admin">Admin</option><option value="manager">Manager</option><option value="staff">Staff</option><option value="viewer">Viewer</option></select></label>
+                <label className="sb-settings-user-active"><input type="checkbox" checked={account.is_active} onChange={e => updateUser(account.id, { is_active: e.target.checked })} disabled={account.id === user?.id} /> Active</label>
+              </div>)}
+            </div>
+          </>}
         </>}
         <div className="sb-settings-actions">
           <button className="sb-primary" type="button" onClick={() => persist(settings, "Shared settings saved successfully.")} disabled={loading || saving || !canManage}>{saving ? "Saving…" : "Save shared settings"}</button>
