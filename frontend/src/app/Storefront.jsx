@@ -153,7 +153,21 @@ export default function Storefront() {
     setSearch("");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
-  const saveDeliveryPin = event => {\n    event.preventDefault();\n    if (!/^[1-9][0-9]{5}$/.test(deliveryDraft)) { setDeliveryMessage("Enter a valid six-digit Indian PIN code."); return; }\n    setDeliveryPin(deliveryDraft);\n    setCustomer(old => ({ ...old, pin: deliveryDraft }));\n    try { window.localStorage.setItem("sb-delivery-pin", deliveryDraft); } catch {}\n    setDeliveryMessage("PIN saved. Delivery availability has not been confirmed by the server.");\n  };\n  const openWishlist = () => {
+  const saveDeliveryPin = async event => {
+    event.preventDefault();
+    if (!/^[1-9][0-9]{5}$/.test(deliveryDraft)) { setDeliveryMessage("Enter a valid six-digit Indian PIN code."); return; }
+    setDeliveryMessage("Checking delivery availability…");
+    try {
+      const result = await apiRequest("/delivery/serviceability/" + deliveryDraft, { skipAuth: true });
+      setDeliveryPin(deliveryDraft);
+      setCustomer(old => ({ ...old, pin: deliveryDraft }));
+      try { window.localStorage.setItem("sb-delivery-pin", deliveryDraft); } catch {}
+      setDeliveryMessage(result.serviceable ? "Delivery is configured for " + deliveryDraft + "." : "Delivery is not configured for " + deliveryDraft + " yet.");
+    } catch (reason) {
+      setDeliveryMessage("Could not verify this PIN with the delivery service. " + (reason.message || "Please try again."));
+    }
+  };
+  const openWishlist = () => {
     window.history.pushState({}, "", "/wishlist");
     setRoutePath("/wishlist");
     setCategoryId("");
