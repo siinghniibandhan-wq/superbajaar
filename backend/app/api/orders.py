@@ -4,7 +4,7 @@ import json
 import re
 
 import psycopg
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from psycopg.rows import dict_row
 from pydantic import BaseModel, Field, field_validator
 
@@ -150,7 +150,11 @@ def get_order(order_id: int):
 
 
 @router.post("", status_code=201)
-def create_order(payload: OrderCreate):
+def create_order(payload: OrderCreate, request: Request):
+    if getattr(request.state, "public_checkout", False) and payload.channel != "website":
+        raise HTTPException(status_code=403, detail="Public checkout can only create website orders")
+    if getattr(request.state, "role", None) == "staff" and payload.channel == "manual":
+        raise HTTPException(status_code=403, detail="Staff cannot create manual orders")
     try:
         with _connect() as conn:
             with conn.transaction():
