@@ -42,7 +42,7 @@ def main():
         "/api/auth/login",
         {"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD},
     )
-    token = login.get("token")
+    token = login.get("access_token")
     assert token and login.get("user", {}).get("role") in {"admin", "owner"}, (
         "Admin login did not return an authenticated admin/owner session"
     )
