@@ -34,7 +34,6 @@ export default function Storefront() {
   const [cart, setCart] = useState([]);
   const [wishlist, setWishlist] = useState([]);
   const [recentlyViewed, setRecentlyViewed] = useState([]);
-  const [recentlyViewed, setRecentlyViewed] = useState([]);
   const [customer, setCustomer] = useState({ name: "", phone: "", pin: "" });
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
