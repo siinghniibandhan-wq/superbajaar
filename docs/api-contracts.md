@@ -1,23 +1,23 @@
 # API contracts
 
-All new endpoints are versioned under `/api/v1`. Responses are validated, list endpoints are paginated, and database writes use parameterized SQL.
+All endpoints are under the single `/api` prefix. Responses are validated, list endpoints are paginated, and database writes use parameterized SQL.
 
 ## Health
-- `GET /api/v1/health`
+- `GET /api/health`
 
 ## Categories and products
-- `GET /api/v1/catalogue/categories?limit=100&offset=0`
-- `POST /api/v1/catalogue/categories`
-- `GET /api/v1/catalogue/products?category_id=&status=active&limit=100&offset=0`
-- `POST /api/v1/catalogue/products`
+- `GET /api/catalogue/categories?limit=100&offset=0`
+- `POST /api/catalogue/categories`
+- `GET /api/catalogue/products?category_id=&status=active&limit=100&offset=0`
+- `POST /api/catalogue/products`
 
 ## Attributes and variants
-- `GET /api/v1/catalogue/attributes`
-- `POST /api/v1/catalogue/attributes`
-- `GET /api/v1/catalogue/products/{product_id}/attributes`
-- `PUT /api/v1/catalogue/products/{product_id}/attributes/{attribute_id}`
-- `GET /api/v1/catalogue/products/{product_id}/variants`
-- `POST /api/v1/catalogue/products/{product_id}/variants`
+- `GET /api/catalogue/attributes`
+- `POST /api/catalogue/attributes`
+- `GET /api/catalogue/products/{product_id}/attributes`
+- `PUT /api/catalogue/products/{product_id}/attributes/{attribute_id}`
+- `GET /api/catalogue/products/{product_id}/variants`
+- `POST /api/catalogue/products/{product_id}/variants`
 
 Attribute definitions support text, number, boolean, date, select, multi-select, colour and size values. Variant creation accepts only active attributes marked as variant attributes, validates required attributes and allowed options, enforces non-negative prices and unique SKUs through database constraints.
 
