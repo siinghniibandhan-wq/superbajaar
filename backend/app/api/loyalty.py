@@ -66,9 +66,80 @@ def get_rules():
                 "SELECT scope_type, scope_id, coins_per_100, is_active FROM loyalty_rules "
                 "WHERE is_active = TRUE ORDER BY CASE scope_type WHEN 'product' THEN 1 WHEN 'category' THEN 2 ELSE 3 END, scope_id"
             ).fetchall()
-        return {"items": rows, "default_coins_per_100": 1, "expiry_days": 365, "redemption_order": "FIFO"}
+            default_rule = conn.execute(
+                "SELECT coins_per_100 FROM loyalty_rules WHERE scope_type='default' AND scope_id IS NULL AND is_active=TRUE"
+            ).fetchone()
+        default_rate = str(default_rule["coins_per_100"]) if default_rule else "0"
+        return {"items": rows, "default_coins_per_100": default_rate, "expiry_days": 365, "redemption_order": "FIFO"}
     except psycopg.Error as exc:
         raise HTTPException(status_code=503, detail="Could not load loyalty rules") from exc
+
+
+@router.get("/admin/rules")
+def get_admin_rules(request: Request):
+    """Administrator view of all earning rules, including inactive rules."""
+    _admin(request)
+    try:
+        with _connection() as conn:
+            rows = conn.execute(
+                "SELECT id, scope_type, scope_id, coins_per_100, is_active, created_at, updated_at "
+                "FROM loyalty_rules ORDER BY CASE scope_type WHEN 'default' THEN 1 WHEN 'category' THEN 2 ELSE 3 END, scope_id"
+            ).fetchall()
+        return {"items": rows}
+    except psycopg.Error as exc:
+        raise HTTPException(status_code=503, detail="Could not load loyalty rules") from exc
+
+
+@router.get("/customer/account")
+def get_customer_loyalty_account(
+    email: EmailStr = Query(),
+    order_reference: str = Query(min_length=1, max_length=40),
+):
+    """Read a customer's loyalty card and ledger after verifying a prior order reference and email."""
+    normalized_email = str(email).strip().lower()
+    reference = order_reference.strip().upper()
+    try:
+        with _connection() as conn:
+            verified_order = conn.execute(
+                "SELECT id FROM orders WHERE upper(order_number)=%s AND lower(customer_email)=%s",
+                (reference, normalized_email),
+            ).fetchone()
+            if verified_order is None:
+                raise HTTPException(status_code=404, detail="We could not verify that order reference and email combination")
+            account = conn.execute(
+                "SELECT id, customer_email, card_number, created_at FROM loyalty_accounts WHERE customer_email=%s",
+                (normalized_email,),
+            ).fetchone()
+            if account is None:
+                return {
+                    "account": None,
+                    "available_coins": 0,
+                    "items": [],
+                    "message": "Your order is verified. A loyalty card and coins appear after an eligible order is marked delivered.",
+                }
+            balance = conn.execute(
+                "SELECT COALESCE(SUM(GREATEST(e.coins - COALESCE(a.used,0),0)),0)::bigint AS available_coins "
+                "FROM loyalty_transactions e "
+                "LEFT JOIN LATERAL (SELECT SUM(x.coins)::bigint AS used FROM loyalty_redemption_allocations x "
+                "WHERE x.earned_transaction_id=e.id) a ON TRUE "
+                "WHERE e.account_id=%s AND e.transaction_type='earn' AND e.expires_at>now()",
+                (account["id"],),
+            ).fetchone()
+            rows = conn.execute(
+                "SELECT id, transaction_type, coins, order_reference, description, expires_at, created_at "
+                "FROM loyalty_transactions WHERE account_id=%s ORDER BY created_at DESC, id DESC LIMIT 100",
+                (account["id"],),
+            ).fetchall()
+        return {
+            "account": account,
+            "available_coins": int(balance["available_coins"] or 0),
+            "items": rows,
+            "message": "Loyalty account loaded.",
+        }
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(status_code=503, detail="Could not load loyalty account") from exc
 
 
 @router.get("/quote")
