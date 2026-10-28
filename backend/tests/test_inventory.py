@@ -93,3 +93,36 @@ def test_inventory_transfer_requires_database_configuration(monkeypatch):
     })
     assert response.status_code == 503
     assert response.json()["detail"] == "Inventory database is not configured"
+
+
+def test_inventory_count_rejects_negative_count():
+    response = client.post("/api/inventory/counts", json={
+        "variant_id": 1, "location_id": 1, "counted_quantity": -1, "note": "Cycle count",
+    })
+    assert response.status_code == 422
+
+
+def test_inventory_count_requires_note():
+    response = client.post("/api/inventory/counts", json={
+        "variant_id": 1, "location_id": 1, "counted_quantity": 4,
+    })
+    assert response.status_code == 422
+
+
+def test_inventory_issue_rejects_unknown_reason_type():
+    response = client.post("/api/inventory/issues", json={
+        "variant_id": 1, "location_id": 1, "quantity": 1,
+        "note": "Damaged stock", "reason_type": "delete",
+    })
+    assert response.status_code == 422
+
+
+def test_inventory_count_requires_database_configuration(monkeypatch):
+    from app.api import inventory
+
+    monkeypatch.setattr(inventory.settings, "database_url", "")
+    response = client.post("/api/inventory/counts", json={
+        "variant_id": 1, "location_id": 1, "counted_quantity": 4, "note": "Cycle count",
+    })
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Inventory database is not configured"
