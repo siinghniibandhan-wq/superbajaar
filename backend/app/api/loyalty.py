@@ -142,6 +142,43 @@ def get_customer_loyalty_account(
         raise HTTPException(status_code=503, detail="Could not load loyalty account") from exc
 
 
+@router.get("/customer/me")
+def get_my_loyalty_account(request: Request):
+    """Return only the signed-in customer's own loyalty card and coin ledger."""
+    email = str(getattr(request.state, "customer_email", "")).strip().lower()
+    if not email:
+        raise HTTPException(status_code=401, detail="Customer sign-in required")
+    try:
+        with _connection() as conn:
+            account = conn.execute(
+                "SELECT id, customer_email, card_number, created_at FROM loyalty_accounts WHERE customer_email=%s",
+                (email,),
+            ).fetchone()
+            if account is None:
+                return {"account": None, "available_coins": 0, "items": [], "coin_value_in_rupees": 1}
+            balance = conn.execute(
+                "SELECT COALESCE(SUM(GREATEST(e.coins - COALESCE(a.used,0),0)),0)::bigint AS available_coins "
+                "FROM loyalty_transactions e LEFT JOIN LATERAL ("
+                "SELECT SUM(x.coins)::bigint AS used FROM loyalty_redemption_allocations x "
+                "WHERE x.earned_transaction_id=e.id) a ON TRUE "
+                "WHERE e.account_id=%s AND e.transaction_type='earn' AND e.expires_at>now()",
+                (account["id"],),
+            ).fetchone()
+            rows = conn.execute(
+                "SELECT id, transaction_type, coins, order_reference, description, expires_at, created_at "
+                "FROM loyalty_transactions WHERE account_id=%s ORDER BY created_at DESC, id DESC LIMIT 100",
+                (account["id"],),
+            ).fetchall()
+        return {
+            "account": account,
+            "available_coins": int(balance["available_coins"] or 0),
+            "coin_value_in_rupees": 1,
+            "items": rows,
+        }
+    except psycopg.Error as exc:
+        raise HTTPException(status_code=503, detail="Could not load loyalty account") from exc
+
+
 @router.get("/quote")
 def quote_coins(amount: Decimal = Query(gt=0), product_id: int | None = Query(default=None, gt=0), category_id: int | None = Query(default=None, gt=0)):
     """Quote estimated coins from configured product/category/default rules."""

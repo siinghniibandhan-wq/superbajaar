@@ -32,7 +32,14 @@ export default function Storefront() {
   const [categoryId, setCategoryId] = useState("");
   const [routePath, setRoutePath] = useState(() => window.location.pathname.replace(/\/+$/, "") || "/");
   const [search, setSearch] = useState("");
-  const [cart, setCart] = useState([]);
+  const [cart, setCart] = useState(() => { try { return JSON.parse(window.localStorage.getItem("sb-cart") || "[]"); } catch { return []; } });
+  const [customerToken, setCustomerToken] = useState(() => { try { return window.localStorage.getItem("sb-customer.access_token") || ""; } catch { return ""; } });
+  const [customerAuth, setCustomerAuth] = useState(null);
+  const [customerAuthMode, setCustomerAuthMode] = useState(() => window.location.pathname === "/customer/register" ? "register" : "login");
+  const [customerAuthDraft, setCustomerAuthDraft] = useState(() => ({ full_name: "", email: "", phone: "", password: "", referral_code: new URLSearchParams(window.location.search).get("ref") || "" }));
+  const [customerAuthBusy, setCustomerAuthBusy] = useState(false);
+  const [referralData, setReferralData] = useState(null);
+  const [referralBusy, setReferralBusy] = useState(false);
   const [wishlist, setWishlist] = useState(() => { try { return JSON.parse(window.localStorage.getItem("sb-wishlist") || "[]").map(Number).filter(Number.isFinite); } catch { return []; } });
   const [recentlyViewed, setRecentlyViewed] = useState([]);
   const [customer, setCustomer] = useState(() => { try { return { name: "", phone: "", pin: "", email: "", address: "", ...JSON.parse(window.localStorage.getItem("sb-customer-profile") || "{}") }; } catch { return { name: "", phone: "", pin: "", email: "", address: "" }; } });
@@ -69,6 +76,26 @@ export default function Storefront() {
   useEffect(() => {
     try { window.localStorage.setItem("sb-wishlist", JSON.stringify(wishlist)); } catch { /* Wishlist remains usable for this session if storage is unavailable. */ }
   }, [wishlist]);
+
+  useEffect(() => {
+    try { window.localStorage.setItem("sb-cart", JSON.stringify(cart)); } catch { /* Keep cart in memory if storage is unavailable. */ }
+  }, [cart]);
+
+  useEffect(() => {
+    if (!customerToken) { setCustomerAuth(null); return; }
+    let active = true;
+    customerRequest("/customer-auth/me").then(result => {
+      if (!active) return;
+      const profile = result?.customer || null;
+      setCustomerAuth(profile);
+      if (profile) setCustomer(old => ({ ...old, name: profile.full_name || old.name, email: profile.email || old.email, phone: profile.phone || old.phone }));
+    }).catch(() => {
+      if (!active) return;
+      setCustomerAuth(null); setCustomerToken("");
+      try { window.localStorage.removeItem("sb-customer.access_token"); } catch {}
+    });
+    return () => { active = false; };
+  }, [customerToken]);
 
   useEffect(() => {
     const syncPath = () => setRoutePath(window.location.pathname.replace(/\/+$/, "") || "/");
@@ -164,6 +191,7 @@ export default function Storefront() {
   const isWishlistPage = routePath === "/wishlist";
   const isAccountPage = routePath === "/account";
   const isCheckoutPage = routePath === "/checkout";
+  const isCustomerAuthPage = routePath === "/customer/login" || routePath === "/customer/register";
   const infoSlug = routePath.startsWith("/pages/") ? routePath.slice("/pages/".length) : "";
   const isInfoPage = Boolean(infoSlug);
   const openCategory = category => {
@@ -174,7 +202,21 @@ export default function Storefront() {
     setSearch("");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
+  const openCustomerAuth = (mode = "login", returnTo = "/checkout") => {
+    const target = mode === "register" ? "/customer/register" : "/customer/login";
+    const query = new URLSearchParams({ return: returnTo });
+    window.history.pushState({}, "", target + "?" + query.toString());
+    setRoutePath(target); setCustomerAuthMode(mode);
+    setCustomerAuthDraft(old => ({ ...old, referral_code: new URLSearchParams(window.location.search).get("ref") || old.referral_code || "" }));
+    setCategoryId(""); setSearch(""); setAccountOpen(false); setError(""); setNotice("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const customerRequest = (path, options = {}) => apiRequest(path, {
+    ...options, skipAuth: true,
+    headers: { ...(customerToken ? { Authorization: "Bearer " + customerToken } : {}), ...(options.headers || {}) },
+  });
   const openCheckout = () => {
+    if (!customerToken || !customerAuth) { openCustomerAuth("login", "/checkout"); return; }
     window.history.pushState({}, "", "/checkout");
     setRoutePath("/checkout");
     setCategoryId("");
@@ -215,11 +257,44 @@ export default function Storefront() {
     }
   };
   const openAccount = () => {
+    if (!customerToken || !customerAuth) { openCustomerAuth("login", "/account"); return; }
     window.history.pushState({}, "", "/account");
     setRoutePath("/account");
     setCategoryId(""); setSearch(""); setAccountOpen(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
+  const submitCustomerAuth = async event => {
+    event.preventDefault(); setCustomerAuthBusy(true); setError(""); setNotice("");
+    const isRegister = customerAuthMode === "register";
+    const returnTo = new URLSearchParams(window.location.search).get("return") === "/checkout" ? "/checkout" : "/account";
+    const payload = isRegister
+      ? { full_name: customerAuthDraft.full_name.trim(), email: customerAuthDraft.email.trim(), phone: customerAuthDraft.phone.trim() || null, password: customerAuthDraft.password, referral_code: customerAuthDraft.referral_code.trim() || null }
+      : { email: customerAuthDraft.email.trim(), password: customerAuthDraft.password };
+    try {
+      const result = await apiRequest(isRegister ? "/customer-auth/register" : "/customer-auth/login", { method: "POST", skipAuth: true, body: JSON.stringify(payload) });
+      if (!result?.access_token || !result?.customer) throw new Error("Customer authentication response was incomplete.");
+      try { window.localStorage.setItem("sb-customer.access_token", result.access_token); } catch {}
+      setCustomerToken(result.access_token); setCustomerAuth(result.customer);
+      setCustomer(old => ({ ...old, name: result.customer.full_name || old.name, email: result.customer.email || old.email, phone: result.customer.phone || old.phone }));
+      window.history.pushState({}, "", returnTo); setRoutePath(returnTo); setCategoryId(""); setSearch("");
+      setNotice(isRegister ? "Your customer account has been created." : "You are signed in.");
+    } catch (reason) { setError(reason.message || "Could not sign in. Please try again."); }
+    finally { setCustomerAuthBusy(false); }
+  };
+
+  const signOutCustomer = async () => {
+    try { if (customerToken) await customerRequest("/customer-auth/logout", { method: "POST" }); } catch {}
+    try { window.localStorage.removeItem("sb-customer.access_token"); } catch {}
+    setCustomerToken(""); setCustomerAuth(null); setReferralData(null); setNotice("You have signed out.");
+  };
+
+  const loadReferrals = async () => {
+    setReferralBusy(true); setError("");
+    try { setReferralData(await customerRequest("/customer-auth/referrals")); }
+    catch (reason) { setError(reason.message || "Could not load your referral information."); }
+    finally { setReferralBusy(false); }
+  };
+
   const saveCustomerProfile = event => {
     event.preventDefault();
     try { window.localStorage.setItem("sb-customer-profile", JSON.stringify(customer)); } catch {}
@@ -334,17 +409,17 @@ export default function Storefront() {
 
   async function checkout(event) {
     event.preventDefault();
+    if (!customerToken || !customerAuth) { openCustomerAuth("login", "/checkout"); return; }
     if (!cart.length) { setError("Add at least one item to your basket."); return; }
     setSubmitting(true); setError(""); setNotice(""); setOrder(null);
     try {
-      const created = await apiRequest("/orders", {
+      const created = await customerRequest("/orders", {
         method: "POST",
-        skipAuth: true,
         body: JSON.stringify({
           channel: "website",
-          customer_name: customer.name.trim(),
+          customer_name: customerAuth.full_name,
           customer_phone: customer.phone.trim() || null,
-          customer_email: customer.email.trim() || null,
+          customer_email: customerAuth.email,
           delivery_pin: customer.pin.trim() || null,
           notes: ["Website checkout", customer.email.trim() ? "Email: " + customer.email.trim() : "", customer.address.trim() ? "Delivery address: " + customer.address.trim() : ""].filter(Boolean).join(" | "),
           lines: cart.map(line => ({ variant_id: line.id, quantity: line.quantity })),
@@ -358,22 +433,14 @@ export default function Storefront() {
     } finally { setSubmitting(false); }
   }
 
-  async function loadCustomerLoyalty(event) {
-    event.preventDefault();
-    if (!customer.email.trim() || !loyaltyOrderReference.trim()) {
-      setError("Enter the email used for your order and its order reference.");
-      return;
-    }
+  async function loadCustomerLoyalty() {
+    if (!customerToken || !customerAuth) { openCustomerAuth("login", "/account"); return; }
     setLoyaltyBusy(true); setError(""); setLoyaltyCustomerData(null);
     try {
-      const query = new URLSearchParams({
-        email: customer.email.trim(),
-        order_reference: loyaltyOrderReference.trim(),
-      });
-      const result = await apiRequest("/loyalty/customer/account?" + query.toString(), { skipAuth: true });
+      const result = await customerRequest("/loyalty/customer/me");
       setLoyaltyCustomerData(result);
     } catch (reason) {
-      setError(reason.message || "Could not verify your order for loyalty access.");
+      setError(reason.message || "Could not load your Super Coin card.");
     } finally { setLoyaltyBusy(false); }
   }
 
@@ -417,11 +484,11 @@ export default function Storefront() {
     <header className="storefront-header">
       <a className="storefront-brand" href="/" onClick={event => { event.preventDefault(); openShopHome(); }} aria-label="Super Bajaar home"><span className="storefront-logo">S</span><span><strong>Super Bajaar <span className="storefront-crown" aria-hidden="true">♛</span></strong><small>Your Everyday Super Store</small></span></a>
       <label className="storefront-header-search"><span className="sr-only">Search products</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search groceries, fashion, electronics…" /><Search aria-hidden="true" size={19} /></label>
-      <div className="storefront-actions"><button type="button" className="storefront-delivery" onClick={() => { setDeliveryDraft(deliveryPin); setDeliveryMessage(""); setDeliveryOpen(true); }} aria-haspopup="dialog"><small>Deliver to</small><strong><MapPin size={13} /> {deliveryPin || "Set PIN"} ▾</strong></button><a className="storefront-icon-action" href="/wishlist" aria-label={`Open wishlist, ${wishlist.length} saved`} onClick={event => { event.preventDefault(); openWishlist(); }}><Heart size={22} strokeWidth={1.8} /><small>{wishlist.length}</small></a><a className="storefront-icon-action" href="#basket" aria-label="Shopping basket" onClick={event => { event.preventDefault(); openCheckout(); }}><ShoppingBag size={22} strokeWidth={1.8} /><small>{cart.reduce((n, line) => n + line.quantity, 0)}</small></a><div className="storefront-account-wrap"><button type="button" className="storefront-account-button" aria-label="Open account menu" aria-expanded={accountOpen} onClick={() => setAccountOpen(value => !value)}><UserRound size={20} /><span>Account</span></button>{accountOpen && <div className="storefront-account-menu storefront-account-menu-desktop"><strong>Your account</strong><p>Enter your details at checkout to attach them to an order.</p><button type="button" onClick={openAccount}>My Account</button>{canOpenAdmin && <a href="/admin">Admin Console</a>}</div>}</div></div>
+      <div className="storefront-actions"><button type="button" className="storefront-delivery" onClick={() => { setDeliveryDraft(deliveryPin); setDeliveryMessage(""); setDeliveryOpen(true); }} aria-haspopup="dialog"><small>Deliver to</small><strong><MapPin size={13} /> {deliveryPin || "Set PIN"} ▾</strong></button><a className="storefront-icon-action" href="/wishlist" aria-label={`Open wishlist, ${wishlist.length} saved`} onClick={event => { event.preventDefault(); openWishlist(); }}><Heart size={22} strokeWidth={1.8} /><small>{wishlist.length}</small></a><a className="storefront-icon-action" href="#basket" aria-label="Shopping basket" onClick={event => { event.preventDefault(); openCheckout(); }}><ShoppingBag size={22} strokeWidth={1.8} /><small>{cart.reduce((n, line) => n + line.quantity, 0)}</small></a><div className="storefront-account-wrap"><button type="button" className="storefront-account-button" aria-label="Open account menu" aria-expanded={accountOpen} onClick={() => setAccountOpen(value => !value)}><UserRound size={20} /><span>Account</span></button>{accountOpen && <div className="storefront-account-menu storefront-account-menu-desktop"><strong>Your account</strong><p>{customerAuth ? "Manage your profile, orders and Super Coins." : "Sign in to manage orders, referrals and Super Coins."}</p><button type="button" onClick={customerAuth ? openAccount : () => openCustomerAuth("login", "/account")}>{customerAuth ? "My Account" : "Customer Sign in"}</button>{canOpenAdmin && <a href="/admin">Admin Console</a>}</div>}</div></div>
     </header>
     {accountOpen && <div className="storefront-account-sheet-backdrop" role="presentation" onClick={event => { if (event.target === event.currentTarget) setAccountOpen(false); }}><section className="storefront-account-sheet" role="dialog" aria-modal="true" aria-labelledby="storefront-account-sheet-title"><div className="storefront-account-sheet-handle" aria-hidden="true" /><div className="storefront-account-sheet-heading"><div><span className="storefront-kicker">SUPER BAJAAR</span><h2 id="storefront-account-sheet-title">Your account</h2></div><button type="button" className="storefront-modal-close" aria-label="Close account menu" onClick={() => setAccountOpen(false)}><X size={19} /></button></div><p>Manage your profile and shopping experience.</p><button type="button" className="storefront-account-sheet-action" onClick={openAccount}><span className="storefront-account-sheet-action-icon"><UserRound size={20} /></span><span><strong>My Account</strong><small>Contact and delivery details</small></span><span aria-hidden="true">›</span></button>{canOpenAdmin && <a className="storefront-account-sheet-action" href="/admin"><span className="storefront-account-sheet-action-icon">⌘</span><span><strong>Admin Console</strong><small>Store management</small></span><span aria-hidden="true">›</span></a>}</section></div>}
     <nav className="storefront-department-nav" aria-label="Shop departments"><a href="/#categories" onClick={event => { event.preventDefault(); openShopHome(); setTimeout(() => document.getElementById("categories")?.scrollIntoView({ behavior: "smooth" }), 0); }}>☰ All Categories</a><a href="/#deals" onClick={event => { event.preventDefault(); openShopHome(); setTimeout(() => document.getElementById("deals")?.scrollIntoView({behavior:"smooth"}), 0); }}>Deals <Flame size={14} /></a><button type="button" onClick={() => { openShopHome(); setTimeout(() => document.getElementById("products")?.scrollIntoView({ behavior: "smooth" }), 0); }}>Shop All</button>{displayCategories.map(category => <a key={category.id} href={"/category/" + categorySlug(category.name)} aria-current={routeSlug === categorySlug(category.name) ? "page" : undefined}>{category.name}</a>)}</nav>
-    {!isCategoryPage && !isWishlistPage && !isAccountPage && !isCheckoutPage && !isInfoPage && <section className="storefront-hero">
+    {!isCustomerAuthPage && !isCategoryPage && !isWishlistPage && !isAccountPage && !isCheckoutPage && !isInfoPage && <section className="storefront-hero">
       <div className="storefront-hero-copy"><span className="storefront-kicker"><i /> YOUR EVERYDAY SUPER STORE</span><h1>Welcome to<br /><em>Super Bajaar</em></h1><p>Everything you need, all in one place. Explore everyday essentials and discover something new for your home and family.</p><a className="storefront-primary" href="#products">Shop Now <span>→</span></a><div className="storefront-trust"><span>✦ Thoughtfully picked</span><span>✦ Made for everyday</span></div></div>
       <div className="storefront-hero-art" aria-label="Colourful shopping bags and everyday products" role="img"><div className="art-sun" /><div className="art-orbit orbit-one" /><div className="art-orbit orbit-two" /><div className="art-spark spark-one">✦</div><div className="art-spark spark-two">✳</div><div className="art-bag bag-purple"><span>S</span></div><div className="art-bag bag-orange"><span>♥</span></div><div className="art-box"><span>GOOD</span><strong>THINGS</strong></div><div className="art-leaf leaf-one">✦</div><div className="art-leaf leaf-two">✿</div><div className="art-caption">A little joy in every basket</div></div>
     </section>}
@@ -437,29 +504,39 @@ export default function Storefront() {
         })}
       </div>
     </section>}
+    {isCustomerAuthPage && <section className="storefront-checkout-page">
+      <div className="storefront-category-breadcrumb"><button type="button" onClick={openShopHome}>Home</button><span>/</span><span>{customerAuthMode === "register" ? "Create account" : "Customer sign in"}</span></div>
+      <div className="storefront-checkout-page-heading"><span className="storefront-kicker">YOUR SUPER BAJAAR</span><h1>{customerAuthMode === "register" ? "Create your customer account" : "Welcome back"}</h1><p>Customer sign-in is separate from the Admin Console. Your basket will be kept while you sign in.</p></div>
+      {error && <p className="storefront-alert" role="alert">{error}</p>}{notice && <p className="storefront-order-success" role="status">{notice}</p>}
+      <form className="storefront-checkout-form" onSubmit={submitCustomerAuth}>
+        {customerAuthMode === "register" && <label>Full name<input required minLength="2" maxLength="200" autoComplete="name" value={customerAuthDraft.full_name} onChange={e=>setCustomerAuthDraft(old=>({...old,full_name:e.target.value}))}/></label>}
+        <label>Email address<input required type="email" maxLength="254" autoComplete="email" value={customerAuthDraft.email} onChange={e=>setCustomerAuthDraft(old=>({...old,email:e.target.value}))}/></label>
+        {customerAuthMode === "register" && <label>Mobile number (optional)<input maxLength="20" autoComplete="tel" value={customerAuthDraft.phone} onChange={e=>setCustomerAuthDraft(old=>({...old,phone:e.target.value}))}/></label>}
+        <label>Password<input required type="password" minLength={customerAuthMode === "register" ? 10 : 1} maxLength="1024" autoComplete={customerAuthMode === "register" ? "new-password" : "current-password"} value={customerAuthDraft.password} onChange={e=>setCustomerAuthDraft(old=>({...old,password:e.target.value}))}/>{customerAuthMode === "register" && <small>Use at least 10 characters.</small>}</label>
+        {customerAuthMode === "register" && <label>Referral code (optional)<input maxLength="24" autoComplete="off" value={customerAuthDraft.referral_code} onChange={e=>setCustomerAuthDraft(old=>({...old,referral_code:e.target.value.toUpperCase()}))} placeholder="Enter a friend's code"/></label>}
+        <button type="submit" className="storefront-primary" disabled={customerAuthBusy}>{customerAuthBusy ? "Please wait…" : customerAuthMode === "register" ? "Create account" : "Sign in and continue"}</button>
+        <p className="storefront-account-note">{customerAuthMode === "register" ? "Already registered? " : "New to Super Bajaar? "}<button type="button" className="storefront-inline-link" onClick={()=>{setCustomerAuthMode(customerAuthMode==="register"?"login":"register");setError("");}}>{customerAuthMode === "register" ? "Sign in" : "Create an account"}</button></p>
+      </form>
+    </section>}
     {isCheckoutPage && <section className="storefront-checkout-page"><div className="storefront-category-breadcrumb"><button type="button" onClick={openShopHome}>Home</button><span>/</span><span>Checkout</span></div><div className="storefront-checkout-page-heading"><span className="storefront-kicker">YOUR BASKET</span><h1>Checkout</h1><p>Review your items and delivery details before placing your order.</p></div>{error && <p className="storefront-alert" role="alert">{error}</p>}{notice && <p className="storefront-order-success" role="status">{notice}</p>}{order && <p className="storefront-order-success" role="status">Order placed: <strong>{order.order_number}</strong> · {money(order.total)}</p>}<section className="storefront-checkout" id="basket"><div><span className="storefront-kicker">ORDER SUMMARY</span><h2>Your basket</h2><p>Prices and order totals are calculated by the server. Online payment collection is not enabled yet.</p></div><div className="storefront-basket-lines">{cart.length ? cart.map(line => <div className="storefront-basket-line" key={line.id}><div><strong>{line.product_name || line.sku}</strong><small>{line.sku} · {money(line.selling_price)}</small></div><label>Qty<input type="number" min="0" max="100000" step="1" value={line.quantity} onChange={e => setQuantity(line.id, e.target.value)} /></label><strong>{money(line.selling_price * line.quantity)}</strong><button type="button" aria-label={"Remove " + line.sku} onClick={() => setCart(old => old.filter(x => x.id !== line.id))}>×</button></div>) : <div className="storefront-checkout-empty"><h3>Your basket is empty</h3><p>Add products to your basket before placing an order.</p><button type="button" className="storefront-primary" onClick={openShopHome}>Continue shopping</button></div>}<div className="storefront-basket-total"><span>Subtotal</span><strong>{money(total)}</strong></div>{cart.length>0 && <form className="storefront-checkout-form" onSubmit={checkout}><label>Full name<input required minLength="1" maxLength="200" value={customer.name} onChange={e => setCustomer(v => ({ ...v, name: e.target.value }))} /></label><label>Email address<input type="email" autoComplete="email" required maxLength="254" value={customer.email} onChange={e => setCustomer(v => ({ ...v, email: e.target.value }))} /></label><label>Phone (optional)<input maxLength="20" value={customer.phone} onChange={e => setCustomer(v => ({ ...v, phone: e.target.value }))} /></label><label>Delivery PIN (optional)<input inputMode="numeric" pattern="[0-9]{6}" maxLength="6" value={customer.pin} onChange={e => setCustomer(v => ({ ...v, pin: e.target.value }))} /></label><button type="submit" className="storefront-primary" disabled={submitting || !cart.length}>{submitting ? "Placing order…" : "Place order"}</button></form>}</div></section></section>}
     {isAccountPage && <section className="storefront-account-page">
       <div className="storefront-category-breadcrumb"><button type="button" onClick={openShopHome}>Home</button><span>/</span><span>My Account</span></div>
       <div className="storefront-account-welcome"><span className="storefront-kicker">YOUR SUPER BAJAAR</span><h1>{customer.name.trim() ? `Hello, ${customer.name.trim().split(/\s+/)[0]}` : "My Account"}</h1><p>Manage your profile, purchases and support in one place.</p></div>
       <div className="storefront-account-layout">
         <nav className="storefront-account-nav" aria-label="Customer account sections">
-          {[["overview","Overview","user-round"],["loyalty","Loyalty Card & Coins","coins"],["orders","My Orders","package"],["tickets","My Tickets","ticket"],["wishlist","My Wishlist","heart"],["addresses","Addresses","map-pin"],["security","Security","shield-check"]].map(([key,label])=><button key={key} type="button" className={accountSection===key?"is-active":""} onClick={()=>{if(key==="wishlist"){openWishlist();return;}setAccountSection(key);setNotice("");setError("");}}>{label}<span aria-hidden="true">›</span></button>)}
+          {[["overview","Overview","user-round"],["loyalty","Loyalty Card & Coins","coins"],["referrals","Refer & Earn","users"],["orders","My Orders","package"],["tickets","My Tickets","ticket"],["wishlist","My Wishlist","heart"],["addresses","Addresses","map-pin"],["security","Security","shield-check"]].map(([key,label])=><button key={key} type="button" className={accountSection===key?"is-active":""} onClick={()=>{if(key==="wishlist"){openWishlist();return;}setAccountSection(key);setNotice("");setError("");if(key==="referrals") loadReferrals();if(key==="loyalty") loadCustomerLoyalty();}}>{label}<span aria-hidden="true">›</span></button>)}
         </nav>
         <div className="storefront-account-panel">
           {accountSection==="overview" && <div className="storefront-account-section">
             <div className="storefront-account-section-heading"><div><h2>Personal details</h2><p>Your saved contact information.</p></div><span className="storefront-account-avatar">{customer.name.trim()?customer.name.trim().slice(0,1).toUpperCase():"S"}</span></div>
             {(customer.name||customer.email||customer.phone) ? <div className="storefront-account-summary">{customer.name&&<div><small>Full name</small><strong>{customer.name}</strong></div>}{customer.email&&<div><small>Email address</small><strong>{customer.email}</strong></div>}{customer.phone&&<div><small>Mobile number</small><strong>{customer.phone}</strong></div>}</div> : <p className="storefront-account-empty">Your profile is not filled in yet. Add your details below so they are ready at checkout.</p>}
-            <form className="storefront-account-form" onSubmit={saveCustomerProfile}><label>Full name<input autoComplete="name" required maxLength="200" value={customer.name} onChange={event=>setCustomer(old=>({...old,name:event.target.value}))}/></label><label>Mobile number<input autoComplete="tel" maxLength="20" value={customer.phone} onChange={event=>setCustomer(old=>({...old,phone:event.target.value}))}/></label><label>Email address<input type="email" autoComplete="email" maxLength="254" value={customer.email} onChange={event=>setCustomer(old=>({...old,email:event.target.value}))}/></label><button className="storefront-primary" type="submit">Save profile</button><p className="storefront-account-note">Currently saved on this device only. A verified customer sign-in is needed to sync details across devices.</p></form>
+            <form className="storefront-account-form" onSubmit={saveCustomerProfile}><label>Full name<input autoComplete="name" required maxLength="200" value={customer.name} onChange={event=>setCustomer(old=>({...old,name:event.target.value}))}/></label><label>Mobile number<input autoComplete="tel" maxLength="20" value={customer.phone} onChange={event=>setCustomer(old=>({...old,phone:event.target.value}))}/></label><label>Email address<input type="email" autoComplete="email" maxLength="254" value={customer.email} onChange={event=>setCustomer(old=>({...old,email:event.target.value}))}/></label><button className="storefront-primary" type="submit">Save profile</button><p className="storefront-account-note">Your sign-in identity is stored securely by Super Bajaar. Address syncing is a separate feature.</p><button type="button" className="storefront-primary" onClick={signOutCustomer}>Sign out</button></form>
           </div>}
           {accountSection==="loyalty" && <div className="storefront-account-section">
             <span className="storefront-kicker">REWARDS FOR EVERYDAY SHOPPING</span>
             <h2>Loyalty Card &amp; Super Coins</h2>
             <p>Earn Super Coins on eligible purchases. The standard rate is {loyaltyDefaultRate} coin(s) per ₹100 eligible spend unless a product or category override applies.</p>
-            <form className="storefront-account-form" onSubmit={loadCustomerLoyalty}>
-              <label>Email used at checkout<input type="email" required maxLength="254" autoComplete="email" value={customer.email} onChange={event=>setCustomer(old=>({...old,email:event.target.value}))}/></label>
-              <label>Order reference<input required maxLength="40" autoComplete="off" placeholder="SB-XXXXXXXXXXXX" value={loyaltyOrderReference} onChange={event=>setLoyaltyOrderReference(event.target.value.toUpperCase())}/></label>
-              <button className="storefront-primary" type="submit" disabled={loyaltyBusy}>{loyaltyBusy ? "Verifying…" : "View my Super Coins"}</button>
-            </form>
+            <button className="storefront-primary" type="button" onClick={loadCustomerLoyalty} disabled={loyaltyBusy}>{loyaltyBusy ? "Loading card…" : "Refresh my Super Coin card"}</button>
             {loyaltyCustomerData && <><div className="storefront-loyalty-card">
               <div className="storefront-loyalty-card-top"><span className="storefront-loyalty-mark">S</span><span>SUPER BAJAAR<br/><strong>LOYALTY CARD</strong></span><CreditCard size={28}/></div>
               <div className="storefront-loyalty-card-bottom"><span>{customer.name.trim() || loyaltyCustomerData.account?.customer_email || "Super Bajaar Customer"}</span><strong>{loyaltyCustomerData.account?.card_number || "CARD AFTER FIRST DELIVERY"}</strong></div>
@@ -474,7 +551,21 @@ export default function Storefront() {
             <div className="storefront-loyalty-note"><strong>How it works</strong><p>Coins are credited only after an order is marked delivered. Product-specific earning rules override category rules, which override the default. Coins expire after 365 days.</p><p>Customer redemption at checkout is not enabled yet; the rupee value of one Super Coin has not been defined in the current programme rules.</p></div>
             {error && <p className="storefront-account-note" role="alert">{error}</p>}
           </div>}
-          {accountSection==="orders" && <div className="storefront-account-section"><h2>My Orders</h2><p>View purchases, order details and delivery updates.</p><div className="storefront-account-empty-state"><span>📦</span><h3>Order history needs customer sign-in</h3><p>Orders are recorded by the store, but this portal does not yet have a secure customer identity to retrieve only your orders. We will not show unverified order records here.</p></div></div>}
+          {accountSection==="referrals" && <div className="storefront-account-section">
+      <span className="storefront-kicker">SHARE THE SUPER BAJAAR LOVE</span><h2>Refer &amp; Earn</h2>
+      <p>Share your unique referral code with friends. Their sign-up will be linked to your account so referrals can be tracked.</p>
+      {referralBusy && <p className="storefront-account-note">Loading referral details…</p>}
+      {referralData && <>
+        <div className="storefront-loyalty-card"><div className="storefront-loyalty-card-top"><span className="storefront-loyalty-mark">S</span><span>SUPER BAJAAR<br/><strong>REFERRAL CODE</strong></span><UserRound size={28}/></div><div className="storefront-loyalty-card-bottom"><span>Your unique code</span><strong>{referralData.referral_code}</strong></div></div>
+        <label className="storefront-account-form">Referral link<input readOnly value={window.location.origin + (referralData.referral_link_path || ("/customer/register?ref=" + referralData.referral_code))}/></label>
+        <button type="button" className="storefront-primary" onClick={async()=>{const link=window.location.origin+(referralData.referral_link_path||("/customer/register?ref="+referralData.referral_code));try{await navigator.clipboard.writeText(link);setNotice("Referral link copied.");}catch{setNotice("Your referral code is "+referralData.referral_code+". Copy it to share.");}}}>Copy referral link</button>
+        <div className="storefront-account-summary"><div><small>Tracked referrals</small><strong>{(referralData.items||[]).length}</strong></div><div><small>Reward status</small><strong>100 coins each after first delivery</strong></div></div>
+        <p className="storefront-account-note">{referralData.reward_status || "Both the referrer and new customer receive 100 Super Coins each after the referred customer’s first order is delivered."}</p>
+        {(referralData.items||[]).length ? <div className="storefront-account-summary"><h3>Your referrals</h3>{referralData.items.map(item=><div key={item.id}><small>{new Date(item.created_at).toLocaleDateString()} · {String(item.status||"tracked").replaceAll("_"," ")}</small><strong>{item.referred_customer}</strong><span>{item.status === "rewarded" ? "100 Super Coins awarded to each customer" : "100 Super Coins each after first delivery"}</span></div>)}</div> : <p className="storefront-account-empty">No referrals yet. Share your code to start building your referral list.</p>}
+      </>}
+      {error && <p className="storefront-account-note" role="alert">{error}</p>}
+    </div>}
+    {accountSection==="orders" && <div className="storefront-account-section"><h2>My Orders</h2><p>View purchases, order details and delivery updates.</p><div className="storefront-account-empty-state"><span>📦</span><h3>Order history needs customer sign-in</h3><p>Orders are recorded by the store, but this portal does not yet have a secure customer identity to retrieve only your orders. We will not show unverified order records here.</p></div></div>}
           {accountSection==="tickets" && <div className="storefront-account-section">
             <h2>My Tickets</h2><p>Create a support request or track an existing ticket using the contact details registered with it.</p>
             <form className="storefront-account-form" onSubmit={submitSupportTicket}>
@@ -505,7 +596,7 @@ export default function Storefront() {
     </section>}
     {isInfoPage && <section className="storefront-info-page"><div className="storefront-category-breadcrumb"><button type="button" onClick={openShopHome}>Home</button><span>/</span><span>Information</span></div>
       {infoSlug === "seller-registration" && <><span className="storefront-kicker">GROW WITH SUPER BAJAAR</span><h1>Partner with Us</h1><p>Bring your products, brand or delivery expertise to Super Bajaar. We welcome enquiries from sellers, brands, suppliers and logistics partners. Every enquiry is reviewed before onboarding; submitting this form does not guarantee acceptance.</p><div className="storefront-partner-cards"><article><strong>Sell on Super Bajaar</strong><p>Introduce eligible products to everyday shoppers.</p></article><article><strong>Brand &amp; supplier partnerships</strong><p>Discuss product range, supply capacity and commercial terms.</p></article><article><strong>Delivery &amp; logistics</strong><p>Explore service coverage and fulfilment partnerships.</p></article></div><form className="storefront-partner-form" onSubmit={submitPartnerEnquiry}><h2>Tell us about your business</h2><label>Your name<input name="name" required maxLength="120" /></label><label>Business / brand name<input name="business" required maxLength="160" /></label><label>Phone number<input name="phone" required minLength="7" maxLength="20" /></label><label>Email address<input name="email" type="email" required maxLength="254" /></label><label>Partnership type<select name="partnerType" required><option value="">Choose a partnership</option><option>Seller</option><option>Brand</option><option>Supplier</option><option>Delivery / logistics</option><option>Other</option></select></label><label>How would you like to partner?<textarea name="message" rows="4" required maxLength="3000" /></label><button className="storefront-primary" type="submit" disabled={partnerBusy}>{partnerBusy ? "Submitting…" : "Send partnership enquiry"}</button>{partnerResult && <p className={partnerResult.error ? "storefront-alert" : "storefront-order-success"} role="status">{partnerResult.error || partnerResult.message}</p>}<p className="storefront-info-note">Your enquiry is submitted to Super Bajaar for review. Onboarding is subject to approval.</p></form></>}
-      {infoSlug === "loyalty-programme" && <><span className="storefront-kicker">CUSTOMER REWARDS</span><h1>Loyalty Programme</h1><p>Super Bajaar customers earn Super Coins on eligible purchases after delivery is confirmed. The default earning rate is 1 coin per ₹100 eligible spend, unless a product or category override is configured by the store.</p><p>Coins expire 365 days after credit. The account area lets you verify an order using the email and order reference to view your loyalty card, available balance and transaction history.</p><p className="storefront-info-note">Super Coins are not currently redeemable for a checkout discount. The rupee value per coin must be defined before redemption can be enabled.</p></>}
+      {infoSlug === "loyalty-programme" && <><span className="storefront-kicker">CUSTOMER REWARDS</span><h1>Loyalty Programme</h1><p>Super Bajaar customers earn Super Coins on eligible purchases after delivery is confirmed. The default earning rate is 1 coin per ₹100 eligible spend, unless a product or category override is configured by the store.</p><p>Coins expire 365 days after credit. The account area lets you verify an order using the email and order reference to view your loyalty card, available balance and transaction history.</p><p className="storefront-info-note">One Super Coin is intended to equal ₹1 and be redeemable at checkout. Checkout redemption is not enabled until backend balance and accounting controls are implemented.</p></>}
       {infoSlug === "super-coins" && <><span className="storefront-kicker">REWARDS WALLET</span><h1>Super Coins</h1><p>Super Coins are earned on eligible orders after delivery is confirmed. The default rate is 1 coin per ₹100 eligible spend, with optional product and category overrides. Each credit expires 365 days after it is earned.</p><p>Use My Account → Loyalty Card &amp; Coins to verify an order and view your available balance and recent activity.</p><p className="storefront-info-note">Checkout redemption is not enabled yet because the rupee value per coin has not been defined.</p></>}
       {infoSlug === "feedback" && <><span className="storefront-kicker">HELP US IMPROVE</span><h1>Feedback</h1><p>We welcome suggestions about your shopping experience, product selection, website usability and customer support.</p><div className="storefront-contact-grid"><a href="mailto:kpmcenterprise@gmail.com?subject=Super%20Bajaar%20Feedback"><strong>Send feedback by email</strong><span>kpmcenterprise@gmail.com</span></a><a href="https://wa.me/917644841104?text=Super%20Bajaar%20feedback" target="_blank" rel="noreferrer"><strong>Share on WhatsApp</strong><span>Message customer support</span></a></div></>}
       {infoSlug === "cancellation-policy" && <><span className="storefront-kicker">ORDERS &amp; CANCELLATIONS</span><h1>Cancellation Policy</h1><p>If you need to cancel an order, contact customer support as soon as possible and provide your order number. Cancellation depends on the order’s processing and dispatch status; an order that has already been dispatched may need to follow the applicable return process.</p><p>Where a cancellation is accepted and a payment has been collected, eligible refunds are processed after verification. Bank or payment-provider settlement times may vary.</p><p>Contact <a href="mailto:kpmcenterprise@gmail.com">kpmcenterprise@gmail.com</a>, call <a href="tel:+917644841104">+91 76448 41104</a> or message <a href="https://wa.me/917644841104">WhatsApp support</a>.</p></>}

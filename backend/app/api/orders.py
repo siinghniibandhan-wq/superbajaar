@@ -153,8 +153,13 @@ def get_order(order_id: int):
 
 @router.post("", status_code=201)
 def create_order(payload: OrderCreate, request: Request):
-    if getattr(request.state, "public_checkout", False) and payload.channel != "website":
-        raise HTTPException(status_code=403, detail="Public checkout can only create website orders")
+    if getattr(request.state, "customer_checkout", False):
+        if payload.channel != "website":
+            raise HTTPException(status_code=403, detail="Customer accounts can only create website orders")
+        if not payload.customer_email or str(payload.customer_email).strip().lower() != str(request.state.customer_email).strip().lower():
+            raise HTTPException(status_code=403, detail="Order email must match the signed-in customer account")
+    elif getattr(request.state, "role", None) == "customer":
+        raise HTTPException(status_code=403, detail="Customer sign-in is required to place a website order")
     if getattr(request.state, "role", None) == "staff" and payload.channel == "manual":
         raise HTTPException(status_code=403, detail="Staff cannot create manual orders")
     try:
@@ -262,6 +267,46 @@ def update_order_status(order_id: int, payload: OrderStatusUpdate):
                                 "VALUES (%s,'earn',%s,%s,%s,now() + interval '365 days',%s) ON CONFLICT (idempotency_key) DO NOTHING",
                                 (account["id"], coins, current["order_number"], "Delivered order reward", f"earn:order:{order_id}:line:{line['line_id']}"),
                             )
+
+                    # Referral rewards are issued only when the referred customer's
+                    # first order reaches delivered. The status update and both coin
+                    # credits share this transaction, so retries cannot double-credit.
+                    referral = conn.execute(
+                        "UPDATE customer_referrals r SET status='rewarded', reward_coins=100, "
+                        "reward_trigger='first_order_delivered', updated_at=now() "
+                        "FROM customer_accounts referred "
+                        "WHERE r.referred_customer_id=referred.id AND lower(referred.email)=%s "
+                        "AND r.status IN ('tracked','eligible') "
+                        "RETURNING r.id, r.referrer_customer_id",
+                        (email,),
+                    ).fetchone()
+                    if referral:
+                        referrer = conn.execute(
+                            "SELECT email FROM customer_accounts WHERE id=%s",
+                            (referral["referrer_customer_id"],),
+                        ).fetchone()
+                        if referrer:
+                            for beneficiary_email, reward_key, description in (
+                                (email, f"referral:{referral['id']}:referred", "Super Bajaar referral reward"),
+                                (str(referrer["email"]).strip().lower(), f"referral:{referral['id']}:referrer", "Super Bajaar referral reward"),
+                            ):
+                                referral_card = "SB-" + secrets.token_hex(5).upper()
+                                conn.execute(
+                                    "INSERT INTO loyalty_accounts (customer_email, card_number) VALUES (%s,%s) "
+                                    "ON CONFLICT (customer_email) DO NOTHING",
+                                    (beneficiary_email, referral_card),
+                                )
+                                referral_account = conn.execute(
+                                    "SELECT id FROM loyalty_accounts WHERE customer_email=%s FOR UPDATE",
+                                    (beneficiary_email,),
+                                ).fetchone()
+                                conn.execute(
+                                    "INSERT INTO loyalty_transactions "
+                                    "(account_id, transaction_type, coins, order_reference, description, expires_at, idempotency_key) "
+                                    "VALUES (%s,'earn',100,%s,%s,now() + interval '365 days',%s) "
+                                    "ON CONFLICT (idempotency_key) DO NOTHING",
+                                    (referral_account["id"], current["order_number"], description, reward_key),
+                                )
         return row
     except HTTPException:
         raise

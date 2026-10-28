@@ -10,6 +10,7 @@ from app.api.delivery import router as delivery_router
 from app.api.customers import router as customers_router
 from app.api.purchasing import router as purchasing_router
 from app.api.auth import router as auth_router
+from app.api.customer_auth import router as customer_auth_router
 from app.api.loyalty import router as loyalty_router
 from app.core.config import settings
 from app.core.auth_middleware import require_active_session
@@ -37,6 +38,7 @@ app.include_router(delivery_router, prefix=settings.api_prefix)
 app.include_router(customers_router, prefix=settings.api_prefix)
 app.include_router(purchasing_router, prefix=settings.api_prefix)
 app.include_router(auth_router, prefix=settings.api_prefix)
+app.include_router(customer_auth_router, prefix=settings.api_prefix)
 app.include_router(loyalty_router, prefix=settings.api_prefix)
 
 

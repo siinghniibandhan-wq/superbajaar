@@ -49,7 +49,7 @@ async def require_active_session(request: Request) -> None:
     """Authenticate a valid request and enforce role-based write access."""
     path = request.url.path
     prefix = settings.api_prefix.rstrip("/")
-    public = {prefix + "/health", prefix + "/auth/login"}
+    public = {prefix + "/health", prefix + "/auth/login", prefix + "/customer-auth/register", prefix + "/customer-auth/login"}
     if method_is_public_serviceability(request.method, path, prefix):
         return
     # Public storefront support portal; tracking requires matching contact details.
@@ -78,12 +78,6 @@ async def require_active_session(request: Request) -> None:
         return
 
     authorization = request.headers.get("authorization", "")
-    # Only unauthenticated callers use the public website checkout path.
-    if request.method == "POST" and path == prefix + "/orders" and not authorization.strip():
-        request.state.public_checkout = True
-        request.state.role = "public"
-        return
-
     if not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="Sign in to continue")
     try:
@@ -92,6 +86,39 @@ async def require_active_session(request: Request) -> None:
         raise
     except Exception as exc:
         raise HTTPException(status_code=401, detail="Invalid or expired access token") from exc
+
+    if claims.get("typ") == "customer":
+        customer_routes = {
+            ("GET", prefix + "/customer-auth/me"),
+            ("POST", prefix + "/customer-auth/logout"),
+            ("GET", prefix + "/customer-auth/referrals"),
+            ("GET", prefix + "/loyalty/customer/me"),
+            ("POST", prefix + "/loyalty/customer/redeem"),
+        }
+        is_website_order = request.method == "POST" and path == prefix + "/orders"
+        if (request.method, path) not in customer_routes and not is_website_order:
+            raise HTTPException(status_code=403, detail="Customer session cannot access staff resources")
+        try:
+            with psycopg.connect(settings.database_url, row_factory=dict_row, connect_timeout=3) as conn:
+                customer = conn.execute(
+                    "SELECT c.id, c.email FROM customer_accounts c JOIN customer_sessions s ON s.customer_id=c.id "
+                    "WHERE c.id=%s AND s.token_id=%s AND c.is_active=TRUE AND s.revoked_at IS NULL AND s.expires_at>now()",
+                    (claims.get("sub"), claims.get("jti")),
+                ).fetchone()
+        except psycopg.Error as exc:
+            raise HTTPException(status_code=503, detail="Customer authentication storage unavailable; verify migration 010") from exc
+        if customer is None:
+            raise HTTPException(status_code=401, detail="Customer session is no longer active")
+        request.state.role = "customer"
+        request.state.customer_id = customer["id"]
+        request.state.customer_email = customer["email"]
+        request.state.customer_token_id = claims.get("jti")
+        if is_website_order:
+            request.state.customer_checkout = True
+        return
+
+    if claims.get("typ"):
+        raise HTTPException(status_code=401, detail="Invalid access token type")
 
     try:
         with psycopg.connect(settings.database_url, row_factory=dict_row, connect_timeout=3) as conn:
