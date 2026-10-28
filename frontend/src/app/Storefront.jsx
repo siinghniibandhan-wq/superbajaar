@@ -19,6 +19,7 @@ export default function Storefront() {
   const [categoryId, setCategoryId] = useState("");
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState([]);
+  const [wishlist, setWishlist] = useState([]);
   const [customer, setCustomer] = useState({ name: "", phone: "", pin: "" });
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -106,12 +107,13 @@ export default function Storefront() {
   return <main className="storefront">
     <div className="storefront-promo">Your everyday favourites, all in one place <span>✦</span> Shop smarter with Super Bajaar</div>
     <header className="storefront-header">
-      <a className="storefront-brand" href="/" aria-label="Super Bajaar home"><span className="storefront-logo">S</span><span><strong>Super Bajaar</strong><small>Your Everyday Super Store</small></span></a>
-      <nav className="storefront-nav" aria-label="Main navigation"><a href="#categories">Categories</a><a href="#products">Shop</a><a href="#why-us">Why Super Bajaar</a></nav>
-      <div className="storefront-actions"><a className="storefront-admin-link" href="/admin">Admin login</a><a className="storefront-cart" href="#basket">Basket ({cart.reduce((n, line) => n + line.quantity, 0)}) ↗</a></div>
+      <a className="storefront-brand" href="/" aria-label="Super Bajaar home"><span className="storefront-logo">S</span><span><strong>Super Bajaar <span className="storefront-crown" aria-hidden="true">♛</span></strong><small>Your Everyday Super Store</small></span></a>
+      <label className="storefront-header-search"><span className="sr-only">Search catalogue</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search groceries, fashion, electronics…" /><span aria-hidden="true">⌕</span></label>
+      <div className="storefront-actions"><span className="storefront-delivery"><small>Deliver to</small><strong>India ▾</strong></span><button type="button" className="storefront-icon-action" aria-label={`Wishlist, ${wishlist.length} saved`} onClick={() => document.getElementById("products")?.scrollIntoView({behavior:"smooth"})}>♡<small>{wishlist.length}</small></button><a className="storefront-icon-action" href="#basket" aria-label="Shopping basket">🛒<small>{cart.reduce((n, line) => n + line.quantity, 0)}</small></a><a className="storefront-admin-link" href="/admin">Admin</a></div>
     </header>
+    <nav className="storefront-department-nav" aria-label="Shop departments"><a href="#categories">☰ All Categories</a><a href="#deals">Deals 🔥</a><button type="button" onClick={() => {setCategoryId(""); document.getElementById("products")?.scrollIntoView({behavior:"smooth"});}}>Shop All</button>{categories.slice(0,7).map(category => <button type="button" key={category.id} onClick={() => {setCategoryId(String(category.id)); document.getElementById("products")?.scrollIntoView({behavior:"smooth"});}}>{category.name}</button>)}<a href="#why-us">Why Super Bajaar</a></nav>
     <section className="storefront-hero">
-      <div className="storefront-hero-copy"><span className="storefront-kicker"><i /> YOUR EVERYDAY SUPER STORE</span><h1>Everyday shopping.<br /><em>Extraordinary</em> easy.</h1><p>From fresh finds to daily essentials, discover more of what you need in one colourful, convenient place.</p><a className="storefront-primary" href="#products">Shop live catalogue <span>→</span></a><div className="storefront-trust"><span>✦ Thoughtfully picked</span><span>✦ Made for everyday</span></div></div>
+      <div className="storefront-hero-copy"><span className="storefront-kicker"><i /> YOUR EVERYDAY SUPER STORE</span><h1>Welcome to<br /><em>Super Bajaar</em></h1><p>Everything you need, all in one place. Explore everyday essentials and discover something new for your home and family.</p><a className="storefront-primary" href="#products">Shop Now <span>→</span></a><div className="storefront-trust"><span>✦ Thoughtfully picked</span><span>✦ Made for everyday</span></div></div>
       <div className="storefront-hero-art" aria-label="Colourful shopping bags and everyday products" role="img"><div className="art-sun" /><div className="art-orbit orbit-one" /><div className="art-orbit orbit-two" /><div className="art-spark spark-one">✦</div><div className="art-spark spark-two">✳</div><div className="art-bag bag-purple"><span>S</span></div><div className="art-bag bag-orange"><span>♥</span></div><div className="art-box"><span>GOOD</span><strong>THINGS</strong></div><div className="art-leaf leaf-one">✦</div><div className="art-leaf leaf-two">✿</div><div className="art-caption">A little joy in every basket</div></div>
     </section>
     <section className="storefront-categories" id="categories">
@@ -127,13 +129,13 @@ export default function Storefront() {
       </div>
     </section>
     <section className="storefront-products" id="products">
-      <div className="storefront-section-heading"><div><span className="storefront-kicker">READY WHEN YOU ARE</span><h2>{categoryId ? (categories.find(c => String(c.id) === categoryId)?.name || "Products") : "Shop products"}</h2></div><span className="storefront-heading-note">{visibleVariants.length} variants available</span></div>
+      <div className="storefront-section-heading"><div><span className="storefront-kicker">TODAY’S PICKS</span><h2>{categoryId ? (categories.find(c => String(c.id) === categoryId)?.name || "Products") : "Shop products"}</h2></div><span className="storefront-heading-note">{visibleVariants.length} variants available</span></div>
       <label className="storefront-search">Search products or SKU<input value={search} onChange={e => setSearch(e.target.value)} placeholder="Try a product name or SKU" /></label>
       {error && <p className="storefront-alert" role="alert">{error}</p>}
       {loading ? <p className="storefront-empty">Loading live products…</p> : visibleVariants.length ? <div className="storefront-product-grid">{visibleVariants.map(variant => {
         const product = productById.get(Number(variant.product_id));
         const index = categories.findIndex(c => String(c.id) === String(product?.category_id));
-        return <article className="storefront-product-card" key={variant.id}><div className="storefront-product-art"><span>{art[(index < 0 ? 0 : index) % art.length].icon}</span></div><small>{product?.brand || product?.name || "Super Bajaar"}</small><h3>{product?.name || variant.product_name || variant.sku}</h3><p className="storefront-sku">{variant.sku}</p><strong>{money(variant.selling_price)}</strong><button type="button" className="storefront-add" onClick={() => addToCart(variant)}>Add to basket +</button></article>;
+        return <article className="storefront-product-card" key={variant.id}><div className="storefront-product-art"><span>{art[(index < 0 ? 0 : index) % art.length].icon}</span><button type="button" className={"storefront-wishlist " + (wishlist.includes(variant.id) ? "is-saved" : "")} aria-label={"Toggle wishlist for " + (product?.name || variant.sku)} aria-pressed={wishlist.includes(variant.id)} onClick={() => setWishlist(old => old.includes(variant.id) ? old.filter(id => id !== variant.id) : [...old, variant.id])}>♡</button></div><small>{product?.brand || product?.name || "Super Bajaar"}</small><h3>{product?.name || variant.product_name || variant.sku}</h3><p className="storefront-sku">{variant.sku}</p><strong>{money(variant.selling_price)}</strong><button type="button" className="storefront-add" onClick={() => addToCart(variant)}>Add to basket +</button></article>;
       })}</div> : <p className="storefront-empty">{error ? "The live catalogue could not be loaded." : "No active products are available in this category yet."}</p>}
     </section>
     <section className="storefront-checkout" id="basket">
