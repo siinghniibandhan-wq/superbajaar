@@ -35,7 +35,7 @@ export default function Storefront() {
   const [cart, setCart] = useState(() => { try { return JSON.parse(window.localStorage.getItem("sb-cart") || "[]"); } catch { return []; } });
   const [customerToken, setCustomerToken] = useState(() => { try { return window.localStorage.getItem("sb-customer.access_token") || ""; } catch { return ""; } });
   const [customerAuth, setCustomerAuth] = useState(null);
-  const [customerAuthMode, setCustomerAuthMode] = useState("login");
+  const [customerAuthMode, setCustomerAuthMode] = useState(() => window.location.pathname === "/customer/register" ? "register" : "login");
   const [customerAuthDraft, setCustomerAuthDraft] = useState({ full_name: "", email: "", phone: "", password: "", referral_code: "" });
   const [customerAuthBusy, setCustomerAuthBusy] = useState(false);
   const [referralData, setReferralData] = useState(null);
@@ -257,6 +257,7 @@ export default function Storefront() {
     }
   };
   const openAccount = () => {
+    if (!customerToken || !customerAuth) { openCustomerAuth("login", "/account"); return; }
     window.history.pushState({}, "", "/account");
     setRoutePath("/account");
     setCategoryId(""); setSearch(""); setAccountOpen(false);
