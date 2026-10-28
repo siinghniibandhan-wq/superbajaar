@@ -39,6 +39,14 @@ class StockIssue(BaseModel):
     location_id: int = Field(gt=0)
     quantity: Decimal = Field(gt=0, max_digits=14, decimal_places=3)
     note: str = Field(min_length=3, max_length=500)
+    reason_type: str = Field(default="issue", pattern=r"^(issue|scrap)$")
+
+
+class StockCount(BaseModel):
+    variant_id: int = Field(gt=0)
+    location_id: int = Field(gt=0)
+    counted_quantity: Decimal = Field(ge=0, max_digits=14, decimal_places=3)
+    note: str = Field(min_length=3, max_length=500)
 
 
 class StockTransfer(BaseModel):
@@ -195,7 +203,7 @@ def create_adjustment(payload: StockAdjustment) -> dict[str, Any]:
                 "(variant_id, location_id, movement_type, quantity, reference_type, note) "
                 "VALUES (%s, %s, 'adjustment', %s, 'manual_adjustment', %s) "
                 "RETURNING id, variant_id, location_id, movement_type, quantity, reference_type, note, created_at",
-                (payload.variant_id, payload.location_id, payload.quantity, payload.note.strip()),
+                (payload.variant_id, payload.location_id, payload.quantity, "manual_scrap" if payload.reason_type == "scrap" else "manual_issue", payload.note.strip()),
             ).fetchone()
         return movement
     except HTTPException:
@@ -238,7 +246,7 @@ def issue_stock(payload: StockIssue) -> dict[str, Any]:
             movement = conn.execute(
                 "INSERT INTO inventory_movements "
                 "(variant_id, location_id, movement_type, quantity, reference_type, note) "
-                "VALUES (%s, %s, 'adjustment', %s, 'manual_issue', %s) "
+                "VALUES (%s, %s, 'adjustment', %s, %s, %s) "
                 "RETURNING id, variant_id, location_id, movement_type, quantity, reference_type, note, created_at",
                 (payload.variant_id, payload.location_id, payload.quantity, payload.note.strip()),
             ).fetchone()
@@ -303,6 +311,64 @@ def transfer_stock(payload: StockTransfer) -> dict[str, Any]:
                 ).fetchone()
                 movement_rows.append(row)
         return {"items": movement_rows, "quantity": payload.quantity, "status": "transferred"}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+
+@router.post("/counts", status_code=201)
+def record_physical_count(payload: StockCount) -> dict[str, Any]:
+    """Reconcile a physical count while protecting reserved stock and recording the variance."""
+    try:
+        with _connect() as conn:
+            variant = conn.execute(
+                "SELECT id FROM product_variants WHERE id = %s AND is_active = TRUE FOR SHARE",
+                (payload.variant_id,),
+            ).fetchone()
+            if variant is None:
+                raise HTTPException(status_code=404, detail="Active product variant not found")
+            location = conn.execute(
+                "SELECT id FROM stock_locations WHERE id = %s AND is_active = TRUE FOR SHARE",
+                (payload.location_id,),
+            ).fetchone()
+            if location is None:
+                raise HTTPException(status_code=404, detail="Active stock location not found")
+            balance = conn.execute(
+                "SELECT on_hand, reserved FROM inventory_balances "
+                "WHERE variant_id = %s AND location_id = %s FOR UPDATE",
+                (payload.variant_id, payload.location_id),
+            ).fetchone()
+            current = balance["on_hand"] if balance else Decimal("0")
+            reserved = balance["reserved"] if balance else Decimal("0")
+            if payload.counted_quantity < reserved:
+                raise HTTPException(status_code=409, detail="Counted quantity cannot be lower than reserved stock")
+            variance = payload.counted_quantity - current
+            conn.execute(
+                "INSERT INTO inventory_balances (variant_id, location_id, on_hand, reserved) "
+                "VALUES (%s, %s, %s, 0) ON CONFLICT (variant_id, location_id) DO UPDATE "
+                "SET on_hand = EXCLUDED.on_hand, updated_at = now()",
+                (payload.variant_id, payload.location_id, payload.counted_quantity),
+            )
+            movement = None
+            if variance != 0:
+                movement = conn.execute(
+                    "INSERT INTO inventory_movements "
+                    "(variant_id, location_id, movement_type, quantity, reference_type, note) "
+                    "VALUES (%s, %s, 'adjustment', %s, 'physical_count', %s) "
+                    "RETURNING id, variant_id, location_id, movement_type, quantity, reference_type, note, created_at",
+                    (payload.variant_id, payload.location_id, abs(variance), payload.note.strip()),
+                ).fetchone()
+        return {
+            "status": "counted",
+            "variant_id": payload.variant_id,
+            "location_id": payload.location_id,
+            "previous_quantity": current,
+            "counted_quantity": payload.counted_quantity,
+            "variance": variance,
+            "movement": movement,
+        }
     except HTTPException:
         raise
     except psycopg.Error as exc:
