@@ -58,7 +58,15 @@ class CustomerRegister(BaseModel):
         digits = "".join(ch for ch in value if ch.isdigit())
         if len(digits) < 7 or len(digits) > 15:
             raise ValueError("Enter a valid mobile number")
-        return value
+        # Canonicalise Indian mobile numbers so +91, 91, 0-prefix and local
+        # 10-digit forms cannot be used to create duplicate accounts.
+        if len(digits) == 12 and digits.startswith("91"):
+            digits = digits[2:]
+        elif len(digits) == 11 and digits.startswith("0"):
+            digits = digits[1:]
+        if len(digits) == 10 and digits[0] in "6789":
+            return "+91" + digits
+        return ("+" if value.strip().startswith("+") else "") + digits
 
     @field_validator("referral_code")
     @classmethod
@@ -110,9 +118,17 @@ def register(payload: CustomerRegister):
             with conn.transaction():
                 phone = payload.phone.strip()
                 phone_digits = "".join(ch for ch in phone if ch.isdigit())
+                if len(phone_digits) == 12 and phone_digits.startswith("91"):
+                    phone_digits = phone_digits[2:]
+                elif len(phone_digits) == 11 and phone_digits.startswith("0"):
+                    phone_digits = phone_digits[1:]
                 existing = conn.execute(
                     "SELECT id FROM customer_accounts WHERE lower(email)=lower(%s) "
-                    "OR regexp_replace(phone, '[^0-9]', '', 'g')=%s LIMIT 1",
+                    "OR CASE WHEN length(regexp_replace(phone, '[^0-9]', '', 'g'))=12 AND left(regexp_replace(phone, '[^0-9]', '', 'g'),2)='91' "
+                    "THEN right(regexp_replace(phone, '[^0-9]', '', 'g'),10) "
+                    "WHEN length(regexp_replace(phone, '[^0-9]', '', 'g'))=11 AND left(regexp_replace(phone, '[^0-9]', '', 'g'),1)='0' "
+                    "THEN right(regexp_replace(phone, '[^0-9]', '', 'g'),10) "
+                    "ELSE regexp_replace(phone, '[^0-9]', '', 'g') END=%s LIMIT 1",
                     (email, phone_digits),
                 ).fetchone()
                 if existing:
@@ -132,7 +148,7 @@ def register(payload: CustomerRegister):
                         expression = sql.SQL("lower(trim({})) = %s").format(sql.Identifier(col))
                     else:
                         value = phone_digits
-                        expression = sql.SQL("regexp_replace(coalesce({}, ''), '[^0-9]', '', 'g') = %s").format(sql.Identifier(col))
+                        expression = sql.SQL("CASE WHEN length(regexp_replace(coalesce({}, ''), '[^0-9]', '', 'g'))=12 AND left(regexp_replace(coalesce({}, ''), '[^0-9]', '', 'g'),2)='91' THEN right(regexp_replace(coalesce({}, ''), '[^0-9]', '', 'g'),10) WHEN length(regexp_replace(coalesce({}, ''), '[^0-9]', '', 'g'))=11 AND left(regexp_replace(coalesce({}, ''), '[^0-9]', '', 'g'),1)='0' THEN right(regexp_replace(coalesce({}, ''), '[^0-9]', '', 'g'),10) ELSE regexp_replace(coalesce({}, ''), '[^0-9]', '', 'g') END = %s").format(*[sql.Identifier(col)]*6)
                     if not value:
                         continue
                     found = conn.execute(
