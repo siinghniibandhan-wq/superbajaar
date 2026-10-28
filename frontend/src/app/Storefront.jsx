@@ -54,6 +54,9 @@ export default function Storefront() {
   const [ticketLookup, setTicketLookup] = useState({ caseNumber: "", email: "", phone: "" });
   const [ticketTracked, setTicketTracked] = useState(null);
   const [ticketBusy, setTicketBusy] = useState(false);
+  const [loyaltyRules, setLoyaltyRules] = useState([]);
+  const [partnerBusy, setPartnerBusy] = useState(false);
+  const [partnerResult, setPartnerResult] = useState(null);
 
   useEffect(() => {
     try { setRecentlyViewed(JSON.parse(sessionStorage.getItem("sb-recently-viewed") || "[]")); } catch { setRecentlyViewed([]); }
@@ -106,6 +109,14 @@ export default function Storefront() {
       const roles = [user.role, user.user_role, ...(Array.isArray(user.roles) ? user.roles : [])].map(value => String(value || "").toLowerCase());
       setCanOpenAdmin(roles.some(role => ["owner", "admin", "administrator", "super_admin", "superadmin"].includes(role)) || user.is_admin === true || user.is_superuser === true);
     }).catch(() => { if (active) setCanOpenAdmin(false); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    apiRequest("/loyalty/rules", { skipAuth: true }).then(result => {
+      if (active) setLoyaltyRules(Array.isArray(result?.items) ? result.items : []);
+    }).catch(() => { if (active) setLoyaltyRules([]); });
     return () => { active = false; };
   }, []);
 
@@ -226,6 +237,18 @@ export default function Storefront() {
     } catch (reason) { setError(reason.message || "Could not create your support ticket."); }
     finally { setTicketBusy(false); }
   };
+  const submitPartnerEnquiry = async event => {
+    event.preventDefault();
+    setPartnerBusy(true); setPartnerResult(null); setError("");
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const payload = { name: String(data.get("name") || "").trim(), business_name: String(data.get("business") || "").trim(), phone: String(data.get("phone") || "").trim(), email: String(data.get("email") || "").trim(), partnership_type: String(data.get("partnerType") || ""), message: String(data.get("message") || "").trim() };
+    try {
+      const result = await apiRequest("/loyalty/partner-enquiries", { method: "POST", skipAuth: true, body: JSON.stringify(payload) });
+      setPartnerResult(result); form.reset();
+    } catch (reason) { setPartnerResult({ error: reason.message || "Could not submit your enquiry. Please try again." }); }
+    finally { setPartnerBusy(false); }
+  };
   const trackSupportTicket = async event => {
     event.preventDefault(); setTicketBusy(true); setError(""); setTicketTracked(null);
     try {
@@ -336,7 +359,7 @@ export default function Storefront() {
       <div className="storefront-product-art"><span>{tile.icon}</span><button type="button" className={"storefront-wishlist " + (saved ? "is-saved" : "")} aria-label={(saved ? "Remove from" : "Add to") + " wishlist: " + (product?.name || variant.sku)} aria-pressed={saved} onClick={() => setWishlist(old => old.some(id => Number(id) === Number(variant.id)) ? old.filter(id => Number(id) !== Number(variant.id)) : [...old, Number(variant.id)])}><Heart size={19} strokeWidth={1.9} fill={saved ? "currentColor" : "none"} /></button></div>
       <small>{product?.brand || product?.name || "Super Bajaar"}</small>
       <h3><button type="button" className="storefront-product-title" onClick={() => { rememberViewed(variant); setSelectedProduct(variant); }}>{product?.name || variant.product_name || variant.sku}</button></h3>
-      <p className="storefront-sku">{variant.sku}</p><strong>{money(variant.selling_price)}</strong><span className="storefront-product-coins"><Coins size={14} /> Earn up to {Math.floor(Number(variant.selling_price || 0) / 100)} Super Coins</span>
+      <p className="storefront-sku">{variant.sku}</p><strong>{money(variant.selling_price)}</strong><span className="storefront-product-coins"><Coins size={14} /> Earn up to {Math.floor(Number(variant.selling_price || 0) / 100 * Number((loyaltyRules.find(rule => rule.scope_type === "product" && Number(rule.scope_id) === Number(variant.id)) || loyaltyRules.find(rule => rule.scope_type === "category" && Number(rule.scope_id) === Number(product?.category_id)) || loyaltyRules.find(rule => rule.scope_type === "default"))?.coins_per_100 ?? 1))} Super Coins</span>
       <button type="button" className="storefront-add" onClick={() => addToCart(variant)}><ShoppingBag size={17} strokeWidth={2} /> Add to basket</button>
     </article>;
   }
@@ -432,7 +455,7 @@ export default function Storefront() {
       </div>
     </section>}
     {isInfoPage && <section className="storefront-info-page"><div className="storefront-category-breadcrumb"><button type="button" onClick={openShopHome}>Home</button><span>/</span><span>Information</span></div>
-      {infoSlug === "seller-registration" && <><span className="storefront-kicker">GROW WITH SUPER BAJAAR</span><h1>Partner with Us</h1><p>Bring your products, brand or delivery expertise to Super Bajaar. We welcome enquiries from sellers, brands, suppliers and logistics partners. Every enquiry is reviewed before onboarding; submitting this form does not guarantee acceptance.</p><div className="storefront-partner-cards"><article><strong>Sell on Super Bajaar</strong><p>Introduce eligible products to everyday shoppers.</p></article><article><strong>Brand &amp; supplier partnerships</strong><p>Discuss product range, supply capacity and commercial terms.</p></article><article><strong>Delivery &amp; logistics</strong><p>Explore service coverage and fulfilment partnerships.</p></article></div><form className="storefront-partner-form" onSubmit={event=>{event.preventDefault();const data=new FormData(event.currentTarget);const subject=encodeURIComponent("Super Bajaar partnership enquiry — "+data.get("partnerType"));const body=encodeURIComponent("Name: "+data.get("name")+"\nBusiness: "+data.get("business")+"\nPhone: "+data.get("phone")+"\nEmail: "+data.get("email")+"\nPartnership type: "+data.get("partnerType")+"\nMessage: "+data.get("message"));window.location.href="mailto:kpmcenterprise@gmail.com?subject="+subject+"&body="+body;}}><h2>Tell us about your business</h2><label>Your name<input name="name" required maxLength="120" /></label><label>Business / brand name<input name="business" required maxLength="160" /></label><label>Phone number<input name="phone" required minLength="7" maxLength="20" /></label><label>Email address<input name="email" type="email" required maxLength="254" /></label><label>Partnership type<select name="partnerType" required><option value="">Choose a partnership</option><option>Seller</option><option>Brand</option><option>Supplier</option><option>Delivery / logistics</option><option>Other</option></select></label><label>How would you like to partner?<textarea name="message" rows="4" required maxLength="3000" /></label><button className="storefront-primary" type="submit">Send partnership enquiry</button><p className="storefront-info-note">Your email app will open with the enquiry prefilled. Direct online submission and tracking are not connected yet.</p></form></>}
+      {infoSlug === "seller-registration" && <><span className="storefront-kicker">GROW WITH SUPER BAJAAR</span><h1>Partner with Us</h1><p>Bring your products, brand or delivery expertise to Super Bajaar. We welcome enquiries from sellers, brands, suppliers and logistics partners. Every enquiry is reviewed before onboarding; submitting this form does not guarantee acceptance.</p><div className="storefront-partner-cards"><article><strong>Sell on Super Bajaar</strong><p>Introduce eligible products to everyday shoppers.</p></article><article><strong>Brand &amp; supplier partnerships</strong><p>Discuss product range, supply capacity and commercial terms.</p></article><article><strong>Delivery &amp; logistics</strong><p>Explore service coverage and fulfilment partnerships.</p></article></div><form className="storefront-partner-form" onSubmit={submitPartnerEnquiry}><h2>Tell us about your business</h2><label>Your name<input name="name" required maxLength="120" /></label><label>Business / brand name<input name="business" required maxLength="160" /></label><label>Phone number<input name="phone" required minLength="7" maxLength="20" /></label><label>Email address<input name="email" type="email" required maxLength="254" /></label><label>Partnership type<select name="partnerType" required><option value="">Choose a partnership</option><option>Seller</option><option>Brand</option><option>Supplier</option><option>Delivery / logistics</option><option>Other</option></select></label><label>How would you like to partner?<textarea name="message" rows="4" required maxLength="3000" /></label><button className="storefront-primary" type="submit" disabled={partnerBusy}>{partnerBusy ? "Submitting…" : "Send partnership enquiry"}</button>{partnerResult && <p className={partnerResult.error ? "storefront-alert" : "storefront-order-success"} role="status">{partnerResult.error || partnerResult.message}</p>}<p className="storefront-info-note">Your enquiry is submitted to Super Bajaar for review. Onboarding is subject to approval.</p></form></>}
       {infoSlug === "loyalty-programme" && <><span className="storefront-kicker">CUSTOMER REWARDS</span><h1>Loyalty Programme</h1><p>We’re working towards a rewarding shopping experience for Super Bajaar customers. Programme eligibility, earning rules, redemption options and launch details will be published here when confirmed.</p><p className="storefront-info-note">No loyalty points or benefits are promised until the programme is officially launched and its terms are published.</p></>}
       {infoSlug === "super-coins" && <><span className="storefront-kicker">REWARDS WALLET</span><h1>Super Coins</h1><p>Super Coins are planned as a potential rewards feature for Super Bajaar. Any earning, balance, expiry and redemption rules will be communicated here once the feature is active.</p><p className="storefront-info-note">Super Coins are not represented as active or redeemable unless shown as enabled in your account.</p></>}
       {infoSlug === "feedback" && <><span className="storefront-kicker">HELP US IMPROVE</span><h1>Feedback</h1><p>We welcome suggestions about your shopping experience, product selection, website usability and customer support.</p><div className="storefront-contact-grid"><a href="mailto:kpmcenterprise@gmail.com?subject=Super%20Bajaar%20Feedback"><strong>Send feedback by email</strong><span>kpmcenterprise@gmail.com</span></a><a href="https://wa.me/917644841104?text=Super%20Bajaar%20feedback" target="_blank" rel="noreferrer"><strong>Share on WhatsApp</strong><span>Message customer support</span></a></div></>}
