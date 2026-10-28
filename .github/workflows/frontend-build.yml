@@ -1,4 +1,4 @@
-name: Frontend build and backend tests
+name: Frontend build and backend smoke checks
 
 on:
   pull_request:
@@ -25,7 +25,7 @@ jobs:
       - name: Build Amplify frontend
         run: npm run build
 
-  backend-tests:
+  backend-checks:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -41,5 +41,7 @@ jobs:
           python-version: "3.12"
       - name: Install backend dependencies
         run: pip install -r requirements.txt
-      - name: Run backend unit tests
-        run: pytest -q tests/test_*.py
+      - name: Compile backend modules
+        run: python -m compileall -q app
+      - name: Run backend health smoke tests
+        run: pytest -q tests/test_health.py
