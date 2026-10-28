@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { apiRequest } from "../../services/api.js";
 const statuses=["pending","authorized","captured","failed","cancelled","refunded"];
 const methods=["upi","card","netbanking","cod","wallet","bank_transfer","other"];
-const next={pending:["authorized","captured","failed","cancelled"],authorized:["captured","failed","cancelled"],captured:["refunded"],failed:[],cancelled:[],refunded:[]};
+const next={pending:["authorized","failed","cancelled"],authorized:["failed","cancelled"],captured:[],failed:[],cancelled:[],refunded:[]};
 const label=s=>String(s||"").replaceAll("_"," ").replace(/\b\w/g,c=>c.toUpperCase());
 const money=v=>new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR"}).format(Number(v||0));
 export default function PaymentsWorkspace({onBack}){
