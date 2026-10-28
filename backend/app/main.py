@@ -21,7 +21,7 @@ app.add_middleware(
     allow_origins=allowed_origins,
     # Amplify URLs can have multiple labels, e.g. main.<app-id>.amplifyapp.com.
     # Keep explicit configured origins and allow HTTPS Amplify app hostnames.
-    allow_origin_regex=r"https://(?:[a-zA-Z0-9-]+\\.)+amplifyapp\\.com",
+    allow_origin_regex=r"https://(?:[a-zA-Z0-9-]+\.)+amplifyapp\.com",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
@@ -30,8 +30,8 @@ app.add_middleware(
 app.include_router(health_router, prefix=settings.api_prefix)
 app.include_router(catalogue_router, prefix=settings.api_prefix)
 app.include_router(inventory_router, prefix=settings.api_prefix)
-app.include_router(orders_router, prefix=settings.api_prefix)
 app.include_router(payments_router, prefix=settings.api_prefix)
+app.include_router(orders_router, prefix=settings.api_prefix)
 app.include_router(delivery_router, prefix=settings.api_prefix)
 app.include_router(customers_router, prefix=settings.api_prefix)
 app.include_router(purchasing_router, prefix=settings.api_prefix)
