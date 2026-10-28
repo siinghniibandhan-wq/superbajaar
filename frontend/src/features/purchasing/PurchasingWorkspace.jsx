@@ -84,6 +84,16 @@ export default function PurchasingWorkspace({ onBack }) {
     } catch (e) { setError(e.message || "Unable to load purchase order details."); }
   }
 
+  async function cancelOrder() {
+    if (!detail || !window.confirm("Cancel the unreceived remainder of " + detail.purchase_number + "? Received stock will remain in inventory.")) return;
+    setSaving(true); setError(""); setNotice("");
+    try {
+      const result = await apiRequest("/purchasing/orders/" + detail.id + "/cancel", { method: "POST" });
+      setNotice(result.message || "Purchase order cancelled."); await load(); await openOrder(detail.id);
+    } catch (e) { setError(e.message || "Unable to cancel purchase order."); }
+    finally { setSaving(false); }
+  }
+
   async function receiveGoods(e) {
     e.preventDefault(); if (!detail) return;
     const receiptLines = (detail.lines || []).filter(line => Number(receipts[line.line_id]) > 0).map(line => ({ line_id: line.line_id, quantity: Number(receipts[line.line_id]) }));
@@ -99,7 +109,7 @@ export default function PurchasingWorkspace({ onBack }) {
   return <section className="sb-workspace sb-purchasing">
     <button className="sb-back" type="button" onClick={onBack}>← All workspaces</button>
     <p className="sb-eyebrow">OPERATIONS · PURCHASING</p><h1>Purchasing</h1>
-    <p>Manage suppliers, create purchase orders and receive goods into a selected stock location.</p>
+    <p>Manage suppliers, create purchase orders, receive goods, and cancel unreceived quantities.</p>
     {error && <p className="sb-alert" role="alert">{error}</p>}{notice && <p className="sb-success" role="status">{notice}</p>}
     <div className="sb-customer-tabs" role="tablist" aria-label="Purchasing workspace">
       <button type="button" role="tab" aria-selected={tab === "orders"} className={tab === "orders" ? "is-active" : ""} onClick={() => setTab("orders")}>Purchase orders <span>{orders.length}</span></button>
@@ -141,6 +151,8 @@ export default function PurchasingWorkspace({ onBack }) {
         <button type="button" className="sb-order-open" onClick={() => openOrder(po.id)}><span><strong>{po.purchase_number}</strong><small>{po.supplier_name} · {po.location_name}</small></span><span className="sb-order-total">{money(po.subtotal)}<small>{po.line_count} lines</small></span><span className={"sb-order-status status-" + po.status}>{label(po.status)}</span></button>
         {selected === po.id && detail && <div className="sb-purchase-detail"><h3>{detail.purchase_number} · Goods receipt</h3><div className="sb-purchase-detail-lines">{detail.lines.map(line => <div className="sb-purchase-detail-line" key={line.line_id}><div><strong>{line.product_name}</strong><small>SKU {line.sku} · ordered {line.quantity_ordered} · received {line.quantity_received} · open {line.quantity_open}</small></div><label>Receive qty<input type="number" min="0" max={Number(line.quantity_open)} step="0.001" disabled={Number(line.quantity_open) <= 0 || detail.status === "cancelled" || detail.status === "received"} value={receipts[line.line_id] ?? ""} onChange={e => setReceipts(old => ({ ...old, [line.line_id]: e.target.value }))} /></label></div>)}</div>
           {detail.status !== "received" && detail.status !== "cancelled" && <form onSubmit={receiveGoods}><button className="sb-primary" type="submit" disabled={saving}>{saving ? "Saving…" : "Record goods receipt"}</button></form>}
+          {(detail.status === "ordered" || detail.status === "partially_received") && <button type="button" className="sb-remove-line" onClick={cancelOrder} disabled={saving}>{saving ? "Saving…" : "Cancel remaining quantities"}</button>}
+          {detail.status === "cancelled" && <p className="sb-muted">Cancelled. Any goods received before cancellation remain in inventory.</p>}
         </div>}
       </article>)}</div> : <p className="sb-empty">No purchase orders yet.</p>}
     </>}
