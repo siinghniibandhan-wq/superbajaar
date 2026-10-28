@@ -11,6 +11,10 @@ from app.api.auth import _decode
 from app.core.config import settings
 
 
+def method_is_public_serviceability(method: str, path: str, prefix: str) -> bool:
+    return method == "GET" and path.startswith(prefix + "/delivery/serviceability/")
+
+
 def _is_public_catalogue_read(method: str, path: str, prefix: str) -> bool:
     return method == "GET" and path in {
         prefix + "/catalogue/categories",
@@ -46,6 +50,8 @@ async def require_active_session(request: Request) -> None:
     path = request.url.path
     prefix = settings.api_prefix.rstrip("/")
     public = {prefix + "/health", prefix + "/auth/login"}
+    if method_is_public_serviceability(request.method, path, prefix):
+        return
     if request.method == "OPTIONS" or not path.startswith(prefix + "/") or path in public:
         return
 
