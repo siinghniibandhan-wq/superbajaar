@@ -3,7 +3,11 @@ import getpass
 import os
 import re
 import sys
+from pathlib import Path
 import psycopg
+
+# Make the backend package importable when this script is launched by path.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.api.v1.auth import _password_hash
 
