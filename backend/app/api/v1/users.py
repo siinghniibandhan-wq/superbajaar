@@ -44,7 +44,12 @@ class UserUpdate(BaseModel):
     @field_validator("full_name")
     @classmethod
     def normalize_name(cls, value):
-        return value.strip() if value is not None else value
+        if value is None:
+            return value
+        value = value.strip()
+        if not value:
+            raise ValueError("Full name cannot be blank")
+        return value
 
 
 def _connect():
@@ -103,6 +108,8 @@ def update_user(user_id: int, payload: UserUpdate, user=Depends(current_user)):
         raise HTTPException(422, "Provide at least one field to update")
     if user_id == user["id"] and payload.is_active is False:
         raise HTTPException(409, "You cannot deactivate your own signed-in account")
+    if user_id == user["id"] and payload.role is not None and payload.role != "owner":
+        raise HTTPException(409, "You cannot remove your own owner role")
     try:
         with _connect() as conn:
             target = conn.execute(
@@ -120,7 +127,7 @@ def update_user(user_id: int, payload: UserUpdate, user=Depends(current_user)):
                 ).fetchone()["total"]
                 if owners <= 1:
                     raise HTTPException(409, "The last active owner cannot be demoted or deactivated")
-            fields = payload.model_dump(exclude_unset=True)
+            fields = {key: value for key, value in payload.model_dump(exclude_unset=True).items() if value is not None}
             assignments = []
             values = []
             for field in ("full_name", "role", "is_active"):
