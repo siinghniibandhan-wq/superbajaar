@@ -1072,3 +1072,42 @@
  .storefront-contact-grid,.storefront-policy-cards { grid-template-columns:minmax(0,1fr); }
 }
 @media(max-width:420px) { .storefront-benefit-grid { grid-template-columns:minmax(0,1fr); } }
+
+
+/* Loyalty programme, partner page and responsive Why Choose Us refinement */
+.storefront-footer-top { display:flex; align-items:center; justify-content:space-between; gap:20px; }
+.storefront-footer-top > p { margin:0; color:var(--sb-muted); font-size:12px; text-align:center; }
+.storefront-benefits { display:block; max-width:1184px; margin:0 auto 55px; padding:clamp(22px,4vw,38px); }
+.storefront-benefits-heading { display:flex !important; flex-direction:column; align-items:center; text-align:center; gap:8px; margin:0 0 26px; }
+.storefront-benefits-heading h2 { margin:0; font-size:clamp(26px,4vw,36px); line-height:1.15; }
+.storefront-benefits-heading p { margin:0; color:var(--sb-muted); font-size:13px; }
+.storefront-benefit-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; }
+.storefront-benefit-grid article { min-width:0; display:flex; align-items:flex-start; gap:12px; padding:20px 16px; border:1px solid #eee4fa; border-radius:20px; background:linear-gradient(145deg,#fff 0%,#faf5ff 100%); box-shadow:8px 8px 20px #4320780d,-6px -6px 16px #fff; }
+.storefront-benefit-grid article > div { min-width:0; display:grid; gap:7px; }
+.storefront-benefit-grid article strong { font-size:13px; line-height:1.35; }
+.storefront-benefit-grid article small { color:var(--sb-muted); font-size:11px; line-height:1.6; }
+.benefit-icon { flex:0 0 42px; box-shadow:inset 2px 2px 5px #d6c4ed, inset -2px -2px 5px #fff; }
+.storefront-product-coins { display:inline-flex; align-items:center; gap:5px; margin-top:8px; color:#8a5a00; font-size:11px; font-weight:750; }
+.storefront-loyalty-card { max-width:520px; margin:20px 0; padding:24px; color:#fff; border-radius:24px; background:radial-gradient(circle at 90% 0%,#ff9b3d55,transparent 35%),linear-gradient(125deg,#32105f,#6428c7 70%,#8c49dd); box-shadow:0 18px 35px #32105f2b; }
+.storefront-loyalty-card-top,.storefront-loyalty-card-bottom { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.storefront-loyalty-card-top { font-size:10px; letter-spacing:.13em; }
+.storefront-loyalty-card-top strong { display:inline-block; margin-top:5px; font-size:15px; letter-spacing:.08em; }
+.storefront-loyalty-mark { display:grid; place-items:center; width:42px; height:42px; border-radius:13px; background:linear-gradient(135deg,#9c67f5,#ff8a24); font-size:24px; font-weight:900; }
+.storefront-loyalty-card-bottom { margin-top:38px; padding-top:16px; border-top:1px solid #ffffff50; font-size:12px; }
+.storefront-loyalty-card-bottom strong { font-size:9px; letter-spacing:.1em; color:#ffcf91; }
+.storefront-loyalty-summary { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; max-width:720px; }
+.storefront-loyalty-summary article { display:grid; justify-items:start; gap:8px; padding:18px; border:1px solid #eee4fa; border-radius:18px; background:#fff; box-shadow:6px 6px 18px #4320780b; }
+.storefront-loyalty-summary article svg { color:var(--sb-purple); }
+.storefront-loyalty-summary small,.storefront-loyalty-summary span { color:var(--sb-muted); font-size:11px; }
+.storefront-loyalty-summary strong { font-size:22px; }
+.storefront-loyalty-note { max-width:720px; margin-top:18px; padding:18px; border-radius:16px; background:#f7f0ff; color:var(--sb-ink); }
+.storefront-loyalty-note p { color:var(--sb-muted); font-size:12px; line-height:1.7; }
+.storefront-partner-cards { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin:22px 0; }
+.storefront-partner-cards article { padding:18px; border:1px solid #eee4fa; border-radius:16px; background:#fff; box-shadow:5px 5px 16px #4320780c; }
+.storefront-partner-cards p { color:var(--sb-muted); font-size:12px; line-height:1.6; }
+.storefront-partner-form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; max-width:760px; margin-top:26px; padding:22px; border:1px solid #eee4fa; border-radius:20px; background:#fff; }
+.storefront-partner-form h2,.storefront-partner-form > p,.storefront-partner-form button { grid-column:1/-1; }
+.storefront-partner-form label { display:grid; gap:7px; color:var(--sb-ink); font-size:12px; font-weight:700; }
+.storefront-partner-form input,.storefront-partner-form select,.storefront-partner-form textarea { width:100%; min-width:0; padding:12px; border:1px solid #e6dced; border-radius:12px; background:#fff; color:var(--sb-ink); font:inherit; }
+@media(max-width:760px){.storefront-benefit-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.storefront-benefit-grid article{padding:15px 12px;}.storefront-benefit-grid .benefit-icon{flex-basis:34px;width:34px;height:34px;border-radius:11px;font-size:17px;}.storefront-benefits{margin:0 12px 32px;padding:22px 15px;}.storefront-footer-top{flex-wrap:wrap;}.storefront-footer-top>p{display:none;}.storefront-partner-cards{grid-template-columns:1fr;}}
+@media(max-width:480px){.storefront-benefit-grid{grid-template-columns:1fr;}.storefront-benefit-grid article{align-items:center;}.storefront-partner-form{grid-template-columns:1fr;padding:16px;}.storefront-partner-form h2,.storefront-partner-form>p,.storefront-partner-form button{grid-column:auto;}.storefront-loyalty-summary{grid-template-columns:1fr;}.storefront-loyalty-card{padding:18px;}}

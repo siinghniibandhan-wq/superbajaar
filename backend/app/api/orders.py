@@ -1,12 +1,13 @@
 """Order management API foundation. Requires database/migrations/002_orders.sql to be applied."""
 from decimal import Decimal
 import json
+import secrets
 import re
 
 import psycopg
 from fastapi import APIRouter, HTTPException, Query, Request
 from psycopg.rows import dict_row
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.core.config import settings
 
@@ -41,6 +42,7 @@ class OrderCreate(BaseModel):
     channel: str = "manual"
     customer_name: str = Field(min_length=1, max_length=200)
     customer_phone: str | None = Field(default=None, max_length=20)
+    customer_email: EmailStr | None = None
     delivery_pin: str | None = Field(default=None, pattern=r"^[0-9]{6}$")
     notes: str | None = Field(default=None, max_length=2000)
     lines: list[OrderLineCreate] = Field(min_length=1, max_length=100)
@@ -170,10 +172,10 @@ def create_order(payload: OrderCreate, request: Request):
                 subtotal = sum((Decimal(str(by_id[line.variant_id]["selling_price"])) * line.quantity for line in payload.lines), Decimal("0"))
                 order_number = "SB-" + __import__("uuid").uuid4().hex[:12].upper()
                 order = conn.execute(
-                    "INSERT INTO orders (order_number, channel, customer_name, customer_phone, delivery_pin, status, subtotal, total, notes) "
-                    "VALUES (%s,%s,%s,%s,%s,'placed',%s,%s,%s) "
-                    "RETURNING id, order_number, channel, customer_name, customer_phone, delivery_pin, status, subtotal, total, notes, created_at, updated_at",
-                    (order_number, payload.channel, payload.customer_name, payload.customer_phone, payload.delivery_pin, subtotal, subtotal, payload.notes),
+                    "INSERT INTO orders (order_number, channel, customer_name, customer_phone, customer_email, delivery_pin, status, subtotal, total, notes) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,'placed',%s,%s,%s) "
+                    "RETURNING id, order_number, channel, customer_name, customer_phone, customer_email, delivery_pin, status, subtotal, total, notes, created_at, updated_at",
+                    (order_number, payload.channel, payload.customer_name, payload.customer_phone, str(payload.customer_email).lower() if payload.customer_email else None, payload.delivery_pin, subtotal, subtotal, payload.notes),
                 ).fetchone()
                 for line in payload.lines:
                     unit_price = Decimal(str(by_id[line.variant_id]["selling_price"]))
@@ -203,7 +205,7 @@ def update_order_status(order_id: int, payload: OrderStatusUpdate):
     try:
         with _connect() as conn:
             with conn.transaction():
-                current = conn.execute("SELECT status FROM orders WHERE id=%s FOR UPDATE", (order_id,)).fetchone()
+                current = conn.execute("SELECT status, customer_email, order_number FROM orders WHERE id=%s FOR UPDATE", (order_id,)).fetchone()
                 if current is None:
                     raise HTTPException(status_code=404, detail="Order not found")
                 old = current["status"]
@@ -219,6 +221,47 @@ def update_order_status(order_id: int, payload: OrderStatusUpdate):
                     "INSERT INTO order_status_history (order_id, from_status, to_status) VALUES (%s,%s,%s)",
                     (order_id, old, payload.status),
                 )
+                # Credit coins only once, in the transaction that marks an order delivered.
+                # Older orders without a customer email are skipped rather than guessing identity.
+                if payload.status == "delivered" and current.get("customer_email"):
+                    email = str(current["customer_email"]).strip().lower()
+                    card_number = "SB-" + secrets.token_hex(5).upper()
+                    conn.execute(
+                        "INSERT INTO loyalty_accounts (customer_email, card_number) VALUES (%s,%s) "
+                        "ON CONFLICT (customer_email) DO NOTHING",
+                        (email, card_number),
+                    )
+                    account = conn.execute(
+                        "SELECT id FROM loyalty_accounts WHERE customer_email=%s FOR UPDATE", (email,)
+                    ).fetchone()
+                    lines = conn.execute(
+                        "SELECT ol.id AS line_id, ol.line_total, p.id AS product_id, p.category_id "
+                        "FROM order_lines ol JOIN product_variants v ON v.id=ol.variant_id "
+                        "JOIN products p ON p.id=v.product_id WHERE ol.order_id=%s ORDER BY ol.id",
+                        (order_id,),
+                    ).fetchall()
+                    for line in lines:
+                        rule = conn.execute(
+                            "SELECT coins_per_100 FROM loyalty_rules WHERE scope_type='product' AND scope_id=%s AND is_active=TRUE",
+                            (line["product_id"],),
+                        ).fetchone()
+                        if rule is None and line["category_id"] is not None:
+                            rule = conn.execute(
+                                "SELECT coins_per_100 FROM loyalty_rules WHERE scope_type='category' AND scope_id=%s AND is_active=TRUE",
+                                (line["category_id"],),
+                            ).fetchone()
+                        if rule is None:
+                            rule = conn.execute(
+                                "SELECT coins_per_100 FROM loyalty_rules WHERE scope_type='default' AND scope_id IS NULL AND is_active=TRUE"
+                            ).fetchone()
+                        rate = Decimal(str(rule["coins_per_100"])) if rule else Decimal("1")
+                        coins = int((Decimal(str(line["line_total"])) / Decimal("100") * rate).to_integral_value(rounding="ROUND_FLOOR"))
+                        if coins > 0:
+                            conn.execute(
+                                "INSERT INTO loyalty_transactions (account_id, transaction_type, coins, order_reference, description, expires_at, idempotency_key) "
+                                "VALUES (%s,'earn',%s,%s,%s,now() + interval '365 days',%s) ON CONFLICT (idempotency_key) DO NOTHING",
+                                (account["id"], coins, current["order_number"], "Delivered order reward", f"earn:order:{order_id}:line:{line['line_id']}"),
+                            )
         return row
     except HTTPException:
         raise
