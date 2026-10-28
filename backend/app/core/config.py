@@ -1,3 +1,4 @@
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -8,7 +9,12 @@ class Settings(BaseSettings):
     api_prefix: str = "/api"
     database_url: str = ""
     cors_allowed_origins: str = "http://localhost:5173"
-    jwt_secret_key: str = ""
+    # Reuse the existing legacy secret during migration if JWT_SECRET_KEY is not set.
+    # Do not hardcode a production secret in source control.
+    jwt_secret_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("JWT_SECRET_KEY", "SB_SECRET_KEY"),
+    )
     # Match the confirmed AWS backend listener. The process manager must also bind this port.
     port: int = 8001
 
