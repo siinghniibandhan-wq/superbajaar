@@ -212,6 +212,50 @@ def redeem_coins(payload: RedeemCoins, request: Request):
         raise HTTPException(status_code=503, detail="Could not redeem loyalty coins") from exc
 
 
+@router.get("/admin/accounts")
+def list_loyalty_accounts(request: Request, limit: int = Query(default=50, ge=1, le=200), offset: int = Query(default=0, ge=0)):
+    """Admin-only account list with unexpired available balance."""
+    _admin(request)
+    try:
+        with _connection() as conn:
+            rows = conn.execute(
+                "SELECT a.id, a.customer_email, a.card_number, a.created_at, "
+                "COALESCE(SUM(CASE WHEN e.transaction_type='earn' AND e.expires_at>now() "
+                "THEN e.coins - COALESCE(alloc.used,0) ELSE 0 END),0)::bigint AS available_coins "
+                "FROM loyalty_accounts a LEFT JOIN loyalty_transactions e ON e.account_id=a.id "
+                "LEFT JOIN LATERAL (SELECT SUM(x.coins)::bigint AS used FROM loyalty_redemption_allocations x "
+                "WHERE x.earned_transaction_id=e.id) alloc ON TRUE "
+                "GROUP BY a.id ORDER BY a.created_at DESC LIMIT %s OFFSET %s", (limit, offset)
+            ).fetchall()
+        return {"items": rows, "limit": limit, "offset": offset}
+    except psycopg.Error as exc:
+        raise HTTPException(status_code=503, detail="Could not load loyalty accounts") from exc
+
+
+@router.get("/admin/accounts/{account_id}/transactions")
+def list_loyalty_transactions(account_id: int, request: Request, limit: int = Query(default=50, ge=1, le=200), offset: int = Query(default=0, ge=0)):
+    """Admin-only ledger history for a loyalty account."""
+    _admin(request)
+    try:
+        with _connection() as conn:
+            account = conn.execute(
+                "SELECT id, customer_email, card_number, created_at FROM loyalty_accounts WHERE id=%s",
+                (account_id,),
+            ).fetchone()
+            if account is None:
+                raise HTTPException(status_code=404, detail="Loyalty account not found")
+            rows = conn.execute(
+                "SELECT id, transaction_type, coins, order_reference, description, expires_at, created_at "
+                "FROM loyalty_transactions WHERE account_id=%s ORDER BY created_at DESC, id DESC LIMIT %s OFFSET %s",
+                (account_id, limit, offset),
+            ).fetchall()
+        return {"account": account, "items": rows, "limit": limit, "offset": offset}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(status_code=503, detail="Could not load loyalty transactions") from exc
+
+
 @router.post("/partner-enquiries", status_code=201)
 def create_partner_enquiry(payload: PartnerEnquiry):
     try:
