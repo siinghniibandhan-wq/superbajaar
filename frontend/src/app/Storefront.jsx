@@ -6,7 +6,7 @@ import "./storefront.css";
 const categoryOrder = [
   "Grocery", "Fresh Daily", "Fashion", "Personal Care", "Electronics",
   "Home Appliances", "Pet Care", "Gifting", "Pooja Essentials",
-  "Automobiles", "Toys & Sports", "Pharmacy",
+  "Automobiles", "Toys & Sports", "Pharmacy", "Insurance",
 ];
 const categoryArt = {
   "Grocery": { icon: "🛒", tone: "lavender", detail: "Everyday groceries" },
@@ -21,6 +21,7 @@ const categoryArt = {
   "Automobiles": { icon: "🚗", tone: "blue", detail: "Everyday auto essentials" },
   "Toys & Sports": { icon: "⚽", tone: "lavender", detail: "Play, move, explore" },
   "Pharmacy": { icon: "💊", tone: "green", detail: "Health and wellness" },
+  "Insurance": { icon: "🛡️", tone: "lavender", detail: "Insurance guidance for life, health and motor cover" },
 };
 const art = categoryOrder.map(name => categoryArt[name]);
 const money = value => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(Number(value || 0));
@@ -336,6 +337,29 @@ export default function Storefront() {
     } catch (reason) { setError(reason.message || "Could not create your support ticket."); }
     finally { setTicketBusy(false); }
   };
+  const submitInsuranceRequest = async event => {
+    event.preventDefault();
+    setTicketBusy(true); setError(""); setTicketCreated(null); setTicketTracked(null);
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const service = String(data.get("insuranceType") || "Life Insurance");
+    const payload = {
+      name: String(data.get("name") || "").trim(),
+      phone: String(data.get("phone") || "").trim(),
+      email: String(data.get("email") || "").trim(),
+      subject: "Insurance consultation request — " + service,
+      description: "Customer requested a consultation for " + service + ". Consultation fee: ₹100. Preferred contact time: " + String(data.get("contactTime") || "Any time") + ". Customer message: " + String(data.get("message") || "").trim(),
+    };
+    try {
+      const result = await apiRequest("/customers/support-portal/tickets", { method: "POST", skipAuth: true, body: JSON.stringify(payload) });
+      setTicketCreated(result.ticket);
+      setTicketLookup(old => ({ ...old, caseNumber: result.ticket.case_number, email: payload.email, phone: payload.phone }));
+      form.reset();
+      setNotice("Your insurance consultation request has been submitted. Our team will contact you.");
+    } catch (reason) {
+      setError(reason.message || "Could not submit your consultation request. Please try again.");
+    } finally { setTicketBusy(false); }
+  };
   const submitPartnerEnquiry = async event => {
     event.preventDefault();
     setPartnerBusy(true); setPartnerResult(null); setError("");
@@ -414,6 +438,17 @@ export default function Storefront() {
     if (!parent) return [];
     return categories.filter(c => [c.parent_id, c.parent_category_id, c.parentId].some(id => id != null && String(id) === String(parent.id)));
   }, [categories, displayCategories, routeCategoryName]);
+  const subcategoryProductRows = useMemo(() => categorySubcategories.map(category => {
+    const items = variants.filter(variant => {
+      const product = productById.get(Number(variant.product_id));
+      if (!product) return false;
+      const productCategoryId = product.category_id ?? product.categoryId;
+      const productCategoryName = product.category_name || product.category || "";
+      return (productCategoryId != null && String(productCategoryId) === String(category.id))
+        || String(productCategoryName).trim().toLowerCase() === String(category.name || "").trim().toLowerCase();
+    }).slice(0, 24);
+    return { category, items };
+  }).filter(row => row.items.length > 0), [categorySubcategories, variants, productById]);
   const dealVariants = useMemo(() => {
     const term = search.trim().toLowerCase();
     const discounted = variants.filter(v => {
@@ -651,11 +686,41 @@ export default function Storefront() {
         <div className="storefront-category-hero-copy"><span className="storefront-kicker">EXPLORE THE COLLECTION</span><h1>{routeCategoryName}</h1><p>{categoryArt[routeCategoryName]?.detail || categories.find(c => c.name === routeCategoryName)?.description || "Discover everyday favourites selected for you."}</p><div className="storefront-category-hero-actions"><button className="storefront-primary" type="button" onClick={openCategoryListing}>View all {routeCategoryName} <span>→</span></button><span>{visibleVariants.length} products and variants</span></div></div>
         <div className="storefront-category-hero-art" aria-hidden="true"><span>{categoryArt[routeCategoryName]?.icon || "🛍️"}</span><i>✦</i><b>SUPER<br/>PICKS</b></div>
       </div>
-      {categorySubcategories.length > 0 && <section className="storefront-subcategory-section"><div className="storefront-section-heading"><div><span className="storefront-kicker">SHOP YOUR WAY</span><h2>Explore subcategories</h2></div></div><div className="storefront-subcategory-grid">{categorySubcategories.map((category, index) => { const tile = categoryArt[category.name] || art[index % art.length]; return <button key={category.id} type="button" className="storefront-subcategory-card" onClick={() => openCategory(category)}><span className={"storefront-subcategory-icon tone-" + tile.tone}>{tile.icon}</span><strong>{category.name}</strong><span>Explore collection →</span></button>; })}</div></section>}
-      <div className="storefront-category-featured-heading"><div><span className="storefront-kicker">HANDPICKED FOR YOU</span><h2>Featured {routeCategoryName}</h2><p>Popular picks from this department.</p></div><button type="button" onClick={openCategoryListing}>View all <span>→</span></button></div>
+      {routeCategoryName === "Insurance" && <section className="storefront-insurance-section">
+        <div className="storefront-section-heading"><div><span className="storefront-kicker">PERSONALISED GUIDANCE</span><h2>Choose an insurance consultation</h2><p>Each consultation costs ₹100. Compare your options with our team.</p></div></div>
+        <div className="storefront-insurance-options">
+          {[
+            {name:"Life Insurance",icon:"👨‍👩‍👧",description:"Discuss family protection, life cover and policy choices."},
+            {name:"Health Insurance",icon:"🏥",description:"Discuss medical cover, hospitalisation benefits and policy choices."},
+            {name:"Motor Insurance",icon:"🚗",description:"Discuss vehicle cover, third-party and comprehensive options."},
+          ].map(service => <article className="storefront-insurance-card" key={service.name}>
+            <span className="storefront-insurance-icon" aria-hidden="true">{service.icon}</span><h3>{service.name}</h3><p>{service.description}</p><strong>₹100 <small>/ consultation</small></strong>
+            <button type="button" className="storefront-primary" onClick={() => { const select = document.getElementById("insuranceType"); if (select) select.value = service.name; document.getElementById("insurance-request")?.scrollIntoView({behavior:"smooth",block:"start"}); }}>Request consultation</button>
+            <button type="button" className="storefront-insurance-pay" disabled title="Online payment is not enabled in the current checkout">Pay ₹100 online · Coming soon</button>
+          </article>)}
+        </div>
+        <form id="insurance-request" className="storefront-insurance-form" onSubmit={submitInsuranceRequest}>
+          <div><span className="storefront-kicker">WE’LL GET IN TOUCH</span><h2>Request a consultation</h2><p>Submit your details and our team will contact you. This request does not collect payment.</p></div>
+          <label>Consultation type<select id="insuranceType" name="insuranceType" required defaultValue="Life Insurance"><option>Life Insurance</option><option>Health Insurance</option><option>Motor Insurance</option></select></label>
+          <div className="storefront-insurance-form-grid"><label>Full name<input name="name" required autoComplete="name" /></label><label>Mobile number<input name="phone" required inputMode="tel" autoComplete="tel" /></label><label>Email address<input name="email" type="email" required autoComplete="email" /></label><label>Preferred contact time<select name="contactTime" defaultValue="Any time"><option>Any time</option><option>Morning</option><option>Afternoon</option><option>Evening</option></select></label></div>
+          <label>What would you like help with? <textarea name="message" rows="3" placeholder="Optional details about your insurance needs" /></label>
+          <button className="storefront-primary" type="submit" disabled={ticketBusy}>{ticketBusy ? "Submitting request…" : "Submit consultation request"}</button>
+          {ticketCreated && <p className="storefront-insurance-success" role="status">Request received. Reference: {ticketCreated.case_number}</p>}
+          {notice && <p className="storefront-insurance-success" role="status">{notice}</p>}
+          {error && <p className="storefront-alert" role="alert">{error}</p>}
+        </form>
+      </section>}
+      {routeCategoryName !== "Insurance" && categorySubcategories.length > 0 && <section className="storefront-subcategory-section"><div className="storefront-section-heading"><div><span className="storefront-kicker">SHOP YOUR WAY</span><h2>Explore subcategories</h2></div></div><div className="storefront-subcategory-grid">{categorySubcategories.map((category, index) => { const tile = categoryArt[category.name] || art[index % art.length]; return <button key={category.id} type="button" className="storefront-subcategory-card" onClick={() => openCategory(category)}><span className={"storefront-subcategory-icon tone-" + tile.tone}>{tile.icon}</span><strong>{category.name}</strong><span>Explore collection →</span></button>; })}</div></section>}
+      {routeCategoryName !== "Insurance" && subcategoryProductRows.map(({ category, items }) => <section className="storefront-subcategory-products" key={category.id}>
+        <div className="storefront-category-featured-heading"><div><span className="storefront-kicker">SHOP BY SUBCATEGORY</span><h2>{category.name}</h2><p>Explore products in {category.name}.</p></div><button type="button" onClick={() => openCategory(category)}>View all <span>→</span></button></div>
+        <div className="storefront-subcategory-products-viewport">
+          <div className="storefront-carousel-track storefront-subcategory-product-track" tabIndex={0} aria-label={category.name + " products"}>{items.map(renderProductCard)}</div>
+        </div>
+      </section>)}
+      {routeCategoryName !== "Insurance" && <><div className="storefront-category-featured-heading"><div><span className="storefront-kicker">HANDPICKED FOR YOU</span><h2>Featured {routeCategoryName}</h2><p>Popular picks from this department.</p></div><button type="button" onClick={openCategoryListing}>View all <span>→</span></button></div>
       {loading ? <p className="storefront-empty">Loading live products…</p> : visibleVariants.length ? <div className="storefront-category-featured-track">{visibleVariants.slice(0, 8).map(renderProductCard)}</div> : <p className="storefront-empty">No active products are available in this category yet.</p>}
       {bestSellers.length > 0 && <div className="storefront-category-featured-heading"><div><span className="storefront-kicker">CUSTOMER FAVOURITES</span><h2>Popular in {routeCategoryName}</h2></div><button type="button" onClick={openCategoryListing}>View all <span>→</span></button></div>}
-      {bestSellers.length > 0 && <div className="storefront-category-featured-track">{bestSellers.slice(0, 8).map(renderProductCard)}</div>}
+      {bestSellers.length > 0 && <div className="storefront-category-featured-track">{bestSellers.slice(0, 8).map(renderProductCard)}</div>}</>}
     </section>}
     {(isCategoryListingPage || isDealsPage || isWishlistPage) && !isAccountPage && !isCheckoutPage && !isInfoPage && <section className={"storefront-products " + (isCategoryPage ? "storefront-category-page" : "") + (isWishlistPage ? " storefront-wishlist-page" : "")} id="products">
       <div className="storefront-category-breadcrumb"><a href="/" onClick={event => {event.preventDefault(); openShopHome();}}>Home</a><span>/</span><span>{isWishlistPage ? "My Wishlist" : isDealsPage ? "Deals" : routeCategoryName || "Shop products"}</span></div><div className="storefront-section-heading"><div><span className="storefront-kicker">{isWishlistPage ? "YOUR SAVED FAVOURITES" : isDealsPage ? "SPECIAL OFFERS" : "SHOP BY DEPARTMENT"}</span><h1>{isWishlistPage ? "My Wishlist" : isDealsPage ? "Deals & Offers" : routeCategoryName}</h1>{isWishlistPage && <p className="storefront-category-description">Your saved products, ready to revisit or add to your basket.</p>}{isDealsPage && <p className="storefront-category-description">Discover current discounted items and customer favourites.</p>}</div><span className="storefront-heading-note">{(isWishlistPage ? displayedVariants : isDealsPage ? dealVariants : visibleVariants).length} {isWishlistPage ? "saved products" : "products and variants"}</span></div>

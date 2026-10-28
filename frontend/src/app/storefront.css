@@ -1153,3 +1153,44 @@
  .storefront-category-featured-heading { align-items:center; }
 }
 @media(max-width:380px) { .storefront-category-featured-track { grid-template-columns:minmax(0,1fr); } }
+
+/* Two-row, horizontally sliding product rails for each parent-category subcategory. */
+.storefront-subcategory-products { margin:26px 0 30px; min-width:0; }
+.storefront-subcategory-products .storefront-category-featured-heading { margin-bottom:13px; }
+.storefront-subcategory-products-viewport { min-width:0; overflow:hidden; }
+.storefront-subcategory-product-track {
+  display:grid;
+  grid-auto-flow:column;
+  grid-template-rows:repeat(2,minmax(0,1fr));
+  grid-auto-columns:calc((100% - 45px)/4);
+  gap:14px 15px;
+  overflow-x:auto;
+  overflow-y:hidden;
+  scroll-snap-type:x mandatory;
+  scrollbar-width:none;
+  padding:2px 2px 8px;
+}
+.storefront-subcategory-product-track::-webkit-scrollbar { display:none; }
+.storefront-subcategory-product-track .storefront-product-card { min-width:0; scroll-snap-align:start; }
+@media(max-width:760px) {
+  .storefront-subcategory-product-track { grid-auto-columns:calc((100% - 20px)/2); gap:10px; }
+}
+
+.storefront-insurance-section{margin:30px 0}
+.storefront-insurance-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:18px 0 28px}
+.storefront-insurance-card{display:flex;flex-direction:column;align-items:flex-start;gap:11px;padding:22px;border:1px solid #e9def7;border-radius:20px;background:linear-gradient(150deg,#fff 35%,#f8f3ff);box-shadow:0 8px 24px rgba(53,17,111,.06)}
+.storefront-insurance-icon{display:grid;place-items:center;width:54px;height:54px;border-radius:16px;background:#efe6ff;font-size:29px}
+.storefront-insurance-card h3{margin:2px 0 0;color:#35116f;font-size:20px}
+.storefront-insurance-card p{flex:1;margin:0;color:#736b80;font-size:14px;line-height:1.55}
+.storefront-insurance-card>strong{color:#5928c8;font-size:24px}
+.storefront-insurance-card>strong small{color:#736b80;font-size:12px;font-weight:500}
+.storefront-insurance-card .storefront-primary{width:100%;justify-content:center}
+.storefront-insurance-pay{width:100%;border:1px solid #e5d9f4;border-radius:999px;background:#f7f3fb;color:#736b80;padding:11px 14px;font:inherit;font-size:12px;font-weight:700;cursor:not-allowed;opacity:.9}
+.storefront-insurance-form{display:grid;gap:16px;max-width:820px;margin:0 auto;padding:clamp(20px,4vw,32px);border:1px solid #e9def7;border-radius:22px;background:#fff;box-shadow:0 10px 28px rgba(53,17,111,.06);scroll-margin-top:24px}
+.storefront-insurance-form h2{margin:6px 0;color:#35116f;font-size:26px}
+.storefront-insurance-form p{margin:0;color:#736b80;line-height:1.5}
+.storefront-insurance-form label{display:grid;gap:7px;color:#35116f;font-size:13px;font-weight:700}
+.storefront-insurance-form input,.storefront-insurance-form select,.storefront-insurance-form textarea{width:100%;min-width:0;padding:12px 13px;border:1px solid #e2d9ec;border-radius:12px;background:#fff;color:#24183b;font:inherit;font-size:14px}
+.storefront-insurance-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.storefront-insurance-success{padding:12px 14px;border-radius:12px;background:#effaf2;color:#176534!important}
+@media(max-width:760px){.storefront-insurance-options{grid-template-columns:minmax(0,1fr);gap:12px}.storefront-insurance-card{padding:18px}.storefront-insurance-form-grid{grid-template-columns:minmax(0,1fr)}}
