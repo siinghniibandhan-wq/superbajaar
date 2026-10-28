@@ -145,3 +145,42 @@ def logout(credentials: HTTPAuthorizationCredentials | None = Depends(bearer), u
         return {"status": "logged_out"}
     except psycopg.Error as exc:
         raise HTTPException(503, "Unable to revoke session") from exc
+
+
+class PasswordChange(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=12, max_length=128)
+
+
+@router.post("/change-password")
+def change_password(
+    payload: PasswordChange,
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+    user=Depends(current_user),
+):
+    if credentials is None:
+        raise HTTPException(401, "Sign in to continue")
+    if payload.current_password == payload.new_password:
+        raise HTTPException(422, "New password must differ from the current password")
+    claims = _decode(credentials.credentials)
+    try:
+        with _connect() as conn:
+            row = conn.execute(
+                "SELECT password_hash FROM app_users WHERE id=%s AND is_active=TRUE",
+                (user["id"],),
+            ).fetchone()
+            if not row or not _password_matches(payload.current_password, row["password_hash"]):
+                raise HTTPException(400, "Current password is incorrect")
+            conn.execute(
+                "UPDATE app_users SET password_hash=%s, updated_at=now() WHERE id=%s",
+                (_password_hash(payload.new_password), user["id"]),
+            )
+            conn.execute(
+                "UPDATE app_user_sessions SET revoked_at=now() WHERE user_id=%s AND token_id<>%s AND revoked_at IS NULL",
+                (user["id"], claims["jti"]),
+            )
+        return {"status": "password_changed", "other_sessions_revoked": True}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Unable to update password") from exc
