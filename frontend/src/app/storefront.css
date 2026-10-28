@@ -1037,8 +1037,10 @@
 .storefront-footer-contact strong,.storefront-footer-links strong { margin-bottom:3px; color:#32105f; font-size:12px; }
 .storefront-footer-contact a,.storefront-footer-links a,.storefront-footer-bottom a,.storefront-social-links a { color:#6b45a6; font-size:12px; text-decoration:none; }
 .storefront-footer-contact a:hover,.storefront-footer-links a:hover,.storefront-footer-bottom a:hover { text-decoration:underline; }
-.storefront-footer-links { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:26px; padding:24px 0; border-bottom:1px solid #eee5f5; }
-.storefront-footer-links > div { display:grid; align-content:start; gap:11px; }
+.storefront-footer-links { display:grid; grid-template-columns:1.45fr 1fr 1fr 1fr; gap:26px; padding:24px 0; border-bottom:1px solid #eee5f5; }
+.storefront-footer-links > div { display:grid; align-content:start; gap:11px; min-width:0; }
+.storefront-footer-links > .storefront-footer-column:first-child { grid-template-columns:repeat(2,minmax(0,1fr)); column-gap:14px; }
+.storefront-footer-links > .storefront-footer-column:first-child > strong { grid-column:1 / -1; }
 .storefront-footer-bottom { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; padding-top:18px; color:#81768f; font-size:11px; }
 .storefront-social-links { display:flex; gap:14px; }
 .storefront-info-page { max-width:1050px; min-height:48vh; margin:24px auto 46px; padding:clamp(22px,4vw,44px); border:1px solid rgba(255,255,255,.94); border-radius:27px; background:linear-gradient(145deg,#fffdfd,#fbf5ff); box-shadow:10px 12px 34px rgba(55,25,90,.08),-5px -5px 15px #fff; color:#38224f; }
@@ -1064,6 +1066,7 @@
  .storefront-benefit-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
  .storefront-footer-top { grid-template-columns:1fr; gap:17px; }
  .storefront-footer-links { grid-template-columns:repeat(2,minmax(0,1fr)); gap:22px 16px; }
+ .storefront-footer-links > .storefront-footer-column:first-child { grid-column:1 / -1; }
  .storefront-footer-bottom { align-items:flex-start; flex-direction:column; }
  .storefront-info-page { margin:14px 12px 30px; padding:20px 16px; border-radius:21px; }
  .storefront-contact-grid,.storefront-policy-cards { grid-template-columns:minmax(0,1fr); }
