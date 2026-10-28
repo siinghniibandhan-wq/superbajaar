@@ -2,7 +2,8 @@ import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
-from app.api.v1.users import UserCreate, UserUpdate, _require_owner
+from app.api.v1.auth import PasswordChange
+from app.api.v1.users import UserCreate, UserPasswordReset, UserUpdate, _require_owner
 
 
 def test_user_creation_normalizes_email_and_name():
@@ -33,3 +34,12 @@ def test_only_owner_can_manage_accounts():
     with pytest.raises(HTTPException) as exc:
         _require_owner({"role": "admin"})
     assert exc.value.status_code == 403
+
+
+def test_password_change_requires_minimum_length():
+    with pytest.raises(ValidationError):
+        PasswordChange(current_password="old", new_password="short")
+    with pytest.raises(ValidationError):
+        UserPasswordReset(password="short")
+    payload = PasswordChange(current_password="old-password", new_password="a-strong-new-password")
+    assert payload.new_password == "a-strong-new-password"
