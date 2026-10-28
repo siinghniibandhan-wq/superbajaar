@@ -33,7 +33,7 @@ export default function Storefront() {
   const [routePath, setRoutePath] = useState(() => window.location.pathname.replace(/\/+$/, "") || "/");
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState([]);
-  const [wishlist, setWishlist] = useState(() => { try { return JSON.parse(window.localStorage.getItem("sb-wishlist") || "[]").filter(Number.isFinite); } catch { return []; } });
+  const [wishlist, setWishlist] = useState(() => { try { return JSON.parse(window.localStorage.getItem("sb-wishlist") || "[]").map(Number).filter(Number.isFinite); } catch { return []; } });
   const [recentlyViewed, setRecentlyViewed] = useState([]);
   const [customer, setCustomer] = useState({ name: "", phone: "", pin: "" });
   const [loading, setLoading] = useState(true);
@@ -41,6 +41,7 @@ export default function Storefront() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [order, setOrder] = useState(null);
+  const [selectedProduct, setSelectedProduct] = useState(null);
 
   useEffect(() => {
     try { setRecentlyViewed(JSON.parse(sessionStorage.getItem("sb-recently-viewed") || "[]")); } catch { setRecentlyViewed([]); }
@@ -55,6 +56,13 @@ export default function Storefront() {
     window.addEventListener("popstate", syncPath);
     return () => window.removeEventListener("popstate", syncPath);
   }, []);
+
+  useEffect(() => {
+    if (!selectedProduct) return undefined;
+    const closeOnEscape = event => { if (event.key === "Escape") setSelectedProduct(null); };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [selectedProduct]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -163,7 +171,7 @@ export default function Storefront() {
       return !term || [v.product_name, product.name, v.sku, product.brand].some(x => String(x || "").toLowerCase().includes(term));
     });
   }, [variants, productById, categoryId, routeCategoryName, search, displayCategories]);
-  const displayedVariants = isWishlistPage ? visibleVariants.filter(v => wishlist.includes(v.id)) : visibleVariants;
+  const displayedVariants = isWishlistPage ? visibleVariants.filter(v => wishlist.some(id => Number(id) === Number(v.id))) : visibleVariants;
   const rememberViewed = variant => {
     const entry = { variantId: variant.id, productId: variant.product_id, viewedAt: Date.now() };
     setRecentlyViewed(old => {
@@ -225,11 +233,11 @@ export default function Storefront() {
     const product = productById.get(Number(variant.product_id));
     const categoryName = product?.category_name || product?.category || orderedCategories.find(c => String(c.id) === String(product?.category_id))?.name;
     const tile = categoryArt[categoryName] || art[0];
-    const saved = wishlist.includes(variant.id);
+    const saved = wishlist.some(id => Number(id) === Number(variant.id));
     return <article className="storefront-product-card" key={variant.id}>
-      <div className="storefront-product-art"><span>{tile.icon}</span><button type="button" className={"storefront-wishlist " + (saved ? "is-saved" : "")} aria-label={(saved ? "Remove from" : "Add to") + " wishlist: " + (product?.name || variant.sku)} aria-pressed={saved} onClick={() => setWishlist(old => old.includes(variant.id) ? old.filter(id => id !== variant.id) : [...old, variant.id])}><Heart size={19} strokeWidth={1.9} fill={saved ? "currentColor" : "none"} /></button></div>
+      <div className="storefront-product-art"><span>{tile.icon}</span><button type="button" className={"storefront-wishlist " + (saved ? "is-saved" : "")} aria-label={(saved ? "Remove from" : "Add to") + " wishlist: " + (product?.name || variant.sku)} aria-pressed={saved} onClick={() => setWishlist(old => old.some(id => Number(id) === Number(variant.id)) ? old.filter(id => Number(id) !== Number(variant.id)) : [...old, Number(variant.id)])}><Heart size={19} strokeWidth={1.9} fill={saved ? "currentColor" : "none"} /></button></div>
       <small>{product?.brand || product?.name || "Super Bajaar"}</small>
-      <h3><button type="button" className="storefront-product-title" onClick={() => rememberViewed(variant)}>{product?.name || variant.product_name || variant.sku}</button></h3>
+      <h3><button type="button" className="storefront-product-title" onClick={() => { rememberViewed(variant); setSelectedProduct(variant); }}>{product?.name || variant.product_name || variant.sku}</button></h3>
       <p className="storefront-sku">{variant.sku}</p><strong>{money(variant.selling_price)}</strong>
       <button type="button" className="storefront-add" onClick={() => addToCart(variant)}><ShoppingBag size={17} strokeWidth={2} /> Add to basket</button>
     </article>;
@@ -261,9 +269,9 @@ export default function Storefront() {
     <header className="storefront-header">
       <a className="storefront-brand" href="/" onClick={event => { event.preventDefault(); openShopHome(); }} aria-label="Super Bajaar home"><span className="storefront-logo">S</span><span><strong>Super Bajaar <span className="storefront-crown" aria-hidden="true">♛</span></strong><small>Your Everyday Super Store</small></span></a>
       <label className="storefront-header-search"><span className="sr-only">Search products</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search groceries, fashion, electronics…" /><Search aria-hidden="true" size={19} /></label>
-      <div className="storefront-actions"><span className="storefront-delivery"><small>Deliver to</small><strong>India ▾</strong></span><a className="storefront-icon-action" href="/wishlist" aria-label={`Open wishlist, ${wishlist.length} saved`} onClick={event => { event.preventDefault(); openWishlist(); }}><Heart size={22} strokeWidth={1.8} /><small>{wishlist.length}</small></a><a className="storefront-icon-action" href="#basket" aria-label="Shopping basket"><ShoppingBag size={22} strokeWidth={1.8} /><small>{cart.reduce((n, line) => n + line.quantity, 0)}</small></a><a className="storefront-admin-link" href="/admin">Admin</a></div>
+      <div className="storefront-actions"><span className="storefront-delivery"><small>Deliver to</small><strong>India ▾</strong></span><a className="storefront-icon-action" href="/wishlist" aria-label={`Open wishlist, ${wishlist.length} saved`} onClick={event => { event.preventDefault(); openWishlist(); }}><Heart size={22} strokeWidth={1.8} /><small>{wishlist.length}</small></a><a className="storefront-icon-action" href="#basket" aria-label="Shopping basket" onClick={event => { if (isWishlistPage) { event.preventDefault(); openShopHome(); setTimeout(() => document.getElementById("basket")?.scrollIntoView({ behavior: "smooth" }), 0); } }}><ShoppingBag size={22} strokeWidth={1.8} /><small>{cart.reduce((n, line) => n + line.quantity, 0)}</small></a><a className="storefront-admin-link" href="/admin">Admin</a></div>
     </header>
-    <nav className="storefront-department-nav" aria-label="Shop departments"><a href="/#categories" onClick={event => { event.preventDefault(); openShopHome(); }}>☰ All Categories</a><a href="/#deals" onClick={event => { event.preventDefault(); openShopHome(); setTimeout(() => document.getElementById("deals")?.scrollIntoView({behavior:"smooth"}), 0); }}>Deals <Flame size={14} /></a><button type="button" onClick={openShopHome}>Shop All</button>{displayCategories.map(category => <a key={category.id} href={"/category/" + categorySlug(category.name)} aria-current={routeSlug === categorySlug(category.name) ? "page" : undefined}>{category.name}</a>)}</nav>
+    <nav className="storefront-department-nav" aria-label="Shop departments"><a href="/#categories" onClick={event => { event.preventDefault(); openShopHome(); setTimeout(() => document.getElementById("categories")?.scrollIntoView({ behavior: "smooth" }), 0); }}>☰ All Categories</a><a href="/#deals" onClick={event => { event.preventDefault(); openShopHome(); setTimeout(() => document.getElementById("deals")?.scrollIntoView({behavior:"smooth"}), 0); }}>Deals <Flame size={14} /></a><button type="button" onClick={() => { openShopHome(); setTimeout(() => document.getElementById("products")?.scrollIntoView({ behavior: "smooth" }), 0); }}>Shop All</button>{displayCategories.map(category => <a key={category.id} href={"/category/" + categorySlug(category.name)} aria-current={routeSlug === categorySlug(category.name) ? "page" : undefined}>{category.name}</a>)}</nav>
     {!isCategoryPage && !isWishlistPage && <section className="storefront-hero">
       <div className="storefront-hero-copy"><span className="storefront-kicker"><i /> YOUR EVERYDAY SUPER STORE</span><h1>Welcome to<br /><em>Super Bajaar</em></h1><p>Everything you need, all in one place. Explore everyday essentials and discover something new for your home and family.</p><a className="storefront-primary" href="#products">Shop Now <span>→</span></a><div className="storefront-trust"><span>✦ Thoughtfully picked</span><span>✦ Made for everyday</span></div></div>
       <div className="storefront-hero-art" aria-label="Colourful shopping bags and everyday products" role="img"><div className="art-sun" /><div className="art-orbit orbit-one" /><div className="art-orbit orbit-two" /><div className="art-spark spark-one">✦</div><div className="art-spark spark-two">✳</div><div className="art-bag bag-purple"><span>S</span></div><div className="art-bag bag-orange"><span>♥</span></div><div className="art-box"><span>GOOD</span><strong>THINGS</strong></div><div className="art-leaf leaf-one">✦</div><div className="art-leaf leaf-two">✿</div><div className="art-caption">A little joy in every basket</div></div>
@@ -299,6 +307,7 @@ export default function Storefront() {
       </div>
     </section>}
     {!isCategoryPage && !isWishlistPage && <section className="storefront-benefits" id="why-us"><div><span className="benefit-icon">✦</span><strong>Everyday essentials</strong><small>All your regular picks in one place.</small></div><div><span className="benefit-icon">♡</span><strong>Made for your routine</strong><small>A simpler way to shop for home and family.</small></div><div><span className="benefit-icon">✳</span><strong>Discover something new</strong><small>Explore categories for every kind of day.</small></div></section>}
+    {selectedProduct && (() => { const product = productById.get(Number(selectedProduct.product_id)); const saved = wishlist.some(id => Number(id) === Number(selectedProduct.id)); const categoryName = product?.category_name || product?.category || orderedCategories.find(c => String(c.id) === String(product?.category_id))?.name; const tile = categoryArt[categoryName] || art[0]; return <div className="storefront-product-modal-backdrop" role="presentation" onClick={event => { if (event.target === event.currentTarget) setSelectedProduct(null); }}><section className="storefront-product-modal" role="dialog" aria-modal="true" aria-labelledby="storefront-product-modal-title"><button type="button" className="storefront-modal-close" aria-label="Close product details" onClick={() => setSelectedProduct(null)}>×</button><div className="storefront-modal-art" aria-hidden="true">{tile.icon}</div><span className="storefront-kicker">PRODUCT DETAILS</span><h2 id="storefront-product-modal-title">{product?.name || selectedProduct.product_name || selectedProduct.sku}</h2><p className="storefront-modal-brand">{product?.brand || "Super Bajaar"}{categoryName ? " · " + categoryName : ""}</p><p className="storefront-modal-sku">SKU: {selectedProduct.sku || "Not available"}</p>{product?.description && <p className="storefront-modal-description">{product.description}</p>}<strong className="storefront-modal-price">{money(selectedProduct.selling_price)}</strong><div className="storefront-modal-actions"><button type="button" className="storefront-primary" onClick={() => { addToCart(selectedProduct); setSelectedProduct(null); }}>Add to basket</button><button type="button" className="storefront-modal-wishlist" onClick={() => setWishlist(old => old.some(id => Number(id) === Number(selectedProduct.id)) ? old.filter(id => Number(id) !== Number(selectedProduct.id)) : [...old, Number(selectedProduct.id)])}><Heart size={17} fill={saved ? "currentColor" : "none"} />{saved ? "Remove from wishlist" : "Save to wishlist"}</button></div></section></div>; })()}
     <footer className="storefront-footer"><a className="storefront-brand" href="/"><span className="storefront-logo">S</span><span><strong>Super Bajaar</strong><small>Your Everyday Super Store</small></span></a><span>Everyday made a little brighter.</span><a href="/admin">Business admin ↗</a></footer>
   </main>;
 }
