@@ -532,7 +532,7 @@ export default function Storefront() {
       <div className="storefront-account-welcome"><span className="storefront-kicker">YOUR SUPER BAJAAR</span><h1>{customer.name.trim() ? `Hello, ${customer.name.trim().split(/\s+/)[0]}` : "My Account"}</h1><p>Manage your profile, purchases and support in one place.</p></div>
       <div className="storefront-account-layout">
         <nav className="storefront-account-nav" aria-label="Customer account sections">
-          {[["overview","Overview","user-round"],["loyalty","Loyalty Card & Coins","coins"],["orders","My Orders","package"],["tickets","My Tickets","ticket"],["wishlist","My Wishlist","heart"],["addresses","Addresses","map-pin"],["security","Security","shield-check"]].map(([key,label])=><button key={key} type="button" className={accountSection===key?"is-active":""} onClick={()=>{if(key==="wishlist"){openWishlist();return;}setAccountSection(key);setNotice("");setError("");}}>{label}<span aria-hidden="true">›</span></button>)}
+          {[["overview","Overview","user-round"],["loyalty","Loyalty Card & Coins","coins"],["referrals","Refer & Earn","users"],["orders","My Orders","package"],["tickets","My Tickets","ticket"],["wishlist","My Wishlist","heart"],["addresses","Addresses","map-pin"],["security","Security","shield-check"]].map(([key,label])=><button key={key} type="button" className={accountSection===key?"is-active":""} onClick={()=>{if(key==="wishlist"){openWishlist();return;}setAccountSection(key);setNotice("");setError("");if(key==="referrals") loadReferrals();}}>{label}<span aria-hidden="true">›</span></button>)}
         </nav>
         <div className="storefront-account-panel">
           {accountSection==="overview" && <div className="storefront-account-section">
@@ -563,7 +563,21 @@ export default function Storefront() {
             <div className="storefront-loyalty-note"><strong>How it works</strong><p>Coins are credited only after an order is marked delivered. Product-specific earning rules override category rules, which override the default. Coins expire after 365 days.</p><p>Customer redemption at checkout is not enabled yet; the rupee value of one Super Coin has not been defined in the current programme rules.</p></div>
             {error && <p className="storefront-account-note" role="alert">{error}</p>}
           </div>}
-          {accountSection==="orders" && <div className="storefront-account-section"><h2>My Orders</h2><p>View purchases, order details and delivery updates.</p><div className="storefront-account-empty-state"><span>📦</span><h3>Order history needs customer sign-in</h3><p>Orders are recorded by the store, but this portal does not yet have a secure customer identity to retrieve only your orders. We will not show unverified order records here.</p></div></div>}
+          {accountSection==="referrals" && <div className="storefront-account-section">
+      <span className="storefront-kicker">SHARE THE SUPER BAJAAR LOVE</span><h2>Refer &amp; Earn</h2>
+      <p>Share your unique referral code with friends. Their sign-up will be linked to your account so referrals can be tracked.</p>
+      {referralBusy && <p className="storefront-account-note">Loading referral details…</p>}
+      {referralData && <>
+        <div className="storefront-loyalty-card"><div className="storefront-loyalty-card-top"><span className="storefront-loyalty-mark">S</span><span>SUPER BAJAAR<br/><strong>REFERRAL CODE</strong></span><UserRound size={28}/></div><div className="storefront-loyalty-card-bottom"><span>Your unique code</span><strong>{referralData.referral_code}</strong></div></div>
+        <label className="storefront-account-form">Referral link<input readOnly value={window.location.origin + (referralData.referral_link_path || ("/customer/register?ref=" + referralData.referral_code))}/></label>
+        <button type="button" className="storefront-primary" onClick={async()=>{const link=window.location.origin+(referralData.referral_link_path||("/customer/register?ref="+referralData.referral_code));try{await navigator.clipboard.writeText(link);setNotice("Referral link copied.");}catch{setNotice("Your referral code is "+referralData.referral_code+". Copy it to share.");}}}>Copy referral link</button>
+        <div className="storefront-account-summary"><div><small>Tracked referrals</small><strong>{(referralData.items||[]).length}</strong></div><div><small>Reward status</small><strong>Awaiting programme settings</strong></div></div>
+        <p className="storefront-account-note">{referralData.reward_status || "Referral rewards will be configured after reward rules are confirmed."}</p>
+        {(referralData.items||[]).length ? <div className="storefront-account-summary"><h3>Your referrals</h3>{referralData.items.map(item=><div key={item.id}><small>{new Date(item.created_at).toLocaleDateString()} · {String(item.status||"tracked").replaceAll("_"," ")}</small><strong>{item.referred_customer}</strong><span>{Number(item.reward_coins||0)} Super Coins recorded as reward</span></div>)}</div> : <p className="storefront-account-empty">No referrals yet. Share your code to start building your referral list.</p>}
+      </>}
+      {error && <p className="storefront-account-note" role="alert">{error}</p>}
+    </div>}
+    {accountSection==="orders" && <div className="storefront-account-section"><h2>My Orders</h2><p>View purchases, order details and delivery updates.</p><div className="storefront-account-empty-state"><span>📦</span><h3>Order history needs customer sign-in</h3><p>Orders are recorded by the store, but this portal does not yet have a secure customer identity to retrieve only your orders. We will not show unverified order records here.</p></div></div>}
           {accountSection==="tickets" && <div className="storefront-account-section">
             <h2>My Tickets</h2><p>Create a support request or track an existing ticket using the contact details registered with it.</p>
             <form className="storefront-account-form" onSubmit={submitSupportTicket}>
