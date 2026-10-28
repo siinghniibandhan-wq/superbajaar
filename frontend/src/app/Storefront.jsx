@@ -337,6 +337,7 @@ export default function Storefront() {
           channel: "website",
           customer_name: customer.name.trim(),
           customer_phone: customer.phone.trim() || null,
+          customer_email: customer.email.trim() || null,
           delivery_pin: customer.pin.trim() || null,
           notes: ["Website checkout", customer.email.trim() ? "Email: " + customer.email.trim() : "", customer.address.trim() ? "Delivery address: " + customer.address.trim() : ""].filter(Boolean).join(" | "),
           lines: cart.map(line => ({ variant_id: line.id, quantity: line.quantity })),
