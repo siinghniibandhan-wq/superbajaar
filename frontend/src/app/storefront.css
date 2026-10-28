@@ -761,12 +761,14 @@
 .storefront-delivery strong { display:flex;align-items:center;gap:3px; }
 .storefront-account-menu {
   position:absolute; z-index:30; right:0; top:calc(100% + 10px); width:min(280px,85vw);
-  padding:18px; border:1px solid rgba(255,255,255,.85); border-radius:20px;
-  background:rgba(250,246,255,.82); box-shadow:0 18px 42px rgba(55,25,90,.2),inset 0 1px white;
-  backdrop-filter:blur(24px) saturate(150%); -webkit-backdrop-filter:blur(24px) saturate(150%);
+  padding:18px; border:1px solid #ffffff; border-radius:20px;
+  /* Fully opaque surface: page content must never show through the account menu. */
+  background:#fbf7ff; box-shadow:0 18px 42px rgba(55,25,90,.22),inset 0 1px #ffffff;
+  backdrop-filter:none; -webkit-backdrop-filter:none;
 }
-.storefront-account-menu p { font-size:12px;line-height:1.5;color:#766b86; }
-.storefront-account-menu button,.storefront-account-menu a { display:block;width:100%;margin-top:8px;padding:10px 12px;border:1px solid rgba(255,255,255,.9);border-radius:12px;text-align:left;color:#54249a;background:rgba(255,255,255,.62);font:inherit;font-size:12px;font-weight:750;text-decoration:none;cursor:pointer; }
+.storefront-account-menu p { font-size:12px;line-height:1.5;color:#655574; }
+.storefront-account-menu button,.storefront-account-menu a { display:block;width:100%;margin-top:8px;padding:10px 12px;border:1px solid #eee3fb;border-radius:12px;text-align:left;color:#54249a;background:#ffffff;font:inherit;font-size:12px;font-weight:750;text-decoration:none;cursor:pointer; }
+.storefront-account-menu button:hover,.storefront-account-menu a:hover { background:#f1e6ff; }
 .storefront-delivery-backdrop { position:fixed;z-index:1200;inset:0;display:grid;place-items:center;padding:18px;background:rgba(36,15,57,.36);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px); }
 .storefront-delivery-dialog { position:relative;width:min(100%,440px);padding:30px;border:1px solid rgba(255,255,255,.9);border-radius:26px;background:rgba(250,246,255,.86);box-shadow:0 24px 60px rgba(35,15,60,.25),inset 0 1px white;backdrop-filter:blur(24px) saturate(150%);-webkit-backdrop-filter:blur(24px) saturate(150%); }
 .storefront-delivery-dialog h2 { margin:12px 0;color:#32105f; }
