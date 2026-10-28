@@ -180,3 +180,60 @@
 @media(prefers-reduced-motion:reduce) {
  .storefront *,.storefront *::before,.storefront *::after { scroll-behavior:auto!important; transition-duration:.01ms!important; animation-duration:.01ms!important; animation-iteration-count:1!important; }
 }
+
+
+/* Approved premium shopping-destination layout */
+.storefront { background:#fffaf4; }
+.storefront-header { max-width:1440px; width:100%; padding:14px clamp(16px,3vw,44px); gap:clamp(12px,2vw,28px); }
+.storefront-crown { color:#f58220; font-size:.8em; }
+.storefront-header-search { display:flex; align-items:center; gap:8px; flex:1; max-width:510px; min-width:130px; border:1px solid #e6d9f1; border-radius:999px; background:#f8f3fc; padding:0 15px; color:#6b4b96; }
+.storefront-header-search input { width:100%; min-width:0; border:0; outline:0; background:transparent; padding:12px 0; font:inherit; font-size:13px; color:var(--sb-ink); }
+.storefront-header-search:focus-within { border-color:#8b62c9; box-shadow:0 0 0 3px #6428c71c; }
+.storefront-header-search>span:last-child { font-size:25px; }
+.storefront-delivery { display:grid; gap:2px; white-space:nowrap; }
+.storefront-delivery small { color:#84768f; font-size:10px; }
+.storefront-delivery strong { font-size:12px; }
+.storefront-icon-action { position:relative; display:inline-grid; place-items:center; min-width:32px; border:0; padding:3px; background:transparent; color:#4c2b78; font-size:24px; text-decoration:none; cursor:pointer; }
+.storefront-icon-action small { position:absolute; top:-4px; right:-7px; min-width:16px; height:16px; display:grid; place-items:center; padding:0 3px; border-radius:99px; background:#f58220; color:white; font-size:9px; font-weight:800; }
+.storefront-department-nav { display:flex; align-items:center; gap:clamp(13px,2vw,27px); min-height:43px; padding:0 clamp(16px,3vw,44px); overflow-x:auto; white-space:nowrap; background:#f2e9fb; border-top:1px solid #eee4f6; border-bottom:1px solid #e6d9f1; scrollbar-width:none; }
+.storefront-department-nav::-webkit-scrollbar { display:none; }
+.storefront-department-nav a,.storefront-department-nav button { flex:0 0 auto; padding:0; border:0; background:none; color:#4d3a61; font:inherit; font-size:12px; font-weight:650; text-decoration:none; cursor:pointer; }
+.storefront-department-nav a:first-child { color:#3a1b61; }
+.storefront-hero { max-width:1440px; padding:26px clamp(16px,3vw,44px) 42px; gap:28px; }
+.storefront-hero-copy { padding:22px 0; }
+.storefront-hero h1 { font-size:clamp(42px,5vw,64px); }
+.storefront-hero-art { min-height:350px; border-radius:24px; }
+.storefront-trust { gap:12px 18px; }
+.storefront-primary { border-radius:11px; }
+.storefront-categories { padding:10px clamp(16px,3vw,44px) 42px; }
+.storefront-category-grid { gap:12px; }
+.storefront-category { flex-basis:112px; padding:5px; border:1px solid #f1e6f1; border-radius:14px; background:#fff; }
+.storefront-category-art { height:78px; border-radius:11px; }
+.storefront-category-art>span { font-size:32px; }
+.storefront-category>strong { font-size:11px; margin:8px 2px 3px; }
+.storefront-category>small { font-size:9px; min-height:24px; }
+.storefront-products { padding:0 clamp(16px,3vw,44px) 30px; }
+.storefront-product-card { position:relative; }
+.storefront-product-art { position:relative; }
+.storefront-wishlist { position:absolute; top:8px; right:8px; display:grid; place-items:center; width:30px; height:30px; border:1px solid #eee3f3; border-radius:50%; background:#ffffffed; color:#6a458f; font-size:21px; cursor:pointer; }
+.storefront-wishlist.is-saved { color:#e65b67; background:#fff0f1; border-color:#f3c8ce; }
+.storefront-checkout { margin-top:26px; }
+@media(max-width:900px) {
+ .storefront-header { flex-wrap:wrap; }
+ .storefront-header-search { order:3; flex-basis:100%; max-width:none; }
+ .storefront-delivery { display:none; }
+ .storefront-hero { grid-template-columns:1fr .9fr; }
+}
+@media(max-width:640px) {
+ .storefront-header { min-height:auto; padding:12px 15px; gap:10px; }
+ .storefront-header-search { order:3; flex-basis:100%; }
+ .storefront-actions { gap:10px; }
+ .storefront-admin-link { font-size:10px; }
+ .storefront-department-nav { min-height:40px; gap:17px; padding-inline:15px; }
+ .storefront-department-nav a,.storefront-department-nav button { font-size:11px; }
+ .storefront-hero { grid-template-columns:1fr; padding:24px 16px 32px; }
+ .storefront-hero-art { min-height:285px; }
+ .storefront-category { flex-basis:105px; }
+ .storefront-category-art { height:75px; }
+ .storefront-section-heading h2 { font-size:25px; }
+}
