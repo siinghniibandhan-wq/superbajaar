@@ -34,12 +34,17 @@ export default function Storefront() {
   const [cart, setCart] = useState([]);
   const [wishlist, setWishlist] = useState([]);
   const [recentlyViewed, setRecentlyViewed] = useState([]);
+  const [recentlyViewed, setRecentlyViewed] = useState([]);
   const [customer, setCustomer] = useState({ name: "", phone: "", pin: "" });
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [order, setOrder] = useState(null);
+
+  useEffect(() => {
+    try { setRecentlyViewed(JSON.parse(sessionStorage.getItem("sb-recently-viewed") || "[]")); } catch { setRecentlyViewed([]); }
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -88,10 +93,35 @@ export default function Storefront() {
     const term = search.trim().toLowerCase();
     return variants.filter(v => {
       const product = productById.get(Number(v.product_id));
-      if (!product || (categoryId && String(product.category_id || "") !== categoryId)) return false;
+      if (!product) return false;
+      if (categoryId) {
+        const selected = displayCategories.find(c => String(c.id) === categoryId);
+        const matches = String(product.category_id || "") === categoryId || (selected && String(product.category_name || product.category || "").trim().toLowerCase() === String(selected.name).toLowerCase());
+        if (!matches) return false;
+      }
       return !term || [v.product_name, product.name, v.sku, product.brand].some(x => String(x || "").toLowerCase().includes(term));
     });
-  }, [variants, productById, categoryId, search]);
+  }, [variants, productById, categoryId, search, displayCategories]);
+  const rememberViewed = variant => {
+    const entry = { variantId: variant.id, productId: variant.product_id, viewedAt: Date.now() };
+    setRecentlyViewed(old => {
+      const next = [entry, ...old.filter(item => Number(item.variantId) !== Number(variant.id))].slice(0, 12);
+      try { sessionStorage.setItem("sb-recently-viewed", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+  const newArrivals = useMemo(() => [...visibleVariants].sort((a,b) => {
+    const pa = productById.get(Number(a.product_id)) || {};
+    const pb = productById.get(Number(b.product_id)) || {};
+    const da = Date.parse(pa.created_at || pa.created_on || pa.createdAt || a.created_at || "") || 0;
+    const db = Date.parse(pb.created_at || pb.created_on || pb.createdAt || b.created_at || "") || 0;
+    return db-da;
+  }).slice(0,8), [visibleVariants, productById]);
+  const bestSellers = useMemo(() => [...visibleVariants].map(v => {
+    const p = productById.get(Number(v.product_id)) || {};
+    return { ...v, _sales: Number(v.units_sold ?? v.sold_count ?? v.sales_count ?? p.units_sold ?? p.sold_count ?? p.sales_count ?? p.order_count ?? 0) };
+  }).filter(v => v._sales > 0).sort((a,b) => b._sales-a._sales).slice(0,8), [visibleVariants, productById]);
+  const recentVariants = useMemo(() => recentlyViewed.map(item => variants.find(v => Number(v.id) === Number(item.variantId))).filter(Boolean).slice(0,8), [recentlyViewed, variants]);
   const total = cart.reduce((sum, line) => sum + Number(line.selling_price || 0) * line.quantity, 0);
   const addToCart = variant => {
     setCart(old => {
