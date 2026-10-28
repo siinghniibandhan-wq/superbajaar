@@ -32,7 +32,14 @@ export default function Storefront() {
   const [categoryId, setCategoryId] = useState("");
   const [routePath, setRoutePath] = useState(() => window.location.pathname.replace(/\/+$/, "") || "/");
   const [search, setSearch] = useState("");
-  const [cart, setCart] = useState([]);
+  const [cart, setCart] = useState(() => { try { return JSON.parse(window.localStorage.getItem("sb-cart") || "[]"); } catch { return []; } });
+  const [customerToken, setCustomerToken] = useState(() => { try { return window.localStorage.getItem("sb-customer.access_token") || ""; } catch { return ""; } });
+  const [customerAuth, setCustomerAuth] = useState(null);
+  const [customerAuthMode, setCustomerAuthMode] = useState("login");
+  const [customerAuthDraft, setCustomerAuthDraft] = useState({ full_name: "", email: "", phone: "", password: "", referral_code: "" });
+  const [customerAuthBusy, setCustomerAuthBusy] = useState(false);
+  const [referralData, setReferralData] = useState(null);
+  const [referralBusy, setReferralBusy] = useState(false);
   const [wishlist, setWishlist] = useState(() => { try { return JSON.parse(window.localStorage.getItem("sb-wishlist") || "[]").map(Number).filter(Number.isFinite); } catch { return []; } });
   const [recentlyViewed, setRecentlyViewed] = useState([]);
   const [customer, setCustomer] = useState(() => { try { return { name: "", phone: "", pin: "", email: "", address: "", ...JSON.parse(window.localStorage.getItem("sb-customer-profile") || "{}") }; } catch { return { name: "", phone: "", pin: "", email: "", address: "" }; } });
@@ -69,6 +76,26 @@ export default function Storefront() {
   useEffect(() => {
     try { window.localStorage.setItem("sb-wishlist", JSON.stringify(wishlist)); } catch { /* Wishlist remains usable for this session if storage is unavailable. */ }
   }, [wishlist]);
+
+  useEffect(() => {
+    try { window.localStorage.setItem("sb-cart", JSON.stringify(cart)); } catch { /* Keep cart in memory if storage is unavailable. */ }
+  }, [cart]);
+
+  useEffect(() => {
+    if (!customerToken) { setCustomerAuth(null); return; }
+    let active = true;
+    customerRequest("/customer-auth/me").then(result => {
+      if (!active) return;
+      const profile = result?.customer || null;
+      setCustomerAuth(profile);
+      if (profile) setCustomer(old => ({ ...old, name: profile.full_name || old.name, email: profile.email || old.email, phone: profile.phone || old.phone }));
+    }).catch(() => {
+      if (!active) return;
+      setCustomerAuth(null); setCustomerToken("");
+      try { window.localStorage.removeItem("sb-customer.access_token"); } catch {}
+    });
+    return () => { active = false; };
+  }, [customerToken]);
 
   useEffect(() => {
     const syncPath = () => setRoutePath(window.location.pathname.replace(/\/+$/, "") || "/");
@@ -164,6 +191,7 @@ export default function Storefront() {
   const isWishlistPage = routePath === "/wishlist";
   const isAccountPage = routePath === "/account";
   const isCheckoutPage = routePath === "/checkout";
+  const isCustomerAuthPage = routePath === "/customer/login" || routePath === "/customer/register";
   const infoSlug = routePath.startsWith("/pages/") ? routePath.slice("/pages/".length) : "";
   const isInfoPage = Boolean(infoSlug);
   const openCategory = category => {
@@ -174,7 +202,21 @@ export default function Storefront() {
     setSearch("");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
+  const openCustomerAuth = (mode = "login", returnTo = "/checkout") => {
+    const target = mode === "register" ? "/customer/register" : "/customer/login";
+    const query = new URLSearchParams({ return: returnTo });
+    window.history.pushState({}, "", target + "?" + query.toString());
+    setRoutePath(target); setCustomerAuthMode(mode);
+    setCustomerAuthDraft(old => ({ ...old, referral_code: new URLSearchParams(window.location.search).get("ref") || old.referral_code || "" }));
+    setCategoryId(""); setSearch(""); setAccountOpen(false); setError(""); setNotice("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const customerRequest = (path, options = {}) => apiRequest(path, {
+    ...options, skipAuth: true,
+    headers: { ...(customerToken ? { Authorization: "Bearer " + customerToken } : {}), ...(options.headers || {}) },
+  });
   const openCheckout = () => {
+    if (!customerToken || !customerAuth) { openCustomerAuth("login", "/checkout"); return; }
     window.history.pushState({}, "", "/checkout");
     setRoutePath("/checkout");
     setCategoryId("");
@@ -220,6 +262,38 @@ export default function Storefront() {
     setCategoryId(""); setSearch(""); setAccountOpen(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
+  const submitCustomerAuth = async event => {
+    event.preventDefault(); setCustomerAuthBusy(true); setError(""); setNotice("");
+    const isRegister = customerAuthMode === "register";
+    const returnTo = new URLSearchParams(window.location.search).get("return") === "/checkout" ? "/checkout" : "/account";
+    const payload = isRegister
+      ? { full_name: customerAuthDraft.full_name.trim(), email: customerAuthDraft.email.trim(), phone: customerAuthDraft.phone.trim() || null, password: customerAuthDraft.password, referral_code: customerAuthDraft.referral_code.trim() || null }
+      : { email: customerAuthDraft.email.trim(), password: customerAuthDraft.password };
+    try {
+      const result = await apiRequest(isRegister ? "/customer-auth/register" : "/customer-auth/login", { method: "POST", skipAuth: true, body: JSON.stringify(payload) });
+      if (!result?.access_token || !result?.customer) throw new Error("Customer authentication response was incomplete.");
+      try { window.localStorage.setItem("sb-customer.access_token", result.access_token); } catch {}
+      setCustomerToken(result.access_token); setCustomerAuth(result.customer);
+      setCustomer(old => ({ ...old, name: result.customer.full_name || old.name, email: result.customer.email || old.email, phone: result.customer.phone || old.phone }));
+      window.history.pushState({}, "", returnTo); setRoutePath(returnTo); setCategoryId(""); setSearch("");
+      setNotice(isRegister ? "Your customer account has been created." : "You are signed in.");
+    } catch (reason) { setError(reason.message || "Could not sign in. Please try again."); }
+    finally { setCustomerAuthBusy(false); }
+  };
+
+  const signOutCustomer = async () => {
+    try { if (customerToken) await customerRequest("/customer-auth/logout", { method: "POST" }); } catch {}
+    try { window.localStorage.removeItem("sb-customer.access_token"); } catch {}
+    setCustomerToken(""); setCustomerAuth(null); setReferralData(null); setNotice("You have signed out.");
+  };
+
+  const loadReferrals = async () => {
+    setReferralBusy(true); setError("");
+    try { setReferralData(await customerRequest("/customer-auth/referrals")); }
+    catch (reason) { setError(reason.message || "Could not load your referral information."); }
+    finally { setReferralBusy(false); }
+  };
+
   const saveCustomerProfile = event => {
     event.preventDefault();
     try { window.localStorage.setItem("sb-customer-profile", JSON.stringify(customer)); } catch {}
@@ -334,17 +408,17 @@ export default function Storefront() {
 
   async function checkout(event) {
     event.preventDefault();
+    if (!customerToken || !customerAuth) { openCustomerAuth("login", "/checkout"); return; }
     if (!cart.length) { setError("Add at least one item to your basket."); return; }
     setSubmitting(true); setError(""); setNotice(""); setOrder(null);
     try {
-      const created = await apiRequest("/orders", {
+      const created = await customerRequest("/orders", {
         method: "POST",
-        skipAuth: true,
         body: JSON.stringify({
           channel: "website",
           customer_name: customer.name.trim(),
           customer_phone: customer.phone.trim() || null,
-          customer_email: customer.email.trim() || null,
+          customer_email: customerAuth.email,
           delivery_pin: customer.pin.trim() || null,
           notes: ["Website checkout", customer.email.trim() ? "Email: " + customer.email.trim() : "", customer.address.trim() ? "Delivery address: " + customer.address.trim() : ""].filter(Boolean).join(" | "),
           lines: cart.map(line => ({ variant_id: line.id, quantity: line.quantity })),
@@ -421,7 +495,7 @@ export default function Storefront() {
     </header>
     {accountOpen && <div className="storefront-account-sheet-backdrop" role="presentation" onClick={event => { if (event.target === event.currentTarget) setAccountOpen(false); }}><section className="storefront-account-sheet" role="dialog" aria-modal="true" aria-labelledby="storefront-account-sheet-title"><div className="storefront-account-sheet-handle" aria-hidden="true" /><div className="storefront-account-sheet-heading"><div><span className="storefront-kicker">SUPER BAJAAR</span><h2 id="storefront-account-sheet-title">Your account</h2></div><button type="button" className="storefront-modal-close" aria-label="Close account menu" onClick={() => setAccountOpen(false)}><X size={19} /></button></div><p>Manage your profile and shopping experience.</p><button type="button" className="storefront-account-sheet-action" onClick={openAccount}><span className="storefront-account-sheet-action-icon"><UserRound size={20} /></span><span><strong>My Account</strong><small>Contact and delivery details</small></span><span aria-hidden="true">›</span></button>{canOpenAdmin && <a className="storefront-account-sheet-action" href="/admin"><span className="storefront-account-sheet-action-icon">⌘</span><span><strong>Admin Console</strong><small>Store management</small></span><span aria-hidden="true">›</span></a>}</section></div>}
     <nav className="storefront-department-nav" aria-label="Shop departments"><a href="/#categories" onClick={event => { event.preventDefault(); openShopHome(); setTimeout(() => document.getElementById("categories")?.scrollIntoView({ behavior: "smooth" }), 0); }}>☰ All Categories</a><a href="/#deals" onClick={event => { event.preventDefault(); openShopHome(); setTimeout(() => document.getElementById("deals")?.scrollIntoView({behavior:"smooth"}), 0); }}>Deals <Flame size={14} /></a><button type="button" onClick={() => { openShopHome(); setTimeout(() => document.getElementById("products")?.scrollIntoView({ behavior: "smooth" }), 0); }}>Shop All</button>{displayCategories.map(category => <a key={category.id} href={"/category/" + categorySlug(category.name)} aria-current={routeSlug === categorySlug(category.name) ? "page" : undefined}>{category.name}</a>)}</nav>
-    {!isCategoryPage && !isWishlistPage && !isAccountPage && !isCheckoutPage && !isInfoPage && <section className="storefront-hero">
+    {!isCustomerAuthPage && !isCategoryPage && !isWishlistPage && !isAccountPage && !isCheckoutPage && !isInfoPage && <section className="storefront-hero">
       <div className="storefront-hero-copy"><span className="storefront-kicker"><i /> YOUR EVERYDAY SUPER STORE</span><h1>Welcome to<br /><em>Super Bajaar</em></h1><p>Everything you need, all in one place. Explore everyday essentials and discover something new for your home and family.</p><a className="storefront-primary" href="#products">Shop Now <span>→</span></a><div className="storefront-trust"><span>✦ Thoughtfully picked</span><span>✦ Made for everyday</span></div></div>
       <div className="storefront-hero-art" aria-label="Colourful shopping bags and everyday products" role="img"><div className="art-sun" /><div className="art-orbit orbit-one" /><div className="art-orbit orbit-two" /><div className="art-spark spark-one">✦</div><div className="art-spark spark-two">✳</div><div className="art-bag bag-purple"><span>S</span></div><div className="art-bag bag-orange"><span>♥</span></div><div className="art-box"><span>GOOD</span><strong>THINGS</strong></div><div className="art-leaf leaf-one">✦</div><div className="art-leaf leaf-two">✿</div><div className="art-caption">A little joy in every basket</div></div>
     </section>}
@@ -436,6 +510,20 @@ export default function Storefront() {
           </button>;
         })}
       </div>
+    </section>}
+    {isCustomerAuthPage && <section className="storefront-checkout-page">
+      <div className="storefront-category-breadcrumb"><button type="button" onClick={openShopHome}>Home</button><span>/</span><span>{customerAuthMode === "register" ? "Create account" : "Customer sign in"}</span></div>
+      <div className="storefront-checkout-page-heading"><span className="storefront-kicker">YOUR SUPER BAJAAR</span><h1>{customerAuthMode === "register" ? "Create your customer account" : "Welcome back"}</h1><p>Customer sign-in is separate from the Admin Console. Your basket will be kept while you sign in.</p></div>
+      {error && <p className="storefront-alert" role="alert">{error}</p>}{notice && <p className="storefront-order-success" role="status">{notice}</p>}
+      <form className="storefront-checkout-form" onSubmit={submitCustomerAuth}>
+        {customerAuthMode === "register" && <label>Full name<input required minLength="2" maxLength="200" autoComplete="name" value={customerAuthDraft.full_name} onChange={e=>setCustomerAuthDraft(old=>({...old,full_name:e.target.value}))}/></label>}
+        <label>Email address<input required type="email" maxLength="254" autoComplete="email" value={customerAuthDraft.email} onChange={e=>setCustomerAuthDraft(old=>({...old,email:e.target.value}))}/></label>
+        {customerAuthMode === "register" && <label>Mobile number (optional)<input maxLength="20" autoComplete="tel" value={customerAuthDraft.phone} onChange={e=>setCustomerAuthDraft(old=>({...old,phone:e.target.value}))}/></label>}
+        <label>Password<input required type="password" minLength={customerAuthMode === "register" ? 10 : 1} maxLength="1024" autoComplete={customerAuthMode === "register" ? "new-password" : "current-password"} value={customerAuthDraft.password} onChange={e=>setCustomerAuthDraft(old=>({...old,password:e.target.value}))}/>{customerAuthMode === "register" && <small>Use at least 10 characters.</small>}</label>
+        {customerAuthMode === "register" && <label>Referral code (optional)<input maxLength="24" autoComplete="off" value={customerAuthDraft.referral_code} onChange={e=>setCustomerAuthDraft(old=>({...old,referral_code:e.target.value.toUpperCase()}))} placeholder="Enter a friend's code"/></label>}
+        <button type="submit" className="storefront-primary" disabled={customerAuthBusy}>{customerAuthBusy ? "Please wait…" : customerAuthMode === "register" ? "Create account" : "Sign in and continue"}</button>
+        <p className="storefront-account-note">{customerAuthMode === "register" ? "Already registered? " : "New to Super Bajaar? "}<button type="button" className="storefront-inline-link" onClick={()=>{setCustomerAuthMode(customerAuthMode==="register"?"login":"register");setError("");}}>{customerAuthMode === "register" ? "Sign in" : "Create an account"}</button></p>
+      </form>
     </section>}
     {isCheckoutPage && <section className="storefront-checkout-page"><div className="storefront-category-breadcrumb"><button type="button" onClick={openShopHome}>Home</button><span>/</span><span>Checkout</span></div><div className="storefront-checkout-page-heading"><span className="storefront-kicker">YOUR BASKET</span><h1>Checkout</h1><p>Review your items and delivery details before placing your order.</p></div>{error && <p className="storefront-alert" role="alert">{error}</p>}{notice && <p className="storefront-order-success" role="status">{notice}</p>}{order && <p className="storefront-order-success" role="status">Order placed: <strong>{order.order_number}</strong> · {money(order.total)}</p>}<section className="storefront-checkout" id="basket"><div><span className="storefront-kicker">ORDER SUMMARY</span><h2>Your basket</h2><p>Prices and order totals are calculated by the server. Online payment collection is not enabled yet.</p></div><div className="storefront-basket-lines">{cart.length ? cart.map(line => <div className="storefront-basket-line" key={line.id}><div><strong>{line.product_name || line.sku}</strong><small>{line.sku} · {money(line.selling_price)}</small></div><label>Qty<input type="number" min="0" max="100000" step="1" value={line.quantity} onChange={e => setQuantity(line.id, e.target.value)} /></label><strong>{money(line.selling_price * line.quantity)}</strong><button type="button" aria-label={"Remove " + line.sku} onClick={() => setCart(old => old.filter(x => x.id !== line.id))}>×</button></div>) : <div className="storefront-checkout-empty"><h3>Your basket is empty</h3><p>Add products to your basket before placing an order.</p><button type="button" className="storefront-primary" onClick={openShopHome}>Continue shopping</button></div>}<div className="storefront-basket-total"><span>Subtotal</span><strong>{money(total)}</strong></div>{cart.length>0 && <form className="storefront-checkout-form" onSubmit={checkout}><label>Full name<input required minLength="1" maxLength="200" value={customer.name} onChange={e => setCustomer(v => ({ ...v, name: e.target.value }))} /></label><label>Email address<input type="email" autoComplete="email" required maxLength="254" value={customer.email} onChange={e => setCustomer(v => ({ ...v, email: e.target.value }))} /></label><label>Phone (optional)<input maxLength="20" value={customer.phone} onChange={e => setCustomer(v => ({ ...v, phone: e.target.value }))} /></label><label>Delivery PIN (optional)<input inputMode="numeric" pattern="[0-9]{6}" maxLength="6" value={customer.pin} onChange={e => setCustomer(v => ({ ...v, pin: e.target.value }))} /></label><button type="submit" className="storefront-primary" disabled={submitting || !cart.length}>{submitting ? "Placing order…" : "Place order"}</button></form>}</div></section></section>}
     {isAccountPage && <section className="storefront-account-page">
