@@ -162,7 +162,6 @@ def test_marking_dispatched_order_delivered_awards_loyalty_coins(monkeypatch):
         return cursor
 
     conn.execute.side_effect = execute
-    monkeypatch.setattr(orders, " _unused", None, raising=False)
     monkeypatch.setattr(orders.settings, "database_url", "")
     monkeypatch.setattr(orders, "_connect", lambda: conn)
 
