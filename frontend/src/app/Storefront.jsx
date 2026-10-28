@@ -305,7 +305,7 @@ export default function Storefront() {
     try { window.localStorage.removeItem("sb-customer.access_token"); } catch {}
     setCustomerToken(""); setCustomerAuth(null); setReferralData(null);
     setAccountOpen(false); setNotice("You have signed out.");
-    if (["/account", "/checkout"].includes(window.location.pathname.replace(/\\/+$/, "") || "/")) {
+    if (["/account", "/checkout"].includes(window.location.pathname.replace(/\/+$/, "") || "/")) {
       window.history.pushState({}, "", "/");
       setRoutePath("/");
       setCategoryId(""); setSearch("");
