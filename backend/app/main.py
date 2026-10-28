@@ -1,15 +1,15 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1.catalogue import router as catalogue_router
-from app.api.v1.health import router as health_router
-from app.api.v1.inventory import router as inventory_router
-from app.api.v1.orders import router as orders_router
-from app.api.v1.payments import router as payments_router
-from app.api.v1.delivery import router as delivery_router
-from app.api.v1.customers import router as customers_router
-from app.api.v1.purchasing import router as purchasing_router
-from app.api.v1.auth import router as auth_router
+from app.api.catalogue import router as catalogue_router
+from app.api.health import router as health_router
+from app.api.inventory import router as inventory_router
+from app.api.orders import router as orders_router
+from app.api.payments import router as payments_router
+from app.api.delivery import router as delivery_router
+from app.api.customers import router as customers_router
+from app.api.purchasing import router as purchasing_router
+from app.api.auth import router as auth_router
 from app.core.config import settings
 from app.core.auth_middleware import require_active_session
 
