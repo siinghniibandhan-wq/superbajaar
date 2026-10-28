@@ -55,7 +55,11 @@ async def require_active_session(request: Request) -> None:
     # Public storefront support portal; tracking requires matching contact details.
     if path == prefix + "/loyalty/partner-enquiries" and request.method == "POST":
         return
-    if request.method == "GET" and path in {prefix + "/loyalty/rules", prefix + "/loyalty/quote"}:
+    if request.method == "GET" and path in {
+        prefix + "/loyalty/rules",
+        prefix + "/loyalty/quote",
+        prefix + "/loyalty/customer/account",
+    }:
         return
     if path == prefix + "/customers/support-portal/tickets" and request.method == "POST":
         return
