@@ -996,3 +996,19 @@
  .storefront-account-summary { grid-template-columns:minmax(0,1fr); }
  .storefront-security-list > div { align-items:flex-start; flex-direction:column; }
 }
+
+/* Dedicated checkout route: never embed the checkout form on the storefront home page. */
+.storefront-checkout-page { max-width:1180px; min-height:48vh; margin:26px auto 52px; padding:clamp(18px,3vw,36px); border:1px solid rgba(255,255,255,.92); border-radius:28px; background:linear-gradient(145deg,rgba(255,255,255,.88),rgba(249,240,255,.84)); box-shadow:12px 14px 34px rgba(67,35,94,.08),-8px -8px 24px rgba(255,255,255,.7); }
+.storefront-checkout-page-heading { margin:14px 0 22px; }
+.storefront-checkout-page-heading h1 { margin:7px 0; color:var(--sb-purple-dark); font-size:clamp(30px,4vw,42px); letter-spacing:-.06em; }
+.storefront-checkout-page-heading p { margin:0; color:var(--sb-muted); font-size:13px; line-height:1.65; }
+.storefront-checkout-page .storefront-checkout { margin:0; box-shadow:none; background:transparent; border:0; padding:0; }
+.storefront-checkout-empty { padding:24px 14px; border:1px dashed #d8c4eb; border-radius:16px; background:rgba(255,255,255,.7); text-align:center; }
+.storefront-checkout-empty h3 { margin:0 0 8px; color:var(--sb-purple-dark); }
+.storefront-checkout-empty p { color:var(--sb-muted); font-size:13px; }
+.storefront-checkout-empty .storefront-primary { cursor:pointer; }
+@media(max-width:760px) {
+ .storefront-checkout-page { margin:14px 12px 30px; padding:18px 14px; border-radius:22px; }
+ .storefront-checkout-page .storefront-checkout { display:block; }
+ .storefront-checkout-page .storefront-checkout-form { grid-template-columns:minmax(0,1fr); }
+}
