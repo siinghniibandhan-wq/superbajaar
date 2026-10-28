@@ -1030,14 +1030,14 @@
 .storefront-benefit-grid small { margin-top:4px; color:#81768f; font-size:10px; line-height:1.55; }
 
 /* Footer and standalone informational/legal pages. */
-.storefront-footer { display:block; padding-top:30px; padding-bottom:22px; }
+.storefront-footer { display:block; padding-top:30px; padding-bottom:22px; text-align:left; }
 .storefront-footer-top { display:grid; grid-template-columns:1.1fr 1fr 1fr; align-items:start; gap:28px; padding-bottom:25px; border-bottom:1px solid #eee5f5; }
 .storefront-footer-top > p { margin:8px 0; color:#81768f; font-size:12px; }
 .storefront-footer-contact { display:grid; gap:8px; font-size:12px; }
 .storefront-footer-contact strong,.storefront-footer-links strong { margin-bottom:3px; color:#32105f; font-size:12px; }
 .storefront-footer-contact a,.storefront-footer-links a,.storefront-footer-bottom a,.storefront-social-links a { color:#6b45a6; font-size:12px; text-decoration:none; }
 .storefront-footer-contact a:hover,.storefront-footer-links a:hover,.storefront-footer-bottom a:hover { text-decoration:underline; }
-.storefront-footer-links { display:grid; grid-template-columns:1.45fr 1fr 1fr 1fr; gap:26px; padding:24px 0; border-bottom:1px solid #eee5f5; }
+.storefront-footer-links { display:grid; grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr); gap:30px; padding:24px 0; border-bottom:1px solid #eee5f5; text-align:left; }
 .storefront-footer-links > div { display:grid; align-content:start; gap:11px; min-width:0; }
 .storefront-footer-links > .storefront-footer-column:first-child { grid-template-columns:repeat(2,minmax(0,1fr)); column-gap:14px; }
 .storefront-footer-links > .storefront-footer-column:first-child > strong { grid-column:1 / -1; }
