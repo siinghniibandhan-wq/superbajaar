@@ -25,15 +25,15 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 
-app.include_router(health_router, prefix=settings.api_v1_prefix)
-app.include_router(catalogue_router, prefix=settings.api_v1_prefix)
-app.include_router(inventory_router, prefix=settings.api_v1_prefix)
-app.include_router(orders_router, prefix=settings.api_v1_prefix)
-app.include_router(payments_router, prefix=settings.api_v1_prefix)
-app.include_router(delivery_router, prefix=settings.api_v1_prefix)
-app.include_router(customers_router, prefix=settings.api_v1_prefix)
-app.include_router(purchasing_router, prefix=settings.api_v1_prefix)
-app.include_router(auth_router, prefix=settings.api_v1_prefix)
+app.include_router(health_router, prefix=settings.api_prefix)
+app.include_router(catalogue_router, prefix=settings.api_prefix)
+app.include_router(inventory_router, prefix=settings.api_prefix)
+app.include_router(orders_router, prefix=settings.api_prefix)
+app.include_router(payments_router, prefix=settings.api_prefix)
+app.include_router(delivery_router, prefix=settings.api_prefix)
+app.include_router(customers_router, prefix=settings.api_prefix)
+app.include_router(purchasing_router, prefix=settings.api_prefix)
+app.include_router(auth_router, prefix=settings.api_prefix)
 
 
 @app.get("/")
