@@ -30,10 +30,20 @@ class CustomerIn(BaseModel):
     def nonblank(cls,v):
         if not v.strip():raise ValueError("Name cannot be blank")
         return v.strip()
-    @field_validator("phone","email","address","notes")
+    @field_validator("phone","address","notes")
     @classmethod
     def trim_optional(cls,v):
         return v.strip() if v else v
+
+    @field_validator("email")
+    @classmethod
+    def valid_email(cls, v):
+        if v:
+            v = v.strip().lower()
+            if "@" not in v or "." not in v.rsplit("@", 1)[-1] or " " in v:
+                raise ValueError("Enter a valid email address")
+            return v
+        return v
 
 class CustomerUpdate(CustomerIn): is_active:bool=True
 class CaseIn(BaseModel):
@@ -113,13 +123,5 @@ def update_case(case_id:int,p:CaseUpdate):
             if not row:raise HTTPException(404,"Support case not found")
             return row
     except HTTPException:raise
-    except psycopg.Error as e:raise _error(e) from e    @field_validator("email")
-    @classmethod
-    def valid_email(cls, v):
-        if v:
-            v = v.strip().lower()
-            if "@" not in v or "." not in v.rsplit("@", 1)[-1] or " " in v:
-                raise ValueError("Enter a valid email address")
-            return v
-        return v
+    except psycopg.Error as e:raise _error(e) from e
 
