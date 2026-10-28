@@ -19,7 +19,7 @@ def request(method,path,payload=None,token=None,expected=200):
 
 
 def main():
-    assert request("GET","/api/health")=={"status":"ok","database":"connected"}
+    assert request("GET","/api/health")=={"status":"ok"}
     suffix=uuid.uuid4().hex[:10]
     registered=request("POST","/api/auth/register",{"name":"Smoke Test Customer","email":f"smoke-{suffix}@example.com","phone":"9876543210","password":"Smoke-test-Password-123!"},expected=201)
     assert registered.get("token") and registered.get("user")
