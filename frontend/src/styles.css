@@ -113,3 +113,8 @@
 .sb-report-card span{font-size:11px;line-height:1.5;color:#81768f}
 @media(max-width:850px){.sb-pos-layout{grid-template-columns:1fr}.sb-report-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:520px){.sb-pos-products{grid-template-columns:1fr}.sb-pos-cart-line{grid-template-columns:minmax(0,1fr) 60px}.sb-pos-cart-line>strong{grid-column:1/-1;text-align:right}.sb-report-grid{grid-template-columns:1fr}}
+
+.sb-access-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.sb-access-actions select,.sb-access-actions button{max-width:140px;padding:7px 9px;border:1px solid #e1d8ed;border-radius:8px;background:#fff;color:#5c4776;font-size:11px}
+.sb-access-actions button{cursor:pointer;font-weight:700}
+.sb-access-actions button:disabled,.sb-access-actions select:disabled{opacity:.55;cursor:not-allowed}
