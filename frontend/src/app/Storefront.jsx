@@ -406,20 +406,20 @@ export default function Storefront() {
             <h2>My Tickets</h2><p>Create a support request or track an existing ticket using the contact details registered with it.</p>
             <form className="storefront-account-form" onSubmit={submitSupportTicket}>
               <h3>Raise a ticket</h3>
-              <label>Full name<input autoComplete="name" required maxLength="200" value={ticketDraft.name || customer.name} onChange={event=>setTicketDraft(old=>({...old,name:event.target.value}))}/></label>
-              <label>Mobile number<input autoComplete="tel" required minLength="7" maxLength="20" value={ticketDraft.phone || customer.phone} onChange={event=>setTicketDraft(old=>({...old,phone:event.target.value}))}/></label>
-              <label>Email address<input type="email" autoComplete="email" required maxLength="254" value={ticketDraft.email || customer.email} onChange={event=>setTicketDraft(old=>({...old,email:event.target.value}))}/></label>
+              <label>Full name<input autoComplete="name" required maxLength="200" value={ticketDraft.name} onChange={event=>setTicketDraft(old=>({...old,name:event.target.value}))}/></label>
+              <label>Mobile number<input autoComplete="tel" required minLength="7" maxLength="20" value={ticketDraft.phone} onChange={event=>setTicketDraft(old=>({...old,phone:event.target.value}))}/></label>
+              <label>Email address<input type="email" autoComplete="email" required maxLength="254" value={ticketDraft.email} onChange={event=>setTicketDraft(old=>({...old,email:event.target.value}))}/></label>
               <label>Subject<input required minLength="3" maxLength="200" value={ticketDraft.subject} onChange={event=>setTicketDraft(old=>({...old,subject:event.target.value}))}/></label>
               <label>How can we help?<textarea required rows="4" maxLength="5000" value={ticketDraft.description} onChange={event=>setTicketDraft(old=>({...old,description:event.target.value}))}/></label>
               <button className="storefront-primary" type="submit" disabled={ticketBusy}>{ticketBusy?"Submitting…":"Create support ticket"}</button>
             </form>
-            {ticketCreated && <div className="storefront-account-summary" role="status"><div><small>Ticket created</small><strong>{ticketCreated.case_number}</strong></div><p>Save this reference. Use the same email or phone below to track updates.</p></div>}
+            {ticketCreated && <div className="storefront-account-summary" role="status"><div><small>Ticket created</small><strong>{ticketCreated.case_number}</strong></div><p>Save this reference. Use both the same email and phone below to track updates.</p></div>}
             <form className="storefront-account-form" onSubmit={trackSupportTicket}>
               <h3>Track a ticket</h3>
               <label>Ticket reference<input required placeholder="SUP-XXXXXXXXXX" value={ticketLookup.caseNumber} onChange={event=>setTicketLookup(old=>({...old,caseNumber:event.target.value.toUpperCase()}))}/></label>
-              <label>Email used for the ticket<input type="email" maxLength="254" value={ticketLookup.email} onChange={event=>setTicketLookup(old=>({...old,email:event.target.value}))}/></label>
-              <label>Or phone used for the ticket<input maxLength="20" value={ticketLookup.phone} onChange={event=>setTicketLookup(old=>({...old,phone:event.target.value}))}/></label>
-              <button className="storefront-primary" type="submit" disabled={ticketBusy || (!ticketLookup.email.trim() && !ticketLookup.phone.trim())}>{ticketBusy?"Checking…":"Track ticket"}</button>
+              <label>Email used for the ticket<input type="email" required maxLength="254" value={ticketLookup.email} onChange={event=>setTicketLookup(old=>({...old,email:event.target.value}))}/></label>
+              <label>Phone used for the ticket<input required maxLength="20" value={ticketLookup.phone} onChange={event=>setTicketLookup(old=>({...old,phone:event.target.value}))}/></label>
+              <button className="storefront-primary" type="submit" disabled={ticketBusy || (!ticketLookup.email.trim() || !ticketLookup.phone.trim())}>{ticketBusy?"Checking…":"Track ticket"}</button>
             </form>
             {ticketTracked && <div className="storefront-account-summary" role="status"><div><small>Reference</small><strong>{ticketTracked.case_number}</strong></div><div><small>Subject</small><strong>{ticketTracked.subject}</strong></div><div><small>Status</small><strong>{String(ticketTracked.status).replaceAll("_"," ")}</strong></div><div><small>Last updated</small><strong>{ticketTracked.updated_at ? new Date(ticketTracked.updated_at).toLocaleString() : "Not available"}</strong></div>{ticketTracked.resolution && <div><small>Support response</small><strong>{ticketTracked.resolution}</strong></div>}</div>}
             {error && <p className="storefront-account-note" role="alert">{error}</p>}
