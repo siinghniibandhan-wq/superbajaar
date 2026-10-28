@@ -9,7 +9,7 @@ from app.core.config import settings
 
 async def require_active_session(request: Request, call_next):
     path = request.url.path
-    prefix = settings.api_v1_prefix.rstrip("/")
+    prefix = settings.api_prefix.rstrip("/")
     public = {prefix + "/health", prefix + "/auth/login"}
     if request.method == "OPTIONS" or not path.startswith(prefix + "/") or path in public:
         return await call_next(request)
