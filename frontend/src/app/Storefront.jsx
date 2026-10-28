@@ -2,14 +2,26 @@ import { useEffect, useMemo, useState } from "react";
 import { apiRequest } from "../services/api.js";
 import "./storefront.css";
 
-const art = [
-  { icon: "🥑", tone: "green", detail: "Everyday essentials" },
-  { icon: "👕", tone: "lavender", detail: "Style for everyone" },
-  { icon: "🎧", tone: "blue", detail: "Smart picks, every day" },
-  { icon: "🧴", tone: "peach", detail: "Care for every day" },
-  { icon: "🍊", tone: "yellow", detail: "Freshness for your home" },
-  { icon: "🐾", tone: "pink", detail: "Little things for pets" },
+const categoryOrder = [
+  "Grocery", "Fresh Daily", "Fashion", "Personal Care", "Electronics",
+  "Home Appliances", "Pet Care", "Gifting", "Pooja Essentials",
+  "Automobiles", "Toys & Sports", "Pharmacy",
 ];
+const categoryArt = {
+  "Grocery": { icon: "🛒", tone: "lavender", detail: "Everyday groceries" },
+  "Fresh Daily": { icon: "🥬", tone: "green", detail: "Fresh picks, every day" },
+  "Fashion": { icon: "👕", tone: "peach", detail: "Style for everyone" },
+  "Personal Care": { icon: "🧴", tone: "blue", detail: "Care for every day" },
+  "Electronics": { icon: "🎧", tone: "lavender", detail: "Smart picks, every day" },
+  "Home Appliances": { icon: "🏠", tone: "yellow", detail: "For a happier home" },
+  "Pet Care": { icon: "🐾", tone: "green", detail: "Little things for pets" },
+  "Gifting": { icon: "🎁", tone: "peach", detail: "Gifts for every moment" },
+  "Pooja Essentials": { icon: "🪔", tone: "yellow", detail: "For your traditions" },
+  "Automobiles": { icon: "🚗", tone: "blue", detail: "Everyday auto essentials" },
+  "Toys & Sports": { icon: "⚽", tone: "lavender", detail: "Play, move, explore" },
+  "Pharmacy": { icon: "💊", tone: "green", detail: "Health and wellness" },
+};
+const art = categoryOrder.map(name => categoryArt[name]);
 const money = value => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(Number(value || 0));
 
 export default function Storefront() {
@@ -56,6 +68,14 @@ export default function Storefront() {
   }, []);
 
   const productById = useMemo(() => new Map(products.map(p => [Number(p.id), p])), [products]);
+  const orderedCategories = useMemo(() => {
+    const rank = new Map(categoryOrder.map((name, index) => [name.toLowerCase(), index]));
+    return [...categories].sort((a, b) => {
+      const ai = rank.get(String(a.name || "").trim().toLowerCase()) ?? categoryOrder.length;
+      const bi = rank.get(String(b.name || "").trim().toLowerCase()) ?? categoryOrder.length;
+      return ai - bi || String(a.name || "").localeCompare(String(b.name || ""));
+    });
+  }, [categories]);
   const visibleVariants = useMemo(() => {
     const term = search.trim().toLowerCase();
     return variants.filter(v => {
@@ -111,7 +131,7 @@ export default function Storefront() {
       <label className="storefront-header-search"><span className="sr-only">Search catalogue</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search groceries, fashion, electronics…" /><span aria-hidden="true">⌕</span></label>
       <div className="storefront-actions"><span className="storefront-delivery"><small>Deliver to</small><strong>India ▾</strong></span><button type="button" className="storefront-icon-action" aria-label={`Wishlist, ${wishlist.length} saved`} onClick={() => document.getElementById("products")?.scrollIntoView({behavior:"smooth"})}>♡<small>{wishlist.length}</small></button><a className="storefront-icon-action" href="#basket" aria-label="Shopping basket">🛒<small>{cart.reduce((n, line) => n + line.quantity, 0)}</small></a><a className="storefront-admin-link" href="/admin">Admin</a></div>
     </header>
-    <nav className="storefront-department-nav" aria-label="Shop departments"><a href="#categories">☰ All Categories</a><a href="#deals">Deals 🔥</a><button type="button" onClick={() => {setCategoryId(""); document.getElementById("products")?.scrollIntoView({behavior:"smooth"});}}>Shop All</button>{categories.slice(0,7).map(category => <button type="button" key={category.id} onClick={() => {setCategoryId(String(category.id)); document.getElementById("products")?.scrollIntoView({behavior:"smooth"});}}>{category.name}</button>)}<a href="#why-us">Why Super Bajaar</a></nav>
+    <nav className="storefront-department-nav" aria-label="Shop departments"><a href="#categories">☰ All Categories</a><a href="#deals">Deals 🔥</a><button type="button" onClick={() => {setCategoryId(""); document.getElementById("products")?.scrollIntoView({behavior:"smooth"});}}>Shop All</button>{orderedCategories.map(category => <button type="button" key={category.id} onClick={() => {setCategoryId(String(category.id)); document.getElementById("products")?.scrollIntoView({behavior:"smooth"});}}>{category.name}</button>)}<a href="#why-us">Why Super Bajaar</a></nav>
     <section className="storefront-hero">
       <div className="storefront-hero-copy"><span className="storefront-kicker"><i /> YOUR EVERYDAY SUPER STORE</span><h1>Welcome to<br /><em>Super Bajaar</em></h1><p>Everything you need, all in one place. Explore everyday essentials and discover something new for your home and family.</p><a className="storefront-primary" href="#products">Shop Now <span>→</span></a><div className="storefront-trust"><span>✦ Thoughtfully picked</span><span>✦ Made for everyday</span></div></div>
       <div className="storefront-hero-art" aria-label="Colourful shopping bags and everyday products" role="img"><div className="art-sun" /><div className="art-orbit orbit-one" /><div className="art-orbit orbit-two" /><div className="art-spark spark-one">✦</div><div className="art-spark spark-two">✳</div><div className="art-bag bag-purple"><span>S</span></div><div className="art-bag bag-orange"><span>♥</span></div><div className="art-box"><span>GOOD</span><strong>THINGS</strong></div><div className="art-leaf leaf-one">✦</div><div className="art-leaf leaf-two">✿</div><div className="art-caption">A little joy in every basket</div></div>
@@ -129,12 +149,12 @@ export default function Storefront() {
       </div>
     </section>
     <section className="storefront-products" id="products">
-      <div className="storefront-section-heading"><div><span className="storefront-kicker">TODAY’S PICKS</span><h2>{categoryId ? (categories.find(c => String(c.id) === categoryId)?.name || "Products") : "Shop products"}</h2></div><span className="storefront-heading-note">{visibleVariants.length} variants available</span></div>
+      <div className="storefront-section-heading"><div><span className="storefront-kicker">TODAY’S PICKS</span><h2>{categoryId ? (orderedCategories.find(c => String(c.id) === categoryId)?.name || "Products") : "Shop products"}</h2></div><span className="storefront-heading-note">{visibleVariants.length} variants available</span></div>
       <label className="storefront-search">Search products or SKU<input value={search} onChange={e => setSearch(e.target.value)} placeholder="Try a product name or SKU" /></label>
       {error && <p className="storefront-alert" role="alert">{error}</p>}
       {loading ? <p className="storefront-empty">Loading live products…</p> : visibleVariants.length ? <div className="storefront-product-grid">{visibleVariants.map(variant => {
         const product = productById.get(Number(variant.product_id));
-        const index = categories.findIndex(c => String(c.id) === String(product?.category_id));
+        const index = orderedCategories.findIndex(c => String(c.id) === String(product?.category_id));
         return <article className="storefront-product-card" key={variant.id}><div className="storefront-product-art"><span>{art[(index < 0 ? 0 : index) % art.length].icon}</span><button type="button" className={"storefront-wishlist " + (wishlist.includes(variant.id) ? "is-saved" : "")} aria-label={"Toggle wishlist for " + (product?.name || variant.sku)} aria-pressed={wishlist.includes(variant.id)} onClick={() => setWishlist(old => old.includes(variant.id) ? old.filter(id => id !== variant.id) : [...old, variant.id])}>♡</button></div><small>{product?.brand || product?.name || "Super Bajaar"}</small><h3>{product?.name || variant.product_name || variant.sku}</h3><p className="storefront-sku">{variant.sku}</p><strong>{money(variant.selling_price)}</strong><button type="button" className="storefront-add" onClick={() => addToCart(variant)}>Add to basket +</button></article>;
       })}</div> : <p className="storefront-empty">{error ? "The live catalogue could not be loaded." : "No active products are available in this category yet."}</p>}
     </section>
