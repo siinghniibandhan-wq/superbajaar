@@ -946,3 +946,53 @@
 @media(prefers-reduced-motion:reduce) {
   .storefront-account-sheet-backdrop,.storefront-account-sheet { animation:none; }
 }
+
+/* Customer portal navigation and responsive account sections */
+.storefront-account-page { max-width:1180px; min-height:560px; margin:28px auto 54px; padding:clamp(22px,4vw,42px); border:1px solid rgba(255,255,255,.9); border-radius:30px; background:linear-gradient(145deg,rgba(255,255,255,.88),rgba(249,241,255,.82)); box-shadow:12px 14px 36px rgba(67,35,94,.08),-8px -8px 24px rgba(255,255,255,.75),inset 0 1px rgba(255,255,255,.95); }
+.storefront-account-welcome { margin:12px 0 26px; }
+.storefront-account-welcome h1 { margin:8px 0; color:var(--sb-purple-dark); font-size:clamp(30px,4vw,42px); letter-spacing:-.06em; }
+.storefront-account-welcome p,.storefront-account-section-heading p { margin:0; color:var(--sb-muted); font-size:13px; line-height:1.65; }
+.storefront-account-layout { display:grid; grid-template-columns:220px minmax(0,1fr); align-items:start; gap:22px; }
+.storefront-account-nav { display:grid; gap:8px; padding:10px; border:1px solid #fff; border-radius:20px; background:rgba(255,255,255,.55); box-shadow:inset 2px 2px 6px rgba(75,43,104,.04),-3px -3px 8px #fff; }
+.storefront-account-nav button { display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:44px; padding:11px 13px; border:1px solid transparent; border-radius:13px; background:transparent; color:#5c4b70; font:inherit; font-size:13px; font-weight:700; text-align:left; cursor:pointer; }
+.storefront-account-nav button span { color:#a18ab9; font-size:21px; }
+.storefront-account-nav button:hover { background:#f8f1ff; }
+.storefront-account-nav button.is-active { border-color:#fff; background:linear-gradient(145deg,#fff,#f0e5ff); color:#5d25b8; box-shadow:5px 5px 12px #48227412,-3px -3px 8px #fff; }
+.storefront-account-panel { min-width:0; padding:clamp(18px,3vw,30px); border:1px solid rgba(255,255,255,.96); border-radius:22px; background:rgba(255,255,255,.58); box-shadow:inset 0 1px #fff,0 8px 25px rgba(67,35,94,.04); }
+.storefront-account-section h2 { margin:0 0 7px; color:var(--sb-purple-dark); font-size:24px; letter-spacing:-.045em; }
+.storefront-account-section > p { color:var(--sb-muted); font-size:13px; line-height:1.65; }
+.storefront-account-section-heading { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:20px; }
+.storefront-account-avatar { display:grid; place-items:center; width:52px; height:52px; flex:0 0 52px; border-radius:18px; color:#fff; font-size:24px; font-weight:850; background:linear-gradient(145deg,#8a4be2,#5720b6 68%,#ff8a24); box-shadow:5px 6px 14px #6428c72a,-3px -3px 8px #fff; }
+.storefront-account-summary { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-bottom:22px; }
+.storefront-account-summary > div { display:grid; gap:5px; min-width:0; padding:13px; border:1px solid #fff; border-radius:13px; background:#faf6ff; }
+.storefront-account-summary small { color:var(--sb-muted); font-size:11px; }
+.storefront-account-summary strong { overflow-wrap:anywhere; font-size:13px; }
+.storefront-account-form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:15px; max-width:780px; margin-top:20px; }
+.storefront-account-form label { display:grid; gap:7px; color:#625873; font-size:12px; font-weight:700; }
+.storefront-account-form input,.storefront-account-form textarea { width:100%; min-width:0; box-sizing:border-box; padding:13px 14px; border:1px solid #e7dced; border-radius:12px; background:rgba(255,255,255,.92); color:var(--sb-ink); font:inherit; font-size:13px; box-shadow:inset 2px 2px 5px rgba(72,36,105,.035),0 1px #fff; }
+.storefront-account-form input:focus,.storefront-account-form textarea:focus { outline:3px solid #6428c721; border-color:#9b77d5; }
+.storefront-account-form > button { justify-self:start; border:0; cursor:pointer; }
+.storefront-account-form .storefront-account-address,.storefront-account-form > button,.storefront-account-form .storefront-account-note { grid-column:1/-1; }
+.storefront-account-note { margin:0; color:#81768f; font-size:11px; line-height:1.65; }
+.storefront-account-empty { padding:14px; border-radius:13px; background:#f7f0ff; }
+.storefront-account-empty-state { margin-top:24px; padding:30px 20px; border:1px dashed #d9c6ed; border-radius:18px; background:linear-gradient(145deg,#fff,#faf5ff); text-align:center; }
+.storefront-account-empty-state > span { font-size:34px; }
+.storefront-account-empty-state h3 { margin:12px 0 8px; color:var(--sb-purple-dark); font-size:17px; }
+.storefront-account-empty-state p { max-width:500px; margin:0 auto; color:var(--sb-muted); font-size:12px; line-height:1.75; }
+.storefront-security-list { display:grid; gap:10px; margin:22px 0; }
+.storefront-security-list > div { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:15px; border:1px solid #fff; border-radius:15px; background:linear-gradient(145deg,#fff,#f7f0ff); box-shadow:4px 4px 10px rgba(67,35,94,.045),-3px -3px 8px #fff; }
+.storefront-security-list > div > span { display:grid; gap:5px; }
+.storefront-security-list strong { font-size:13px; }
+.storefront-security-list small { color:var(--sb-muted); font-size:11px; line-height:1.5; }
+.storefront-security-list button { flex:0 0 auto; padding:8px 10px; border:1px solid #e6dbee; border-radius:10px; background:#f5effa; color:#857895; font:inherit; font-size:10px; font-weight:700; }
+@media(max-width:760px) {
+ .storefront-account-page { margin:14px 12px 34px; padding:18px 14px; border-radius:22px; }
+ .storefront-account-layout { grid-template-columns:minmax(0,1fr); gap:14px; }
+ .storefront-account-nav { display:flex; gap:7px; overflow-x:auto; padding:7px; scrollbar-width:thin; }
+ .storefront-account-nav button { flex:0 0 auto; min-height:40px; padding:10px 12px; white-space:nowrap; font-size:12px; }
+ .storefront-account-nav button span { display:none; }
+ .storefront-account-panel { padding:18px 14px; border-radius:18px; }
+ .storefront-account-form { grid-template-columns:minmax(0,1fr); gap:13px; }
+ .storefront-account-summary { grid-template-columns:minmax(0,1fr); }
+ .storefront-security-list > div { align-items:flex-start; flex-direction:column; }
+}
