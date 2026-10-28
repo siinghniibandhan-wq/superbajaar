@@ -17,6 +17,7 @@ import AccountingWorkspace from "../features/accounting/AccountingWorkspace.jsx"
 import HRWorkspace from "../features/hr/HRWorkspace.jsx";
 import { apiRequest, healthApi } from "../services/api.js";
 import LoginScreen from "./LoginScreen.jsx";
+import Storefront from "./Storefront.jsx";
 
 const groups = [
   { title: "Commerce", items: [
@@ -112,4 +113,10 @@ function AppShell() {
     <footer>Super Bajaar · Separate module workspaces · Backend port 8001 · PostgreSQL port 5432</footer>
   </main>;
 }
-export function Router() { return <AppProviders><AppShell /></AppProviders>; }
+function AdminApp() { return <AppProviders><AppShell /></AppProviders>; }
+
+export function Router() {
+  const path = window.location.pathname.replace(/\\/+$/, "") || "/";
+  if (path === "/admin" || path.startsWith("/admin/")) return <AdminApp />;
+  return <Storefront />;
+}
