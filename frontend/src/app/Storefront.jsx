@@ -414,6 +414,17 @@ export default function Storefront() {
     if (!parent) return [];
     return categories.filter(c => [c.parent_id, c.parent_category_id, c.parentId].some(id => id != null && String(id) === String(parent.id)));
   }, [categories, displayCategories, routeCategoryName]);
+  const subcategoryProductRows = useMemo(() => categorySubcategories.map(category => {
+    const items = variants.filter(variant => {
+      const product = productById.get(Number(variant.product_id));
+      if (!product) return false;
+      const productCategoryId = product.category_id ?? product.categoryId;
+      const productCategoryName = product.category_name || product.category || "";
+      return (productCategoryId != null && String(productCategoryId) === String(category.id))
+        || String(productCategoryName).trim().toLowerCase() === String(category.name || "").trim().toLowerCase();
+    }).slice(0, 24);
+    return { category, items };
+  }).filter(row => row.items.length > 0), [categorySubcategories, variants, productById]);
   const dealVariants = useMemo(() => {
     const term = search.trim().toLowerCase();
     const discounted = variants.filter(v => {
@@ -652,6 +663,12 @@ export default function Storefront() {
         <div className="storefront-category-hero-art" aria-hidden="true"><span>{categoryArt[routeCategoryName]?.icon || "🛍️"}</span><i>✦</i><b>SUPER<br/>PICKS</b></div>
       </div>
       {categorySubcategories.length > 0 && <section className="storefront-subcategory-section"><div className="storefront-section-heading"><div><span className="storefront-kicker">SHOP YOUR WAY</span><h2>Explore subcategories</h2></div></div><div className="storefront-subcategory-grid">{categorySubcategories.map((category, index) => { const tile = categoryArt[category.name] || art[index % art.length]; return <button key={category.id} type="button" className="storefront-subcategory-card" onClick={() => openCategory(category)}><span className={"storefront-subcategory-icon tone-" + tile.tone}>{tile.icon}</span><strong>{category.name}</strong><span>Explore collection →</span></button>; })}</div></section>}
+      {subcategoryProductRows.map(({ category, items }) => <section className="storefront-subcategory-products" key={category.id}>
+        <div className="storefront-category-featured-heading"><div><span className="storefront-kicker">SHOP BY SUBCATEGORY</span><h2>{category.name}</h2><p>Explore products in {category.name}.</p></div><button type="button" onClick={() => openCategory(category)}>View all <span>→</span></button></div>
+        <div className="storefront-subcategory-products-viewport">
+          <div className="storefront-carousel-track storefront-subcategory-product-track" tabIndex={0} aria-label={category.name + " products"}>{items.map(renderProductCard)}</div>
+        </div>
+      </section>)}
       <div className="storefront-category-featured-heading"><div><span className="storefront-kicker">HANDPICKED FOR YOU</span><h2>Featured {routeCategoryName}</h2><p>Popular picks from this department.</p></div><button type="button" onClick={openCategoryListing}>View all <span>→</span></button></div>
       {loading ? <p className="storefront-empty">Loading live products…</p> : visibleVariants.length ? <div className="storefront-category-featured-track">{visibleVariants.slice(0, 8).map(renderProductCard)}</div> : <p className="storefront-empty">No active products are available in this category yet.</p>}
       {bestSellers.length > 0 && <div className="storefront-category-featured-heading"><div><span className="storefront-kicker">CUSTOMER FAVOURITES</span><h2>Popular in {routeCategoryName}</h2></div><button type="button" onClick={openCategoryListing}>View all <span>→</span></button></div>}
