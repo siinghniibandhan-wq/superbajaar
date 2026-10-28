@@ -795,3 +795,154 @@
 .storefront-account-address,.storefront-account-note { grid-column:1/-1; }
 .storefront-account-note { margin:0;color:#766b86;font-size:12px;line-height:1.6; }
 @media(max-width:600px) { .storefront-account-page { margin:16px 12px 30px;padding:20px 16px; } .storefront-account-form { grid-template-columns:1fr; } .storefront-account-address,.storefront-account-note { grid-column:auto; } }
+
+
+/* Mobile account sheet and compact-width header corrections */
+.storefront-account-sheet-backdrop {
+  display:none;
+}
+.storefront-account-sheet {
+  display:none;
+}
+@media(max-width:640px) {
+  /* Prevent the brand/search/action row from forcing the entire page sideways. */
+  .storefront-header {
+    display:grid;
+    grid-template-columns:minmax(0,1fr);
+    gap:12px;
+    width:100%;
+    min-width:0;
+    padding:14px 14px 16px;
+    overflow:visible;
+  }
+  .storefront-brand { min-width:0; }
+  .storefront-header-search {
+    grid-row:2;
+    width:100%;
+    min-width:0;
+    min-height:46px;
+    box-sizing:border-box;
+  }
+  .storefront-header-search input { min-width:0; width:100%; }
+  .storefront-actions {
+    grid-row:3;
+    width:100%;
+    min-width:0;
+    justify-content:space-between;
+    gap:8px;
+  }
+  .storefront-delivery { min-width:0; flex:1 1 auto; }
+  .storefront-icon-action { flex:0 0 36px; }
+  .storefront-account-wrap { flex:0 0 auto; }
+  .storefront-account-button { min-height:40px; padding:8px 10px; }
+  .storefront-account-menu-desktop { display:none !important; }
+  .storefront-account-sheet-backdrop {
+    position:fixed;
+    z-index:1300;
+    inset:0;
+    display:flex;
+    align-items:flex-end;
+    justify-content:center;
+    padding:0;
+    background:rgba(31,14,48,.46);
+    backdrop-filter:blur(9px) saturate(115%);
+    -webkit-backdrop-filter:blur(9px) saturate(115%);
+    animation:sb-account-backdrop-in .18s ease-out;
+  }
+  .storefront-account-sheet {
+    display:block;
+    position:relative;
+    width:100%;
+    max-width:560px;
+    max-height:min(78dvh,620px);
+    overflow:auto;
+    padding:10px 22px calc(24px + env(safe-area-inset-bottom));
+    border:1px solid rgba(255,255,255,.9);
+    border-bottom:0;
+    border-radius:28px 28px 0 0;
+    background:linear-gradient(145deg,rgba(255,255,255,.97),rgba(246,237,255,.96));
+    box-shadow:0 -12px 42px rgba(36,15,57,.22),inset 0 1px rgba(255,255,255,.98);
+    color:#32105f;
+    animation:sb-account-sheet-in .22s ease-out;
+  }
+  .storefront-account-sheet-handle {
+    width:42px;
+    height:4px;
+    margin:0 auto 20px;
+    border-radius:99px;
+    background:#cbb9df;
+  }
+  .storefront-account-sheet-heading {
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:14px;
+  }
+  .storefront-account-sheet-heading h2 {
+    margin:6px 0 0;
+    font-size:26px;
+    line-height:1.15;
+    letter-spacing:-.05em;
+  }
+  .storefront-account-sheet-heading .storefront-modal-close {
+    position:static;
+    flex:0 0 40px;
+    width:40px;
+    height:40px;
+  }
+  .storefront-account-sheet > p {
+    margin:10px 0 20px;
+    color:#766b86;
+    font-size:13px;
+    line-height:1.6;
+  }
+  .storefront-account-sheet-action {
+    display:flex;
+    align-items:center;
+    gap:13px;
+    width:100%;
+    min-height:70px;
+    margin-top:12px;
+    padding:12px 14px;
+    border:1px solid rgba(255,255,255,.96);
+    border-radius:18px;
+    color:#43206f;
+    text-align:left;
+    text-decoration:none;
+    background:linear-gradient(145deg,#fff,#f3eafb);
+    box-shadow:6px 7px 14px rgba(84,48,126,.12),-4px -4px 10px #fff,inset 0 1px #fff;
+    font:inherit;
+    cursor:pointer;
+  }
+  .storefront-account-sheet-action:active {
+    transform:translateY(1px);
+    box-shadow:inset 3px 3px 7px rgba(84,48,126,.13),inset -3px -3px 7px #fff;
+  }
+  .storefront-account-sheet-action-icon {
+    display:grid;
+    place-items:center;
+    flex:0 0 42px;
+    width:42px;
+    height:42px;
+    border:1px solid rgba(255,255,255,.95);
+    border-radius:14px;
+    background:linear-gradient(145deg,#f4eaff,#fff);
+    box-shadow:3px 3px 7px rgba(84,48,126,.1),-2px -2px 6px #fff;
+    color:#6428c7;
+    font-size:20px;
+  }
+  .storefront-account-sheet-action > span:nth-child(2) {
+    display:grid;
+    flex:1;
+    gap:4px;
+    min-width:0;
+  }
+  .storefront-account-sheet-action strong { font-size:14px; }
+  .storefront-account-sheet-action small { color:#766b86; font-size:11px; }
+  .storefront-account-sheet-action > span:last-child { color:#8a68b7; font-size:26px; }
+}
+@keyframes sb-account-backdrop-in { from { opacity:0; } to { opacity:1; } }
+@keyframes sb-account-sheet-in { from { transform:translateY(24px); opacity:.7; } to { transform:translateY(0); opacity:1; } }
+@media(prefers-reduced-motion:reduce) {
+  .storefront-account-sheet-backdrop,.storefront-account-sheet { animation:none; }
+}
