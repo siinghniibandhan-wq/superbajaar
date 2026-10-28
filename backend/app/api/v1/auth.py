@@ -145,3 +145,121 @@ def logout(credentials: HTTPAuthorizationCredentials | None = Depends(bearer), u
         return {"status": "logged_out"}
     except psycopg.Error as exc:
         raise HTTPException(503, "Unable to revoke session") from exc
+
+
+USER_ROLES = {"owner", "admin", "manager", "staff", "viewer"}
+
+
+def _require_user_admin(user: dict):
+    if user.get("role") not in {"owner", "admin"}:
+        raise HTTPException(403, "Owner or admin permission is required")
+    return user
+
+
+class UserCreate(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    full_name: str = Field(min_length=1, max_length=200)
+    password: str = Field(min_length=12, max_length=1024)
+    role: str = "staff"
+
+    @field_validator("email")
+    @classmethod
+    def normalize_user_email(cls, value):
+        value = value.strip().lower()
+        if "@" not in value or "." not in value.rsplit("@", 1)[-1] or " " in value:
+            raise ValueError("Enter a valid email address")
+        return value
+
+    @field_validator("full_name")
+    @classmethod
+    def validate_user_name(cls, value):
+        value = value.strip()
+        if not value:
+            raise ValueError("Full name cannot be blank")
+        return value
+
+    @field_validator("role")
+    @classmethod
+    def validate_user_role(cls, value):
+        if value not in USER_ROLES:
+            raise ValueError("Unsupported user role")
+        return value
+
+
+class UserUpdate(BaseModel):
+    role: str | None = None
+    is_active: bool | None = None
+
+    @field_validator("role")
+    @classmethod
+    def validate_optional_user_role(cls, value):
+        if value is not None and value not in USER_ROLES:
+            raise ValueError("Unsupported user role")
+        return value
+
+
+@router.get("/users")
+def list_users(user=Depends(current_user)):
+    _require_user_admin(user)
+    try:
+        with _connect() as conn:
+            rows = conn.execute(
+                "SELECT id,email,full_name,role,is_active,created_at,updated_at FROM app_users ORDER BY created_at,id"
+            ).fetchall()
+        return {"items": rows}
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Unable to load users; verify migration 007") from exc
+
+
+@router.post("/users", status_code=201)
+def create_user(payload: UserCreate, user=Depends(current_user)):
+    _require_user_admin(user)
+    if payload.role in {"owner", "admin"} and user["role"] != "owner":
+        raise HTTPException(403, "Only an owner can create owner or admin accounts")
+    try:
+        with _connect() as conn:
+            row = conn.execute(
+                "INSERT INTO app_users(email,full_name,password_hash,role) VALUES(%s,%s,%s,%s) "
+                "RETURNING id,email,full_name,role,is_active,created_at,updated_at",
+                (payload.email, payload.full_name, _password_hash(payload.password), payload.role),
+            ).fetchone()
+        return row
+    except psycopg.Error as exc:
+        if getattr(exc, "sqlstate", None) == "23505":
+            raise HTTPException(409, "An account with this email already exists") from exc
+        raise HTTPException(503, "Unable to create user; verify migration 007") from exc
+
+
+@router.patch("/users/{user_id}")
+def update_user(user_id: int, payload: UserUpdate, user=Depends(current_user)):
+    _require_user_admin(user)
+    if payload.role is None and payload.is_active is None:
+        raise HTTPException(422, "Provide role or is_active")
+    if payload.role in {"owner", "admin"} and user["role"] != "owner":
+        raise HTTPException(403, "Only an owner can assign owner or admin roles")
+    if user_id == user["id"] and payload.is_active is False:
+        raise HTTPException(409, "You cannot deactivate your own account")
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                target = conn.execute("SELECT id,role,is_active FROM app_users WHERE id=%s FOR UPDATE", (user_id,)).fetchone()
+                if target is None:
+                    raise HTTPException(404, "User not found")
+                next_role = payload.role if payload.role is not None else target["role"]
+                next_active = payload.is_active if payload.is_active is not None else target["is_active"]
+                if target["role"] == "owner" and (next_role != "owner" or not next_active):
+                    owners = conn.execute("SELECT count(*) AS n FROM app_users WHERE role='owner' AND is_active=TRUE").fetchone()["n"]
+                    if owners <= 1:
+                        raise HTTPException(409, "The last active owner cannot be demoted or deactivated")
+                row = conn.execute(
+                    "UPDATE app_users SET role=%s,is_active=%s,updated_at=now() WHERE id=%s "
+                    "RETURNING id,email,full_name,role,is_active,created_at,updated_at",
+                    (next_role, next_active, user_id),
+                ).fetchone()
+                if not next_active:
+                    conn.execute("UPDATE app_user_sessions SET revoked_at=now() WHERE user_id=%s AND revoked_at IS NULL", (user_id,))
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Unable to update user; verify migration 007") from exc
