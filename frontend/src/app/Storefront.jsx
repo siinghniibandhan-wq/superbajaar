@@ -109,13 +109,10 @@ export default function Storefront() {
       return next;
     });
   };
-  const newArrivals = useMemo(() => [...visibleVariants].sort((a,b) => {
-    const pa = productById.get(Number(a.product_id)) || {};
-    const pb = productById.get(Number(b.product_id)) || {};
-    const da = Date.parse(pa.created_at || pa.created_on || pa.createdAt || a.created_at || "") || 0;
-    const db = Date.parse(pb.created_at || pb.created_on || pb.createdAt || b.created_at || "") || 0;
-    return db-da;
-  }).slice(0,8), [visibleVariants, productById]);
+  const newArrivals = useMemo(() => [...visibleVariants].map(v => {
+    const p = productById.get(Number(v.product_id)) || {};
+    return { ...v, _created: Date.parse(p.created_at || p.created_on || p.createdAt || v.created_at || "") || 0 };
+  }).filter(v => v._created > 0).sort((a,b) => b._created-a._created).slice(0,8), [visibleVariants, productById]);
   const bestSellers = useMemo(() => [...visibleVariants].map(v => {
     const p = productById.get(Number(v.product_id)) || {};
     return { ...v, _sales: Number(v.units_sold ?? v.sold_count ?? v.sales_count ?? p.units_sold ?? p.sold_count ?? p.sales_count ?? p.order_count ?? 0) };
