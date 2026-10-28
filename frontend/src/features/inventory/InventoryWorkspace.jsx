@@ -10,7 +10,8 @@ export default function InventoryWorkspace({ onBack }) {
   const [movements, setMovements] = useState([]);
   const [productId, setProductId] = useState("");
   const [form, setForm] = useState({ variant_id: "", location_id: "", quantity: "", note: "" });
-  const [issueForm, setIssueForm] = useState({ variant_id: "", location_id: "", quantity: "", note: "" });
+  const [issueForm, setIssueForm] = useState({ variant_id: "", location_id: "", quantity: "", note: "", reason_type: "issue" });
+  const [countForm, setCountForm] = useState({ variant_id: "", location_id: "", counted_quantity: "", note: "" });
   const [transferForm, setTransferForm] = useState({ variant_id: "", source_location_id: "", destination_location_id: "", quantity: "", note: "" });
   const [locationForm, setLocationForm] = useState({ name: "", location_type: "warehouse", pin_code: "" });
   const [error, setError] = useState("");
@@ -67,11 +68,25 @@ export default function InventoryWorkspace({ onBack }) {
     try {
       await apiRequest("/inventory/issues", { method: "POST", body: JSON.stringify({
         variant_id: Number(issueForm.variant_id), location_id: Number(issueForm.location_id),
-        quantity: Number(issueForm.quantity), note: issueForm.note,
+        quantity: Number(issueForm.quantity), note: issueForm.note, reason_type: issueForm.reason_type,
       })});
       setIssueForm(v => ({ ...v, quantity: "", note: "" }));
-      setMessage("Stock issue recorded. Reserved units were protected."); await loadBase();
+      setMessage(issueForm.reason_type === "scrap" ? "Scrap recorded and stock reduced." : "Stock issue recorded. Reserved units were protected."); await loadBase();
     } catch (e) { setError(e.message || "Stock issue failed."); }
+    finally { setBusy(false); }
+  }
+
+
+  async function submitCount(event) {
+    event.preventDefault(); setBusy(true); setError(""); setMessage("");
+    try {
+      const result = await apiRequest("/inventory/counts", { method: "POST", body: JSON.stringify({
+        variant_id: Number(countForm.variant_id), location_id: Number(countForm.location_id),
+        counted_quantity: Number(countForm.counted_quantity), note: countForm.note,
+      })});
+      setCountForm(v => ({ ...v, counted_quantity: "", note: "" }));
+      setMessage("Physical count saved. Variance: " + result.variance + " units."); await loadBase();
+    } catch (e) { setError(e.message || "Physical count failed."); }
     finally { setBusy(false); }
   }
 
@@ -119,15 +134,27 @@ export default function InventoryWorkspace({ onBack }) {
     </form>
     <form className="sb-form" onSubmit={submitIssue}>
       <h2>Issue / reduce stock</h2>
-      <p className="sb-muted">Reduces on-hand quantity only when unreserved available stock is sufficient. Reserved units cannot be issued.</p>
+      <p className="sb-muted">Issue or scrap stock. On-hand stock cannot fall below reserved units; every reduction is recorded in movement history.</p>
       <div className="sb-form-grid">
         <label>Product<select required value={productId} onChange={e=>{setProductId(e.target.value);setIssueForm(v=>({...v,variant_id:""}));}}><option value="">Choose product</option>{products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
         <label>Variant / SKU<select required value={issueForm.variant_id} onChange={e=>setIssueForm(v=>({...v,variant_id:e.target.value}))}><option value="">Choose variant</option>{variants.map(v=><option key={v.id} value={v.id}>{v.sku} · ₹{v.selling_price}</option>)}</select></label>
         <label>Stock location<select required value={issueForm.location_id} onChange={e=>setIssueForm(v=>({...v,location_id:e.target.value}))}><option value="">Choose location</option>{locations.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select></label>
-        <label>Quantity to issue<input required type="number" min="0.001" step="0.001" value={issueForm.quantity} onChange={e=>setIssueForm(v=>({...v,quantity:e.target.value}))}/></label>
+        <label>Action<select value={issueForm.reason_type} onChange={e=>setIssueForm(v=>({...v,reason_type:e.target.value}))}><option value="issue">Issue / remove stock</option><option value="scrap">Scrap / damaged stock</option></select></label>\n        <label>Quantity<input required type="number" min="0.001" step="0.001" value={issueForm.quantity} onChange={e=>setIssueForm(v=>({...v,quantity:e.target.value}))}/></label>
         <label className="sb-span-all">Reason / reference<input required minLength="3" maxLength="500" value={issueForm.note} onChange={e=>setIssueForm(v=>({...v,note:e.target.value}))}/></label>
       </div>
       <button className="sb-primary" disabled={busy || !locations.length} type="submit">{busy ? "Saving…" : "Issue stock"}</button>
+    </form>
+    <form className="sb-form" onSubmit={submitCount}>
+      <h2>Physical inventory count</h2>
+      <p className="sb-muted">Enter the physically counted quantity. The system records the variance and will not allow a count below reserved stock.</p>
+      <div className="sb-form-grid">
+        <label>Product<select required value={productId} onChange={e=>{setProductId(e.target.value);setCountForm(v=>({...v,variant_id:""}));}}><option value="">Choose product</option>{products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+        <label>Variant / SKU<select required value={countForm.variant_id} onChange={e=>setCountForm(v=>({...v,variant_id:e.target.value}))}><option value="">Choose variant</option>{variants.map(v=><option key={v.id} value={v.id}>{v.sku} · ₹{v.selling_price}</option>)}</select></label>
+        <label>Stock location<select required value={countForm.location_id} onChange={e=>setCountForm(v=>({...v,location_id:e.target.value}))}><option value="">Choose location</option>{locations.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select></label>
+        <label>Physically counted quantity<input required type="number" min="0" step="0.001" value={countForm.counted_quantity} onChange={e=>setCountForm(v=>({...v,counted_quantity:e.target.value}))}/></label>
+        <label className="sb-span-all">Count notes / reference<input required minLength="3" maxLength="500" value={countForm.note} onChange={e=>setCountForm(v=>({...v,note:e.target.value}))}/></label>
+      </div>
+      <button className="sb-primary" disabled={busy || !locations.length} type="submit">{busy ? "Saving…" : "Reconcile physical count"}</button>
     </form>
     <form className="sb-form" onSubmit={submitTransfer}>
       <h2>Transfer stock between locations</h2>
@@ -143,6 +170,11 @@ export default function InventoryWorkspace({ onBack }) {
       <button className="sb-primary" disabled={busy || locations.length < 2} type="submit">{busy ? "Saving…" : "Transfer stock"}</button>
       {locations.length < 2 && <p className="sb-muted">Create at least two active locations to transfer stock.</p>}
     </form>
+    <div className="sb-data-card">
+      <h2>Replenishment watchlist</h2>
+      <p className="sb-muted">Balances with 5 or fewer available units. Review these and raise purchase orders in Purchasing; no orders are created automatically.</p>
+      {balances.filter(b => Number(b.available ?? (Number(b.on_hand || 0) - Number(b.reserved || 0))) <= 5).length ? <div className="sb-table-wrap"><table><thead><tr><th>SKU</th><th>Location</th><th>Available</th><th>On hand</th></tr></thead><tbody>{balances.filter(b => Number(b.available ?? (Number(b.on_hand || 0) - Number(b.reserved || 0))) <= 5).map((b,i)=><tr key={"replenish-"+b.variant_id+"-"+b.location_id+"-"+i}><td>{b.sku}</td><td>{b.location_name}</td><td>{b.available ?? (Number(b.on_hand || 0) - Number(b.reserved || 0))}</td><td>{b.on_hand}</td></tr>)}</tbody></table></div> : <p className="sb-empty">No balances currently meet the replenishment threshold.</p>}
+    </div>
     <div className="sb-data-card"><div className="sb-data-heading"><h2>Stock balances ({balances.length})</h2><button type="button" onClick={loadBase}>Refresh</button></div>
       {balances.length ? <div className="sb-table-wrap"><table><thead><tr><th>SKU</th><th>Location</th><th>On hand</th><th>Reserved</th><th>Available</th></tr></thead><tbody>{balances.map((b,i)=><tr key={b.variant_id+"-"+b.location_id+"-"+i}><td>{b.sku}</td><td>{b.location_name}</td><td>{b.on_hand}</td><td>{b.reserved}</td><td>{b.available}</td></tr>)}</tbody></table></div> : <p className="sb-empty">No stock balances found.</p>}
     </div>
