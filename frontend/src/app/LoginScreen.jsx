@@ -20,7 +20,7 @@ export default function LoginScreen({ onSignedIn }) {
     setBusy(true);
     setError("");
     try {
-      const response = await apiRequest("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+      const response = await apiRequest("/auth/login", { method: "POST", skipAuth: true, body: JSON.stringify({ email, password }) });
       const { token, user, keys } = normalizeLoginResponse(response);
       if (!token) {
         const shape = keys.length ? keys.join(", ") : typeof response;
