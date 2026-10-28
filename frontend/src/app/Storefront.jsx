@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Heart, ShoppingBag, Search, Sparkles, Flame, Clock3, ChevronLeft, ChevronRight } from "lucide-react";
 import { apiRequest } from "../services/api.js";
 import "./storefront.css";
 
@@ -32,12 +33,36 @@ export default function Storefront() {
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState([]);
   const [wishlist, setWishlist] = useState([]);
+  const [recentlyViewed, setRecentlyViewed] = useState([]);
   const [customer, setCustomer] = useState({ name: "", phone: "", pin: "" });
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [order, setOrder] = useState(null);
+
+  useEffect(() => {
+    try { setRecentlyViewed(JSON.parse(sessionStorage.getItem("sb-recently-viewed") || "[]")); } catch { setRecentlyViewed([]); }
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      document.querySelectorAll(".storefront-carousel-track").forEach(track => {
+        if (track.matches(":hover") || track.matches(":focus-within")) return;
+        const card = track.querySelector(".storefront-product-card");
+        if (!card) return;
+        const styles = window.getComputedStyle(track);
+        const gap = Number.parseFloat(styles.columnGap || styles.gap || "0") || 0;
+        const step = card.getBoundingClientRect().width + gap;
+        const max = track.scrollWidth - track.clientWidth;
+        if (max <= 2) return;
+        if (track.scrollLeft >= max - 8) track.scrollTo({ left: 0, behavior: "smooth" });
+        else track.scrollBy({ left: step, behavior: "smooth" });
+      });
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -76,14 +101,42 @@ export default function Storefront() {
       return ai - bi || String(a.name || "").localeCompare(String(b.name || ""));
     });
   }, [categories]);
+  const displayCategories = useMemo(() => {
+    const byName = new Map(categories.map(c => [String(c.name || "").trim().toLowerCase(), c]));
+    const approved = categoryOrder.map(name => byName.get(name.toLowerCase()) || { id: "name:" + name, name, description: categoryArt[name].detail });
+    const approvedNames = new Set(categoryOrder.map(name => name.toLowerCase()));
+    return [...approved, ...orderedCategories.filter(c => !approvedNames.has(String(c.name || "").trim().toLowerCase()))];
+  }, [categories, orderedCategories]);
   const visibleVariants = useMemo(() => {
     const term = search.trim().toLowerCase();
     return variants.filter(v => {
       const product = productById.get(Number(v.product_id));
-      if (!product || (categoryId && String(product.category_id || "") !== categoryId)) return false;
+      if (!product) return false;
+      if (categoryId) {
+        const selected = displayCategories.find(c => String(c.id) === categoryId);
+        const matches = String(product.category_id || "") === categoryId || (selected && String(product.category_name || product.category || "").trim().toLowerCase() === String(selected.name).toLowerCase());
+        if (!matches) return false;
+      }
       return !term || [v.product_name, product.name, v.sku, product.brand].some(x => String(x || "").toLowerCase().includes(term));
     });
-  }, [variants, productById, categoryId, search]);
+  }, [variants, productById, categoryId, search, displayCategories]);
+  const rememberViewed = variant => {
+    const entry = { variantId: variant.id, productId: variant.product_id, viewedAt: Date.now() };
+    setRecentlyViewed(old => {
+      const next = [entry, ...old.filter(item => Number(item.variantId) !== Number(variant.id))].slice(0, 12);
+      try { sessionStorage.setItem("sb-recently-viewed", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+  const newArrivals = useMemo(() => [...visibleVariants].map(v => {
+    const p = productById.get(Number(v.product_id)) || {};
+    return { ...v, _created: Date.parse(p.created_at || p.created_on || p.createdAt || v.created_at || "") || 0 };
+  }).filter(v => v._created > 0).sort((a,b) => b._created-a._created).slice(0,8), [visibleVariants, productById]);
+  const bestSellers = useMemo(() => [...visibleVariants].map(v => {
+    const p = productById.get(Number(v.product_id)) || {};
+    return { ...v, _sales: Number(v.units_sold ?? v.sold_count ?? v.sales_count ?? p.units_sold ?? p.sold_count ?? p.sales_count ?? p.order_count ?? 0) };
+  }).filter(v => v._sales > 0).sort((a,b) => b._sales-a._sales).slice(0,8), [visibleVariants, productById]);
+  const recentVariants = useMemo(() => recentlyViewed.map(item => variants.find(v => Number(v.id) === Number(item.variantId))).filter(Boolean).slice(0,8), [recentlyViewed, variants]);
   const total = cart.reduce((sum, line) => sum + Number(line.selling_price || 0) * line.quantity, 0);
   const addToCart = variant => {
     setCart(old => {
@@ -124,14 +177,49 @@ export default function Storefront() {
     } finally { setSubmitting(false); }
   }
 
+  function renderProductCard(variant) {
+    const product = productById.get(Number(variant.product_id));
+    const categoryName = product?.category_name || product?.category || orderedCategories.find(c => String(c.id) === String(product?.category_id))?.name;
+    const tile = categoryArt[categoryName] || art[0];
+    const saved = wishlist.includes(variant.id);
+    return <article className="storefront-product-card" key={variant.id}>
+      <div className="storefront-product-art"><span>{tile.icon}</span><button type="button" className={"storefront-wishlist " + (saved ? "is-saved" : "")} aria-label={(saved ? "Remove from" : "Add to") + " wishlist: " + (product?.name || variant.sku)} aria-pressed={saved} onClick={() => setWishlist(old => old.includes(variant.id) ? old.filter(id => id !== variant.id) : [...old, variant.id])}><Heart size={19} strokeWidth={1.9} fill={saved ? "currentColor" : "none"} /></button></div>
+      <small>{product?.brand || product?.name || "Super Bajaar"}</small>
+      <h3><button type="button" className="storefront-product-title" onClick={() => rememberViewed(variant)}>{product?.name || variant.product_name || variant.sku}</button></h3>
+      <p className="storefront-sku">{variant.sku}</p><strong>{money(variant.selling_price)}</strong>
+      <button type="button" className="storefront-add" onClick={() => addToCart(variant)}><ShoppingBag size={17} strokeWidth={2} /> Add to basket</button>
+    </article>;
+  }
+  function renderDiscoverySection(title, subtitle, items, emptyText, icon) {
+    const trackId = "carousel-" + title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const moveTrack = direction => {
+      const track = document.getElementById(trackId);
+      const card = track?.querySelector(".storefront-product-card");
+      if (!track || !card) return;
+      const styles = window.getComputedStyle(track);
+      const gap = Number.parseFloat(styles.columnGap || styles.gap || "0") || 0;
+      track.scrollBy({ left: direction * (card.getBoundingClientRect().width + gap), behavior: "smooth" });
+    };
+    return <section className="storefront-discovery-section" id={title === "Best Sellers" ? "deals" : undefined}>
+      <div className="storefront-section-heading storefront-carousel-heading">
+        <div><span className="storefront-kicker">{icon} DISCOVER MORE</span><h2>{title}</h2><p>{subtitle}</p></div>
+        <div className="storefront-carousel-controls" aria-label={title + " carousel controls"}>
+          <button type="button" aria-label={"Previous " + title} onClick={() => moveTrack(-1)}><ChevronLeft size={20} /></button>
+          <button type="button" aria-label={"Next " + title} onClick={() => moveTrack(1)}><ChevronRight size={20} /></button>
+        </div>
+      </div>
+      {items.length ? <div className="storefront-carousel-track" id={trackId} tabIndex={0} aria-label={title + " products"}>{items.map(renderProductCard)}</div> : <p className="storefront-empty">{emptyText}</p>}
+    </section>;
+  }
+
   return <main className="storefront">
     <div className="storefront-promo">Your everyday favourites, all in one place <span>✦</span> Shop smarter with Super Bajaar</div>
     <header className="storefront-header">
       <a className="storefront-brand" href="/" aria-label="Super Bajaar home"><span className="storefront-logo">S</span><span><strong>Super Bajaar <span className="storefront-crown" aria-hidden="true">♛</span></strong><small>Your Everyday Super Store</small></span></a>
-      <label className="storefront-header-search"><span className="sr-only">Search catalogue</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search groceries, fashion, electronics…" /><span aria-hidden="true">⌕</span></label>
-      <div className="storefront-actions"><span className="storefront-delivery"><small>Deliver to</small><strong>India ▾</strong></span><button type="button" className="storefront-icon-action" aria-label={`Wishlist, ${wishlist.length} saved`} onClick={() => document.getElementById("products")?.scrollIntoView({behavior:"smooth"})}>♡<small>{wishlist.length}</small></button><a className="storefront-icon-action" href="#basket" aria-label="Shopping basket">🛒<small>{cart.reduce((n, line) => n + line.quantity, 0)}</small></a><a className="storefront-admin-link" href="/admin">Admin</a></div>
+      <label className="storefront-header-search"><span className="sr-only">Search products</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search groceries, fashion, electronics…" /><Search aria-hidden="true" size={19} /></label>
+      <div className="storefront-actions"><span className="storefront-delivery"><small>Deliver to</small><strong>India ▾</strong></span><button type="button" className="storefront-icon-action" aria-label={`Wishlist, ${wishlist.length} saved`} onClick={() => document.getElementById("products")?.scrollIntoView({behavior:"smooth"})}><Heart size={22} strokeWidth={1.8} /><small>{wishlist.length}</small></button><a className="storefront-icon-action" href="#basket" aria-label="Shopping basket"><ShoppingBag size={22} strokeWidth={1.8} /><small>{cart.reduce((n, line) => n + line.quantity, 0)}</small></a><a className="storefront-admin-link" href="/admin">Admin</a></div>
     </header>
-    <nav className="storefront-department-nav" aria-label="Shop departments"><a href="#categories">☰ All Categories</a><a href="#deals">Deals 🔥</a><button type="button" onClick={() => {setCategoryId(""); document.getElementById("products")?.scrollIntoView({behavior:"smooth"});}}>Shop All</button>{orderedCategories.map(category => <button type="button" key={category.id} onClick={() => {setCategoryId(String(category.id)); document.getElementById("products")?.scrollIntoView({behavior:"smooth"});}}>{category.name}</button>)}<a href="#why-us">Why Super Bajaar</a></nav>
+    <nav className="storefront-department-nav" aria-label="Shop departments"><a href="#categories">☰ All Categories</a><a href="#deals">Deals <Flame size={14} /></a><button type="button" onClick={() => {setCategoryId(""); document.getElementById("products")?.scrollIntoView({behavior:"smooth"});}}>Shop All</button>{displayCategories.map(category => <button type="button" key={category.id} onClick={() => {setCategoryId(String(category.id)); document.getElementById("products")?.scrollIntoView({behavior:"smooth"});}}>{category.name}</button>)}</nav>
     <section className="storefront-hero">
       <div className="storefront-hero-copy"><span className="storefront-kicker"><i /> YOUR EVERYDAY SUPER STORE</span><h1>Welcome to<br /><em>Super Bajaar</em></h1><p>Everything you need, all in one place. Explore everyday essentials and discover something new for your home and family.</p><a className="storefront-primary" href="#products">Shop Now <span>→</span></a><div className="storefront-trust"><span>✦ Thoughtfully picked</span><span>✦ Made for everyday</span></div></div>
       <div className="storefront-hero-art" aria-label="Colourful shopping bags and everyday products" role="img"><div className="art-sun" /><div className="art-orbit orbit-one" /><div className="art-orbit orbit-two" /><div className="art-spark spark-one">✦</div><div className="art-spark spark-two">✳</div><div className="art-bag bag-purple"><span>S</span></div><div className="art-bag bag-orange"><span>♥</span></div><div className="art-box"><span>GOOD</span><strong>THINGS</strong></div><div className="art-leaf leaf-one">✦</div><div className="art-leaf leaf-two">✿</div><div className="art-caption">A little joy in every basket</div></div>
@@ -139,9 +227,9 @@ export default function Storefront() {
     <section className="storefront-categories" id="categories">
       <div className="storefront-section-heading"><div><span className="storefront-kicker">FIND YOUR FAVOURITES</span><h2>Shop by category</h2></div><span className="storefront-heading-note">Choose a category to filter products.</span></div>
       <div className="storefront-category-grid">
-        <button type="button" className={"storefront-category storefront-category-all " + (!categoryId ? "is-selected" : "")} onClick={() => setCategoryId("")}><span className="storefront-category-art tone-lavender"><span>✦</span><i>↗</i></span><strong>All categories</strong><small>Browse everything</small></button>
-        {categories.map((category, index) => {
-          const tile = art[index % art.length];
+
+        {displayCategories.map((category, index) => {
+          const tile = categoryArt[category.name] || art[index % art.length];
           return <button type="button" className={"storefront-category " + (String(category.id) === categoryId ? "is-selected" : "")} key={category.id} onClick={() => { setCategoryId(String(category.id)); document.getElementById("products")?.scrollIntoView({ behavior: "smooth" }); }}>
             <span className={"storefront-category-art tone-" + tile.tone}><span>{tile.icon}</span><i>↗</i></span><strong>{category.name}</strong><small>{category.description || tile.detail}</small>
           </button>;
@@ -152,12 +240,13 @@ export default function Storefront() {
       <div className="storefront-section-heading"><div><span className="storefront-kicker">TODAY’S PICKS</span><h2>{categoryId ? (orderedCategories.find(c => String(c.id) === categoryId)?.name || "Products") : "Shop products"}</h2></div><span className="storefront-heading-note">{visibleVariants.length} variants available</span></div>
       <label className="storefront-search">Search products or SKU<input value={search} onChange={e => setSearch(e.target.value)} placeholder="Try a product name or SKU" /></label>
       {error && <p className="storefront-alert" role="alert">{error}</p>}
-      {loading ? <p className="storefront-empty">Loading live products…</p> : visibleVariants.length ? <div className="storefront-product-grid">{visibleVariants.map(variant => {
-        const product = productById.get(Number(variant.product_id));
-        const index = orderedCategories.findIndex(c => String(c.id) === String(product?.category_id));
-        return <article className="storefront-product-card" key={variant.id}><div className="storefront-product-art"><span>{art[(index < 0 ? 0 : index) % art.length].icon}</span><button type="button" className={"storefront-wishlist " + (wishlist.includes(variant.id) ? "is-saved" : "")} aria-label={"Toggle wishlist for " + (product?.name || variant.sku)} aria-pressed={wishlist.includes(variant.id)} onClick={() => setWishlist(old => old.includes(variant.id) ? old.filter(id => id !== variant.id) : [...old, variant.id])}>♡</button></div><small>{product?.brand || product?.name || "Super Bajaar"}</small><h3>{product?.name || variant.product_name || variant.sku}</h3><p className="storefront-sku">{variant.sku}</p><strong>{money(variant.selling_price)}</strong><button type="button" className="storefront-add" onClick={() => addToCart(variant)}>Add to basket +</button></article>;
-      })}</div> : <p className="storefront-empty">{error ? "The live catalogue could not be loaded." : "No active products are available in this category yet."}</p>}
+      {loading ? <p className="storefront-empty">Loading live products…</p> : visibleVariants.length ? <div className="storefront-product-grid">{visibleVariants.map(renderProductCard)}</div> : <p className="storefront-empty">{error ? "The live catalogue could not be loaded." : "No active products are available in this category yet."}</p>}
     </section>
+    {!loading && <div className="storefront-discovery">
+      {renderDiscoverySection("Best Sellers", "Customer favourites, ranked by recorded sales", bestSellers, "Best Sellers will appear when real sales data is available.", <Flame size={18} />)}
+      {renderDiscoverySection("New Arrivals", "Fresh additions to the catalogue", newArrivals, "New products will appear here when available.", <Sparkles size={18} />)}
+      {renderDiscoverySection("Recently Viewed", "Pick up where you left off", recentVariants, "Products you open will appear here during this browsing session.", <Clock3 size={18} />)}
+    </div>}
     <section className="storefront-checkout" id="basket">
       <div><span className="storefront-kicker">YOUR BASKET</span><h2>Checkout</h2><p>Prices and order totals are calculated by the server. Online payment collection is not enabled yet.</p>{order && <p className="storefront-order-success" role="status">Order placed: <strong>{order.order_number}</strong> · {money(order.total)}</p>}</div>
       <div className="storefront-basket-lines">{cart.length ? cart.map(line => <div className="storefront-basket-line" key={line.id}><div><strong>{line.product_name || line.sku}</strong><small>{line.sku} · {money(line.selling_price)}</small></div><label>Qty<input type="number" min="0" max="100000" step="1" value={line.quantity} onChange={e => setQuantity(line.id, e.target.value)} /></label><strong>{money(line.selling_price * line.quantity)}</strong><button type="button" aria-label={"Remove " + line.sku} onClick={() => setCart(old => old.filter(x => x.id !== line.id))}>×</button></div>) : <p className="storefront-empty">Your basket is empty. Add a product to begin.</p>}<div className="storefront-basket-total"><span>Subtotal</span><strong>{money(total)}</strong></div>
