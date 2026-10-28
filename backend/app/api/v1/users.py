@@ -151,3 +151,32 @@ def update_user(user_id: int, payload: UserUpdate, user=Depends(current_user)):
         raise
     except psycopg.Error as exc:
         raise HTTPException(503, "Unable to update user account") from exc
+
+
+class UserPasswordReset(BaseModel):
+    password: str = Field(min_length=12, max_length=128)
+
+
+@router.post("/{user_id}/password")
+def reset_user_password(user_id: int, payload: UserPasswordReset, user=Depends(current_user)):
+    _require_owner(user)
+    if user_id == user["id"]:
+        raise HTTPException(409, "Use Change my password for your own account")
+    try:
+        with _connect() as conn:
+            row = conn.execute(
+                "UPDATE app_users SET password_hash=%s, updated_at=now() WHERE id=%s "
+                "RETURNING id,email,full_name",
+                (_password_hash(payload.password), user_id),
+            ).fetchone()
+            if not row:
+                raise HTTPException(404, "User not found")
+            conn.execute(
+                "UPDATE app_user_sessions SET revoked_at=now() WHERE user_id=%s AND revoked_at IS NULL",
+                (user_id,),
+            )
+        return {"status": "password_reset", "user": dict(row), "sessions_revoked": True}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Unable to reset user password") from exc
