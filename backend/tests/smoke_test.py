@@ -35,7 +35,8 @@ def request(method, path, payload=None, token=None, expected=200):
 
 
 def main():
-    assert request("GET", "/api/health") == {"status": "ok"}
+    health = request("GET", "/api/health")
+    assert health.get("database") == "connected"
 
     login = request(
         "POST",
