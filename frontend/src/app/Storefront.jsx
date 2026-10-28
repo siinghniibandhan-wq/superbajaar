@@ -339,7 +339,7 @@ export default function Storefront() {
     </section>}
     {isAccountPage && <section className="storefront-account-page">
       <div className="storefront-category-breadcrumb"><button type="button" onClick={openShopHome}>Home</button><span>/</span><span>My Account</span></div>
-      <div className="storefront-account-welcome"><span className="storefront-kicker">YOUR SUPER BAJAAR</span><h1>{customer.name.trim() ? `Hello, ${customer.name.trim().split(/\\s+/)[0]}` : "My Account"}</h1><p>Manage your profile, purchases and support in one place.</p></div>
+      <div className="storefront-account-welcome"><span className="storefront-kicker">YOUR SUPER BAJAAR</span><h1>{customer.name.trim() ? `Hello, ${customer.name.trim().split(/\s+/)[0]}` : "My Account"}</h1><p>Manage your profile, purchases and support in one place.</p></div>
       <div className="storefront-account-layout">
         <nav className="storefront-account-nav" aria-label="Customer account sections">
           {[["overview","Overview","user-round"],["orders","My Orders","package"],["tickets","My Tickets","ticket"],["wishlist","My Wishlist","heart"],["addresses","Addresses","map-pin"],["security","Security","shield-check"]].map(([key,label])=><button key={key} type="button" className={accountSection===key?"is-active":""} onClick={()=>{if(key==="wishlist"){openWishlist();return;}setAccountSection(key);setNotice("");setError("");}}>{label}<span aria-hidden="true">›</span></button>)}
