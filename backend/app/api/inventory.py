@@ -1,5 +1,6 @@
 """Inventory read and adjustment endpoints. Requires the reviewed v1 schema."""
 from decimal import Decimal
+from uuid import uuid4
 from typing import Any
 
 import psycopg
@@ -267,11 +268,12 @@ def transfer_stock(payload: StockTransfer) -> dict[str, Any]:
             ).fetchall()
             if len(locations) != 2:
                 raise HTTPException(status_code=404, detail="Both stock locations must exist and be active")
-            source = conn.execute(
-                "SELECT on_hand, reserved FROM inventory_balances "
-                "WHERE variant_id = %s AND location_id = %s FOR UPDATE",
-                (payload.variant_id, payload.source_location_id),
-            ).fetchone()
+            locked_balances = conn.execute(
+                "SELECT location_id, on_hand, reserved FROM inventory_balances "
+                "WHERE variant_id = %s AND location_id = ANY(%s) ORDER BY location_id FOR UPDATE",
+                (payload.variant_id, [payload.source_location_id, payload.destination_location_id]),
+            ).fetchall()
+            source = next((row for row in locked_balances if row["location_id"] == payload.source_location_id), None)
             available = (source["on_hand"] - source["reserved"]) if source else Decimal("0")
             if payload.quantity > available:
                 raise HTTPException(status_code=409, detail="Insufficient available stock; reserved units cannot be transferred")
@@ -287,6 +289,7 @@ def transfer_stock(payload: StockTransfer) -> dict[str, Any]:
                 (payload.variant_id, payload.destination_location_id, payload.quantity),
             )
             movement_rows = []
+            transfer_reference = uuid4().hex
             for location_id, movement_type in (
                 (payload.source_location_id, "transfer_out"),
                 (payload.destination_location_id, "transfer_in"),
@@ -296,7 +299,7 @@ def transfer_stock(payload: StockTransfer) -> dict[str, Any]:
                     "(variant_id, location_id, movement_type, quantity, reference_type, reference_id, note) "
                     "VALUES (%s, %s, %s, %s, 'stock_transfer', %s, %s) "
                     "RETURNING id, variant_id, location_id, movement_type, quantity, reference_type, reference_id, note, created_at",
-                    (payload.variant_id, location_id, movement_type, payload.quantity, None, payload.note.strip()),
+                    (payload.variant_id, location_id, movement_type, payload.quantity, transfer_reference, payload.note.strip()),
                 ).fetchone()
                 movement_rows.append(row)
         return {"items": movement_rows, "quantity": payload.quantity, "status": "transferred"}
