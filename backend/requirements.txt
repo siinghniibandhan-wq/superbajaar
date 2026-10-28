@@ -1,7 +1,5 @@
-fastapi
-uvicorn[standard]
-gunicorn
-pydantic-settings
-psycopg[binary]
-pytest
-httpx
+fastapi==0.115.12
+uvicorn[standard]==0.34.0
+gunicorn==26.2.0
+pydantic-settings==2.16.1
+psycopg[binary]==3.2.6
