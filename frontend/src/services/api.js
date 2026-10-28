@@ -28,15 +28,16 @@ export async function apiRequest(path, options = {}) {
 
   const requestPath = normalizeRequestPath(path);
   const requestUrl = `${API_BASE_URL}${requestPath}`;
-  const token = readStoredToken();
+  const { skipAuth = false, ...fetchOptions } = options;
+  const token = skipAuth ? "" : readStoredToken();
   let response;
   try {
     response = await fetch(requestUrl, {
-      ...options,
+      ...fetchOptions,
       headers: {
         "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(options.headers || {}),
+        ...(fetchOptions.headers || {}),
       },
     });
   } catch {

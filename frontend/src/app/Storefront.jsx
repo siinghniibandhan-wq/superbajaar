@@ -74,6 +74,7 @@ export default function Storefront() {
     try {
       const created = await apiRequest("/orders", {
         method: "POST",
+        skipAuth: true,
         body: JSON.stringify({
           channel: "website",
           customer_name: customer.name.trim(),
