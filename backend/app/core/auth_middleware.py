@@ -48,13 +48,14 @@ async def require_active_session(request: Request, call_next):
     if _is_public_catalogue_read(request.method, path, prefix):
         request.state.public_catalogue = True
         return await call_next(request)
-    # Public order creation is constrained to channel=website in create_order().
-    if request.method == "POST" and path == prefix + "/orders":
+    authorization = request.headers.get("authorization", "")
+    # Only unauthenticated callers use the public checkout path. Authenticated POS
+    # staff must continue through session and role checks so channel=pos still works.
+    if request.method == "POST" and path == prefix + "/orders" and not authorization.strip():
         request.state.public_checkout = True
         request.state.role = "public"
         return await call_next(request)
 
-    authorization = request.headers.get("authorization", "")
     if not authorization.lower().startswith("bearer "):
         return JSONResponse(status_code=401, content={"detail": "Sign in to continue"})
     try:
