@@ -1,5 +1,5 @@
 """Loyalty rules, FIFO coin ledger and partner enquiry API."""
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal, ROUND_FLOOR
 import secrets
 
@@ -151,7 +151,7 @@ def earn_coins(payload: EarnCoins, request: Request):
                 "VALUES (%s,'earn',%s,%s,%s,%s,%s) ON CONFLICT (idempotency_key) DO NOTHING "
                 "RETURNING id, coins, expires_at, created_at",
                 (account["id"], coins, payload.order_reference.strip(), payload.description or "Delivered order reward",
-                 payload.delivered_at.astimezone(timezone.utc).replace(year=payload.delivered_at.astimezone(timezone.utc).year + 1),
+                 payload.delivered_at.astimezone(timezone.utc) + timedelta(days=365),
                  key),
             ).fetchone()
             if row is None:
