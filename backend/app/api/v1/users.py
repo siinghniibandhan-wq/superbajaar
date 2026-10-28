@@ -112,6 +112,7 @@ def update_user(user_id: int, payload: UserUpdate, user=Depends(current_user)):
         raise HTTPException(409, "You cannot remove your own owner role")
     try:
         with _connect() as conn:
+            conn.execute("SELECT pg_advisory_xact_lock(83174201)")
             target = conn.execute(
                 "SELECT id,role,is_active FROM app_users WHERE id=%s FOR UPDATE", (user_id,)
             ).fetchone()
