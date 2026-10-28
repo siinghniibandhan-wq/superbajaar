@@ -116,7 +116,7 @@ function AppShell() {
 function AdminApp() { return <AppProviders><AppShell /></AppProviders>; }
 
 export function Router() {
-  const path = window.location.pathname.replace(/\\/+$/, "") || "/";
+  const path = window.location.pathname.replace(/\/+$/, "") || "/";
   if (path === "/admin" || path.startsWith("/admin/")) return <AdminApp />;
   return <Storefront />;
 }
