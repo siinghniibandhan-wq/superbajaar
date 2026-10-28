@@ -130,3 +130,46 @@ def test_order_listing_requires_authentication_when_database_is_configured(monke
     monkeypatch.setattr(orders.settings, "database_url", "postgresql://test")
     response = client.get("/api/orders")
     assert response.status_code == 401
+
+
+def test_marking_dispatched_order_delivered_awards_loyalty_coins(monkeypatch):
+    from app.api import orders
+
+    conn = MagicMock()
+    conn.__enter__.return_value = conn
+    current = {"status": "dispatched", "customer_email": "customer@example.com", "order_number": "SB-ORDER-1"}
+    updated = {"id": 101, "order_number": "SB-ORDER-1", "status": "delivered", "updated_at": "2026-10-29T00:00:00Z"}
+    account = {"id": 55}
+    lines = [{"line_id": 8, "line_total": Decimal("250.00"), "product_id": 3, "category_id": 2}]
+    earned_inserts = []
+
+    def execute(sql, params=None):
+        cursor = MagicMock()
+        if "SELECT status, customer_email, order_number FROM orders" in sql:
+            cursor.fetchone.return_value = current
+        elif "UPDATE orders SET status" in sql:
+            cursor.fetchone.return_value = updated
+        elif "SELECT id FROM loyalty_accounts" in sql:
+            cursor.fetchone.return_value = account
+        elif "SELECT ol.id AS line_id" in sql:
+            cursor.fetchall.return_value = lines
+        elif "scope_type='product'" in sql or "scope_type='category'" in sql:
+            cursor.fetchone.return_value = None
+        elif "scope_type='default'" in sql:
+            cursor.fetchone.return_value = {"coins_per_100": Decimal("1")}
+        elif "INSERT INTO loyalty_transactions" in sql:
+            earned_inserts.append(params)
+        return cursor
+
+    conn.execute.side_effect = execute
+    monkeypatch.setattr(orders, " _unused", None, raising=False)
+    monkeypatch.setattr(orders.settings, "database_url", "")
+    monkeypatch.setattr(orders, "_connect", lambda: conn)
+
+    response = client.patch("/api/orders/101/status", json={"status": "delivered"})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "delivered"
+    assert len(earned_inserts) == 1
+    assert earned_inserts[0][1] == 2
+    assert earned_inserts[0][-1] == "earn:order:101:line:8"
