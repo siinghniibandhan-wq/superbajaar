@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Heart, ShoppingBag, Search, Sparkles, Flame, Clock3 } from "lucide-react";
 import { apiRequest } from "../services/api.js";
 import "./storefront.css";
 
@@ -32,6 +33,7 @@ export default function Storefront() {
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState([]);
   const [wishlist, setWishlist] = useState([]);
+  const [recentlyViewed, setRecentlyViewed] = useState([]);
   const [customer, setCustomer] = useState({ name: "", phone: "", pin: "" });
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -128,8 +130,8 @@ export default function Storefront() {
     <div className="storefront-promo">Your everyday favourites, all in one place <span>✦</span> Shop smarter with Super Bajaar</div>
     <header className="storefront-header">
       <a className="storefront-brand" href="/" aria-label="Super Bajaar home"><span className="storefront-logo">S</span><span><strong>Super Bajaar <span className="storefront-crown" aria-hidden="true">♛</span></strong><small>Your Everyday Super Store</small></span></a>
-      <label className="storefront-header-search"><span className="sr-only">Search catalogue</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search groceries, fashion, electronics…" /><span aria-hidden="true">⌕</span></label>
-      <div className="storefront-actions"><span className="storefront-delivery"><small>Deliver to</small><strong>India ▾</strong></span><button type="button" className="storefront-icon-action" aria-label={`Wishlist, ${wishlist.length} saved`} onClick={() => document.getElementById("products")?.scrollIntoView({behavior:"smooth"})}>♡<small>{wishlist.length}</small></button><a className="storefront-icon-action" href="#basket" aria-label="Shopping basket">🛒<small>{cart.reduce((n, line) => n + line.quantity, 0)}</small></a><a className="storefront-admin-link" href="/admin">Admin</a></div>
+      <label className="storefront-header-search"><span className="sr-only">Search products</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search groceries, fashion, electronics…" /><Search aria-hidden="true" size={19} /></label>
+      <div className="storefront-actions"><span className="storefront-delivery"><small>Deliver to</small><strong>India ▾</strong></span><button type="button" className="storefront-icon-action" aria-label={`Wishlist, ${wishlist.length} saved`} onClick={() => document.getElementById("products")?.scrollIntoView({behavior:"smooth"})}><Heart size={22} strokeWidth={1.8} /><small>{wishlist.length}</small></button><a className="storefront-icon-action" href="#basket" aria-label="Shopping basket"><ShoppingBag size={22} strokeWidth={1.8} /><small>{cart.reduce((n, line) => n + line.quantity, 0)}</small></a><a className="storefront-admin-link" href="/admin">Admin</a></div>
     </header>
     <nav className="storefront-department-nav" aria-label="Shop departments"><a href="#categories">☰ All Categories</a><a href="#deals">Deals 🔥</a><button type="button" onClick={() => {setCategoryId(""); document.getElementById("products")?.scrollIntoView({behavior:"smooth"});}}>Shop All</button>{orderedCategories.map(category => <button type="button" key={category.id} onClick={() => {setCategoryId(String(category.id)); document.getElementById("products")?.scrollIntoView({behavior:"smooth"});}}>{category.name}</button>)}<a href="#why-us">Why Super Bajaar</a></nav>
     <section className="storefront-hero">
