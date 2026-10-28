@@ -30,6 +30,7 @@ export default function Storefront() {
   const [products, setProducts] = useState([]);
   const [variants, setVariants] = useState([]);
   const [categoryId, setCategoryId] = useState("");
+  const [routePath, setRoutePath] = useState(() => window.location.pathname.replace(/\/+$/, "") || "/");
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState([]);
   const [wishlist, setWishlist] = useState([]);
@@ -43,6 +44,12 @@ export default function Storefront() {
 
   useEffect(() => {
     try { setRecentlyViewed(JSON.parse(sessionStorage.getItem("sb-recently-viewed") || "[]")); } catch { setRecentlyViewed([]); }
+  }, []);
+
+  useEffect(() => {
+    const syncPath = () => setRoutePath(window.location.pathname.replace(/\\/+$/, "") || "/");
+    window.addEventListener("popstate", syncPath);
+    return () => window.removeEventListener("popstate", syncPath);
   }, []);
 
   useEffect(() => {
@@ -93,6 +100,26 @@ export default function Storefront() {
   }, []);
 
   const productById = useMemo(() => new Map(products.map(p => [Number(p.id), p])), [products]);
+  const categorySlug = name => String(name || "").trim().toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const routeSlug = routePath.match(/^\\/category\\/([^/]+)$/)?.[1] || "";
+  const routeCategoryName = categoryOrder.find(name => categorySlug(name) === routeSlug)
+    || categories.find(category => categorySlug(category.name) === routeSlug)?.name || "";
+  const isCategoryPage = Boolean(routeSlug);
+  const openCategory = category => {
+    const slug = categorySlug(category.name);
+    window.history.pushState({}, "", "/category/" + slug);
+    setRoutePath("/category/" + slug);
+    setCategoryId(String(category.id));
+    setSearch("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const openShopHome = () => {
+    window.history.pushState({}, "", "/");
+    setRoutePath("/");
+    setCategoryId("");
+    setSearch("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
   const orderedCategories = useMemo(() => {
     const rank = new Map(categoryOrder.map((name, index) => [name.toLowerCase(), index]));
     return [...categories].sort((a, b) => {
@@ -119,7 +146,7 @@ export default function Storefront() {
       }
       return !term || [v.product_name, product.name, v.sku, product.brand].some(x => String(x || "").toLowerCase().includes(term));
     });
-  }, [variants, productById, categoryId, search, displayCategories]);
+  }, [variants, productById, categoryId, routeCategoryName, search, displayCategories]);
   const rememberViewed = variant => {
     const entry = { variantId: variant.id, productId: variant.product_id, viewedAt: Date.now() };
     setRecentlyViewed(old => {
@@ -215,12 +242,12 @@ export default function Storefront() {
   return <main className="storefront">
     <div className="storefront-promo">Your everyday favourites, all in one place <span>✦</span> Shop smarter with Super Bajaar</div>
     <header className="storefront-header">
-      <a className="storefront-brand" href="/" aria-label="Super Bajaar home"><span className="storefront-logo">S</span><span><strong>Super Bajaar <span className="storefront-crown" aria-hidden="true">♛</span></strong><small>Your Everyday Super Store</small></span></a>
+      <a className="storefront-brand" href="/" onClick={event => { event.preventDefault(); openShopHome(); }} aria-label="Super Bajaar home"><span className="storefront-logo">S</span><span><strong>Super Bajaar <span className="storefront-crown" aria-hidden="true">♛</span></strong><small>Your Everyday Super Store</small></span></a>
       <label className="storefront-header-search"><span className="sr-only">Search products</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search groceries, fashion, electronics…" /><Search aria-hidden="true" size={19} /></label>
       <div className="storefront-actions"><span className="storefront-delivery"><small>Deliver to</small><strong>India ▾</strong></span><button type="button" className="storefront-icon-action" aria-label={`Wishlist, ${wishlist.length} saved`} onClick={() => document.getElementById("products")?.scrollIntoView({behavior:"smooth"})}><Heart size={22} strokeWidth={1.8} /><small>{wishlist.length}</small></button><a className="storefront-icon-action" href="#basket" aria-label="Shopping basket"><ShoppingBag size={22} strokeWidth={1.8} /><small>{cart.reduce((n, line) => n + line.quantity, 0)}</small></a><a className="storefront-admin-link" href="/admin">Admin</a></div>
     </header>
-    <nav className="storefront-department-nav" aria-label="Shop departments"><a href="#categories">☰ All Categories</a><a href="#deals">Deals <Flame size={14} /></a><button type="button" onClick={() => {setCategoryId(""); document.getElementById("products")?.scrollIntoView({behavior:"smooth"});}}>Shop All</button>{displayCategories.map(category => <button type="button" key={category.id} onClick={() => {setCategoryId(String(category.id)); document.getElementById("products")?.scrollIntoView({behavior:"smooth"});}}>{category.name}</button>)}</nav>
-    <section className="storefront-hero">
+    <nav className="storefront-department-nav" aria-label="Shop departments"><a href="/#categories" onClick={event => { event.preventDefault(); openShopHome(); }}>☰ All Categories</a><a href="/#deals" onClick={event => { event.preventDefault(); openShopHome(); setTimeout(() => document.getElementById("deals")?.scrollIntoView({behavior:"smooth"}), 0); }}>Deals <Flame size={14} /></a><button type="button" onClick={openShopHome}>Shop All</button>{displayCategories.map(category => <a key={category.id} href={"/category/" + categorySlug(category.name)} aria-current={routeSlug === categorySlug(category.name) ? "page" : undefined}>{category.name}</a>)}</nav>
+    {!isCategoryPage && <section className="storefront-hero">
       <div className="storefront-hero-copy"><span className="storefront-kicker"><i /> YOUR EVERYDAY SUPER STORE</span><h1>Welcome to<br /><em>Super Bajaar</em></h1><p>Everything you need, all in one place. Explore everyday essentials and discover something new for your home and family.</p><a className="storefront-primary" href="#products">Shop Now <span>→</span></a><div className="storefront-trust"><span>✦ Thoughtfully picked</span><span>✦ Made for everyday</span></div></div>
       <div className="storefront-hero-art" aria-label="Colourful shopping bags and everyday products" role="img"><div className="art-sun" /><div className="art-orbit orbit-one" /><div className="art-orbit orbit-two" /><div className="art-spark spark-one">✦</div><div className="art-spark spark-two">✳</div><div className="art-bag bag-purple"><span>S</span></div><div className="art-bag bag-orange"><span>♥</span></div><div className="art-box"><span>GOOD</span><strong>THINGS</strong></div><div className="art-leaf leaf-one">✦</div><div className="art-leaf leaf-two">✿</div><div className="art-caption">A little joy in every basket</div></div>
     </section>
@@ -230,19 +257,19 @@ export default function Storefront() {
 
         {displayCategories.map((category, index) => {
           const tile = categoryArt[category.name] || art[index % art.length];
-          return <button type="button" className={"storefront-category " + (String(category.id) === categoryId ? "is-selected" : "")} key={category.id} onClick={() => { setCategoryId(String(category.id)); document.getElementById("products")?.scrollIntoView({ behavior: "smooth" }); }}>
+          return <button type="button" className={"storefront-category " + (String(category.id) === categoryId ? "is-selected" : "")} key={category.id} onClick={() => openCategory(category)}>
             <span className={"storefront-category-art tone-" + tile.tone}><span>{tile.icon}</span><i>↗</i></span><strong>{category.name}</strong><small>{category.description || tile.detail}</small>
           </button>;
         })}
       </div>
     </section>
     <section className="storefront-products" id="products">
-      <div className="storefront-section-heading"><div><span className="storefront-kicker">TODAY’S PICKS</span><h2>{categoryId ? (orderedCategories.find(c => String(c.id) === categoryId)?.name || "Products") : "Shop products"}</h2></div><span className="storefront-heading-note">{visibleVariants.length} variants available</span></div>
+      <div className="storefront-category-breadcrumb"><a href="/" onClick={event => {event.preventDefault(); openShopHome();}}>Home</a><span>/</span><span>{routeCategoryName || "Shop products"}</span></div><div className="storefront-section-heading"><div><span className="storefront-kicker">{isCategoryPage ? "SHOP BY DEPARTMENT" : "TODAY’S PICKS"}</span><h1>{isCategoryPage ? routeCategoryName : categoryId ? (orderedCategories.find(c => String(c.id) === categoryId)?.name || "Products") : "Shop products"}</h1>{isCategoryPage && <p className="storefront-category-description">{categoryArt[routeCategoryName]?.detail || "Explore products in this department."}</p>}</div><span className="storefront-heading-note">{visibleVariants.length} variants available</span></div>
       <label className="storefront-search">Search products or SKU<input value={search} onChange={e => setSearch(e.target.value)} placeholder="Try a product name or SKU" /></label>
       {error && <p className="storefront-alert" role="alert">{error}</p>}
       {loading ? <p className="storefront-empty">Loading live products…</p> : visibleVariants.length ? <div className="storefront-product-grid">{visibleVariants.map(renderProductCard)}</div> : <p className="storefront-empty">{error ? "The live catalogue could not be loaded." : "No active products are available in this category yet."}</p>}
     </section>
-    {!loading && <div className="storefront-discovery">
+    {!isCategoryPage && !loading && <div className="storefront-discovery">
       {renderDiscoverySection("Best Sellers", "Customer favourites, ranked by recorded sales", bestSellers, "Best Sellers will appear when real sales data is available.", <Flame size={18} />)}
       {renderDiscoverySection("New Arrivals", "Fresh additions to the catalogue", newArrivals, "New products will appear here when available.", <Sparkles size={18} />)}
       {renderDiscoverySection("Recently Viewed", "Pick up where you left off", recentVariants, "Products you open will appear here during this browsing session.", <Clock3 size={18} />)}
@@ -254,7 +281,7 @@ export default function Storefront() {
         {notice && <p className="storefront-order-success" role="status">{notice}</p>}{error && <p className="storefront-alert" role="alert">{error}</p>}
       </div>
     </section>
-    <section className="storefront-benefits" id="why-us"><div><span className="benefit-icon">✦</span><strong>Everyday essentials</strong><small>All your regular picks in one place.</small></div><div><span className="benefit-icon">♡</span><strong>Made for your routine</strong><small>A simpler way to shop for home and family.</small></div><div><span className="benefit-icon">✳</span><strong>Discover something new</strong><small>Explore categories for every kind of day.</small></div></section>
+    {!isCategoryPage && <section className="storefront-benefits" id="why-us"><div><span className="benefit-icon">✦</span><strong>Everyday essentials</strong><small>All your regular picks in one place.</small></div><div><span className="benefit-icon">♡</span><strong>Made for your routine</strong><small>A simpler way to shop for home and family.</small></div><div><span className="benefit-icon">✳</span><strong>Discover something new</strong><small>Explore categories for every kind of day.</small></div></section>
     <footer className="storefront-footer"><a className="storefront-brand" href="/"><span className="storefront-logo">S</span><span><strong>Super Bajaar</strong><small>Your Everyday Super Store</small></span></a><span>Everyday made a little brighter.</span><a href="/admin">Business admin ↗</a></footer>
   </main>;
 }
