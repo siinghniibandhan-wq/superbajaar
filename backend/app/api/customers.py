@@ -125,3 +125,99 @@ def update_case(case_id:int,p:CaseUpdate):
     except HTTPException:raise
     except psycopg.Error as e:raise _error(e) from e
 
+
+
+class PublicSupportTicketIn(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    phone: str = Field(min_length=7, max_length=20)
+    email: str = Field(min_length=5, max_length=254)
+    subject: str = Field(min_length=3, max_length=200)
+    description: str = Field(min_length=1, max_length=5000)
+
+    @field_validator("name", "subject", "description", "phone")
+    @classmethod
+    def trim_required(cls, value):
+        value = value.strip()
+        if not value:
+            raise ValueError("This field cannot be blank")
+        return value
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value):
+        value = value.strip().lower()
+        if "@" not in value or "." not in value.rsplit("@", 1)[-1] or " " in value:
+            raise ValueError("Enter a valid email address")
+        return value
+
+
+@router.post("/support-portal/tickets", status_code=201)
+def create_public_support_ticket(p: PublicSupportTicketIn):
+    """Create a public support ticket and bind it to matching contact details."""
+    import uuid
+    try:
+        with _connect() as c:
+            customer = c.execute(
+                "SELECT id, name, phone, email FROM customers "
+                "WHERE lower(COALESCE(email, ''))=%s OR COALESCE(phone, '')=%s "
+                "ORDER BY id LIMIT 1",
+                (p.email, p.phone),
+            ).fetchone()
+            if customer:
+                if (str(customer.get("email") or "").lower() != p.email
+                        or str(customer.get("phone") or "") != p.phone):
+                    raise HTTPException(
+                        status_code=409,
+                        detail="These contact details do not match an existing customer record. Contact support for help.",
+                    )
+                customer_id = customer["id"]
+            else:
+                customer = c.execute(
+                    "INSERT INTO customers(name, phone, email) VALUES(%s, %s, %s) RETURNING id",
+                    (p.name, p.phone, p.email),
+                ).fetchone()
+                customer_id = customer["id"]
+            case_number = "SUP-" + uuid.uuid4().hex[:10].upper()
+            row = c.execute(
+                "INSERT INTO support_cases(case_number, customer_id, subject, description, priority) "
+                "VALUES(%s, %s, %s, %s, 'normal') "
+                "RETURNING case_number, subject, status, priority, created_at, updated_at",
+                (case_number, customer_id, p.subject.strip(), p.description.strip()),
+            ).fetchone()
+        return {"ticket": row, "message": "Your support ticket has been created."}
+    except HTTPException:
+        raise
+    except psycopg.Error as e:
+        if getattr(e, "sqlstate", None) == "23505":
+            raise HTTPException(status_code=409, detail="A matching customer record already exists. Please contact support.") from e
+        raise _error(e) from e
+
+
+@router.get("/support-portal/tickets/{case_number}")
+def track_public_support_ticket(
+    case_number: str,
+    email: str | None = Query(default=None, max_length=254),
+    phone: str | None = Query(default=None, max_length=20),
+):
+    """Return only a ticket whose registered contact details match the request."""
+    normalized_email = email.strip().lower() if email else ""
+    normalized_phone = phone.strip() if phone else ""
+    if not normalized_email and not normalized_phone:
+        raise HTTPException(status_code=422, detail="Provide the email address or phone number used when creating the ticket")
+    try:
+        with _connect() as c:
+            row = c.execute(
+                "SELECT s.case_number, s.subject, s.status, s.priority, s.resolution, s.created_at, s.updated_at "
+                "FROM support_cases s JOIN customers cu ON cu.id=s.customer_id "
+                "WHERE upper(s.case_number)=upper(%s) "
+                "AND ((%s <> '' AND lower(COALESCE(cu.email, ''))=%s) "
+                "OR (%s <> '' AND COALESCE(cu.phone, '')=%s))",
+                (case_number.strip(), normalized_email, normalized_email, normalized_phone, normalized_phone),
+            ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Ticket not found for those contact details")
+        return {"ticket": row}
+    except HTTPException:
+        raise
+    except psycopg.Error as e:
+        raise _error(e) from e
