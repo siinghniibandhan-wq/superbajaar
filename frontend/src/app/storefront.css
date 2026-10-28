@@ -1012,3 +1012,60 @@
  .storefront-checkout-page .storefront-checkout { display:block; }
  .storefront-checkout-page .storefront-checkout-form { grid-template-columns:minmax(0,1fr); }
 }
+
+/* Category cards: center-align the label and description beneath each icon. */
+.storefront-category { text-align:center; align-items:center; }
+.storefront-category > strong,.storefront-category > small { width:100%; text-align:center; }
+.storefront-category > small { padding-inline:5px; box-sizing:border-box; }
+
+/* Why Choose Us: positioned after Recently Viewed on the storefront home page. */
+.storefront-benefits { display:block; padding:clamp(22px,3vw,34px); }
+.storefront-benefits-heading { margin-bottom:22px; text-align:center; }
+.storefront-benefits-heading h2 { margin:7px 0; color:var(--sb-purple-dark,#32105f); font-size:clamp(25px,3vw,32px); letter-spacing:-.05em; }
+.storefront-benefits-heading p { margin:0; color:var(--sb-muted,#81768f); font-size:13px; }
+.storefront-benefit-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; }
+.storefront-benefit-grid article { display:grid; grid-template-columns:42px minmax(0,1fr); align-items:center; column-gap:11px; padding:15px; border:1px solid #fff; border-radius:17px; background:linear-gradient(145deg,#fff,#f8f0ff); box-shadow:5px 6px 13px rgba(55,25,90,.06),-3px -3px 9px #fff; }
+.storefront-benefit-grid .benefit-icon { grid-row:span 2; display:grid; place-items:center; width:42px; height:42px; border-radius:14px; background:#efe3ff; color:#6428c7; font-size:20px; }
+.storefront-benefit-grid strong { font-size:12px; align-self:end; }
+.storefront-benefit-grid small { margin-top:4px; color:#81768f; font-size:10px; line-height:1.55; }
+
+/* Footer and standalone informational/legal pages. */
+.storefront-footer { display:block; padding-top:30px; padding-bottom:22px; }
+.storefront-footer-top { display:grid; grid-template-columns:1.1fr 1fr 1fr; align-items:start; gap:28px; padding-bottom:25px; border-bottom:1px solid #eee5f5; }
+.storefront-footer-top > p { margin:8px 0; color:#81768f; font-size:12px; }
+.storefront-footer-contact { display:grid; gap:8px; font-size:12px; }
+.storefront-footer-contact strong,.storefront-footer-links strong { margin-bottom:3px; color:#32105f; font-size:12px; }
+.storefront-footer-contact a,.storefront-footer-links a,.storefront-footer-bottom a,.storefront-social-links a { color:#6b45a6; font-size:12px; text-decoration:none; }
+.storefront-footer-contact a:hover,.storefront-footer-links a:hover,.storefront-footer-bottom a:hover { text-decoration:underline; }
+.storefront-footer-links { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:26px; padding:24px 0; border-bottom:1px solid #eee5f5; }
+.storefront-footer-links > div { display:grid; align-content:start; gap:11px; }
+.storefront-footer-bottom { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; padding-top:18px; color:#81768f; font-size:11px; }
+.storefront-social-links { display:flex; gap:14px; }
+.storefront-info-page { max-width:1050px; min-height:48vh; margin:24px auto 46px; padding:clamp(22px,4vw,44px); border:1px solid rgba(255,255,255,.94); border-radius:27px; background:linear-gradient(145deg,#fffdfd,#fbf5ff); box-shadow:10px 12px 34px rgba(55,25,90,.08),-5px -5px 15px #fff; color:#38224f; }
+.storefront-info-page h1 { margin:10px 0 18px; color:var(--sb-purple-dark,#32105f); font-size:clamp(30px,4vw,42px); letter-spacing:-.055em; }
+.storefront-info-page h2 { margin:26px 0 9px; color:#45216d; font-size:19px; letter-spacing:-.025em; }
+.storefront-info-page p,.storefront-info-page li { color:#685c76; font-size:14px; line-height:1.8; }
+.storefront-info-page a { color:#6428c7; overflow-wrap:anywhere; }
+.storefront-info-note { margin-top:22px; padding:13px 15px; border-left:3px solid #e3a04b; border-radius:8px; background:#fff7e9; color:#765d36 !important; font-size:12px !important; }
+.storefront-contact-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; margin:24px 0; }
+.storefront-contact-grid > a,.storefront-contact-grid > button { display:grid; gap:7px; min-width:0; padding:19px; border:1px solid #fff; border-radius:17px; background:linear-gradient(145deg,#fff,#f6edff); box-shadow:5px 6px 14px rgba(55,25,90,.07),-3px -3px 9px #fff; text-align:left; text-decoration:none; color:#48216f; font:inherit; cursor:pointer; }
+.storefront-contact-grid strong { font-size:14px; }
+.storefront-contact-grid span { color:#756681; font-size:12px; overflow-wrap:anywhere; }
+.storefront-policy-cards { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:15px; margin:24px 0; }
+.storefront-policy-cards article,.storefront-grievance-card { padding:20px; border:1px solid #fff; border-radius:18px; background:linear-gradient(145deg,#fff,#f7efff); box-shadow:5px 6px 14px rgba(55,25,90,.06),-3px -3px 9px #fff; }
+.storefront-policy-cards article { display:grid; gap:9px; }
+.storefront-policy-cards strong { color:#45216d; }
+.storefront-policy-cards b { color:#6428c7; font-size:23px; }
+.storefront-policy-cards p,.storefront-policy-cards small { margin:0; font-size:12px; line-height:1.65; }
+.storefront-grievance-card { margin:20px 0; }
+.storefront-grievance-card h2 { margin:8px 0; }
+.storefront-grievance-card p { margin:5px 0; }
+@media(max-width:760px) {
+ .storefront-benefit-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+ .storefront-footer-top { grid-template-columns:1fr; gap:17px; }
+ .storefront-footer-links { grid-template-columns:repeat(2,minmax(0,1fr)); gap:22px 16px; }
+ .storefront-footer-bottom { align-items:flex-start; flex-direction:column; }
+ .storefront-info-page { margin:14px 12px 30px; padding:20px 16px; border-radius:21px; }
+ .storefront-contact-grid,.storefront-policy-cards { grid-template-columns:minmax(0,1fr); }
+}
+@media(max-width:420px) { .storefront-benefit-grid { grid-template-columns:minmax(0,1fr); } }
