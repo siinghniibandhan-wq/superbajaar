@@ -417,7 +417,7 @@ export default function Storefront() {
         method: "POST",
         body: JSON.stringify({
           channel: "website",
-          customer_name: customer.name.trim(),
+          customer_name: customerAuth.full_name,
           customer_phone: customer.phone.trim() || null,
           customer_email: customerAuth.email,
           delivery_pin: customer.pin.trim() || null,
@@ -530,7 +530,7 @@ export default function Storefront() {
           {accountSection==="overview" && <div className="storefront-account-section">
             <div className="storefront-account-section-heading"><div><h2>Personal details</h2><p>Your saved contact information.</p></div><span className="storefront-account-avatar">{customer.name.trim()?customer.name.trim().slice(0,1).toUpperCase():"S"}</span></div>
             {(customer.name||customer.email||customer.phone) ? <div className="storefront-account-summary">{customer.name&&<div><small>Full name</small><strong>{customer.name}</strong></div>}{customer.email&&<div><small>Email address</small><strong>{customer.email}</strong></div>}{customer.phone&&<div><small>Mobile number</small><strong>{customer.phone}</strong></div>}</div> : <p className="storefront-account-empty">Your profile is not filled in yet. Add your details below so they are ready at checkout.</p>}
-            <form className="storefront-account-form" onSubmit={saveCustomerProfile}><label>Full name<input autoComplete="name" required maxLength="200" value={customer.name} onChange={event=>setCustomer(old=>({...old,name:event.target.value}))}/></label><label>Mobile number<input autoComplete="tel" maxLength="20" value={customer.phone} onChange={event=>setCustomer(old=>({...old,phone:event.target.value}))}/></label><label>Email address<input type="email" autoComplete="email" maxLength="254" value={customer.email} onChange={event=>setCustomer(old=>({...old,email:event.target.value}))}/></label><button className="storefront-primary" type="submit">Save profile</button><p className="storefront-account-note">Currently saved on this device only. A verified customer sign-in is needed to sync details across devices.</p></form>
+            <form className="storefront-account-form" onSubmit={saveCustomerProfile}><label>Full name<input autoComplete="name" required maxLength="200" value={customer.name} onChange={event=>setCustomer(old=>({...old,name:event.target.value}))}/></label><label>Mobile number<input autoComplete="tel" maxLength="20" value={customer.phone} onChange={event=>setCustomer(old=>({...old,phone:event.target.value}))}/></label><label>Email address<input type="email" autoComplete="email" maxLength="254" value={customer.email} onChange={event=>setCustomer(old=>({...old,email:event.target.value}))}/></label><button className="storefront-primary" type="submit">Save profile</button><p className="storefront-account-note">Your sign-in identity is stored securely by Super Bajaar. Address syncing is a separate feature.</p><button type="button" className="storefront-primary" onClick={signOutCustomer}>Sign out</button></form>
           </div>}
           {accountSection==="loyalty" && <div className="storefront-account-section">
             <span className="storefront-kicker">REWARDS FOR EVERYDAY SHOPPING</span>
