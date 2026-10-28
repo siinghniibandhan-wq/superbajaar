@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Heart, ShoppingBag, Search, Sparkles, Flame, Clock3 } from "lucide-react";
+import { Heart, ShoppingBag, Search, Sparkles, Flame, Clock3, ChevronLeft, ChevronRight } from "lucide-react";
 import { apiRequest } from "../services/api.js";
 import "./storefront.css";
 
@@ -43,6 +43,25 @@ export default function Storefront() {
 
   useEffect(() => {
     try { setRecentlyViewed(JSON.parse(sessionStorage.getItem("sb-recently-viewed") || "[]")); } catch { setRecentlyViewed([]); }
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      document.querySelectorAll(".storefront-carousel-track").forEach(track => {
+        if (track.matches(":hover") || track.matches(":focus-within")) return;
+        const card = track.querySelector(".storefront-product-card");
+        if (!card) return;
+        const styles = window.getComputedStyle(track);
+        const gap = Number.parseFloat(styles.columnGap || styles.gap || "0") || 0;
+        const step = card.getBoundingClientRect().width + gap;
+        const max = track.scrollWidth - track.clientWidth;
+        if (max <= 2) return;
+        if (track.scrollLeft >= max - 8) track.scrollTo({ left: 0, behavior: "smooth" });
+        else track.scrollBy({ left: step, behavior: "smooth" });
+      });
+    }, 5000);
+    return () => window.clearInterval(timer);
   }, []);
 
   useEffect(() => {
@@ -172,9 +191,24 @@ export default function Storefront() {
     </article>;
   }
   function renderDiscoverySection(title, subtitle, items, emptyText, icon) {
+    const trackId = "carousel-" + title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const moveTrack = direction => {
+      const track = document.getElementById(trackId);
+      const card = track?.querySelector(".storefront-product-card");
+      if (!track || !card) return;
+      const styles = window.getComputedStyle(track);
+      const gap = Number.parseFloat(styles.columnGap || styles.gap || "0") || 0;
+      track.scrollBy({ left: direction * (card.getBoundingClientRect().width + gap), behavior: "smooth" });
+    };
     return <section className="storefront-discovery-section" id={title === "Best Sellers" ? "deals" : undefined}>
-      <div className="storefront-section-heading"><div><span className="storefront-kicker">{icon} DISCOVER MORE</span><h2>{title}</h2><p>{subtitle}</p></div></div>
-      {items.length ? <div className="storefront-product-grid">{items.map(renderProductCard)}</div> : <p className="storefront-empty">{emptyText}</p>}
+      <div className="storefront-section-heading storefront-carousel-heading">
+        <div><span className="storefront-kicker">{icon} DISCOVER MORE</span><h2>{title}</h2><p>{subtitle}</p></div>
+        <div className="storefront-carousel-controls" aria-label={title + " carousel controls"}>
+          <button type="button" aria-label={"Previous " + title} onClick={() => moveTrack(-1)}><ChevronLeft size={20} /></button>
+          <button type="button" aria-label={"Next " + title} onClick={() => moveTrack(1)}><ChevronRight size={20} /></button>
+        </div>
+      </div>
+      {items.length ? <div className="storefront-carousel-track" id={trackId} tabIndex={0} aria-label={title + " products"}>{items.map(renderProductCard)}</div> : <p className="storefront-empty">{emptyText}</p>}
     </section>;
   }
 
