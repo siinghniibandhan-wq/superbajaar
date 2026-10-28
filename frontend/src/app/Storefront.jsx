@@ -197,7 +197,7 @@ export default function Storefront() {
     <section className="storefront-categories" id="categories">
       <div className="storefront-section-heading"><div><span className="storefront-kicker">FIND YOUR FAVOURITES</span><h2>Shop by category</h2></div><span className="storefront-heading-note">Choose a category to filter products.</span></div>
       <div className="storefront-category-grid">
-        <button type="button" className={"storefront-category storefront-category-all " + (!categoryId ? "is-selected" : "")} onClick={() => setCategoryId("")}><span className="storefront-category-art tone-lavender"><span>✦</span><i>↗</i></span><strong>All categories</strong><small>Browse everything</small></button>
+
         {displayCategories.map((category, index) => {
           const tile = categoryArt[category.name] || art[index % art.length];
           return <button type="button" className={"storefront-category " + (String(category.id) === categoryId ? "is-selected" : "")} key={category.id} onClick={() => { setCategoryId(String(category.id)); document.getElementById("products")?.scrollIntoView({ behavior: "smooth" }); }}>
