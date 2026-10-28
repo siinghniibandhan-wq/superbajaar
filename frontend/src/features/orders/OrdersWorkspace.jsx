@@ -23,6 +23,8 @@ export default function OrdersWorkspace({ onBack }) {
   const [selected,setSelected] = useState(null);
   const [detail,setDetail] = useState(null);
   const [detailLoading,setDetailLoading] = useState(false);
+  const [history,setHistory] = useState(null);
+  const [historyLoading,setHistoryLoading] = useState(false);
   const load = useCallback(async () => {
     setLoading(true); setError("");
     try {
@@ -41,6 +43,13 @@ export default function OrdersWorkspace({ onBack }) {
     try { setDetail(await apiRequest("/orders/"+order.id)); }
     catch(e) { setError(e.message || "Unable to load order details."); }
     finally { setDetailLoading(false); }
+  }
+  async function toggleHistory(order) {
+    if (history?.order_id === order.id) { setHistory(null); return; }
+    setHistoryLoading(true); setError("");
+    try { setHistory(await apiRequest("/orders/"+order.id+"/history?limit=100")); }
+    catch(e) { setError(e.message || "Unable to load order status history."); }
+    finally { setHistoryLoading(false); }
   }
   async function updateStatus(order,next) {
     setBusy(order.id); setError(""); setNotice("");
@@ -76,7 +85,11 @@ export default function OrdersWorkspace({ onBack }) {
         <h3>Order details</h3><p>{detail.customer_name}{detail.customer_phone?" · "+detail.customer_phone:""}{detail.delivery_pin?" · PIN "+detail.delivery_pin:""}</p>
         <ul>{(detail.lines||[]).map(line=><li key={line.id}><span>{line.product_name} <small>({line.sku}) × {line.quantity}</small></span><strong>{money(line.line_total)}</strong></li>)}</ul>
         {detail.notes && <p>Notes: {detail.notes}</p>}
-      </> : null}</div>}
+      </> : null}
+      <div className="sb-order-history"><button type="button" onClick={()=>toggleHistory(order)} disabled={historyLoading}>{historyLoading?"Loading history…":history?.order_id===order.id?"Hide status history":"View status history"}</button>
+      {history?.order_id===order.id&&<div className="sb-order-history-list">{history.items?.length?history.items.map(entry=><div key={entry.id}><strong>{label(entry.from_status||"created")} → {label(entry.to_status)}</strong><small>{entry.changed_at?new Date(entry.changed_at).toLocaleString("en-IN"):""}</small></div>):<p className="sb-muted">No status changes recorded yet.</p>}</div>}
+      </div>
+    </div>}
     </article>)}</div> : <p className="sb-empty">{error ? "Orders could not be loaded." : "No orders found for these filters."}</p>}
   </section>;
 }
