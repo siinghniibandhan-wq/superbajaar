@@ -87,7 +87,7 @@ def _fake_order_connection():
             return variant_cursor
         if "INSERT INTO orders" in sql:
             # Mirror the optional email value returned by PostgreSQL.
-            order_cursor.fetchone.return_value["customer_email"] = params[3]
+            order_cursor.fetchone.return_value["customer_email"] = params[4]
             return order_cursor
         return cursor
 
