@@ -66,7 +66,7 @@ export default function PurchasingWorkspace({ onBack }) {
         throw new Error("Select a supplier, location, catalogue variant, quantity and valid unit cost for each line.");
       }
       const po = await apiRequest("/purchasing/orders", { method: "POST", body: JSON.stringify(payload) });
-      setNotice("Purchase order " + po.purchase_number + " created."); setNotes(""); setLines([{ ...emptyLine }]); await load(); await openOrder(po.id);
+      setNotice("Purchase order " + po.purchase_number + " saved as a draft. Approve it before receiving goods."); setNotes(""); setLines([{ ...emptyLine }]); await load(); await openOrder(po.id);
     } catch (e) { setError(e.message || "Unable to create purchase order."); }
     finally { setSaving(false); }
   }
@@ -84,6 +84,16 @@ export default function PurchasingWorkspace({ onBack }) {
     } catch (e) { setError(e.message || "Unable to load purchase order details."); }
   }
 
+  async function approveOrder() {
+    if (!detail) return;
+    setSaving(true); setError(""); setNotice("");
+    try {
+      const result = await apiRequest("/purchasing/orders/" + detail.id + "/approve", { method: "POST" });
+      setNotice(result.message || "Purchase order approved."); await load(); await openOrder(detail.id);
+    } catch (e) { setError(e.message || "Unable to approve purchase order."); }
+    finally { setSaving(false); }
+  }
+
   async function receiveGoods(e) {
     e.preventDefault(); if (!detail) return;
     const receiptLines = (detail.lines || []).filter(line => Number(receipts[line.line_id]) > 0).map(line => ({ line_id: line.line_id, quantity: Number(receipts[line.line_id]) }));
@@ -99,7 +109,7 @@ export default function PurchasingWorkspace({ onBack }) {
   return <section className="sb-workspace sb-purchasing">
     <button className="sb-back" type="button" onClick={onBack}>← All workspaces</button>
     <p className="sb-eyebrow">OPERATIONS · PURCHASING</p><h1>Purchasing</h1>
-    <p>Manage suppliers, create purchase orders and receive goods into a selected stock location.</p>
+    <p>Manage suppliers, save purchase orders as drafts, approve orders and receive goods into a selected stock location.</p>
     {error && <p className="sb-alert" role="alert">{error}</p>}{notice && <p className="sb-success" role="status">{notice}</p>}
     <div className="sb-customer-tabs" role="tablist" aria-label="Purchasing workspace">
       <button type="button" role="tab" aria-selected={tab === "orders"} className={tab === "orders" ? "is-active" : ""} onClick={() => setTab("orders")}>Purchase orders <span>{orders.length}</span></button>
@@ -139,7 +149,7 @@ export default function PurchasingWorkspace({ onBack }) {
       <div className="sb-customer-toolbar"><button type="button" onClick={load} disabled={loading}>{loading ? "Loading…" : "Refresh orders"}</button></div>
       {loading ? <p className="sb-empty">Loading purchase orders…</p> : orders.length ? <div className="sb-customer-list">{orders.map(po => <article className={"sb-order-card " + (selected === po.id ? "is-selected" : "")} key={po.id}>
         <button type="button" className="sb-order-open" onClick={() => openOrder(po.id)}><span><strong>{po.purchase_number}</strong><small>{po.supplier_name} · {po.location_name}</small></span><span className="sb-order-total">{money(po.subtotal)}<small>{po.line_count} lines</small></span><span className={"sb-order-status status-" + po.status}>{label(po.status)}</span></button>
-        {selected === po.id && detail && <div className="sb-purchase-detail"><h3>{detail.purchase_number} · Goods receipt</h3><div className="sb-purchase-detail-lines">{detail.lines.map(line => <div className="sb-purchase-detail-line" key={line.line_id}><div><strong>{line.product_name}</strong><small>SKU {line.sku} · ordered {line.quantity_ordered} · received {line.quantity_received} · open {line.quantity_open}</small></div><label>Receive qty<input type="number" min="0" max={Number(line.quantity_open)} step="0.001" disabled={Number(line.quantity_open) <= 0 || detail.status === "cancelled" || detail.status === "received"} value={receipts[line.line_id] ?? ""} onChange={e => setReceipts(old => ({ ...old, [line.line_id]: e.target.value }))} /></label></div>)}</div>
+        {selected === po.id && detail && <div className="sb-purchase-detail"><h3>{detail.purchase_number} · {detail.status === "draft" ? "Approval required" : "Goods receipt"}</h3>{detail.status === "draft" && <div className="sb-purchase-approval"><p className="sb-muted">Draft orders cannot receive stock until approved.</p><button className="sb-primary" type="button" onClick={approveOrder} disabled={saving}>{saving ? "Saving…" : "Approve purchase order"}</button></div>}<div className="sb-purchase-detail-lines">{detail.lines.map(line => <div className="sb-purchase-detail-line" key={line.line_id}><div><strong>{line.product_name}</strong><small>SKU {line.sku} · ordered {line.quantity_ordered} · received {line.quantity_received} · open {line.quantity_open}</small></div><label>Receive qty<input type="number" min="0" max={Number(line.quantity_open)} step="0.001" disabled={Number(line.quantity_open) <= 0 || detail.status === "cancelled" || detail.status === "received"} value={receipts[line.line_id] ?? ""} onChange={e => setReceipts(old => ({ ...old, [line.line_id]: e.target.value }))} /></label></div>)}</div>
           {detail.status !== "received" && detail.status !== "cancelled" && <form onSubmit={receiveGoods}><button className="sb-primary" type="submit" disabled={saving}>{saving ? "Saving…" : "Record goods receipt"}</button></form>}
         </div>}
       </article>)}</div> : <p className="sb-empty">No purchase orders yet.</p>}
