@@ -14,6 +14,6 @@ def test_root_reports_running_and_configured_port():
 
 
 def test_versioned_health_endpoint():
-    response = client.get("/api/v1/health")
+    response = client.get("/api/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
