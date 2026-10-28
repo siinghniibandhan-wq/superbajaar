@@ -112,7 +112,7 @@ def create_case(p:CaseIn):
     import uuid
     try:
         with _connect() as c:
-            return c.execute("INSERT INTO support_cases(case_number,customer_id,order_id,subject,description,priority) VALUES(%s,%s,%s,%s,%s,%s) RETURNING id,case_number,customer_id,order_id,subject,description,priority,status,created_at,updated_at",("SUP-"+uuid.uuid4().hex[:10].upper(),p.customer_id,p.order_id,p.subject.strip(),p.description.strip(),p.priority)).fetchone()
+            return c.execute("INSERT INTO support_cases(case_number,customer_id,order_id,subject,description,priority) VALUES(%s,%s,%s,%s,%s,%s) RETURNING id,case_number,customer_id,order_id,subject,description,priority,status,created_at,updated_at",("SUP-"+uuid.uuid4().hex[:16].upper(),p.customer_id,p.order_id,p.subject.strip(),p.description.strip(),p.priority)).fetchone()
     except psycopg.Error as e:raise _error(e) from e
 
 @router.patch("/support-cases/{case_id}")
@@ -202,17 +202,16 @@ def track_public_support_ticket(
     """Return only a ticket whose registered contact details match the request."""
     normalized_email = email.strip().lower() if email else ""
     normalized_phone = phone.strip() if phone else ""
-    if not normalized_email and not normalized_phone:
-        raise HTTPException(status_code=422, detail="Provide the email address or phone number used when creating the ticket")
+    if not normalized_email or not normalized_phone:
+        raise HTTPException(status_code=422, detail="Provide both the email address and phone number used when creating the ticket")
     try:
         with _connect() as c:
             row = c.execute(
                 "SELECT s.case_number, s.subject, s.status, s.priority, s.resolution, s.created_at, s.updated_at "
                 "FROM support_cases s JOIN customers cu ON cu.id=s.customer_id "
                 "WHERE upper(s.case_number)=upper(%s) "
-                "AND ((%s <> '' AND lower(COALESCE(cu.email, ''))=%s) "
-                "OR (%s <> '' AND COALESCE(cu.phone, '')=%s))",
-                (case_number.strip(), normalized_email, normalized_email, normalized_phone, normalized_phone),
+                "AND lower(COALESCE(cu.email, ''))=%s AND COALESCE(cu.phone, '')=%s",
+                (case_number.strip(), normalized_email, normalized_phone),
             ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Ticket not found for those contact details")
