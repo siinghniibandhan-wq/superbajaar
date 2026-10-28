@@ -19,6 +19,9 @@ allowed_origins = [origin.strip() for origin in settings.cors_allowed_origins.sp
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    # Amplify branch deployments use distinct HTTPS subdomains. Keep explicit
+    # configured origins and permit HTTPS AWS Amplify app hostnames too.
+    allow_origin_regex=r"https://[a-zA-Z0-9-]+\.amplifyapp\.com",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
