@@ -27,6 +27,8 @@ export default function SettingsWorkspace({ onBack, user }) {
   const [users, setUsers] = useState([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [newUser, setNewUser] = useState({ full_name: "", email: "", password: "", role: "staff" });
+  const [passwordChange, setPasswordChange] = useState({ current_password: "", new_password: "", confirm_password: "" });
+  const [resetPasswords, setResetPasswords] = useState({});
 
   async function loadSettings() {
     setLoading(true);
@@ -82,6 +84,38 @@ export default function SettingsWorkspace({ onBack, user }) {
     } catch (reason) {
       setError(reason.message || "Unable to update user account.");
       await loadUsers();
+    }
+  }
+
+  async function changeMyPassword(event) {
+    event.preventDefault();
+    if (passwordChange.new_password !== passwordChange.confirm_password) {
+      setError("New password and confirmation do not match."); return;
+    }
+    setError(""); setNotice("");
+    try {
+      await apiRequest("/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify({ current_password: passwordChange.current_password, new_password: passwordChange.new_password }),
+      });
+      setPasswordChange({ current_password: "", new_password: "", confirm_password: "" });
+      setNotice("Password changed. Other active sessions have been signed out.");
+    } catch (reason) {
+      setError(reason.message || "Unable to change password.");
+    }
+  }
+
+  async function resetUserPassword(account) {
+    const password = resetPasswords[account.id] || "";
+    if (password.length < 12) { setError("Temporary password must be at least 12 characters."); return; }
+    if (!window.confirm("Reset the password for " + account.email + " and sign out their active sessions?")) return;
+    setError(""); setNotice("");
+    try {
+      await apiRequest("/users/" + account.id + "/password", { method: "POST", body: JSON.stringify({ password }) });
+      setResetPasswords(previous => ({ ...previous, [account.id]: "" }));
+      setNotice("Password reset. The user must sign in again with the new password.");
+    } catch (reason) {
+      setError(reason.message || "Unable to reset user password.");
     }
   }
 
@@ -192,6 +226,13 @@ export default function SettingsWorkspace({ onBack, user }) {
         {activeTab === "access" && <>
           <h2>Account & access</h2><p>Signed-in identity and current permissions.</p>
           <div className="sb-settings-account"><span className="sb-settings-avatar">{(user?.full_name || user?.email || "A").slice(0,1).toUpperCase()}</span><div><strong>{user?.full_name || "Signed-in user"}</strong><small>{user?.email || "Email not provided by authentication API"}</small><small>Role: {user?.role || "Not provided by API"}</small></div></div>
+          <h3>Change my password</h3>
+          <form className="sb-settings-grid" onSubmit={changeMyPassword}>
+            <Field label="Current password *" type="password" value={passwordChange.current_password} onChange={v => setPasswordChange(previous => ({ ...previous, current_password: v }))} required autoComplete="current-password" />
+            <Field label="New password * (12+ characters)" type="password" value={passwordChange.new_password} onChange={v => setPasswordChange(previous => ({ ...previous, new_password: v }))} required minLength={12} maxLength={128} autoComplete="new-password" />
+            <Field label="Confirm new password *" type="password" value={passwordChange.confirm_password} onChange={v => setPasswordChange(previous => ({ ...previous, confirm_password: v }))} required minLength={12} maxLength={128} autoComplete="new-password" />
+            <button className="sb-primary" type="submit">Change password</button>
+          </form>
           <div className="sb-settings-note"><strong>{user?.role === "owner" ? "Owner access" : canManage ? "Settings administrator" : "Read-only settings access"}</strong><p>{user?.role === "owner" ? "Create accounts, assign roles and deactivate access below. Deactivated users have their active sessions revoked. The last active owner cannot be removed." : canManage ? "Your role can update shared business settings. Only the store owner can manage user accounts and roles." : "Only owners and admins can change shared business settings. Contact an owner or admin to request a change."}</p></div>
           {user?.role === "owner" && <>
             <h3>User accounts</h3>
@@ -210,6 +251,7 @@ export default function SettingsWorkspace({ onBack, user }) {
                 <div className="sb-settings-user-identity"><strong>{account.full_name}</strong><small>{account.email}</small><small>{account.is_active ? "Active" : "Deactivated"}</small></div>
                 <label className="sb-settings-field">Role<select value={account.role} onChange={e => updateUser(account.id, { role: e.target.value })} disabled={account.id === user?.id}><option value="owner">Owner</option><option value="admin">Admin</option><option value="manager">Manager</option><option value="staff">Staff</option><option value="viewer">Viewer</option></select></label>
                 <label className="sb-settings-user-active"><input type="checkbox" checked={account.is_active} onChange={e => updateUser(account.id, { is_active: e.target.checked })} disabled={account.id === user?.id} /> Active</label>
+                {account.id !== user?.id && <div className="sb-settings-user-password"><Field label="Reset password (12+ characters)" type="password" value={resetPasswords[account.id] || ""} onChange={v => setResetPasswords(previous => ({ ...previous, [account.id]: v }))} minLength={12} maxLength={128} autoComplete="new-password" /><button type="button" onClick={() => resetUserPassword(account)}>Reset password</button></div>}
               </div>)}
             </div>
           </>}
