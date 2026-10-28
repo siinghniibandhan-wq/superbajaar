@@ -1,10 +1,20 @@
-// Use the deployed API by default in production while allowing Amplify build
-// configuration to override it. Local development continues to use port 8001.
-const configuredBase = import.meta.env.VITE_API_BASE_URL?.trim();
-const productionApiBase = "https://superappkart.duckdns.org/api/v1";
-const API_BASE_URL = (configuredBase || (import.meta.env.DEV
-  ? "http://127.0.0.1:8001/api/v1"
-  : productionApiBase)).replace(/\/+$/, "");
+// The storefront and ERP share the existing backend host, but use different
+// API prefixes: the storefront calls /api/* while the ERP calls /api/v1/*.
+// Amplify has historically supplied VITE_API_BASE_URL ending in /api, so
+// normalize that value for this ERP client instead of generating /api/auth/*.
+const configuredBase = import.meta.env.VITE_API_BASE_URL?.trim().replace(/\/+$/, "");
+const productionApiOrigin = "https://superappkart.duckdns.org";
+function resolveApiBase(value) {
+  if (!value) {
+    return import.meta.env.DEV
+      ? "http://127.0.0.1:8001/api/v1"
+      : `${productionApiOrigin}/api/v1`;
+  }
+  if (/\/api\/v1$/i.test(value)) return value;
+  if (/\/api$/i.test(value)) return value + "/v1";
+  return value + "/api/v1";
+}
+const API_BASE_URL = resolveApiBase(configuredBase);
 
 function readStoredToken() {
   try { return window.localStorage.getItem("superbajaar.access_token") || ""; }
@@ -12,11 +22,8 @@ function readStoredToken() {
 }
 
 export async function apiRequest(path, options = {}) {
-  if (!API_BASE_URL) {
-    throw new Error("Backend URL is not configured. Set VITE_API_BASE_URL in the frontend hosting environment.");
-  }
-  let response;
   const token = readStoredToken();
+  let response;
   try {
     response = await fetch(`${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`, {
       ...options,
@@ -28,7 +35,7 @@ export async function apiRequest(path, options = {}) {
       },
     });
   } catch {
-    throw new Error("Cannot reach the Super Bajaar backend. Verify the API host is live and allows this Amplify origin in CORS.");
+    throw new Error(`Cannot reach the Super Bajaar API at ${API_BASE_URL}. Check backend availability and CORS for this Amplify origin.`);
   }
   const contentType = response.headers.get("content-type") || "";
   const body = contentType.includes("application/json") ? await response.json() : await response.text();
