@@ -237,3 +237,23 @@
  .storefront-category-art { height:75px; }
  .storefront-section-heading h2 { font-size:25px; }
 }
+
+/* Refined category navigation and product-discovery shelves */
+.storefront-header-search>svg { flex:0 0 auto; color:#76539c; }
+.storefront-icon-action { text-decoration:none; }
+.storefront-department-nav a { display:inline-flex; align-items:center; gap:4px; }
+.storefront-department-nav button:hover,.storefront-department-nav a:hover { color:var(--sb-purple); }
+.storefront-discovery { max-width:1440px; margin:0 auto; padding:0 clamp(16px,3vw,44px) 26px; }
+.storefront-discovery-section { padding:12px 0 30px; scroll-margin-top:20px; }
+.storefront-discovery-section .storefront-section-heading { margin-bottom:14px; }
+.storefront-discovery-section .storefront-section-heading h2 { margin-top:7px; }
+.storefront-discovery-section .storefront-section-heading p { margin:7px 0 0; color:var(--sb-muted); font-size:12px; }
+.storefront-discovery-section .storefront-kicker { gap:6px; }
+.storefront-discovery-section .storefront-kicker svg { vertical-align:middle; }
+.storefront-product-title { border:0; padding:0; text-align:left; background:transparent; color:inherit; font:inherit; font-weight:inherit; cursor:pointer; }
+.storefront-product-title:hover { color:var(--sb-purple); }
+.storefront-add { display:flex; align-items:center; justify-content:center; gap:8px; }
+.storefront-wishlist { box-shadow:0 3px 12px #32105f12; transition:transform .16s ease,background .16s ease,color .16s ease; }
+.storefront-wishlist:hover { transform:scale(1.07); }
+.storefront-wishlist.is-saved { color:#e14f70; background:#fff0f4; border-color:#f4c2d0; }
+@media(max-width:640px) { .storefront-discovery { padding-inline:17px; } .storefront-discovery-section { padding-bottom:22px; } .storefront-discovery-section .storefront-section-heading h2 { font-size:25px; } }
