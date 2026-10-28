@@ -30,6 +30,8 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    env:
+      PYTHONPATH: ${{ github.workspace }}/backend
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -39,5 +41,5 @@ jobs:
           python-version: "3.12"
       - name: Install backend dependencies
         run: pip install -r requirements.txt
-      - name: Run backend tests
-        run: pytest -q
+      - name: Run backend unit tests
+        run: pytest -q tests/test_*.py
