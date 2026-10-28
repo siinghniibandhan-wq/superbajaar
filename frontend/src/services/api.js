@@ -1,5 +1,13 @@
-const configuredBase = import.meta.env.VITE_API_BASE_URL?.trim();
-const API_BASE_URL = (configuredBase || (import.meta.env.DEV ? "http://127.0.0.1:8001/api/v1" : "")).replace(/\/$/, "");
+function normalizeApiBase(value) {
+  const base = value?.trim().replace(/\\/+$/, "");
+  if (!base) return "";
+  if (base.endsWith("/api/v1")) return base;
+  if (base.endsWith("/api")) return base + "/v1";
+  return base + "/api/v1";
+}
+
+const configuredBase = import.meta.env.VITE_API_BASE_URL;
+const API_BASE_URL = normalizeApiBase(configuredBase) || (import.meta.env.DEV ? "http://127.0.0.1:8001/api/v1" : "");
 
 function readStoredToken() { try { return window.localStorage.getItem("superbajaar.access_token") || ""; } catch { return ""; } }
 
