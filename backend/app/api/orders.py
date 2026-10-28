@@ -153,8 +153,13 @@ def get_order(order_id: int):
 
 @router.post("", status_code=201)
 def create_order(payload: OrderCreate, request: Request):
-    if getattr(request.state, "public_checkout", False) and payload.channel != "website":
-        raise HTTPException(status_code=403, detail="Public checkout can only create website orders")
+    if getattr(request.state, "customer_checkout", False):
+        if payload.channel != "website":
+            raise HTTPException(status_code=403, detail="Customer accounts can only create website orders")
+        if not payload.customer_email or str(payload.customer_email).strip().lower() != str(request.state.customer_email).strip().lower():
+            raise HTTPException(status_code=403, detail="Order email must match the signed-in customer account")
+    elif getattr(request.state, "role", None) == "customer":
+        raise HTTPException(status_code=403, detail="Customer sign-in is required to place a website order")
     if getattr(request.state, "role", None) == "staff" and payload.channel == "manual":
         raise HTTPException(status_code=403, detail="Staff cannot create manual orders")
     try:
