@@ -312,3 +312,31 @@ def update_order_status(order_id: int, payload: OrderStatusUpdate):
         raise
     except psycopg.Error as exc:
         raise _db_error(exc) from exc
+
+
+
+@router.get("/{order_id}/history")
+def order_status_history(
+    order_id: int,
+    limit: int = Query(default=100, ge=1, le=500),
+):
+    """Return recorded status transitions for an order, newest first."""
+    try:
+        with _connect() as conn:
+            order = conn.execute(
+                "SELECT id, order_number FROM orders WHERE id = %s",
+                (order_id,),
+            ).fetchone()
+            if order is None:
+                raise HTTPException(status_code=404, detail="Order not found")
+            rows = conn.execute(
+                "SELECT id, from_status, to_status, changed_at "
+                "FROM order_status_history WHERE order_id = %s "
+                "ORDER BY changed_at DESC, id DESC LIMIT %s",
+                (order_id, limit),
+            ).fetchall()
+        return {"order_id": order_id, "order_number": order["order_number"], "items": rows}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
