@@ -33,3 +33,22 @@ def test_shipment_rejects_blank_recipient_before_database_access():
 def test_shipment_status_rejects_unknown_value():
     response = client.patch("/api/delivery/shipments/1/status", json={"status": "teleported"})
     assert response.status_code == 422
+
+
+def test_delivery_history_requires_database_configuration(monkeypatch):
+    from app.api import delivery
+
+    monkeypatch.setattr(delivery.settings, "database_url", "")
+    response = client.get("/api/delivery/shipments/1/history")
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Delivery database is not configured"
+
+
+def test_delivery_history_rejects_non_integer_shipment_id():
+    response = client.get("/api/delivery/shipments/not-a-number/history")
+    assert response.status_code == 422
+
+
+def test_delivery_history_rejects_invalid_limit():
+    response = client.get("/api/delivery/shipments/1/history?limit=0")
+    assert response.status_code == 422
