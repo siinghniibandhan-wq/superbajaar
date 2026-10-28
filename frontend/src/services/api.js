@@ -35,7 +35,9 @@ export async function apiRequest(path, options = {}) {
     response = await fetch(requestUrl, {
       ...fetchOptions,
       headers: {
-        "Content-Type": "application/json",
+        // Avoid forcing JSON content type on GETs; it can trigger unnecessary
+        // cross-origin preflight requests for public storefront catalogue reads.
+        ...(fetchOptions.body !== undefined ? { "Content-Type": "application/json" } : {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(fetchOptions.headers || {}),
       },

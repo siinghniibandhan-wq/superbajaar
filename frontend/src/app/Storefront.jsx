@@ -29,9 +29,10 @@ export default function Storefront() {
   useEffect(() => {
     let active = true;
     Promise.all([
-      apiRequest("/catalogue/categories"),
-      apiRequest("/catalogue/products"),
-      apiRequest("/catalogue/variants?limit=500"),
+      // Public storefront reads must not inherit a stale admin session token.
+      apiRequest("/catalogue/categories", { skipAuth: true }),
+      apiRequest("/catalogue/products", { skipAuth: true }),
+      apiRequest("/catalogue/variants?limit=500", { skipAuth: true }),
     ]).then(([c, p, v]) => {
       if (!active) return;
       setCategories(c.items || []);
