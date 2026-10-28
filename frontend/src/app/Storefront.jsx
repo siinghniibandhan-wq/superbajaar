@@ -250,8 +250,8 @@ export default function Storefront() {
     {!isCategoryPage && <section className="storefront-hero">
       <div className="storefront-hero-copy"><span className="storefront-kicker"><i /> YOUR EVERYDAY SUPER STORE</span><h1>Welcome to<br /><em>Super Bajaar</em></h1><p>Everything you need, all in one place. Explore everyday essentials and discover something new for your home and family.</p><a className="storefront-primary" href="#products">Shop Now <span>→</span></a><div className="storefront-trust"><span>✦ Thoughtfully picked</span><span>✦ Made for everyday</span></div></div>
       <div className="storefront-hero-art" aria-label="Colourful shopping bags and everyday products" role="img"><div className="art-sun" /><div className="art-orbit orbit-one" /><div className="art-orbit orbit-two" /><div className="art-spark spark-one">✦</div><div className="art-spark spark-two">✳</div><div className="art-bag bag-purple"><span>S</span></div><div className="art-bag bag-orange"><span>♥</span></div><div className="art-box"><span>GOOD</span><strong>THINGS</strong></div><div className="art-leaf leaf-one">✦</div><div className="art-leaf leaf-two">✿</div><div className="art-caption">A little joy in every basket</div></div>
-    </section>
-    <section className="storefront-categories" id="categories">
+    </section>}
+    {!isCategoryPage && <section className="storefront-categories" id="categories">
       <div className="storefront-section-heading"><div><span className="storefront-kicker">FIND YOUR FAVOURITES</span><h2>Shop by category</h2></div><span className="storefront-heading-note">Choose a category to filter products.</span></div>
       <div className="storefront-category-grid">
 
@@ -262,8 +262,8 @@ export default function Storefront() {
           </button>;
         })}
       </div>
-    </section>
-    <section className="storefront-products" id="products">
+    </section>}
+    <section className={"storefront-products " + (isCategoryPage ? "storefront-category-page" : "")} id="products">
       <div className="storefront-category-breadcrumb"><a href="/" onClick={event => {event.preventDefault(); openShopHome();}}>Home</a><span>/</span><span>{routeCategoryName || "Shop products"}</span></div><div className="storefront-section-heading"><div><span className="storefront-kicker">{isCategoryPage ? "SHOP BY DEPARTMENT" : "TODAY’S PICKS"}</span><h1>{isCategoryPage ? routeCategoryName : categoryId ? (orderedCategories.find(c => String(c.id) === categoryId)?.name || "Products") : "Shop products"}</h1>{isCategoryPage && <p className="storefront-category-description">{categoryArt[routeCategoryName]?.detail || "Explore products in this department."}</p>}</div><span className="storefront-heading-note">{visibleVariants.length} variants available</span></div>
       <label className="storefront-search">Search products or SKU<input value={search} onChange={e => setSearch(e.target.value)} placeholder="Try a product name or SKU" /></label>
       {error && <p className="storefront-alert" role="alert">{error}</p>}
@@ -281,7 +281,7 @@ export default function Storefront() {
         {notice && <p className="storefront-order-success" role="status">{notice}</p>}{error && <p className="storefront-alert" role="alert">{error}</p>}
       </div>
     </section>
-    {!isCategoryPage && <section className="storefront-benefits" id="why-us"><div><span className="benefit-icon">✦</span><strong>Everyday essentials</strong><small>All your regular picks in one place.</small></div><div><span className="benefit-icon">♡</span><strong>Made for your routine</strong><small>A simpler way to shop for home and family.</small></div><div><span className="benefit-icon">✳</span><strong>Discover something new</strong><small>Explore categories for every kind of day.</small></div></section>
+    {!isCategoryPage && <section className="storefront-benefits" id="why-us"><div><span className="benefit-icon">✦</span><strong>Everyday essentials</strong><small>All your regular picks in one place.</small></div><div><span className="benefit-icon">♡</span><strong>Made for your routine</strong><small>A simpler way to shop for home and family.</small></div><div><span className="benefit-icon">✳</span><strong>Discover something new</strong><small>Explore categories for every kind of day.</small></div></section>}
     <footer className="storefront-footer"><a className="storefront-brand" href="/"><span className="storefront-logo">S</span><span><strong>Super Bajaar</strong><small>Your Everyday Super Store</small></span></a><span>Everyday made a little brighter.</span><a href="/admin">Business admin ↗</a></footer>
   </main>;
 }
