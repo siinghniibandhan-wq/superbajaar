@@ -1,6 +1,14 @@
 import { useState } from "react";
 import { apiRequest } from "../services/api.js";
 
+function normalizeLoginResponse(response) {
+  // Support the canonical FastAPI response and common API gateway wrappers.
+  const payload = response?.data && typeof response.data === "object" ? response.data : response;
+  const token = payload?.access_token || payload?.accessToken || payload?.token || payload?.data?.access_token || payload?.data?.accessToken;
+  const user = payload?.user || payload?.data?.user || (payload?.id || payload?.email ? payload : null);
+  return { token, user, keys: payload && typeof payload === "object" ? Object.keys(payload) : [] };
+}
+
 export default function LoginScreen({ onSignedIn }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -13,9 +21,16 @@ export default function LoginScreen({ onSignedIn }) {
     setError("");
     try {
       const response = await apiRequest("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
-      if (!response?.access_token) throw new Error("Login response did not include an access token.");
-      try { window.localStorage.setItem("superbajaar.access_token", response.access_token); } catch {}
-      onSignedIn(response.user);
+      const { token, user, keys } = normalizeLoginResponse(response);
+      if (!token) {
+        const shape = keys.length ? keys.join(", ") : typeof response;
+        throw new Error(`The configured login API returned no access token (response fields: ${shape}). Check VITE_API_BASE_URL points to the Super Bajaar API ending in /api/v1.`);
+      }
+      if (!user || typeof user !== "object") {
+        throw new Error("Login API returned an access token but no user profile. Check the configured authentication API.");
+      }
+      try { window.localStorage.setItem("superbajaar.access_token", token); } catch {}
+      onSignedIn(user);
     } catch (reason) {
       setError(reason.message || "Unable to sign in.");
     } finally {
