@@ -433,22 +433,14 @@ export default function Storefront() {
     } finally { setSubmitting(false); }
   }
 
-  async function loadCustomerLoyalty(event) {
-    event.preventDefault();
-    if (!customer.email.trim() || !loyaltyOrderReference.trim()) {
-      setError("Enter the email used for your order and its order reference.");
-      return;
-    }
+  async function loadCustomerLoyalty() {
+    if (!customerToken || !customerAuth) { openCustomerAuth("login", "/account"); return; }
     setLoyaltyBusy(true); setError(""); setLoyaltyCustomerData(null);
     try {
-      const query = new URLSearchParams({
-        email: customer.email.trim(),
-        order_reference: loyaltyOrderReference.trim(),
-      });
-      const result = await apiRequest("/loyalty/customer/account?" + query.toString(), { skipAuth: true });
+      const result = await customerRequest("/loyalty/customer/me");
       setLoyaltyCustomerData(result);
     } catch (reason) {
-      setError(reason.message || "Could not verify your order for loyalty access.");
+      setError(reason.message || "Could not load your Super Coin card.");
     } finally { setLoyaltyBusy(false); }
   }
 
