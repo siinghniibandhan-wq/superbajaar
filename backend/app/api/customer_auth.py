@@ -114,11 +114,15 @@ def register(payload: CustomerRegister):
                 referral_code = payload.referral_code
                 if referral_code:
                     referrer = conn.execute(
-                        "SELECT id FROM customer_accounts WHERE referral_code=%s AND is_active=TRUE",
+                        "SELECT id, email, phone FROM customer_accounts WHERE referral_code=%s AND is_active=TRUE",
                         (referral_code,),
                     ).fetchone()
                     if referrer is None:
                         raise HTTPException(status_code=422, detail="Referral code is invalid")
+                    if referrer["email"].strip().lower() == email or (
+                        payload.phone and referrer["phone"] and payload.phone.strip() == referrer["phone"].strip()
+                    ):
+                        raise HTTPException(status_code=422, detail="You cannot use your own referral details")
                 own_code = _new_referral_code(conn)
                 customer = conn.execute(
                     "INSERT INTO customer_accounts (email,full_name,phone,password_hash,referral_code,referred_by_customer_id) "
@@ -233,7 +237,7 @@ def referrals(request: Request):
         return {
             "referral_code": customer["referral_code"],
             "referral_link_path": "/customer/register?ref=" + customer["referral_code"],
-            "reward_status": "Referral tracking is enabled; rewards await programme settings.",
+            "reward_status": "When a referred customer\u0027s first order is delivered, both customers receive 100 Super Coins each.",
             "items": rows,
         }
     except HTTPException:
