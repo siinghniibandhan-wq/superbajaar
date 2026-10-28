@@ -101,7 +101,7 @@ export default function Storefront() {
 
   const productById = useMemo(() => new Map(products.map(p => [Number(p.id), p])), [products]);
   const categorySlug = name => String(name || "").trim().toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-  const routeSlug = routePath.match(/^\\/category\\/([^/]+)$/)?.[1] || "";
+  const routeSlug = routePath.startsWith("/category/") ? routePath.slice("/category/".length).split("/")[0] : "";
   const routeCategoryName = categoryOrder.find(name => categorySlug(name) === routeSlug)
     || categories.find(category => categorySlug(category.name) === routeSlug)?.name || "";
   const isCategoryPage = Boolean(routeSlug);
