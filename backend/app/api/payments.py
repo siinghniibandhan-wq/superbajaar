@@ -106,7 +106,7 @@ def create_payment(payload: PaymentCreate):
     try:
         with _connect() as conn:
             with conn.transaction():
-                order = conn.execute("SELECT id, total, status FROM orders WHERE id=%s FOR SHARE", (payload.order_id,)).fetchone()
+                order = conn.execute("SELECT id, total, status FROM orders WHERE id=%s FOR UPDATE", (payload.order_id,)).fetchone()
                 if order is None:
                     raise HTTPException(status_code=404, detail="Order not found")
                 if order["status"] == "cancelled":
