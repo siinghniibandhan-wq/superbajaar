@@ -49,6 +49,11 @@ export default function Storefront() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [accountSection, setAccountSection] = useState("overview");
   const [canOpenAdmin, setCanOpenAdmin] = useState(false);
+  const [ticketDraft, setTicketDraft] = useState({ name: "", phone: "", email: "", subject: "", description: "" });
+  const [ticketCreated, setTicketCreated] = useState(null);
+  const [ticketLookup, setTicketLookup] = useState({ caseNumber: "", email: "", phone: "" });
+  const [ticketTracked, setTicketTracked] = useState(null);
+  const [ticketBusy, setTicketBusy] = useState(false);
 
   useEffect(() => {
     try { setRecentlyViewed(JSON.parse(sessionStorage.getItem("sb-recently-viewed") || "[]")); } catch { setRecentlyViewed([]); }
@@ -210,6 +215,29 @@ export default function Storefront() {
     setSearch("");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
+  const submitSupportTicket = async event => {
+    event.preventDefault();
+    setTicketBusy(true); setError(""); setTicketCreated(null); setTicketTracked(null);
+    try {
+      const result = await apiRequest("/customers/support-portal/tickets", { method: "POST", skipAuth: true, body: JSON.stringify(ticketDraft) });
+      setTicketCreated(result.ticket);
+      setTicketLookup(old => ({ ...old, caseNumber: result.ticket.case_number, email: ticketDraft.email, phone: ticketDraft.phone }));
+      setTicketDraft(old => ({ ...old, subject: "", description: "" }));
+    } catch (reason) { setError(reason.message || "Could not create your support ticket."); }
+    finally { setTicketBusy(false); }
+  };
+  const trackSupportTicket = async event => {
+    event.preventDefault(); setTicketBusy(true); setError(""); setTicketTracked(null);
+    try {
+      const params = new URLSearchParams();
+      if (ticketLookup.email.trim()) params.set("email", ticketLookup.email.trim());
+      if (ticketLookup.phone.trim()) params.set("phone", ticketLookup.phone.trim());
+      const result = await apiRequest("/customers/support-portal/tickets/" + encodeURIComponent(ticketLookup.caseNumber.trim()) + "?" + params.toString(), { skipAuth: true });
+      setTicketTracked(result.ticket);
+    } catch (reason) { setError(reason.message || "Could not find that ticket."); }
+    finally { setTicketBusy(false); }
+  };
+
   const orderedCategories = useMemo(() => {
     const rank = new Map(categoryOrder.map((name, index) => [name.toLowerCase(), index]));
     return [...categories].sort((a, b) => {
@@ -374,7 +402,28 @@ export default function Storefront() {
             <form className="storefront-account-form" onSubmit={saveCustomerProfile}><label>Full name<input autoComplete="name" required maxLength="200" value={customer.name} onChange={event=>setCustomer(old=>({...old,name:event.target.value}))}/></label><label>Mobile number<input autoComplete="tel" maxLength="20" value={customer.phone} onChange={event=>setCustomer(old=>({...old,phone:event.target.value}))}/></label><label>Email address<input type="email" autoComplete="email" maxLength="254" value={customer.email} onChange={event=>setCustomer(old=>({...old,email:event.target.value}))}/></label><button className="storefront-primary" type="submit">Save profile</button><p className="storefront-account-note">Currently saved on this device only. A verified customer sign-in is needed to sync details across devices.</p></form>
           </div>}
           {accountSection==="orders" && <div className="storefront-account-section"><h2>My Orders</h2><p>View purchases, order details and delivery updates.</p><div className="storefront-account-empty-state"><span>📦</span><h3>Order history needs customer sign-in</h3><p>Orders are recorded by the store, but this portal does not yet have a secure customer identity to retrieve only your orders. We will not show unverified order records here.</p></div></div>}
-          {accountSection==="tickets" && <div className="storefront-account-section"><h2>My Tickets</h2><p>Raise an issue and follow replies from the support team.</p><div className="storefront-account-empty-state"><span>🎫</span><h3>Customer ticket access needs to be connected</h3><p>The system has support-case records for store operations. A secure customer sign-in and ownership-checked ticket endpoints are required before customers can create or view their own tickets here.</p></div></div>}
+          {accountSection==="tickets" && <div className="storefront-account-section">
+            <h2>My Tickets</h2><p>Create a support request or track an existing ticket using the contact details registered with it.</p>
+            <form className="storefront-account-form" onSubmit={submitSupportTicket}>
+              <h3>Raise a ticket</h3>
+              <label>Full name<input autoComplete="name" required maxLength="200" value={ticketDraft.name || customer.name} onChange={event=>setTicketDraft(old=>({...old,name:event.target.value}))}/></label>
+              <label>Mobile number<input autoComplete="tel" required minLength="7" maxLength="20" value={ticketDraft.phone || customer.phone} onChange={event=>setTicketDraft(old=>({...old,phone:event.target.value}))}/></label>
+              <label>Email address<input type="email" autoComplete="email" required maxLength="254" value={ticketDraft.email || customer.email} onChange={event=>setTicketDraft(old=>({...old,email:event.target.value}))}/></label>
+              <label>Subject<input required minLength="3" maxLength="200" value={ticketDraft.subject} onChange={event=>setTicketDraft(old=>({...old,subject:event.target.value}))}/></label>
+              <label>How can we help?<textarea required rows="4" maxLength="5000" value={ticketDraft.description} onChange={event=>setTicketDraft(old=>({...old,description:event.target.value}))}/></label>
+              <button className="storefront-primary" type="submit" disabled={ticketBusy}>{ticketBusy?"Submitting…":"Create support ticket"}</button>
+            </form>
+            {ticketCreated && <div className="storefront-account-summary" role="status"><div><small>Ticket created</small><strong>{ticketCreated.case_number}</strong></div><p>Save this reference. Use the same email or phone below to track updates.</p></div>}
+            <form className="storefront-account-form" onSubmit={trackSupportTicket}>
+              <h3>Track a ticket</h3>
+              <label>Ticket reference<input required placeholder="SUP-XXXXXXXXXX" value={ticketLookup.caseNumber} onChange={event=>setTicketLookup(old=>({...old,caseNumber:event.target.value.toUpperCase()}))}/></label>
+              <label>Email used for the ticket<input type="email" maxLength="254" value={ticketLookup.email} onChange={event=>setTicketLookup(old=>({...old,email:event.target.value}))}/></label>
+              <label>Or phone used for the ticket<input maxLength="20" value={ticketLookup.phone} onChange={event=>setTicketLookup(old=>({...old,phone:event.target.value}))}/></label>
+              <button className="storefront-primary" type="submit" disabled={ticketBusy || (!ticketLookup.email.trim() && !ticketLookup.phone.trim())}>{ticketBusy?"Checking…":"Track ticket"}</button>
+            </form>
+            {ticketTracked && <div className="storefront-account-summary" role="status"><div><small>Reference</small><strong>{ticketTracked.case_number}</strong></div><div><small>Subject</small><strong>{ticketTracked.subject}</strong></div><div><small>Status</small><strong>{String(ticketTracked.status).replaceAll("_"," ")}</strong></div><div><small>Last updated</small><strong>{ticketTracked.updated_at ? new Date(ticketTracked.updated_at).toLocaleString() : "Not available"}</strong></div>{ticketTracked.resolution && <div><small>Support response</small><strong>{ticketTracked.resolution}</strong></div>}</div>}
+            {error && <p className="storefront-account-note" role="alert">{error}</p>}
+          </div>}
           {accountSection==="addresses" && <div className="storefront-account-section"><h2>Addresses</h2><p>Manage your preferred delivery address and PIN code.</p><form className="storefront-account-form" onSubmit={saveCustomerProfile}><label>Delivery PIN<input inputMode="numeric" autoComplete="postal-code" pattern="[1-9][0-9]{5}" maxLength="6" value={customer.pin} onChange={event=>setCustomer(old=>({...old,pin:event.target.value.replace(/\\D/g,"").slice(0,6)}))}/></label><label className="storefront-account-address">Delivery address<textarea autoComplete="street-address" rows="3" maxLength="1000" value={customer.address} onChange={event=>setCustomer(old=>({...old,address:event.target.value}))}/></label><button className="storefront-primary" type="submit">Save address</button><p className="storefront-account-note">Address is currently saved on this device, not synced to a signed-in customer account.</p></form></div>}
           {accountSection==="security" && <div className="storefront-account-section"><h2>Security</h2><p>Protect your account and keep your contact details verified.</p><div className="storefront-security-list"><div><span><strong>Change password</strong><small>Change the password used to sign in.</small></span><button type="button" disabled>Not available yet</button></div><div><span><strong>Update mobile number</strong><small>Requires OTP verification of the new number.</small></span><button type="button" disabled>OTP setup required</button></div><div><span><strong>Update email address</strong><small>Requires verification of the new email address.</small></span><button type="button" disabled>Email verification required</button></div><div><span><strong>Login sessions</strong><small>Review and end active customer sessions.</small></span><button type="button" disabled>Customer sign-in required</button></div></div><p className="storefront-account-note">These actions are not enabled because customer authentication and verification are not implemented yet. We will not simulate security changes in the browser.</p></div>}
           {notice && <p className="storefront-order-success" role="status">{notice}</p>}
