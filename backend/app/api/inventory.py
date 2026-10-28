@@ -203,7 +203,7 @@ def create_adjustment(payload: StockAdjustment) -> dict[str, Any]:
                 "(variant_id, location_id, movement_type, quantity, reference_type, note) "
                 "VALUES (%s, %s, 'adjustment', %s, 'manual_adjustment', %s) "
                 "RETURNING id, variant_id, location_id, movement_type, quantity, reference_type, note, created_at",
-                (payload.variant_id, payload.location_id, payload.quantity, "manual_scrap" if payload.reason_type == "scrap" else "manual_issue", payload.note.strip()),
+                (payload.variant_id, payload.location_id, payload.quantity, payload.note.strip()),
             ).fetchone()
         return movement
     except HTTPException:
@@ -248,7 +248,7 @@ def issue_stock(payload: StockIssue) -> dict[str, Any]:
                 "(variant_id, location_id, movement_type, quantity, reference_type, note) "
                 "VALUES (%s, %s, 'adjustment', %s, %s, %s) "
                 "RETURNING id, variant_id, location_id, movement_type, quantity, reference_type, note, created_at",
-                (payload.variant_id, payload.location_id, payload.quantity, payload.note.strip()),
+                (payload.variant_id, payload.location_id, payload.quantity, "manual_scrap" if payload.reason_type == "scrap" else "manual_issue", payload.note.strip()),
             ).fetchone()
         return movement
     except HTTPException:
