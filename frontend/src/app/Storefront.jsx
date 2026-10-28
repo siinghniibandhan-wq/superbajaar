@@ -415,15 +415,17 @@ export default function Storefront() {
     return categories.filter(c => [c.parent_id, c.parent_category_id, c.parentId].some(id => id != null && String(id) === String(parent.id)));
   }, [categories, displayCategories, routeCategoryName]);
   const dealVariants = useMemo(() => {
+    const term = search.trim().toLowerCase();
     const discounted = variants.filter(v => {
       const p = productById.get(Number(v.product_id)) || {};
       const price = Number(v.selling_price ?? v.price ?? 0);
       const compare = Number(v.compare_at_price ?? v.original_price ?? v.mrp ?? p.compare_at_price ?? p.original_price ?? p.mrp ?? 0);
       const discount = Number(v.discount_percent ?? v.discount_percentage ?? p.discount_percent ?? p.discount_percentage ?? 0);
-      return (compare > price && price > 0) || discount > 0;
+      const matchesSearch = !term || [v.product_name, p.name, v.sku, p.brand].some(value => String(value || "").toLowerCase().includes(term));
+      return matchesSearch && (((compare > price) && price > 0) || discount > 0);
     });
     return discounted.filter((v, i, all) => all.findIndex(x => Number(x.id) === Number(v.id)) === i).slice(0, 24);
-  }, [variants, productById, bestSellers, newArrivals]);
+  }, [variants, productById, search]);
   const total = cart.reduce((sum, line) => sum + Number(line.selling_price || 0) * line.quantity, 0);
   const addToCart = variant => {
     setCart(old => {
