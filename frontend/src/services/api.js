@@ -4,8 +4,6 @@ function normalizeApiBase(value) {
   const fallback = import.meta.env.DEV ? "http://127.0.0.1:8001/api" : "";
   const candidate = (value || fallback).trim().replace(/\/+$/, "");
   if (!candidate) return "";
-  // This backend exposes /api/* routes (not /api/v1/*).
-  if (/\/api\/v1$/i.test(candidate)) return candidate.replace(/\/v1$/i, "");
   if (/\/api$/i.test(candidate)) return candidate;
   return candidate + "/api";
 }
@@ -19,7 +17,7 @@ function readStoredToken() {
 function normalizeRequestPath(path) {
   const raw = path.startsWith("/") ? path : `/${path}`;
   // The base URL owns the /api prefix; remove it from callers to prevent duplication.
-  const withoutPrefix = raw.replace(/^\/api(?:\/v1)?(?=\/|$)/i, "");
+  const withoutPrefix = raw.replace(/^\/api(?=\/|$)/i, "");
   return withoutPrefix || "/";
 }
 

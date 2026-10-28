@@ -2,7 +2,7 @@
 from typing import Any
 
 import psycopg
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from psycopg.rows import dict_row
 from pydantic import BaseModel, Field, field_validator
 
@@ -48,7 +48,7 @@ class AttributeCreate(BaseModel):
     value_type: str = Field(pattern=r"^(text|number|boolean|date|select|multi_select|colour|size)$")
     is_variant_attribute: bool = False
     is_required: bool = False
-    options: list[Any] = Field(default_factory=list, max_length=200)
+    options: list[Any] = Field(default_factory=list, max_length=200, validate_default=True)
 
     @field_validator("name")
     @classmethod
@@ -165,11 +165,11 @@ def _validate_attribute_value(conn, attribute: dict[str, Any], value: Any) -> No
 
 
 @router.get("/categories")
-def list_categories(limit: int = Query(default=100, ge=1, le=500), offset: int = Query(default=0, ge=0)):
+def list_categories(request: Request, limit: int = Query(default=100, ge=1, le=500), offset: int = Query(default=0, ge=0)):
     with _connection() as conn:
         rows = conn.execute(
             "SELECT id, parent_id, name, slug, description, is_active, created_at, updated_at "
-            "FROM categories ORDER BY name LIMIT %s OFFSET %s", (limit, offset)
+            "FROM categories WHERE is_active = TRUE ORDER BY name LIMIT %s OFFSET %s", (limit, offset)
         ).fetchall()
     return {"items": rows, "limit": limit, "offset": offset}
 
@@ -190,6 +190,7 @@ def create_category(payload: CategoryCreate):
 
 @router.get("/products")
 def list_products(
+    request: Request,
     category_id: int | None = Query(default=None, gt=0),
     status: str = Query(default="active", pattern="^(draft|active|archived|all)$"),
     limit: int = Query(default=100, ge=1, le=500),
@@ -200,6 +201,8 @@ def list_products(
     if category_id is not None:
         clauses.append("category_id = %s")
         params.append(category_id)
+    if getattr(request.state, "public_catalogue", False):
+        status = "active"
     if status != "all":
         clauses.append("status = %s")
         params.append(status)
@@ -396,7 +399,7 @@ def list_all_variants(limit: int = Query(default=200, ge=1, le=500), offset: int
                 "SELECT v.id, v.product_id, p.name AS product_name, v.sku, v.barcode, v.attributes, "
                 "v.selling_price, v.mrp, v.cost_price, v.is_active "
                 "FROM product_variants v JOIN products p ON p.id = v.product_id "
-                "WHERE v.is_active = TRUE ORDER BY p.name, v.sku LIMIT %s OFFSET %s",
+                "WHERE v.is_active = TRUE AND p.status = 'active' ORDER BY p.name, v.sku LIMIT %s OFFSET %s",
                 (limit, offset),
             ).fetchall()
         return {"items": rows, "limit": limit, "offset": offset}

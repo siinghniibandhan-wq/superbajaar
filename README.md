@@ -10,7 +10,7 @@ Super Bajaar is a commerce storefront and ERP application. This file is the sing
 - Backend port: `8001` (keep unchanged).
 - PostgreSQL port: `5432` (keep unchanged).
 - Frontend development port: `5173` (existing Vite configuration).
-- API prefix: `/api/v1` (the prefix configured by the backend).
+- API prefix: `/api` (the only public API prefix).
 - Do not add ports, services, databases, or deployment targets without an identified need and approval.
 - Never reset or clear production data as part of routine development.
 
@@ -18,7 +18,7 @@ Super Bajaar is a commerce storefront and ERP application. This file is the sing
 
 1. A page or form in the frontend calls the shared frontend API client.
 2. The API client sends an HTTP request to the backend URL with the required authentication token.
-3. A route in `backend/app/api/v1/` receives and validates the request.
+3. A route in `backend/app/api/` receives and validates the request.
 4. Backend code applies the relevant business rules and checks permissions.
 5. PostgreSQL is read or updated using the existing database connection/query code.
 6. The backend returns a response; the frontend displays the result or error.
@@ -45,22 +45,22 @@ There must be one authoritative backend API system. Frontend API functions are c
 - `backend/app/main.py`: creates the FastAPI application, middleware and registers routers.
 - `backend/app/core/config.py`: environment-based settings, API prefix, CORS configuration and backend port setting.
 - `backend/app/core/auth_middleware.py`: active-session/authentication middleware.
-- `backend/app/api/v1/auth.py`: authentication endpoints.
-- `backend/app/api/v1/catalogue.py`: catalogue, categories, product attributes and variants endpoints.
-- `backend/app/api/v1/inventory.py`: inventory endpoints.
-- `backend/app/api/v1/purchasing.py`: purchasing endpoints.
-- `backend/app/api/v1/orders.py`: order endpoints.
-- `backend/app/api/v1/payments.py`: payment endpoints.
-- `backend/app/api/v1/delivery.py`: delivery endpoints.
-- `backend/app/api/v1/customers.py`: customer endpoints.
-- `backend/app/api/v1/health.py`: health endpoint.
+- `backend/app/api/auth.py`: authentication endpoints.
+- `backend/app/api/catalogue.py`: catalogue, categories, product attributes and variants endpoints.
+- `backend/app/api/inventory.py`: inventory endpoints.
+- `backend/app/api/purchasing.py`: purchasing endpoints.
+- `backend/app/api/orders.py`: order endpoints.
+- `backend/app/api/payments.py`: payment endpoints.
+- `backend/app/api/delivery.py`: delivery endpoints.
+- `backend/app/api/customers.py`: customer endpoints.
+- `backend/app/api/health.py`: health endpoint.
 - `backend/tests/`: backend tests.
 
 The route files on the current codebase include some direct database access. A separate service/repository layer is not assumed to exist everywhere. Extract code only when a verified fix or maintenance need justifies it; do not rewrite working modules just to match a folder pattern.
 
 ## Backend API endpoints currently registered
 
-All paths below are prefixed with `/api/v1` by `backend/app/main.py`. This list is based on route declarations in the repository, not a claim that production/database integration has been runtime-tested.
+All paths below are prefixed with `/api` by `backend/app/main.py`. This list is based on route declarations in the repository, not a claim that production/database integration has been runtime-tested.
 
 - Health: `GET /health`
 - Authentication: `POST /auth/login`, `GET /auth/me`, `POST /auth/logout`
@@ -94,7 +94,7 @@ A module is not considered functional merely because its page or route exists. V
 
 - Keep the existing AWS Amplify, EC2, Nginx and PostgreSQL setup.
 - Keep backend port `8001` and PostgreSQL port `5432`.
-- Keep the configured API prefix `/api/v1`; align frontend callers with real backend routes rather than introducing another prefix.
+- Keep `/api` as the single public API prefix. Do not introduce API version segments.
 - Test on a branch created from `main`; do not push directly to `main`.
 - Before changing an endpoint, check both its frontend caller and backend route, including request/response field names and authentication requirements.
 - Before changing schema, check existing schema files and production compatibility.

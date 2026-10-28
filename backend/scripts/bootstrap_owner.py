@@ -5,7 +5,7 @@ import re
 import sys
 import psycopg
 
-from app.api.v1.auth import _password_hash
+from app.api.auth import _password_hash
 
 
 def main():

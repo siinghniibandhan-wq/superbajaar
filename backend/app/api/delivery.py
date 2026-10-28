@@ -100,6 +100,8 @@ def create_shipment(payload: DeliveryCreate):
                     raise HTTPException(status_code=404, detail="Order not found")
                 if order["status"] in {"cancelled", "delivered"}:
                     raise HTTPException(status_code=409, detail="Cannot create a shipment for a cancelled or delivered order")
+                if order["delivery_pin"] and order["delivery_pin"].strip() != payload.delivery_pin:
+                    raise HTTPException(status_code=422, detail="Shipment delivery PIN must match the order delivery PIN")
                 existing = conn.execute("SELECT id FROM deliveries WHERE order_id=%s AND status NOT IN ('cancelled','returned','failed')", (payload.order_id,)).fetchone()
                 if existing:
                     raise HTTPException(status_code=409, detail="An active shipment already exists for this order")

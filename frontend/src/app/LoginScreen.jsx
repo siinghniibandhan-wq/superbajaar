@@ -24,7 +24,7 @@ export default function LoginScreen({ onSignedIn }) {
       const { token, user, keys } = normalizeLoginResponse(response);
       if (!token) {
         const shape = keys.length ? keys.join(", ") : typeof response;
-        throw new Error(`The configured login API returned no access token (response fields: ${shape}). Check VITE_API_BASE_URL points to the Super Bajaar API ending in /api/v1.`);
+        throw new Error(`The configured login API returned no access token (response fields: ${shape}). Check VITE_API_BASE_URL points to the Super Bajaar API ending in /api.`);
       }
       if (!user || typeof user !== "object") {
         throw new Error("Login API returned an access token but no user profile. Check the configured authentication API.");
