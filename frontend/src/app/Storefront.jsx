@@ -268,7 +268,7 @@ export default function Storefront() {
     const isRegister = customerAuthMode === "register";
     const returnTo = new URLSearchParams(window.location.search).get("return") === "/checkout" ? "/checkout" : "/account";
     const payload = isRegister
-      ? { full_name: customerAuthDraft.full_name.trim(), email: customerAuthDraft.email.trim(), phone: customerAuthDraft.phone.trim() || null, password: customerAuthDraft.password, referral_code: customerAuthDraft.referral_code.trim() || null }
+      ? { full_name: customerAuthDraft.full_name.trim(), email: customerAuthDraft.email.trim(), phone: customerAuthDraft.phone.trim(), password: customerAuthDraft.password, referral_code: customerAuthDraft.referral_code.trim() || null }
       : { email: customerAuthDraft.email.trim(), password: customerAuthDraft.password };
     try {
       const result = await apiRequest(isRegister ? "/customer-auth/register" : "/customer-auth/login", { method: "POST", skipAuth: true, body: JSON.stringify(payload) });
@@ -511,7 +511,7 @@ export default function Storefront() {
       <form className="storefront-checkout-form" onSubmit={submitCustomerAuth}>
         {customerAuthMode === "register" && <label>Full name<input required minLength="2" maxLength="200" autoComplete="name" value={customerAuthDraft.full_name} onChange={e=>setCustomerAuthDraft(old=>({...old,full_name:e.target.value}))}/></label>}
         <label>Email address<input required type="email" maxLength="254" autoComplete="email" value={customerAuthDraft.email} onChange={e=>setCustomerAuthDraft(old=>({...old,email:e.target.value}))}/></label>
-        {customerAuthMode === "register" && <label>Mobile number (optional)<input maxLength="20" autoComplete="tel" value={customerAuthDraft.phone} onChange={e=>setCustomerAuthDraft(old=>({...old,phone:e.target.value}))}/></label>}
+        {customerAuthMode === "register" && <label>Mobile number <span aria-hidden="true">*</span><input required type="tel" minLength="7" maxLength="20" autoComplete="tel" value={customerAuthDraft.phone} onChange={e=>setCustomerAuthDraft(old=>({...old,phone:e.target.value}))}/></label>}
         <label>Password<input required type="password" minLength={customerAuthMode === "register" ? 10 : 1} maxLength="1024" autoComplete={customerAuthMode === "register" ? "new-password" : "current-password"} value={customerAuthDraft.password} onChange={e=>setCustomerAuthDraft(old=>({...old,password:e.target.value}))}/>{customerAuthMode === "register" && <small>Use at least 10 characters.</small>}</label>
         {customerAuthMode === "register" && <label>Referral code (optional)<input maxLength="24" autoComplete="off" value={customerAuthDraft.referral_code} onChange={e=>setCustomerAuthDraft(old=>({...old,referral_code:e.target.value.toUpperCase()}))} placeholder="Enter a friend's code"/></label>}
         <button type="submit" className="storefront-primary" disabled={customerAuthBusy}>{customerAuthBusy ? "Please wait…" : customerAuthMode === "register" ? "Create account" : "Sign in and continue"}</button>
