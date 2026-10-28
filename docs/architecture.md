@@ -14,7 +14,7 @@
 - `frontend/src/pages`: page/workspace entry points.
 - `frontend/src/features`: domain-specific UI and client workflows.
 - `frontend/src/services`: API client and client service wrappers.
-- `backend/app/api/v1`: versioned HTTP endpoints.
+- `backend/app/api`: HTTP route handlers.
 - `backend/app/models`: persistence models.
 - `backend/app/schemas`: request/response validation.
 - `backend/app/services`: domain rules and orchestration.
