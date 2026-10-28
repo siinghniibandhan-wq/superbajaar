@@ -20,7 +20,7 @@ export default function SettingsWorkspace({ onBack, currentUser }) {
     finally { setLoading(false); }
   }, []);
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { apiRequest("/loyalty/rules").then(result => setLoyaltyRules(result.items || [])).catch(() => setLoyaltyRules([])); apiRequest("/loyalty/admin/accounts").then(result => setLoyaltyAccounts(result.items || [])).catch(() => setLoyaltyAccounts([])); }, []);
+  useEffect(() => { apiRequest("/loyalty/admin/rules").then(result => setLoyaltyRules(result.items || [])).catch(e => setError(e.message || "Unable to load loyalty rules.")); apiRequest("/loyalty/admin/accounts").then(result => setLoyaltyAccounts(result.items || [])).catch(e => setError(e.message || "Unable to load loyalty accounts.")); }, []);
 
   async function create(event) {
     event.preventDefault(); setSaving(true); setError(""); setNotice("");
@@ -47,7 +47,7 @@ export default function SettingsWorkspace({ onBack, currentUser }) {
     const payload = { scope_type: ruleForm.scope_type, scope_id: ruleForm.scope_type === "default" ? null : Number(ruleForm.scope_id), coins_per_100: Number(ruleForm.coins_per_100), is_active: ruleForm.is_active };
     try {
       await apiRequest("/loyalty/rules", { method: "PUT", body: JSON.stringify(payload) });
-      const result = await apiRequest("/loyalty/rules");
+      const result = await apiRequest("/loyalty/admin/rules");
       setLoyaltyRules(result.items || []); setNotice("Loyalty earning rule saved.");
     } catch (e) { setError(e.message || "Unable to save loyalty rule."); }
     finally { setSaving(false); }
