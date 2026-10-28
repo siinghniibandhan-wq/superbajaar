@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 import psycopg
 from psycopg.rows import dict_row
 
-from app.api.v1.auth import _decode
+from app.api.auth import _decode
 from app.core.config import settings
 
 
