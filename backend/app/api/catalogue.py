@@ -110,7 +110,7 @@ class AvailabilityRestriction(BaseModel):
         value = value.strip()
         if not value:
             raise ValueError("Restriction value cannot be blank")
-        if not re.fullmatch(r"\\d{6}", value) and value.isdigit() and len(value) != 6:
+        if not re.fullmatch(r"\d{6}", value) and value.isdigit() and len(value) != 6:
             raise ValueError("Pincode restrictions must contain exactly six digits")
         return value
 
@@ -389,7 +389,7 @@ def update_product_availability(product_id: int, payload: ProductAvailabilityUpd
                 if exists is None:
                     raise HTTPException(status_code=404, detail="Product not found")
                 for restriction in payload.restrictions:
-                    if restriction.type == "pincode" and not re.fullmatch(r"\\d{6}", restriction.value):
+                    if restriction.type == "pincode" and not re.fullmatch(r"\d{6}", restriction.value):
                         raise HTTPException(status_code=422, detail="Pincode restrictions must contain exactly six digits")
                     if restriction.type == "warehouse":
                         if not restriction.value.isdigit():
