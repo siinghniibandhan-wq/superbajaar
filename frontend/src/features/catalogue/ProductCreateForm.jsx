@@ -25,7 +25,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
   }
   useEffect(() => { loadDefinitions().catch(e => setError(e.message || "Unable to load attributes.")); }, []);
 
-  const chosenAttributes = useMemo(() => definitions.filter(def => (selected[def.code] || []).length), [definitions, selected]);
+  const chosenAttributes = useMemo(() => definitions.filter(def => def.is_variant_attribute && (selected[def.code] || []).length), [definitions, selected]);
   const variantCombinations = useMemo(() => {
     if (!chosenAttributes.length) return [{}];
     return combinations(chosenAttributes.map(def => ({ code: def.code, values: selected[def.code] || [] })));
@@ -60,7 +60,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
       }
       const payload = { ...form, category_id: form.category_id ? Number(form.category_id) : null, tax_rate: form.tax_rate === "" ? null : Number(form.tax_rate), selling_price: undefined, mrp: undefined };
       delete payload.selling_price; delete payload.mrp;
-      createdProduct = await apiRequest("/catalogue/products", { method: "POST", body: JSON.stringify(payload) });
+      createdProduct = await apiRequest(product?.id ? "/catalogue/products/" + product.id : "/catalogue/products", { method: product?.id ? "PUT" : "POST", body: JSON.stringify(payload) });
       for (const def of chosenAttributes) {
         const values = selected[def.code] || [];
         if (!values.length) continue;
