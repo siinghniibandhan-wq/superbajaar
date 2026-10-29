@@ -432,14 +432,26 @@ export default function Storefront() {
       return next;
     });
   };
-  const newArrivals = useMemo(() => [...visibleVariants].map(v => {
-    const p = productById.get(Number(v.product_id)) || {};
-    return { ...v, _created: Date.parse(p.created_at || p.created_on || p.createdAt || v.created_at || "") || 0 };
-  }).filter(v => v._created > 0).sort((a,b) => b._created-a._created).slice(0,8), [visibleVariants, productById]);
-  const bestSellers = useMemo(() => [...visibleVariants].map(v => {
-    const p = productById.get(Number(v.product_id)) || {};
-    return { ...v, _sales: Number(v.units_sold ?? v.sold_count ?? v.sales_count ?? p.units_sold ?? p.sold_count ?? p.sales_count ?? p.order_count ?? 0) };
-  }).filter(v => v._sales > 0).sort((a,b) => b._sales-a._sales).slice(0,8), [visibleVariants, productById]);
+  // Discovery placements are explicit product-category assignments, never inferred from
+  // creation dates or sales. Each section contains one card per parent product.
+  const assignedSectionProducts = useMemo(() => sectionName => {
+    const section = categories.find(category => String(category.name || "").trim().toLowerCase() === sectionName.toLowerCase());
+    if (!section) return [];
+    const seen = new Set();
+    return variants.filter(variant => {
+      if (variant.is_active === false) return false;
+      const productId = Number(variant.product_id);
+      if (!productId || seen.has(productId)) return false;
+      const product = productById.get(productId);
+      if (!product) return false;
+      const assignedIds = Array.isArray(product.category_ids) ? product.category_ids.map(String) : [String(product.category_id || "")];
+      const explicitlyAssigned = assignedIds.includes(String(section.id)) || String(product.category_id || "") === String(section.id);
+      if (explicitlyAssigned) seen.add(productId);
+      return explicitlyAssigned;
+    }).slice(0, 8);
+  }, [categories, variants, productById]);
+  const newArrivals = useMemo(() => assignedSectionProducts("New Arrivals"), [assignedSectionProducts]);
+  const bestSellers = useMemo(() => assignedSectionProducts("Best Sellers"), [assignedSectionProducts]);
   const recentVariants = useMemo(() => recentlyViewed.map(item => variants.find(v => Number(v.id) === Number(item.variantId))).filter(Boolean).slice(0,8), [recentlyViewed, variants]);
   const categorySubcategories = useMemo(() => {
     const parent = displayCategories.find(c => String(c.name || "").trim().toLowerCase() === String(routeCategoryName).trim().toLowerCase());
