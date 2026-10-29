@@ -678,6 +678,34 @@ def create_product_image(product_id: int, payload: ProductImageCreate):
 
 
 
+@router.put("/products/{product_id}/images/{image_id}/primary")
+def set_product_image_primary(product_id: int, image_id: int):
+    try:
+        with _connection() as conn:
+            _require_product(conn, product_id)
+            image = conn.execute(
+                "SELECT id, variant_id FROM product_images WHERE id=%s AND product_id=%s",
+                (image_id, product_id),
+            ).fetchone()
+            if image is None:
+                raise HTTPException(status_code=404, detail="Product image not found")
+            conn.execute(
+                "UPDATE product_images SET is_primary=FALSE "
+                "WHERE product_id=%s AND variant_id IS NOT DISTINCT FROM %s AND is_primary=TRUE",
+                (product_id, image["variant_id"]),
+            )
+            row = conn.execute(
+                "UPDATE product_images SET is_primary=TRUE WHERE id=%s "
+                "RETURNING id, product_id, variant_id, image_url, alt_text, sort_order, is_primary, created_at",
+                (image_id,),
+            ).fetchone()
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
 @router.post("/products/{product_id}/images/upload", status_code=201)
 async def upload_product_image(
     product_id: int,
