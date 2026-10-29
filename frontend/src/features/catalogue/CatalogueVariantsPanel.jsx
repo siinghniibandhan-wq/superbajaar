@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { apiRequest } from "../../services/api.js";
 
-const initialAttribute = { name: "", code: "", value_type: "select", is_variant_attribute: true, is_required: true, options: "" };
+const initialAttribute = { name: "", code: "", value_type: "select", display_style: "text", is_variant_attribute: true, is_required: true, options: "" };
 const initialVariant = { sku: "", barcode: "", attributes: "{}", selling_price: "", mrp: "", cost_price: "" };
 
 function skuToken(value, limit = 8) {
@@ -92,6 +92,7 @@ export default function CatalogueVariantsPanel({ products, categories = [], mode
         <label>Type<select value={attribute.value_type} onChange={e=>setAttribute(v=>({...v,value_type:e.target.value,options:""}))}>{["text","number","boolean","date","select","multi_select","colour","size"].map(x=><option key={x}>{x}</option>)}</select></label>
         <label>Options (comma-separated)<input value={attribute.options} disabled={!["select","multi_select","colour","size"].includes(attribute.value_type)} placeholder="S, M, L" onChange={e=>setAttribute(v=>({...v,options:e.target.value}))}/></label>
       </div>
+      <label>Presentation style<select value={attribute.display_style || "text"} onChange={e=>setAttribute(v=>({...v,display_style:e.target.value}))}>{[["text","Text"],["button","Button"],["colour_swatch","Colour swatch"],["dropdown","Dropdown"]].map(([value,label])=><option key={value} value={value}>{label}</option>)}</select><small className="sb-muted">Shared by every product using this attribute.</small></label>
       <label className="sb-check"><input type="checkbox" checked={attribute.is_variant_attribute} onChange={e=>setAttribute(v=>({...v,is_variant_attribute:e.target.checked}))}/> Used to define variant combinations</label>
       <label className="sb-check"><input type="checkbox" checked={attribute.is_required} onChange={e=>setAttribute(v=>({...v,is_required:e.target.checked}))}/> Required attribute</label>
       <button className="sb-primary" disabled={busy} type="submit">{busy ? "Saving…" : "Save attribute"}</button>
@@ -99,9 +100,11 @@ export default function CatalogueVariantsPanel({ products, categories = [], mode
     {mode === "attributes" ? <div className="sb-strip-list" aria-label="Attribute definitions">
       {definitions.length ? definitions.map(definition => <article className="sb-strip-row" key={definition.id}>
         <div className="sb-strip-icon" aria-hidden="true">Aa</div>
-        <div className="sb-strip-main"><strong>{definition.name}</strong><small>{definition.code} · {definition.value_type}{definition.options?.length ? " · " + definition.options.join(", ") : ""}</small></div>
+        <div className="sb-strip-main"><strong>{definition.name}</strong><small>{definition.code} · {definition.value_type} · Style: {definition.display_style || "text"}{definition.options?.length ? " · " + definition.options.join(", ") : ""}</small></div>
         <span className="sb-status-pill">{definition.is_required ? "Required" : "Optional"}</span>
         {definition.is_variant_attribute && <span className="sb-strip-meta">Variant</span>}
+        <label className="sb-inline-style">Style<select aria-label={"Presentation style for "+definition.name} value={definition.display_style || "text"} onChange={async e=>{try{await apiRequest("/catalogue/attributes/"+definition.id+"/display-style",{method:"PUT",body:JSON.stringify({display_style:e.target.value})});await loadDefinitions();setNotice("Shared attribute style updated.");}catch(error){setError(error.message||"Unable to update style.");}}}>{[["text","Text"],["button","Button"],["colour_swatch","Colour swatch"],["dropdown","Dropdown"]].map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>
+        <button type="button" className="sb-row-action" onClick={async()=>{if(!window.confirm("Archive attribute "+definition.name+"? Existing variant/order history will be preserved."))return;try{await apiRequest("/catalogue/attributes/"+definition.id+"/archive",{method:"POST"});setNotice("Attribute archived.");await loadDefinitions();}catch(error){setError(error.message||"Unable to archive attribute.");}}}>Archive</button>
       </article>) : <p className="sb-empty">No attributes found. Select Save attribute after completing the form above.</p>}
     </div> : <p className="sb-muted">Active attributes: {definitions.map(d=>d.code + " (" + d.value_type + ")").join(", ") || "None yet"}</p>}
     {mode !== "attributes" && <>
