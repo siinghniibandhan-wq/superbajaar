@@ -51,3 +51,22 @@ def test_order_rejects_duplicate_variant_lines():
     })
     assert response.status_code == 422
     assert "only once per order" in str(response.json())
+
+
+def test_order_history_requires_database_configuration(monkeypatch):
+    from app.api import orders
+
+    monkeypatch.setattr(orders.settings, "database_url", "")
+    response = client.get("/api/orders/1/history")
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Orders database is not configured"
+
+
+def test_order_history_rejects_non_integer_order_id():
+    response = client.get("/api/orders/not-a-number/history")
+    assert response.status_code == 422
+
+
+def test_order_history_rejects_invalid_limit():
+    response = client.get("/api/orders/1/history?limit=0")
+    assert response.status_code == 422
