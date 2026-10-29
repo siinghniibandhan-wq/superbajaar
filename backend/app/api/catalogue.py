@@ -340,6 +340,15 @@ class AvailabilityRuleCreate(BaseModel):
         return value.strip() if value and value.strip() else None
 
 
+@router.get("/stock-locations")
+def list_catalogue_stock_locations():
+    with _connection() as conn:
+        rows = conn.execute(
+            "SELECT id, name, location_type, pin_code FROM stock_locations WHERE is_active=TRUE ORDER BY name"
+        ).fetchall()
+    return {"items": rows}
+
+
 @router.get("/products/{product_id}/availability-rules")
 def list_product_availability_rules(product_id: int):
     with _connection() as conn:
