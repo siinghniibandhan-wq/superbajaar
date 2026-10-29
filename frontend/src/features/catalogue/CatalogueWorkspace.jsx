@@ -10,7 +10,7 @@ export default function CatalogueWorkspace({ onBack }) {
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
   const [showProductForm, setShowProductForm] = useState(false);
-  const [editingProduct, setEditingProduct] = useState(null);
+  const [editingProduct, setEditingProduct] = useState(null);\n  const [selectedVariantProductId, setSelectedVariantProductId] = useState("");
   const [showCategoryForm, setShowCategoryForm] = useState(false);
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
@@ -81,7 +81,7 @@ export default function CatalogueWorkspace({ onBack }) {
       <div className="sb-strip-list" aria-label="Product list">
         {products.length ? products.map(item => <article className="sb-strip-row" key={item.id}>
           <div className="sb-strip-icon" aria-hidden="true">S</div>
-          <div className="sb-strip-main"><strong>{item.name}</strong><small>{item.brand || "No brand"} · {categories.find(category => Number(category.id) === Number(item.category_id))?.name || "Uncategorised"} · {item.variant_count || 0} variant(s)</small><b>{item.min_selling_price == null ? "Price not set" : item.min_selling_price === item.max_selling_price ? "₹" + Number(item.min_selling_price).toFixed(2) : "₹" + Number(item.min_selling_price).toFixed(2) + " – ₹" + Number(item.max_selling_price).toFixed(2)}</b></div>
+          <div className="sb-strip-main"><strong>{item.name}</strong><small>{item.brand || "No brand"} · {categories.find(category => Number(category.id) === Number(item.category_id))?.name || "Uncategorised"}</small><button type="button" className="sb-row-action" onClick={() => { setSelectedVariantProductId(String(item.id)); setActiveTab("attributes"); }}> {item.variant_count || 0} Variants </button><b>{item.min_selling_price == null ? "Price not set" : item.min_selling_price === item.max_selling_price ? "₹" + Number(item.min_selling_price).toFixed(2) : "₹" + Number(item.min_selling_price).toFixed(2) + " – ₹" + Number(item.max_selling_price).toFixed(2)}</b></div>
           <span className={"sb-status-pill sb-status-" + item.status}>{item.status}</span>
           <button type="button" className="sb-row-action" onClick={() => { setEditingProduct(item); setShowProductForm(true); }}>Edit</button>
           {item.status !== "archived" && <button type="button" className="sb-row-action" onClick={async () => { if (!window.confirm("Archive " + item.name + "?")) return; try { await apiRequest("/catalogue/products/" + item.id + "/archive", {method:"POST"}); await refresh(); } catch (e) { setError(e.message || "Unable to archive product"); } }}>Archive</button>}
@@ -117,7 +117,7 @@ export default function CatalogueWorkspace({ onBack }) {
       <div className="sb-catalogue-toolbar">
         <div><h2>Product attributes</h2><p className="sb-muted">Define properties such as colour, size and material.</p></div>
       </div>
-      <CatalogueVariantsPanel products={products} categories={categories} />
+      <CatalogueVariantsPanel products={products} categories={categories} initialProductId={selectedVariantProductId} />
       <ProductImagesPanel products={products} />
     </>}
   </section>;
