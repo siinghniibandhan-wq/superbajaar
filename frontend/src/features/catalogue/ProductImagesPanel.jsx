@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { apiRequest } from "../../services/api.js";
 
-export default function ProductImagesPanel({ products }) {
-  const [productId, setProductId] = useState("");
+export default function ProductImagesPanel({ products = [], initialProductId = "", embedded = false }) {
+  const [productId, setProductId] = useState(initialProductId ? String(initialProductId) : "");
   const [variantId, setVariantId] = useState("");
   const [variants, setVariants] = useState([]);
   const [images, setImages] = useState([]);
@@ -18,6 +18,7 @@ export default function ProductImagesPanel({ products }) {
     try { const result = await apiRequest("/catalogue/products/" + id + "/images"); setImages(result.items || []); }
     catch (e) { setError(e.message || "Unable to load product images."); }
   }
+  useEffect(() => { if (initialProductId && String(initialProductId) !== String(productId)) setProductId(String(initialProductId)); }, [initialProductId]);
   useEffect(() => {
     setVariants([]); setVariantId(""); setImages([]);
     if (!productId) return;
@@ -46,11 +47,11 @@ export default function ProductImagesPanel({ products }) {
   }
 
   return <section className="sb-data-card">
-    <h2>Product & variant images</h2>
+    <h2>{embedded ? "Product & variant images" : "Product & variant images"}</h2>
     <p className="sb-muted">Add an HTTPS/HTTP image URL. This stores image metadata only; upload/storage hosting is not configured yet.</p>
     {error && <p className="sb-alert" role="alert">{error}</p>}
     {message && <p className="sb-success" role="status">{message}</p>}
-    <div className="sb-form-grid"><label>Product<select value={productId} onChange={e=>setProductId(e.target.value)}><option value="">Choose product</option>{products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label></div>
+    {!embedded && <div className="sb-form-grid"><label>Product<select value={productId} onChange={e=>setProductId(e.target.value)}><option value="">Choose product</option>{products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label></div>}
     <form className="sb-form sb-form-inner" onSubmit={submit}>
       <div className="sb-form-grid">
         <label className="sb-span-all">Image URL<input type="url" required maxLength="2048" value={imageUrl} onChange={e=>setImageUrl(e.target.value)} placeholder="https://…"/></label>
