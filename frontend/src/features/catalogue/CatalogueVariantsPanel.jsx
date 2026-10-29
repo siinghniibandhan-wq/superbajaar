@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { apiRequest } from "../../services/api.js";
 
-const initialAttribute = { name: "", code: "", value_type: "select", is_variant_attribute: true, is_required: true, options: "" };
+const initialAttribute = { name: "", code: "", value_type: "text", is_variant_attribute: true, is_required: true, options: "" };
 const initialVariant = { sku: "", barcode: "", attributes: "{}", selling_price: "", mrp: "", cost_price: "" };
 
 function skuToken(value, limit = 8) {
@@ -27,15 +27,17 @@ function skuPreview(product, categories, attributes, version) {
   return ["SB", categoryCode(parentCategory?.name || category?.name), deptCode, skuToken(product.brand), skuToken(productCode, 6), String(product.id).padStart(5, "0"), ...values, "V" + String(version).padStart(2, "0")].join("-");
 }
 
-export default function CatalogueVariantsPanel({ products, categories = [], mode = "all" }) {
+export default function CatalogueVariantsPanel({ products, categories = [], mode = "all", initialProductId = "" }) {
   const [definitions, setDefinitions] = useState([]);
-  const [productId, setProductId] = useState("");
+  const [productId, setProductId] = useState(initialProductId);
   const [variants, setVariants] = useState([]);
   const [attribute, setAttribute] = useState(initialAttribute);
   const [variant, setVariant] = useState(initialVariant);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [editingVariant, setEditingVariant] = useState(null);
+  const [viewingVariant, setViewingVariant] = useState(null);
 
   async function loadDefinitions() {
     try { const result = await apiRequest("/catalogue/attributes"); setDefinitions(result.items || []); }
@@ -47,6 +49,7 @@ export default function CatalogueVariantsPanel({ products, categories = [], mode
     catch (e) { setError(e.message || "Unable to load variants."); }
   }
   useEffect(() => { loadDefinitions(); }, []);
+  useEffect(() => { if (initialProductId && String(initialProductId) !== String(productId)) setProductId(String(initialProductId)); }, [initialProductId]);
   useEffect(() => { loadVariants(productId); }, [productId]);
 
   async function createAttribute(event) {
@@ -66,8 +69,8 @@ export default function CatalogueVariantsPanel({ products, categories = [], mode
       let attributes;
       try { attributes = JSON.parse(variant.attributes || "{}"); }
       catch { throw new Error("Variant attributes must be valid JSON, for example { \"size\": \"M\" }."); }
-      await apiRequest("/catalogue/products/" + productId + "/variants", {
-        method: "POST",
+      await apiRequest(editingVariant ? "/catalogue/variants/" + editingVariant.id : "/catalogue/products/" + productId + "/variants", {
+        method: editingVariant ? "PUT" : "POST",
         body: JSON.stringify({
           barcode: variant.barcode || null, attributes,
           selling_price: Number(variant.selling_price),
@@ -75,7 +78,7 @@ export default function CatalogueVariantsPanel({ products, categories = [], mode
           cost_price: variant.cost_price === "" ? null : Number(variant.cost_price),
         }),
       });
-      setVariant(initialVariant); setNotice("Variant saved."); await loadVariants(productId);
+      setVariant(initialVariant); setEditingVariant(null); setNotice(editingVariant ? "Variant updated." : "Variant saved."); await loadVariants(productId);
     } catch (e) { setError(e.message || "Unable to save variant."); }
     finally { setBusy(false); }
   }
@@ -109,7 +112,7 @@ export default function CatalogueVariantsPanel({ products, categories = [], mode
       <label>Product for variants<select value={productId} onChange={e=>setProductId(e.target.value)}><option value="">Choose product</option>{products.map(p=><option key={p.id} value={p.id}>{p.name} · #{p.id}</option>)}</select></label>
     </div>
     <form className="sb-form sb-form-inner" onSubmit={createVariant}>
-      <h3>Create SKU variant</h3>
+      <h3>{editingVariant ? "Edit SKU variant" : "Create SKU variant"}</h3>
       <div className="sb-form-grid">
         <label className="sb-span-all">SKU (automatic)<input readOnly aria-readonly="true" value={skuPreview(products.find(p => String(p.id) === String(productId)), categories, (() => { try { return JSON.parse(variant.attributes || "{}"); } catch { return {}; } })(), variants.length + 1)} /><small className="sb-muted">Generated from category, department, brand, product ID and variant attributes. The server checks uniqueness when saving.</small></label>
         <label>Barcode<input value={variant.barcode} onChange={e=>setVariant(v=>({...v,barcode:e.target.value}))}/></label>
@@ -118,10 +121,25 @@ export default function CatalogueVariantsPanel({ products, categories = [], mode
         <label>Cost price (₹)<input type="number" min="0" step="0.01" value={variant.cost_price} onChange={e=>setVariant(v=>({...v,cost_price:e.target.value}))}/></label>
         <label className="sb-span-all">Attribute values (JSON)<input value={variant.attributes} onChange={e=>setVariant(v=>({...v,attributes:e.target.value}))} placeholder='{"size":"M","colour":"Blue"}'/></label>
       </div>
-      <button className="sb-primary" disabled={busy || !productId} type="submit">{busy ? "Saving…" : "Save variant"}</button>
+      <div className="sb-product-actions"><button className="sb-primary" disabled={busy || !productId} type="submit">{busy ? "Saving…" : editingVariant ? "Save variant changes" : "Save variant"}</button>{editingVariant && <button type="button" className="sb-secondary" disabled={busy} onClick={() => { setEditingVariant(null); setVariant(initialVariant); }}>Cancel edit</button>}</div>
     </form>
     <h3>Variants for selected product</h3>
-    {variants.length ? <ul>{variants.map(v=><li key={v.id}><strong>{v.sku}</strong> — ₹{v.selling_price} <small>{JSON.stringify(v.attributes)}</small></li>)}</ul> : <p className="sb-empty">Choose a product to load its variants.</p>}
+    {viewingVariant && <section className="sb-form-inner" aria-label="Variant details">
+      <h3>View variant — read only</h3>
+      <p><strong>SKU:</strong> {viewingVariant.sku}</p>
+      <p><strong>Barcode:</strong> {viewingVariant.barcode || "—"}</p>
+      <p><strong>Attributes:</strong> {JSON.stringify(viewingVariant.attributes)}</p>
+      <p><strong>Selling price:</strong> ₹{viewingVariant.selling_price}</p>
+      <p><strong>MRP:</strong> {viewingVariant.mrp == null ? "—" : "₹" + viewingVariant.mrp}</p>
+      <p><strong>Cost price:</strong> {viewingVariant.cost_price == null ? "—" : "₹" + viewingVariant.cost_price}</p>
+      <button type="button" className="sb-secondary" onClick={() => setViewingVariant(null)}>Close view</button>
+    </section>}
+    {variants.length ? <div className="sb-strip-list">{variants.map(v=><article className="sb-strip-row" key={v.id}>
+      <div className="sb-strip-main"><strong>{v.sku}</strong><small>{JSON.stringify(v.attributes)} · ₹{v.selling_price} · {v.is_active ? "Active" : "Archived"}</small></div>
+      <button type="button" className="sb-row-action" onClick={() => setViewingVariant(v)}>View</button>
+      {v.is_active && <button type="button" className="sb-row-action" onClick={() => { setEditingVariant(v); setViewingVariant(null); setVariant({sku:v.sku || "", barcode:v.barcode || "", attributes:JSON.stringify(v.attributes || {}, null, 2), selling_price:String(v.selling_price ?? ""), mrp:v.mrp == null ? "" : String(v.mrp), cost_price:v.cost_price == null ? "" : String(v.cost_price)}); }}>Edit</button>}
+      {v.is_active && <button type="button" className="sb-row-action" onClick={async () => { if (!window.confirm("Archive variant " + v.sku + "? This will not archive the product or other variants.")) return; setError(""); try { await apiRequest("/catalogue/variants/" + v.id + "/archive", {method:"POST"}); setNotice("Variant archived."); await loadVariants(productId); } catch(e) { setError(e.message || "Unable to archive variant."); } }}>Archive</button>}
+    </article>)}</div> : <p className="sb-empty">Choose a product to load its variants.</p>}
     </>}
   </section>;
 }
