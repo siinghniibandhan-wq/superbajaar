@@ -34,6 +34,10 @@ class ProductCreate(BaseModel):
     tax_code: str | None = Field(default=None, max_length=32)
     tax_rate: float | None = Field(default=None, ge=0, le=100)
     status: str = Field(default="active", pattern=r"^(draft|active|archived)$")
+    pos_enabled: bool = True
+    website_enabled: bool = True
+    standard_delivery_enabled: bool = True
+    express_delivery_enabled: bool = False
 
     @field_validator("name")
     @classmethod
@@ -49,6 +53,7 @@ class AttributeCreate(BaseModel):
     value_type: str = Field(pattern=r"^(text|number|boolean|date|select|multi_select|colour|size)$")
     is_variant_attribute: bool = False
     is_required: bool = False
+    display_style: str = Field(default="text", pattern=r"^(text|button|colour_swatch|dropdown)$")
     options: list[Any] = Field(default_factory=list, max_length=200, validate_default=True)
 
     @field_validator("name")
@@ -92,6 +97,29 @@ class ProductImageCreate(BaseModel):
 
 class AttributeValueCreate(BaseModel):
     value: Any
+
+
+class AvailabilityRestriction(BaseModel):
+    type: str = Field(pattern=r"^(region|state|warehouse|pincode)$")
+    value: str = Field(min_length=1, max_length=160)
+
+    @field_validator("value")
+    @classmethod
+    def restriction_value_not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Restriction value cannot be blank")
+        if not re.fullmatch(r"\\d{6}", value) and value.isdigit() and len(value) != 6:
+            raise ValueError("Pincode restrictions must contain exactly six digits")
+        return value
+
+
+class ProductAvailabilityUpdate(BaseModel):
+    pos_enabled: bool = True
+    website_enabled: bool = True
+    standard_delivery_enabled: bool = True
+    express_delivery_enabled: bool = False
+    restrictions: list[AvailabilityRestriction] = Field(default_factory=list, max_length=200)
 
 
 class VariantCreate(BaseModel):
@@ -268,7 +296,7 @@ def list_products(
     params.extend([limit, offset])
     with _connection() as conn:
         rows = conn.execute(
-            "SELECT p.id, p.category_id, p.name, p.slug, p.description, p.brand, p.status, p.tax_code, p.tax_rate, p.created_at, p.updated_at, "
+            "SELECT p.id, p.category_id, p.name, p.slug, p.description, p.brand, p.status, p.tax_code, p.tax_rate, p.pos_enabled, p.website_enabled, p.standard_delivery_enabled, p.express_delivery_enabled, p.created_at, p.updated_at, "
             "(SELECT COUNT(*) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS variant_count, "
             "(SELECT MIN(v.selling_price) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS min_selling_price, "
             "(SELECT MAX(v.selling_price) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS max_selling_price "
@@ -282,10 +310,10 @@ def create_product(payload: ProductCreate):
     try:
         with _connection() as conn:
             row = conn.execute(
-                "INSERT INTO products (category_id, name, slug, description, brand, tax_code, tax_rate, status) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
-                "RETURNING id, category_id, name, slug, description, brand, status, tax_code, tax_rate, created_at, updated_at",
-                (payload.category_id, payload.name, payload.slug, payload.description, payload.brand, payload.tax_code, payload.tax_rate, payload.status),
+                "INSERT INTO products (category_id, name, slug, description, brand, tax_code, tax_rate, status, pos_enabled, website_enabled, standard_delivery_enabled, express_delivery_enabled) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                "RETURNING id, category_id, name, slug, description, brand, status, tax_code, tax_rate, pos_enabled, website_enabled, standard_delivery_enabled, express_delivery_enabled, created_at, updated_at",
+                (payload.category_id, payload.name, payload.slug, payload.description, payload.brand, payload.tax_code, payload.tax_rate, payload.status, payload.pos_enabled, payload.website_enabled, payload.standard_delivery_enabled, payload.express_delivery_enabled),
             ).fetchone()
         return row
     except psycopg.Error as exc:
@@ -301,9 +329,9 @@ def update_product(product_id: int, payload: ProductUpdate):
     try:
         with _connection() as conn:
             row = conn.execute(
-                "UPDATE products SET category_id=%s, name=%s, slug=%s, description=%s, brand=%s, tax_code=%s, tax_rate=%s, status=%s, updated_at=now() "
-                "WHERE id=%s RETURNING id, category_id, name, slug, description, brand, status, tax_code, tax_rate, created_at, updated_at",
-                (payload.category_id, payload.name, payload.slug, payload.description, payload.brand, payload.tax_code, payload.tax_rate, payload.status, product_id),
+                "UPDATE products SET category_id=%s, name=%s, slug=%s, description=%s, brand=%s, tax_code=%s, tax_rate=%s, status=%s, pos_enabled=%s, website_enabled=%s, standard_delivery_enabled=%s, express_delivery_enabled=%s, updated_at=now() "
+                "WHERE id=%s RETURNING id, category_id, name, slug, description, brand, status, tax_code, tax_rate, pos_enabled, website_enabled, standard_delivery_enabled, express_delivery_enabled, created_at, updated_at",
+                (payload.category_id, payload.name, payload.slug, payload.description, payload.brand, payload.tax_code, payload.tax_rate, payload.status, payload.pos_enabled, payload.website_enabled, payload.standard_delivery_enabled, payload.express_delivery_enabled, product_id),
             ).fetchone()
             if row is None:
                 raise HTTPException(status_code=404, detail="Product not found")
@@ -321,6 +349,95 @@ def archive_product(product_id: int):
             row = conn.execute("UPDATE products SET status='archived', updated_at=now() WHERE id=%s AND status <> 'archived' RETURNING id, name, status", (product_id,)).fetchone()
             if row is None:
                 raise HTTPException(status_code=404, detail="Product not found or already archived")
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.get("/products/{product_id}/availability")
+def get_product_availability(product_id: int):
+    try:
+        with _connection() as conn:
+            product = conn.execute(
+                "SELECT id, pos_enabled, website_enabled, standard_delivery_enabled, express_delivery_enabled "
+                "FROM products WHERE id=%s", (product_id,)
+            ).fetchone()
+            if product is None:
+                raise HTTPException(status_code=404, detail="Product not found")
+            restrictions = conn.execute(
+                "SELECT id, restriction_type AS type, restriction_value AS value "
+                "FROM product_availability_restrictions WHERE product_id=%s ORDER BY restriction_type, restriction_value",
+                (product_id,),
+            ).fetchall()
+        return {**product, "restrictions": restrictions}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.put("/products/{product_id}/availability")
+def update_product_availability(product_id: int, payload: ProductAvailabilityUpdate):
+    try:
+        with _connection() as conn:
+            with conn.transaction():
+                exists = conn.execute("SELECT id FROM products WHERE id=%s FOR UPDATE", (product_id,)).fetchone()
+                if exists is None:
+                    raise HTTPException(status_code=404, detail="Product not found")
+                for restriction in payload.restrictions:
+                    if restriction.type == "pincode" and not re.fullmatch(r"\\d{6}", restriction.value):
+                        raise HTTPException(status_code=422, detail="Pincode restrictions must contain exactly six digits")
+                    if restriction.type == "warehouse":
+                        if not restriction.value.isdigit():
+                            raise HTTPException(status_code=422, detail="Warehouse restriction must be a stock location ID")
+                        location = conn.execute(
+                            "SELECT id FROM stock_locations WHERE id=%s AND is_active=TRUE AND location_type='warehouse'",
+                            (int(restriction.value),),
+                        ).fetchone()
+                        if location is None:
+                            raise HTTPException(status_code=422, detail="Active warehouse not found")
+                conn.execute(
+                    "UPDATE products SET pos_enabled=%s, website_enabled=%s, standard_delivery_enabled=%s, express_delivery_enabled=%s, updated_at=now() WHERE id=%s",
+                    (payload.pos_enabled, payload.website_enabled, payload.standard_delivery_enabled, payload.express_delivery_enabled, product_id),
+                )
+                conn.execute("DELETE FROM product_availability_restrictions WHERE product_id=%s", (product_id,))
+                for restriction in payload.restrictions:
+                    conn.execute(
+                        "INSERT INTO product_availability_restrictions (product_id, restriction_type, restriction_value) VALUES (%s,%s,%s) ON CONFLICT DO NOTHING",
+                        (product_id, restriction.type, restriction.value),
+                    )
+                restrictions = conn.execute(
+                    "SELECT id, restriction_type AS type, restriction_value AS value FROM product_availability_restrictions WHERE product_id=%s ORDER BY restriction_type, restriction_value",
+                    (product_id,),
+                ).fetchall()
+                product = conn.execute(
+                    "SELECT id, pos_enabled, website_enabled, standard_delivery_enabled, express_delivery_enabled FROM products WHERE id=%s",
+                    (product_id,),
+                ).fetchone()
+        return {**product, "restrictions": restrictions}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+class AttributeDisplayStyleUpdate(BaseModel):
+    display_style: str = Field(pattern=r"^(text|button|colour_swatch|dropdown)$")
+
+
+@router.put("/attributes/{attribute_id}/display-style")
+def update_attribute_display_style(attribute_id: int, payload: AttributeDisplayStyleUpdate):
+    try:
+        with _connection() as conn:
+            row = conn.execute(
+                "UPDATE product_attributes SET display_style=%s WHERE id=%s AND is_active=TRUE "
+                "RETURNING id,name,code,display_style,is_active",
+                (payload.display_style, attribute_id),
+            ).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Active attribute not found")
         return row
     except HTTPException:
         raise
@@ -346,10 +463,10 @@ def create_attribute(payload: AttributeCreate):
     try:
         with _connection() as conn:
             row = conn.execute(
-                "INSERT INTO product_attributes (name, code, value_type, is_variant_attribute, is_required, options) "
-                "VALUES (%s, %s, %s, %s, %s, %s::jsonb) "
-                "RETURNING id, name, code, value_type, is_variant_attribute, is_required, options, is_active, created_at",
-                (payload.name, payload.code, payload.value_type, payload.is_variant_attribute, payload.is_required, __import__("json").dumps(payload.options)),
+                "INSERT INTO product_attributes (name, code, value_type, is_variant_attribute, is_required, display_style, options) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb) "
+                "RETURNING id, name, code, value_type, is_variant_attribute, is_required, display_style, options, is_active, created_at",
+                (payload.name, payload.code, payload.value_type, payload.is_variant_attribute, payload.is_required, payload.display_style, __import__("json").dumps(payload.options)),
             ).fetchone()
         return row
     except psycopg.Error as exc:
@@ -404,7 +521,7 @@ def archive_attribute(attribute_id: int):
 def list_attributes(limit: int = Query(default=100, ge=1, le=500), offset: int = Query(default=0, ge=0)):
     with _connection() as conn:
         rows = conn.execute(
-            "SELECT id, name, code, value_type, is_variant_attribute, is_required, options, is_active, created_at "
+            "SELECT id, name, code, value_type, is_variant_attribute, is_required, display_style, options, is_active, created_at "
             "FROM product_attributes WHERE is_active = TRUE ORDER BY name LIMIT %s OFFSET %s", (limit, offset)
         ).fetchall()
     return {"items": rows, "limit": limit, "offset": offset}
