@@ -90,6 +90,7 @@ class ProductImageCreate(BaseModel):
     alt_text: str | None = Field(default=None, max_length=300)
     variant_id: int | None = Field(default=None, gt=0)
     sort_order: int = Field(default=0, ge=0, le=10000)
+    is_primary: bool = False
 
     @field_validator("image_url")
     @classmethod
@@ -633,8 +634,8 @@ def list_product_images(product_id: int):
         with _connection() as conn:
             _require_product(conn, product_id)
             rows = conn.execute(
-                "SELECT id, product_id, variant_id, image_url, alt_text, sort_order, created_at "
-                "FROM product_images WHERE product_id = %s ORDER BY sort_order, id",
+                "SELECT id, product_id, variant_id, image_url, alt_text, sort_order, is_primary, created_at "
+                "FROM product_images WHERE product_id = %s ORDER BY variant_id NULLS FIRST, is_primary DESC, sort_order, id",
                 (product_id,),
             ).fetchall()
         return {"items": rows}
@@ -656,11 +657,17 @@ def create_product_image(product_id: int, payload: ProductImageCreate):
                 ).fetchone()
                 if variant is None:
                     raise HTTPException(status_code=422, detail="Image variant must belong to the selected product")
+            if payload.is_primary:
+                conn.execute(
+                    "UPDATE product_images SET is_primary=FALSE "
+                    "WHERE product_id=%s AND variant_id IS NOT DISTINCT FROM %s AND is_primary=TRUE",
+                    (product_id, payload.variant_id),
+                )
             row = conn.execute(
-                "INSERT INTO product_images (product_id, variant_id, image_url, alt_text, sort_order) "
-                "VALUES (%s, %s, %s, %s, %s) "
-                "RETURNING id, product_id, variant_id, image_url, alt_text, sort_order, created_at",
-                (product_id, payload.variant_id, payload.image_url, payload.alt_text, payload.sort_order),
+                "INSERT INTO product_images (product_id, variant_id, image_url, alt_text, sort_order, is_primary) "
+                "VALUES (%s, %s, %s, %s, %s, %s) "
+                "RETURNING id, product_id, variant_id, image_url, alt_text, sort_order, is_primary, created_at",
+                (product_id, payload.variant_id, payload.image_url, payload.alt_text, payload.sort_order, payload.is_primary),
             ).fetchone()
         return row
     except HTTPException:
