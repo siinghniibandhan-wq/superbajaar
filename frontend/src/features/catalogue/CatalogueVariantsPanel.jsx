@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { apiRequest } from "../../services/api.js";
 
-const initialAttribute = { name: "", code: "", value_type: "text", is_variant_attribute: true, is_required: true, options: "" };
+const initialAttribute = { name: "", code: "", value_type: "select", is_variant_attribute: true, is_required: true, options: "" };
 const initialVariant = { sku: "", barcode: "", attributes: "{}", selling_price: "", mrp: "", cost_price: "" };
 
 function skuToken(value, limit = 8) {
@@ -99,7 +99,7 @@ export default function CatalogueVariantsPanel({ products, categories = [], mode
         <label>Name<input required value={attribute.name} onChange={e=>setAttribute(v=>({...v,name:e.target.value,code:attributeCode(e.target.value)}))}/></label>
         <label>Code (automatic)<input required pattern="[a-z][a-z0-9_]*" value={attribute.code} readOnly aria-readonly="true"/><small className="sb-muted">Generated automatically from the attribute name.</small></label>
         <label>Type<select value={attribute.value_type} onChange={e=>setAttribute(v=>({...v,value_type:e.target.value,options:""}))}>{["text","number","boolean","date","select","multi_select","colour","size"].map(x=><option key={x}>{x}</option>)}</select></label>
-        <label>Options (comma-separated)<input value={attribute.options} disabled={!["select","multi_select","colour","size"].includes(attribute.value_type)} placeholder="S, M, L" onChange={e=>setAttribute(v=>({...v,options:e.target.value}))}/></label>
+        <label>Options (comma-separated)<input value={attribute.options} disabled={!["select","multi_select","colour","size"].includes(attribute.value_type)} placeholder={attribute.value_type === "colour" ? "Black, White, Blue" : attribute.value_type === "size" ? "S, M, L" : "Option 1, Option 2"} onChange={e=>setAttribute(v=>({...v,options:e.target.value}))}/><small className="sb-muted">{["select","multi_select","colour","size"].includes(attribute.value_type) ? "Enter the allowed values separated by commas." : "To enter options, change Type to Select, Multi-select, Colour or Size."}</small></label>
       </div>
       <label className="sb-check"><input type="checkbox" checked={attribute.is_variant_attribute} onChange={e=>setAttribute(v=>({...v,is_variant_attribute:e.target.checked}))}/> Used to define variant combinations</label>
       <label className="sb-check"><input type="checkbox" checked={attribute.is_required} onChange={e=>setAttribute(v=>({...v,is_required:e.target.checked}))}/> Required attribute</label>
