@@ -291,19 +291,24 @@ def update_category(category_id: int, payload: CategoryCreate):
 
 @router.post("/categories/{category_id}/archive")
 def archive_category(category_id: int):
-    with _connection() as conn:
-        current = conn.execute("SELECT id FROM categories WHERE id=%s AND is_active=TRUE", (category_id,)).fetchone()
-        if current is None:
-            raise HTTPException(status_code=404, detail="Active category not found or already archived")
-        child = conn.execute("SELECT id FROM categories WHERE parent_id=%s AND is_active=TRUE LIMIT 1", (category_id,)).fetchone()
-        if child is not None:
-            raise HTTPException(status_code=409, detail="Archive or move this category's subcategories first")
-        row = conn.execute(
-            "UPDATE categories SET is_active=FALSE, updated_at=now() WHERE id=%s "
-            "RETURNING id, parent_id, name, slug, is_active, updated_at",
-            (category_id,),
-        ).fetchone()
-    return row
+    try:
+        with _connection() as conn:
+            current = conn.execute("SELECT id FROM categories WHERE id=%s AND is_active=TRUE", (category_id,)).fetchone()
+            if current is None:
+                raise HTTPException(status_code=404, detail="Active category not found or already archived")
+            child = conn.execute("SELECT id FROM categories WHERE parent_id=%s AND is_active=TRUE LIMIT 1", (category_id,)).fetchone()
+            if child is not None:
+                raise HTTPException(status_code=409, detail="Archive or move this category's subcategories first")
+            row = conn.execute(
+                "UPDATE categories SET is_active=FALSE, updated_at=now() WHERE id=%s "
+                "RETURNING id, parent_id, name, slug, is_active, updated_at",
+                (category_id,),
+            ).fetchone()
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
 
 
 @router.delete("/categories/{category_id}")
