@@ -445,6 +445,63 @@ def create_variant(product_id: int, payload: VariantCreate):
         raise _db_error(exc) from exc
 
 
+class VariantUpdate(VariantCreate):
+    pass
+
+
+@router.put("/variants/{variant_id}")
+def update_variant(variant_id: int, payload: VariantUpdate):
+    try:
+        with _connection() as conn:
+            current = conn.execute(
+                "SELECT id, product_id FROM product_variants WHERE id = %s AND is_active = TRUE",
+                (variant_id,),
+            ).fetchone()
+            if current is None:
+                raise HTTPException(status_code=404, detail="Active variant not found")
+            definitions = conn.execute(
+                "SELECT code, name, value_type, options FROM product_attributes "
+                "WHERE is_active = TRUE AND is_variant_attribute = TRUE"
+            ).fetchall()
+            by_code = {row["code"]: row for row in definitions}
+            unknown = sorted(set(payload.attributes) - set(by_code))
+            if unknown:
+                raise HTTPException(status_code=422, detail=f"Unknown or non-variant attributes: {', '.join(unknown)}")
+            for code, value in payload.attributes.items():
+                _validate_attribute_value(conn, by_code[code], value)
+            row = conn.execute(
+                "UPDATE product_variants SET barcode=%s, attributes=%s::jsonb, selling_price=%s, mrp=%s, "
+                "cost_price=%s, updated_at=now() WHERE id=%s "
+                "RETURNING id, product_id, sku, barcode, attributes, selling_price, mrp, cost_price, is_active, updated_at",
+                (payload.barcode, __import__("json").dumps(payload.attributes), payload.selling_price,
+                 payload.mrp, payload.cost_price, variant_id),
+            ).fetchone()
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.post("/variants/{variant_id}/archive")
+def archive_variant(variant_id: int):
+    try:
+        with _connection() as conn:
+            row = conn.execute(
+                "UPDATE product_variants SET is_active=FALSE, updated_at=now() "
+                "WHERE id=%s AND is_active=TRUE "
+                "RETURNING id, product_id, sku, is_active, updated_at",
+                (variant_id,),
+            ).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Active variant not found or already archived")
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
 @router.get("/products/{product_id}/images")
 def list_product_images(product_id: int):
     try:
