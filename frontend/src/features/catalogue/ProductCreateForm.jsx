@@ -26,7 +26,7 @@ export default function ProductCreateForm({ categories, onSaved }) {
     finally { setBusy(false); }
   }
 
-  return <form className="sb-form" onSubmit={event => { event.preventDefault(); submit("active"); }}>
+  return <form className="sb-form" onSubmit={event => { event.preventDefault(); submit(event.nativeEvent.submitter?.value || "active"); }}>
     <h2>Add product</h2>
     {error && <p role="alert" className="sb-alert">{error}</p>}
     {success && <p role="status" className="sb-success">{success}</p>}
@@ -39,6 +39,6 @@ export default function ProductCreateForm({ categories, onSaved }) {
       <label>Tax rate (%)<input type="number" min="0" max="100" step="0.01" value={form.tax_rate} onChange={e=>change("tax_rate",e.target.value)} /></label>
       <label className="sb-span-all">Description<input value={form.description} onChange={e=>change("description",e.target.value)} /></label>
     </div>
-    <div className="sb-product-actions"><button className="sb-primary" disabled={busy} type="submit">{busy ? "Adding…" : "Add product"}</button><button className="sb-secondary" disabled={busy} type="button" onClick={() => submit("draft")}>{busy ? "Saving…" : "Save as draft"}</button></div>
+    <div className="sb-product-actions"><button className="sb-primary" disabled={busy} type="submit" value="active">{busy ? "Adding…" : "Add product"}</button><button className="sb-secondary" disabled={busy} type="submit" value="draft">{busy ? "Saving…" : "Save as draft"}</button></div>
   </form>;
 }
