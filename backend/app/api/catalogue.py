@@ -300,7 +300,8 @@ def list_products(
             "SELECT p.id, p.category_id, p.name, p.slug, p.description, p.brand, p.status, p.tax_code, p.tax_rate, p.pos_enabled, p.website_enabled, p.standard_delivery_enabled, p.express_delivery_enabled, p.created_at, p.updated_at, "
             "(SELECT COUNT(*) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS variant_count, "
             "(SELECT MIN(v.selling_price) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS min_selling_price, "
-            "(SELECT MAX(v.selling_price) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS max_selling_price "
+            "(SELECT MAX(v.selling_price) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS max_selling_price, "
+            "(SELECT MAX(v.mrp) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS max_mrp "
             f"FROM products p {where} ORDER BY p.name LIMIT %s OFFSET %s", tuple(params)
         ).fetchall()
     return {"items": rows, "limit": limit, "offset": offset}
@@ -451,7 +452,7 @@ def list_product_attributes(product_id: int):
     with _connection() as conn:
         _require_product(conn, product_id)
         rows = conn.execute(
-            "SELECT a.id, a.name, a.code, a.value_type, a.is_variant_attribute, a.is_required, a.options, pav.value "
+            "SELECT a.id, a.name, a.code, a.value_type, a.is_variant_attribute, a.is_required, a.display_style, a.options, pav.value "
             "FROM product_attributes a LEFT JOIN product_attribute_values pav "
             "ON pav.attribute_id = a.id AND pav.product_id = %s "
             "WHERE a.is_active = TRUE ORDER BY a.name", (product_id,)
