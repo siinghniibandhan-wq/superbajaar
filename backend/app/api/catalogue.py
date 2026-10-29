@@ -33,6 +33,7 @@ class ProductCreate(BaseModel):
     brand: str | None = Field(default=None, max_length=160)
     tax_code: str | None = Field(default=None, max_length=32)
     tax_rate: float | None = Field(default=None, ge=0, le=100)
+    status: str = Field(default="active", pattern=r"^(draft|active)$")
 
     @field_validator("name")
     @classmethod
@@ -221,10 +222,10 @@ def create_product(payload: ProductCreate):
     try:
         with _connection() as conn:
             row = conn.execute(
-                "INSERT INTO products (category_id, name, slug, description, brand, tax_code, tax_rate) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s) "
+                "INSERT INTO products (category_id, name, slug, description, brand, tax_code, tax_rate, status) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
                 "RETURNING id, category_id, name, slug, description, brand, status, tax_code, tax_rate, created_at, updated_at",
-                (payload.category_id, payload.name, payload.slug, payload.description, payload.brand, payload.tax_code, payload.tax_rate),
+                (payload.category_id, payload.name, payload.slug, payload.description, payload.brand, payload.tax_code, payload.tax_rate, payload.status),
             ).fetchone()
         return row
     except psycopg.Error as exc:
