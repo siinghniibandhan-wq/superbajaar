@@ -19,7 +19,6 @@ export default function ProductCreateForm({ categories = [], product = null, onS
   const [availabilityRules, setAvailabilityRules] = useState([]);
   const [stockLocations, setStockLocations] = useState([]);
   const [ruleDraft, setRuleDraft] = useState({ channel: "website", region_code: "", pincode: "", location_id: "", is_allowed: true });
-  const [imageProducts, setImageProducts] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
