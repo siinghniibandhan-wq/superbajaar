@@ -34,6 +34,17 @@ class ProductCreate(BaseModel):
     tax_code: str | None = Field(default=None, max_length=32)
     tax_rate: float | None = Field(default=None, ge=0, le=100)
     status: str = Field(default="active", pattern=r"^(draft|active)$")
+    is_pos_available: bool = True
+    is_website_available: bool = True
+    delivery_options: list[str] = Field(default_factory=lambda: ["standard"], max_length=2)
+
+    @field_validator("delivery_options")
+    @classmethod
+    def valid_delivery_options(cls, value: list[str]) -> list[str]:
+        allowed = {"standard", "express"}
+        if not value or len(set(value)) != len(value) or any(item not in allowed for item in value):
+            raise ValueError("Select Standard and/or Express delivery")
+        return value
 
     @field_validator("name")
     @classmethod
@@ -261,6 +272,7 @@ def list_products(
         params.append(category_id)
     if getattr(request.state, "public_catalogue", False):
         status = "active"
+        clauses.append("is_website_available = TRUE")
     if status != "all":
         clauses.append("status = %s")
         params.append(status)
@@ -268,7 +280,7 @@ def list_products(
     params.extend([limit, offset])
     with _connection() as conn:
         rows = conn.execute(
-            "SELECT p.id, p.category_id, p.name, p.slug, p.description, p.brand, p.status, p.tax_code, p.tax_rate, p.created_at, p.updated_at, "
+            "SELECT p.id, p.category_id, p.name, p.slug, p.description, p.brand, p.status, p.tax_code, p.tax_rate, p.is_pos_available, p.is_website_available, p.delivery_options, p.created_at, p.updated_at, "
             "(SELECT COUNT(*) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS variant_count, "
             "(SELECT MIN(v.selling_price) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS min_selling_price, "
             "(SELECT MAX(v.selling_price) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS max_selling_price "
@@ -282,10 +294,10 @@ def create_product(payload: ProductCreate):
     try:
         with _connection() as conn:
             row = conn.execute(
-                "INSERT INTO products (category_id, name, slug, description, brand, tax_code, tax_rate, status) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
-                "RETURNING id, category_id, name, slug, description, brand, status, tax_code, tax_rate, created_at, updated_at",
-                (payload.category_id, payload.name, payload.slug, payload.description, payload.brand, payload.tax_code, payload.tax_rate, payload.status),
+                "INSERT INTO products (category_id, name, slug, description, brand, tax_code, tax_rate, status, is_pos_available, is_website_available, delivery_options) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                "RETURNING id, category_id, name, slug, description, brand, status, tax_code, tax_rate, is_pos_available, is_website_available, delivery_options, created_at, updated_at",
+                (payload.category_id, payload.name, payload.slug, payload.description, payload.brand, payload.tax_code, payload.tax_rate, payload.status, payload.is_pos_available, payload.is_website_available, payload.delivery_options),
             ).fetchone()
         return row
     except psycopg.Error as exc:
@@ -299,7 +311,7 @@ class ProductUpdate(ProductCreate):
 def update_product(product_id: int, payload: ProductUpdate):
     try:
         with _connection() as conn:
-            row = conn.execute("UPDATE products SET category_id=%s,name=%s,slug=%s,description=%s,brand=%s,tax_code=%s,tax_rate=%s,status=%s,updated_at=now() WHERE id=%s RETURNING id,category_id,name,slug,description,brand,status,tax_code,tax_rate,created_at,updated_at", (payload.category_id,payload.name,payload.slug,payload.description,payload.brand,payload.tax_code,payload.tax_rate,payload.status,product_id)).fetchone()
+            row = conn.execute("UPDATE products SET category_id=%s,name=%s,slug=%s,description=%s,brand=%s,tax_code=%s,tax_rate=%s,status=%s,is_pos_available=%s,is_website_available=%s,delivery_options=%s,updated_at=now() WHERE id=%s RETURNING id,category_id,name,slug,description,brand,status,tax_code,tax_rate,is_pos_available,is_website_available,delivery_options,created_at,updated_at", (payload.category_id,payload.name,payload.slug,payload.description,payload.brand,payload.tax_code,payload.tax_rate,payload.status,payload.is_pos_available,payload.is_website_available,payload.delivery_options,product_id)).fetchone()
             if row is None:
                 raise HTTPException(status_code=404, detail="Product not found")
         return row
@@ -315,6 +327,70 @@ def archive_product(product_id: int):
         if row is None:
             raise HTTPException(status_code=404, detail="Product not found or already archived")
     return row
+
+class AvailabilityRuleCreate(BaseModel):
+    channel: str = Field(pattern=r"^(pos|website)$")
+    region_code: str | None = Field(default=None, max_length=80)
+    pincode: str | None = Field(default=None, pattern=r"^[0-9]{6}$")
+    location_id: int | None = Field(default=None, gt=0)
+    is_allowed: bool = True
+
+    @field_validator("region_code")
+    @classmethod
+    def normalize_region(cls, value: str | None) -> str | None:
+        return value.strip() if value and value.strip() else None
+
+
+@router.get("/stock-locations")
+def list_catalogue_stock_locations():
+    with _connection() as conn:
+        rows = conn.execute(
+            "SELECT id, name, location_type, pin_code FROM stock_locations WHERE is_active=TRUE ORDER BY name"
+        ).fetchall()
+    return {"items": rows}
+
+
+@router.get("/products/{product_id}/availability-rules")
+def list_product_availability_rules(product_id: int):
+    with _connection() as conn:
+        _require_product(conn, product_id)
+        rows = conn.execute(
+            "SELECT id, product_id, channel, region_code, pincode, location_id, is_allowed, created_at "
+            "FROM product_availability_rules WHERE product_id=%s ORDER BY channel, id",
+            (product_id,),
+        ).fetchall()
+    return {"items": rows}
+
+
+@router.put("/products/{product_id}/availability-rules")
+def replace_product_availability_rules(product_id: int, payload: list[AvailabilityRuleCreate]):
+    try:
+        with _connection() as conn:
+            _require_product(conn, product_id)
+            for rule in payload:
+                if not (rule.region_code or rule.pincode or rule.location_id):
+                    raise HTTPException(status_code=422, detail="Each availability rule needs a region, pincode or warehouse")
+                if rule.location_id is not None:
+                    location = conn.execute(
+                        "SELECT id FROM stock_locations WHERE id=%s AND is_active=TRUE",
+                        (rule.location_id,),
+                    ).fetchone()
+                    if location is None:
+                        raise HTTPException(status_code=422, detail="Selected warehouse/store location is not active")
+            conn.execute("DELETE FROM product_availability_rules WHERE product_id=%s", (product_id,))
+            rows = []
+            for rule in payload:
+                rows.append(conn.execute(
+                    "INSERT INTO product_availability_rules (product_id,channel,region_code,pincode,location_id,is_allowed) "
+                    "VALUES (%s,%s,%s,%s,%s,%s) RETURNING id,product_id,channel,region_code,pincode,location_id,is_allowed,created_at",
+                    (product_id,rule.channel,rule.region_code,rule.pincode,rule.location_id,rule.is_allowed),
+                ).fetchone())
+        return {"items": rows}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
 
 @router.get("/products/{product_id}/attributes")
 def list_product_attributes(product_id: int):
