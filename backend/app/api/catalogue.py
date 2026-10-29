@@ -696,9 +696,21 @@ def archive_variant(variant_id: int):
 
 
 @router.get("/variants")
-def list_all_variants(request: Request, limit: int = Query(default=200, ge=1, le=500), offset: int = Query(default=0, ge=0)):
+def list_all_variants(
+    request: Request,
+    channel: str = Query(default="all", pattern="^(all|pos|website)$"),
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+):
     try:
-        public_filter = " AND p.website_enabled = TRUE" if getattr(request.state, "public_catalogue", False) else ""
+        if getattr(request.state, "public_catalogue", False):
+            public_filter = " AND p.website_enabled = TRUE"
+        elif channel == "pos":
+            public_filter = " AND p.pos_enabled = TRUE"
+        elif channel == "website":
+            public_filter = " AND p.website_enabled = TRUE"
+        else:
+            public_filter = ""
         with _connection() as conn:
             rows = conn.execute(
                 "SELECT v.id, v.product_id, p.name AS product_name, v.sku, v.barcode, v.attributes, "
