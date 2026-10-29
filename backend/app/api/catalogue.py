@@ -334,6 +334,7 @@ def list_products(
             "(SELECT MIN(v.selling_price) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS min_selling_price, "
             "(SELECT MAX(v.selling_price) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS max_selling_price, "
             "(SELECT MIN(v.mrp) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS min_mrp, "
+            "(SELECT pi.image_url FROM product_images pi WHERE pi.product_id=p.id AND pi.variant_id IS NULL ORDER BY pi.is_primary DESC, pi.sort_order, pi.id LIMIT 1) AS image_url, "
             f"{stock_projection} "
             f"FROM products p {where} ORDER BY p.name LIMIT %s OFFSET %s", tuple(params)
         ).fetchall()
@@ -831,7 +832,9 @@ def list_all_variants(limit: int = Query(default=200, ge=1, le=500), offset: int
         with _connection() as conn:
             rows = conn.execute(
                 "SELECT v.id, v.product_id, p.name AS product_name, v.sku, v.barcode, v.attributes, "
-                "v.selling_price, v.mrp, v.cost_price, v.is_active "
+                "v.selling_price, v.mrp, v.cost_price, v.is_active, "
+                "(SELECT pi.image_url FROM product_images pi WHERE pi.product_id=p.id AND (pi.variant_id=v.id OR pi.variant_id IS NULL) "
+                "ORDER BY (pi.variant_id=v.id) DESC, pi.is_primary DESC, pi.sort_order, pi.id LIMIT 1) AS image_url "
                 "FROM product_variants v JOIN products p ON p.id = v.product_id "
                 "WHERE v.is_active = TRUE AND p.status = 'active' ORDER BY p.name, v.sku LIMIT %s OFFSET %s",
                 (limit, offset),
