@@ -1,5 +1,6 @@
 """Inventory read and adjustment endpoints. Requires the reviewed v1 schema."""
 from decimal import Decimal
+from uuid import uuid4
 from typing import Any
 
 import psycopg
@@ -31,6 +32,37 @@ class StockAdjustment(BaseModel):
     quantity: Decimal = Field(gt=0, max_digits=14, decimal_places=3)
     note: str = Field(min_length=3, max_length=500)
 
+
+
+class StockIssue(BaseModel):
+    variant_id: int = Field(gt=0)
+    location_id: int = Field(gt=0)
+    quantity: Decimal = Field(gt=0, max_digits=14, decimal_places=3)
+    note: str = Field(min_length=3, max_length=500)
+    reason_type: str = Field(default="issue", pattern=r"^(issue|scrap)$")
+
+
+class StockCount(BaseModel):
+    variant_id: int = Field(gt=0)
+    location_id: int = Field(gt=0)
+    counted_quantity: Decimal = Field(ge=0, max_digits=14, decimal_places=3)
+    note: str = Field(min_length=3, max_length=500)
+
+
+class StockTransfer(BaseModel):
+    variant_id: int = Field(gt=0)
+    source_location_id: int = Field(gt=0)
+    destination_location_id: int = Field(gt=0)
+    quantity: Decimal = Field(gt=0, max_digits=14, decimal_places=3)
+    note: str = Field(min_length=3, max_length=500)
+
+    @field_validator("destination_location_id")
+    @classmethod
+    def destination_must_differ_from_source(cls, value: int, info):
+        source = info.data.get("source_location_id")
+        if source is not None and value == source:
+            raise ValueError("Source and destination locations must be different")
+        return value
 
 def _connect():
     if not settings.database_url:
@@ -174,6 +206,169 @@ def create_adjustment(payload: StockAdjustment) -> dict[str, Any]:
                 (payload.variant_id, payload.location_id, payload.quantity, payload.note.strip()),
             ).fetchone()
         return movement
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+
+@router.post("/issues", status_code=201)
+def issue_stock(payload: StockIssue) -> dict[str, Any]:
+    """Reduce on-hand stock only when unreserved available quantity is sufficient."""
+    try:
+        with _connect() as conn:
+            variant = conn.execute(
+                "SELECT id FROM product_variants WHERE id = %s AND is_active = TRUE FOR SHARE",
+                (payload.variant_id,),
+            ).fetchone()
+            if variant is None:
+                raise HTTPException(status_code=404, detail="Active product variant not found")
+            location = conn.execute(
+                "SELECT id FROM stock_locations WHERE id = %s AND is_active = TRUE FOR SHARE",
+                (payload.location_id,),
+            ).fetchone()
+            if location is None:
+                raise HTTPException(status_code=404, detail="Active stock location not found")
+            balance = conn.execute(
+                "SELECT on_hand, reserved FROM inventory_balances "
+                "WHERE variant_id = %s AND location_id = %s FOR UPDATE",
+                (payload.variant_id, payload.location_id),
+            ).fetchone()
+            available = (balance["on_hand"] - balance["reserved"]) if balance else Decimal("0")
+            if payload.quantity > available:
+                raise HTTPException(status_code=409, detail="Insufficient available stock; reserved units cannot be issued")
+            conn.execute(
+                "UPDATE inventory_balances SET on_hand = on_hand - %s, updated_at = now() "
+                "WHERE variant_id = %s AND location_id = %s",
+                (payload.quantity, payload.variant_id, payload.location_id),
+            )
+            movement = conn.execute(
+                "INSERT INTO inventory_movements "
+                "(variant_id, location_id, movement_type, quantity, reference_type, note) "
+                "VALUES (%s, %s, 'adjustment', %s, %s, %s) "
+                "RETURNING id, variant_id, location_id, movement_type, quantity, reference_type, note, created_at",
+                (payload.variant_id, payload.location_id, payload.quantity, "manual_scrap" if payload.reason_type == "scrap" else "manual_issue", payload.note.strip()),
+            ).fetchone()
+        return movement
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.post("/transfers", status_code=201)
+def transfer_stock(payload: StockTransfer) -> dict[str, Any]:
+    """Atomically move available stock between two active locations."""
+    if payload.source_location_id == payload.destination_location_id:
+        raise HTTPException(status_code=422, detail="Source and destination locations must be different")
+    try:
+        with _connect() as conn:
+            variant = conn.execute(
+                "SELECT id FROM product_variants WHERE id = %s AND is_active = TRUE FOR SHARE",
+                (payload.variant_id,),
+            ).fetchone()
+            if variant is None:
+                raise HTTPException(status_code=404, detail="Active product variant not found")
+            locations = conn.execute(
+                "SELECT id FROM stock_locations WHERE id = ANY(%s) AND is_active = TRUE ORDER BY id FOR SHARE",
+                ([payload.source_location_id, payload.destination_location_id],),
+            ).fetchall()
+            if len(locations) != 2:
+                raise HTTPException(status_code=404, detail="Both stock locations must exist and be active")
+            locked_balances = conn.execute(
+                "SELECT location_id, on_hand, reserved FROM inventory_balances "
+                "WHERE variant_id = %s AND location_id = ANY(%s) ORDER BY location_id FOR UPDATE",
+                (payload.variant_id, [payload.source_location_id, payload.destination_location_id]),
+            ).fetchall()
+            source = next((row for row in locked_balances if row["location_id"] == payload.source_location_id), None)
+            available = (source["on_hand"] - source["reserved"]) if source else Decimal("0")
+            if payload.quantity > available:
+                raise HTTPException(status_code=409, detail="Insufficient available stock; reserved units cannot be transferred")
+            conn.execute(
+                "UPDATE inventory_balances SET on_hand = on_hand - %s, updated_at = now() "
+                "WHERE variant_id = %s AND location_id = %s",
+                (payload.quantity, payload.variant_id, payload.source_location_id),
+            )
+            conn.execute(
+                "INSERT INTO inventory_balances (variant_id, location_id, on_hand, reserved) "
+                "VALUES (%s, %s, %s, 0) ON CONFLICT (variant_id, location_id) DO UPDATE "
+                "SET on_hand = inventory_balances.on_hand + EXCLUDED.on_hand, updated_at = now()",
+                (payload.variant_id, payload.destination_location_id, payload.quantity),
+            )
+            movement_rows = []
+            transfer_reference = uuid4().hex
+            for location_id, movement_type in (
+                (payload.source_location_id, "transfer_out"),
+                (payload.destination_location_id, "transfer_in"),
+            ):
+                row = conn.execute(
+                    "INSERT INTO inventory_movements "
+                    "(variant_id, location_id, movement_type, quantity, reference_type, reference_id, note) "
+                    "VALUES (%s, %s, %s, %s, 'stock_transfer', %s, %s) "
+                    "RETURNING id, variant_id, location_id, movement_type, quantity, reference_type, reference_id, note, created_at",
+                    (payload.variant_id, location_id, movement_type, payload.quantity, transfer_reference, payload.note.strip()),
+                ).fetchone()
+                movement_rows.append(row)
+        return {"items": movement_rows, "quantity": payload.quantity, "status": "transferred"}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+
+@router.post("/counts", status_code=201)
+def record_physical_count(payload: StockCount) -> dict[str, Any]:
+    """Reconcile a physical count while protecting reserved stock and recording the variance."""
+    try:
+        with _connect() as conn:
+            variant = conn.execute(
+                "SELECT id FROM product_variants WHERE id = %s AND is_active = TRUE FOR SHARE",
+                (payload.variant_id,),
+            ).fetchone()
+            if variant is None:
+                raise HTTPException(status_code=404, detail="Active product variant not found")
+            location = conn.execute(
+                "SELECT id FROM stock_locations WHERE id = %s AND is_active = TRUE FOR SHARE",
+                (payload.location_id,),
+            ).fetchone()
+            if location is None:
+                raise HTTPException(status_code=404, detail="Active stock location not found")
+            balance = conn.execute(
+                "SELECT on_hand, reserved FROM inventory_balances "
+                "WHERE variant_id = %s AND location_id = %s FOR UPDATE",
+                (payload.variant_id, payload.location_id),
+            ).fetchone()
+            current = balance["on_hand"] if balance else Decimal("0")
+            reserved = balance["reserved"] if balance else Decimal("0")
+            if payload.counted_quantity < reserved:
+                raise HTTPException(status_code=409, detail="Counted quantity cannot be lower than reserved stock")
+            variance = payload.counted_quantity - current
+            conn.execute(
+                "INSERT INTO inventory_balances (variant_id, location_id, on_hand, reserved) "
+                "VALUES (%s, %s, %s, 0) ON CONFLICT (variant_id, location_id) DO UPDATE "
+                "SET on_hand = EXCLUDED.on_hand, updated_at = now()",
+                (payload.variant_id, payload.location_id, payload.counted_quantity),
+            )
+            movement = None
+            if variance != 0:
+                movement = conn.execute(
+                    "INSERT INTO inventory_movements "
+                    "(variant_id, location_id, movement_type, quantity, reference_type, note) "
+                    "VALUES (%s, %s, 'adjustment', %s, 'physical_count', %s) "
+                    "RETURNING id, variant_id, location_id, movement_type, quantity, reference_type, note, created_at",
+                    (payload.variant_id, payload.location_id, abs(variance), payload.note.strip()),
+                ).fetchone()
+        return {
+            "status": "counted",
+            "variant_id": payload.variant_id,
+            "location_id": payload.location_id,
+            "previous_quantity": current,
+            "counted_quantity": payload.counted_quantity,
+            "variance": variance,
+            "movement": movement,
+        }
     except HTTPException:
         raise
     except psycopg.Error as exc:
