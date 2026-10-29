@@ -27,7 +27,7 @@ function skuPreview(product, categories, attributes, version) {
   return ["SB", categoryCode(parentCategory?.name || category?.name), deptCode, skuToken(product.brand), skuToken(productCode, 6), String(product.id).padStart(5, "0"), ...values, "V" + String(version).padStart(2, "0")].join("-");
 }
 
-export default function CatalogueVariantsPanel({ products, categories = [] }) {
+export default function CatalogueVariantsPanel({ products, categories = [], mode = "all" }) {
   const [definitions, setDefinitions] = useState([]);
   const [productId, setProductId] = useState("");
   const [variants, setVariants] = useState([]);
@@ -96,7 +96,15 @@ export default function CatalogueVariantsPanel({ products, categories = [] }) {
       <label className="sb-check"><input type="checkbox" checked={attribute.is_required} onChange={e=>setAttribute(v=>({...v,is_required:e.target.checked}))}/> Required attribute</label>
       <button className="sb-primary" disabled={busy} type="submit">{busy ? "Saving…" : "Save attribute"}</button>
     </form>
-    <p className="sb-muted">Active attributes: {definitions.map(d=>d.code + " (" + d.value_type + ")").join(", ") || "None yet"}</p>
+    {mode === "attributes" ? <div className="sb-strip-list" aria-label="Attribute definitions">
+      {definitions.length ? definitions.map(definition => <article className="sb-strip-row" key={definition.id}>
+        <div className="sb-strip-icon" aria-hidden="true">Aa</div>
+        <div className="sb-strip-main"><strong>{definition.name}</strong><small>{definition.code} · {definition.value_type}{definition.options?.length ? " · " + definition.options.join(", ") : ""}</small></div>
+        <span className="sb-status-pill">{definition.is_required ? "Required" : "Optional"}</span>
+        {definition.is_variant_attribute && <span className="sb-strip-meta">Variant</span>}
+      </article>) : <p className="sb-empty">No attributes found. Select Save attribute after completing the form above.</p>}
+    </div> : <p className="sb-muted">Active attributes: {definitions.map(d=>d.code + " (" + d.value_type + ")").join(", ") || "None yet"}</p>}
+    {mode !== "attributes" && <>
     <div className="sb-form-grid">
       <label>Product for variants<select value={productId} onChange={e=>setProductId(e.target.value)}><option value="">Choose product</option>{products.map(p=><option key={p.id} value={p.id}>{p.name} · #{p.id}</option>)}</select></label>
     </div>
@@ -114,5 +122,6 @@ export default function CatalogueVariantsPanel({ products, categories = [] }) {
     </form>
     <h3>Variants for selected product</h3>
     {variants.length ? <ul>{variants.map(v=><li key={v.id}><strong>{v.sku}</strong> — ₹{v.selling_price} <small>{JSON.stringify(v.attributes)}</small></li>)}</ul> : <p className="sb-empty">Choose a product to load its variants.</p>}
+    </>}
   </section>;
 }
