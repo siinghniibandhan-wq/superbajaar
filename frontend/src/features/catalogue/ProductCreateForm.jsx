@@ -6,6 +6,10 @@ const EMPTY = { name: "", slug: "", brand: "", category_id: "", description: "",
 const OPTION_TYPES = ["select", "multi_select", "colour", "size"];
 function ProductImagesEmbedded({ product }) { return <ProductImagesPanel products={[product]} initialProductId={product.id} embedded />; }
 
+function combinationKey(attributes) {
+  return JSON.stringify(Object.fromEntries(Object.entries(attributes || {}).sort(([a], [b]) => a.localeCompare(b))));
+}
+
 function combinations(items) {
   return items.reduce((acc, item) => acc.flatMap(prefix => item.values.map(value => [...prefix, [item.code, value]])), [[]]).map(entries => Object.fromEntries(entries));
 }
@@ -20,6 +24,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
   } : EMPTY);
   const [definitions, setDefinitions] = useState([]);
   const [selected, setSelected] = useState({});
+  const [variantPricing, setVariantPricing] = useState({});
   const [newOptions, setNewOptions] = useState({});
   const [activeTab, setActiveTab] = useState("general");
   const [availabilityRules, setAvailabilityRules] = useState([]);
@@ -111,9 +116,17 @@ export default function ProductCreateForm({ categories = [], product = null, onS
       const existing = new Set((existingResult.items || []).filter(v => v.is_active).map(v => normalize(v.attributes)));
       const missingCombinations = product?.id && !chosenAttributes.length ? [] : variantCombinations.filter(attrs => !existing.has(normalize(attrs)));
       for (const attrs of missingCombinations) {
+        const row = variantPricing[combinationKey(attrs)] || {};
+        const variantPrice = row.selling_price === undefined || row.selling_price === "" ? price : Number(row.selling_price);
+        const variantMrp = row.mrp === undefined || row.mrp === "" ? mrp : Number(row.mrp);
+        const variantCost = row.cost_price === undefined || row.cost_price === "" ? null : Number(row.cost_price);
+        if (!Number.isFinite(variantPrice) || !Number.isFinite(variantMrp) || variantPrice < 0 || variantMrp < variantPrice || (variantCost !== null && (!Number.isFinite(variantCost) || variantCost < 0))) {
+          setActiveTab("attributes");
+          throw new Error("Check each variant's selling price, MRP and cost price. MRP must be at least the selling price.");
+        }
         await apiRequest("/catalogue/products/" + savedProduct.id + "/variants", {
           method: "POST",
-          body: JSON.stringify({ attributes: attrs, selling_price: price, mrp, cost_price: null }),
+          body: JSON.stringify({ attributes: attrs, selling_price: variantPrice, mrp: variantMrp, cost_price: variantCost }),
         });
       }
       if (product?.id) {
@@ -215,7 +228,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
     <section hidden={activeTab !== "attributes"} aria-label="Attributes and variants">
       {product?.id && <p className="sb-muted">Existing variants are preserved. Select additional values below to add only missing combinations; existing variants will not be duplicated.</p>}
       <>
-        <p className="sb-muted">Choose values from the central Attributes module. Each unique combination creates a variant with the default prices above.</p>
+        <p className="sb-muted">Choose reusable attribute values. Each generated variant gets its own selling price, MRP and cost; the product-level prices are defaults that prefill each row.</p>
         <section className="sb-product-attributes">
           <h3>Attributes and variants</h3>
           {definitions.map(def => <div className="sb-attribute-picker" key={def.id}>
@@ -225,7 +238,23 @@ export default function ProductCreateForm({ categories = [], product = null, onS
             {OPTION_TYPES.includes(def.value_type) && <div className="sb-add-option"><input aria-label={"New " + def.name + " option"} value={newOptions[def.code] || ""} placeholder={"Add new " + def.name.toLowerCase() + " option"} onChange={e => setNewOptions(old => ({ ...old, [def.code]: e.target.value }))} /><button type="button" className="sb-secondary" disabled={busy || !(newOptions[def.code] || "").trim()} onClick={() => addOption(def).catch(e => setError(e.message || "Unable to add option."))}>Add value</button></div>}
           </div>)}
           {!definitions.length && <p className="sb-empty">Create an attribute in the Attributes tab first, or continue with a product that has no variants.</p>}
-          <p className="sb-muted">This product will create {variantCombinations.length} variant(s).</p>
+          <p className="sb-muted">This product will create {variantCombinations.length} variant(s). Prices below are stored on each variant, not on the reusable attribute definition.</p>
+          <div className="sb-variant-pricing-list" aria-label="Variant-specific pricing">
+            {variantCombinations.map((attrs, index) => {
+              const key = combinationKey(attrs);
+              const label = Object.entries(attrs).map(([code, value]) => {
+                const definition = definitions.find(item => item.code === code);
+                return (definition?.name || code) + ": " + (Array.isArray(value) ? value.join(", ") : String(value));
+              }).join(" · ") || "Simple product (no selectable options)";
+              const row = variantPricing[key] || {};
+              return <article className="sb-strip-row" key={key || index}>
+                <div className="sb-strip-main"><strong>{label}</strong><small>Variant {index + 1}</small></div>
+                <label>Selling price (₹)<input type="number" min="0" step="0.01" value={row.selling_price ?? form.selling_price} onChange={e => setVariantPricing(old => ({ ...old, [key]: { ...(old[key] || {}), selling_price: e.target.value } }))}/></label>
+                <label>MRP (₹)<input type="number" min="0" step="0.01" value={row.mrp ?? form.mrp} onChange={e => setVariantPricing(old => ({ ...old, [key]: { ...(old[key] || {}), mrp: e.target.value } }))}/></label>
+                <label>Cost price (₹)<input type="number" min="0" step="0.01" value={row.cost_price ?? ""} onChange={e => setVariantPricing(old => ({ ...old, [key]: { ...(old[key] || {}), cost_price: e.target.value } }))} placeholder="Optional"/></label>
+              </article>;
+            })}
+          </div>
         </section>
       </>
       <div className="sb-product-actions"><button className="sb-secondary" type="button" disabled={busy} onClick={() => setActiveTab("general")}>Back to Product Information</button><button className="sb-primary" type="button" disabled={busy} onClick={() => setActiveTab("availability")}>Next: Availability</button></div>
