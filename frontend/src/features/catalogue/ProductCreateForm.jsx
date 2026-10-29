@@ -188,7 +188,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
           <p className="sb-muted">This product will create {variantCombinations.length} variant(s).</p>
         </section>
       </>}
-      <div className="sb-product-actions"><button className="sb-primary" disabled={busy} type="submit">{busy ? "Saving product and variants…" : product ? "Save product changes" : "Save product and variants"}</button><button className="sb-secondary" type="button" disabled={busy} onClick={() => setActiveTab("general")}>Back to Product Information</button><button className="sb-secondary" type="button" disabled={busy} onClick={() => setActiveTab("availability")}>Next: Availability</button></div>
+      <div className="sb-product-actions"><button className="sb-secondary" type="button" disabled={busy} onClick={() => setActiveTab("general")}>Back to Product Information</button><button className="sb-primary" type="button" disabled={busy} onClick={() => setActiveTab("availability")}>Next: Availability</button></div>
     </section>
   </form>;
 }
