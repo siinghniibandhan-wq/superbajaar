@@ -123,6 +123,7 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
       await apiRequest(editingVariant ? "/catalogue/variants/" + editingVariant.id : "/catalogue/products/" + productId + "/variants", {
         method: editingVariant ? "PUT" : "POST",
         body: JSON.stringify({
+          sku: editingVariant ? (variant.sku.trim() || null) : null,
           barcode: variant.barcode || null, attributes,
           selling_price: Number(variant.selling_price),
           mrp: variant.mrp === "" ? null : Number(variant.mrp),
@@ -207,7 +208,7 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
     <form className="sb-form sb-form-inner" onSubmit={createVariant}>
       <h3>{editingVariant ? "Edit SKU variant" : "Advanced: create one variant manually"}</h3>
       <div className="sb-form-grid">
-        <label className="sb-span-all">SKU (automatic)<input readOnly aria-readonly="true" value={skuPreview(products.find(p => String(p.id) === String(productId)), categories, (() => { try { return JSON.parse(variant.attributes || "{}"); } catch { return {}; } })(), variants.length + 1)} /><small className="sb-muted">Generated from category, department, brand, product ID and variant attributes. The server checks uniqueness when saving.</small></label>
+        <label className="sb-span-all">SKU{editingVariant ? "" : " (automatic)"}<input value={editingVariant ? variant.sku : skuPreview(products.find(p => String(p.id) === String(productId)), categories, (() => { try { return JSON.parse(variant.attributes || "{}"); } catch { return {}; } })(), variants.length + 1)} readOnly={!editingVariant} aria-readonly={!editingVariant} onChange={e=>setVariant(v=>({...v,sku:e.target.value}))} /><small className="sb-muted">{editingVariant ? "Edit the SKU for this variant. It must remain unique." : "Generated from category, department, brand, product ID and variant attributes. The server checks uniqueness when saving."}</small></label>
         <label>Barcode<input value={variant.barcode} onChange={e=>setVariant(v=>({...v,barcode:e.target.value}))}/></label>
         <label>Selling price (₹)<input required type="number" min="0" step="0.01" value={variant.selling_price} onChange={e=>setVariant(v=>({...v,selling_price:e.target.value}))}/></label>
         <label>MRP (₹)<input type="number" min="0" step="0.01" value={variant.mrp} onChange={e=>setVariant(v=>({...v,mrp:e.target.value}))}/></label>
