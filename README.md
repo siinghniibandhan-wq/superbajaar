@@ -2,6 +2,44 @@
 
 Super Bajaar is a commerce storefront and ERP application. This file is the single project guide: it explains the current structure, what each important file does, how requests flow, and how the application is deployed.
 
+## PRECAUTIONS AND STRICTLY PROHIBITED CHANGES
+
+This section is a mandatory safety checklist for every contributor and coding agent. A change that conflicts with these rules must stop for explicit approval; do not improvise, “clean up,” reset, replace, or bypass existing infrastructure.
+
+### Runtime, ports, database and services — do not change casually
+
+- Backend must continue to listen on **port `8001`**. Do not move it to `8000` or another port.
+- PostgreSQL must continue to listen on **port `5432`**. Do not change the port or replace PostgreSQL with another database.
+- Production database name is **`sb_app`** (verify the target before any database operation; never create a substitute database to avoid a connection problem).
+- Preserve the existing **Gunicorn** backend process, its current bind address/port, and the existing **systemd service and timer** used for backend operation/code synchronization. Do not replace, rename, disable, or bypass these services or change their cadence without explicit approval.
+- Preserve the existing **Nginx** reverse-proxy configuration and routing to the backend on `127.0.0.1:8001`. Do not change upstreams, proxy routes, TLS, or host configuration as a workaround without approval.
+- Preserve the existing **AWS EC2 backend** and **AWS Amplify frontend** deployment arrangement. Do not create a new server, service, deployment target, database, or hosting platform without approval.
+- Preserve the existing automatic deployment/synchronization mechanisms, repository/branch settings, build settings, environment-variable names, and deployment hooks. Do not disable, replace, or trigger production deployment merely to test a change. Confirm the exact workflow before editing deployment configuration.
+- Keep the existing public API prefix `/api`, CORS/security configuration, authentication/session behaviour, and established frontend-to-backend URL contract unless a verified requirement and explicit approval authorize a change.
+- Never print, commit, rotate, overwrite, or remove production secrets or environment values as part of unrelated work. Never put credentials in README or source code.
+
+### Schema files and migration rules — strictly prohibited
+
+- **Never edit, delete, rename, replace, regenerate, or reformat `backend/schema/000_baseline_schema.sql`.**
+- **Never edit, delete, rename, replace, regenerate, or reformat `backend/schema/009_loyalty_programme.sql`.**
+- Do not edit, delete, rename, reorder, or reapply `backend/schema/009_product_availability_delivery.sql` as a quick fix. It shares the `009` prefix with the protected loyalty migration; its production application status and migration-runner ordering must be verified first.
+- Never edit or delete any existing migration that may already have been applied. Inspect all schema files and the target database's `schema_migrations` records before choosing the next unused migration number.
+- If a schema change is truly necessary, create a separate additive, idempotent migration using the existing approved workflow. Follow the project’s one-new-schema-file rule; do not bundle unrelated schema changes.
+- Never run `DROP TABLE`, `DROP SCHEMA`, `TRUNCATE`, destructive reset scripts, database recreation, or bulk-delete statements against production. Never assume a table is disposable because it is empty or absent from this README.
+- Treat **all existing production tables, records, sequences, indexes, constraints, triggers, grants, and migration history as protected**. This includes, wherever present, products, categories, attributes, variants, product images, customers, users, user sessions, orders, payments, stock locations/balances/movements, suppliers/purchasing, deliveries/shipments, loyalty data, and `schema_migrations`.
+- Do not change table ownership, database roles/permissions, or production data without an explicitly approved, verified migration plan and backup.
+- A schema file being present in Git does not prove it has or has not been applied in AWS. Check the live migration ledger and database state before any decision that depends on application status.
+
+### Source control, coding and verification — strictly required
+
+- **Switch to the intended working branch first.** If branch switching fails, stop; do not pull, edit, build, test, or commit on the wrong branch.
+- Create work branches from the current `main`; never push directly to `main`. Use a pull request and review its complete diff before merging.
+- Do not overwrite or revert unrelated working code. Keep changes minimal and within the approved scope.
+- Never claim a build, test, endpoint, database integration, or deployment passed unless it was actually executed and the result was observed. Distinguish local/Codespaces checks from live AWS verification.
+- Before merging backend/schema changes, verify the frontend build, backend tests, route registration, migration compatibility, and relevant API/database behaviour. Do not deploy merely because unit tests pass.
+- Do not run production migrations or deploy automatically as part of documentation or routine code changes.
+- If any instruction in this section conflicts with a proposed change, stop and ask for approval rather than proceeding.
+
 ## Fixed technology and runtime
 
 - Frontend: React + Vite, hosted on AWS Amplify.
