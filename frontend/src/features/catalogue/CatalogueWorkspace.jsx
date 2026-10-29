@@ -6,8 +6,11 @@ import ProductImagesPanel from "./ProductImagesPanel.jsx";
 import "./catalogue.css";
 
 export default function CatalogueWorkspace({ onBack }) {
+  const [activeTab, setActiveTab] = useState("catalogue");
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
+  const [showProductForm, setShowProductForm] = useState(false);
+  const [showCategoryForm, setShowCategoryForm] = useState(false);
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [parentId, setParentId] = useState("");
@@ -42,6 +45,7 @@ export default function CatalogueWorkspace({ onBack }) {
       setName("");
       setSlug("");
       setParentId("");
+      setShowCategoryForm(false);
       setMessage(parentId ? "Subcategory created." : "Category created.");
       await refresh();
     } catch (e) {
@@ -49,32 +53,72 @@ export default function CatalogueWorkspace({ onBack }) {
     }
   }
 
+  const parentCategories = categories.filter(item => !item.parent_id);
+  const childrenOf = id => categories.filter(child => Number(child.parent_id) === Number(id));
+
   return <section className="sb-workspace">
     <button className="sb-back" onClick={onBack} type="button">← All workspaces</button>
     <p className="sb-eyebrow">CATALOGUE MANAGEMENT</p>
     <h1>Catalogue</h1>
-    <p>Categories and products loaded from the backend API.</p>
-    <ProductCreateForm categories={categories} onSaved={refresh} />
+    <p>Manage products, categories and product attributes in one place.</p>
+
+    <nav className="sb-catalogue-tabs" aria-label="Catalogue sections" role="tablist">
+      <button type="button" role="tab" aria-selected={activeTab === "catalogue"} className={activeTab === "catalogue" ? "is-active" : ""} onClick={() => { setActiveTab("catalogue"); setError(""); setMessage(""); }}>Catalogue <span>{products.length}</span></button>
+      <button type="button" role="tab" aria-selected={activeTab === "categories"} className={activeTab === "categories" ? "is-active" : ""} onClick={() => { setActiveTab("categories"); setError(""); setMessage(""); }}>Categories <span>{categories.length}</span></button>
+      <button type="button" role="tab" aria-selected={activeTab === "attributes"} className={activeTab === "attributes" ? "is-active" : ""} onClick={() => { setActiveTab("attributes"); setError(""); setMessage(""); }}>Attributes</button>
+    </nav>
+
     {error && <p role="alert" className="sb-alert">{error}</p>}
     {message && <p role="status" className="sb-success">{message}</p>}
-    <form className="sb-form" onSubmit={createCategory}>
-      <h2>Create category</h2>
-      <div className="sb-form-grid">
-        <label>Name<input required value={name} onChange={e => {setName(e.target.value); setSlug(e.target.value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""));}} /></label>
-        <label>Slug (automatic)<input required pattern="[a-z0-9]+(-[a-z0-9]+)*" value={slug} readOnly aria-readonly="true" /><small className="sb-muted">Generated from the category name.</small></label>
-        <label className="sb-span-all">Parent category (optional)<select value={parentId} onChange={e => setParentId(e.target.value)}><option value="">None — create a main category</option>{categories.filter(item => !item.parent_id).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><small className="sb-muted">Choose a parent to create a subcategory.</small></label>
+
+    {activeTab === "catalogue" && <>
+      <div className="sb-catalogue-toolbar">
+        <div><h2>All products</h2><p className="sb-muted">Products loaded from the backend API.</p></div>
+        <button className="sb-primary" type="button" onClick={() => setShowProductForm(value => !value)}>{showProductForm ? "Cancel" : "+ Add product"}</button>
       </div>
-      <button className="sb-primary" type="submit">Create category</button>
-    </form>
-    <div className="sb-data-card">
-      <div className="sb-data-heading"><h2>Categories</h2><button type="button" onClick={refresh}>Refresh</button></div>
-      {categories.length ? <ul>{categories.filter(item => !item.parent_id).map(item => <li key={item.id}>{item.name} <small>({item.slug})</small>{categories.filter(child => Number(child.parent_id) === Number(item.id)).length > 0 && <ul>{categories.filter(child => Number(child.parent_id) === Number(item.id)).map(child => <li key={child.id}>{child.name} <small>({child.slug})</small></li>)}</ul>}</li>)}</ul> : <p className="sb-empty">No categories loaded.</p>}
-    </div>
-    <div className="sb-data-card">
-      <CatalogueVariantsPanel products={products} categories={categories} />
-      <ProductImagesPanel products={products} />
-      <h2>Products ({products.length})</h2>
-      {products.length ? <ul>{products.map(item => <li key={item.id}>{item.name} <small>— {item.status}</small></li>)}</ul> : <p className="sb-empty">No products loaded.</p>}
-    </div>
+      {showProductForm && <ProductCreateForm categories={categories} onSaved={async () => { await refresh(); setShowProductForm(false); }} />}
+      <div className="sb-strip-list" aria-label="Product list">
+        {products.length ? products.map(item => <article className="sb-strip-row" key={item.id}>
+          <div className="sb-strip-icon" aria-hidden="true">S</div>
+          <div className="sb-strip-main"><strong>{item.name}</strong><small>{item.brand || "No brand"} · {categories.find(category => Number(category.id) === Number(item.category_id))?.name || "Uncategorised"}</small></div>
+          <span className={"sb-status-pill sb-status-" + item.status}>{item.status}</span>
+          <span className="sb-strip-meta">#{item.id}</span>
+        </article>) : <p className="sb-empty">No products found. Select Add product to create your first product.</p>}
+      </div>
+      <details className="sb-catalogue-tools">
+        <summary>Variants, pricing and product images</summary>
+        <CatalogueVariantsPanel products={products} categories={categories} />
+        <ProductImagesPanel products={products} />
+      </details>
+    </>}
+
+    {activeTab === "categories" && <>
+      <div className="sb-catalogue-toolbar">
+        <div><h2>All categories</h2><p className="sb-muted">Organise parent categories and subcategories.</p></div>
+        <button className="sb-primary" type="button" onClick={() => setShowCategoryForm(value => !value)}>{showCategoryForm ? "Cancel" : "+ Add category"}</button>
+      </div>
+      {showCategoryForm && <form className="sb-form" onSubmit={createCategory}>
+        <h2>Create category</h2>
+        <div className="sb-form-grid">
+          <label>Name<input required maxLength="160" value={name} onChange={e => {setName(e.target.value); setSlug(e.target.value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""));}} /></label>
+          <label>Slug (automatic)<input required pattern="[a-z0-9]+(-[a-z0-9]+)*" value={slug} readOnly aria-readonly="true" /><small className="sb-muted">Generated from the category name.</small></label>
+          <label className="sb-span-all">Parent category (optional)<select value={parentId} onChange={e => setParentId(e.target.value)}><option value="">None — create a main category</option>{parentCategories.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><small className="sb-muted">Choose a parent to create a subcategory.</small></label>
+        </div>
+        <button className="sb-primary" type="submit">Create category</button>
+      </form>}
+      <div className="sb-strip-list" aria-label="Category list">
+        {parentCategories.length ? parentCategories.map(item => <div key={item.id}>
+          <article className="sb-strip-row"><div className="sb-strip-icon" aria-hidden="true"><span>▦</span></div><div className="sb-strip-main"><strong>{item.name}</strong><small>/{item.slug} · Parent category</small></div><span className="sb-strip-meta">{childrenOf(item.id).length} subcategories</span></article>
+          {childrenOf(item.id).map(child => <article className="sb-strip-row sb-strip-child" key={child.id}><div className="sb-strip-icon" aria-hidden="true">↳</div><div className="sb-strip-main"><strong>{child.name}</strong><small>/{child.slug} · Subcategory of {item.name}</small></div></article>)}
+        </div>) : <p className="sb-empty">No categories found. Select Add category to create one.</p>}
+      </div>
+    </>}
+
+    {activeTab === "attributes" && <>
+      <div className="sb-catalogue-toolbar">
+        <div><h2>Product attributes</h2><p className="sb-muted">Define properties such as colour, size and material.</p></div>
+      </div>
+      <CatalogueVariantsPanel products={[]} categories={[]} mode="attributes" />
+    </>}
   </section>;
 }
