@@ -2,9 +2,10 @@
 from typing import Any
 
 import psycopg
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from psycopg.rows import dict_row
 from pydantic import BaseModel, Field, field_validator
+from uuid import uuid4
 
 from app.core.config import settings
 
@@ -674,6 +675,84 @@ def create_product_image(product_id: int, payload: ProductImageCreate):
         raise
     except psycopg.Error as exc:
         raise _db_error(exc) from exc
+
+
+
+@router.post("/products/{product_id}/images/upload", status_code=201)
+async def upload_product_image(
+    product_id: int,
+    file: UploadFile = File(...),
+    variant_id: int | None = Form(default=None),
+    alt_text: str | None = Form(default=None, max_length=300),
+    sort_order: int = Form(default=0, ge=0, le=10000),
+    is_primary: bool = Form(default=False),
+):
+    """Upload an image to configured object storage and register its gallery record."""
+    allowed_types = {
+        "image/jpeg": "jpg",
+        "image/png": "png",
+        "image/webp": "webp",
+        "image/gif": "gif",
+    }
+    content_type = (file.content_type or "").lower()
+    if content_type not in allowed_types:
+        raise HTTPException(status_code=415, detail="Upload a JPEG, PNG, WebP or GIF image")
+    if not settings.media_bucket or not settings.media_public_base_url:
+        raise HTTPException(status_code=503, detail="Product image storage is not configured")
+    data = await file.read(10 * 1024 * 1024 + 1)
+    if not data:
+        raise HTTPException(status_code=422, detail="Image file is empty")
+    if len(data) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Image files must be 10 MB or smaller")
+    signatures = {
+        "image/jpeg": data.startswith(b"\\xff\\xd8\\xff"),
+        "image/png": data.startswith(b"\\x89PNG\\r\\n\\x1a\\n"),
+        "image/webp": len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP",
+        "image/gif": data.startswith((b"GIF87a", b"GIF89a")),
+    }
+    if not signatures[content_type]:
+        raise HTTPException(status_code=415, detail="The uploaded file content does not match its image type")
+    try:
+        with _connection() as conn:
+            _require_product(conn, product_id)
+            if variant_id is not None:
+                variant = conn.execute(
+                    "SELECT id FROM product_variants WHERE id=%s AND product_id=%s",
+                    (variant_id, product_id),
+                ).fetchone()
+                if variant is None:
+                    raise HTTPException(status_code=422, detail="Image variant must belong to the selected product")
+        import boto3
+        key = f"products/{product_id}/{uuid4().hex}.{allowed_types[content_type]}"
+        client = boto3.client("s3", region_name=settings.aws_region)
+        client.put_object(
+            Bucket=settings.media_bucket,
+            Key=key,
+            Body=data,
+            ContentType=content_type,
+            CacheControl="public, max-age=31536000, immutable",
+        )
+        image_url = settings.media_public_base_url.rstrip("/") + "/" + key
+        with _connection() as conn:
+            if is_primary:
+                conn.execute(
+                    "UPDATE product_images SET is_primary=FALSE "
+                    "WHERE product_id=%s AND variant_id IS NOT DISTINCT FROM %s AND is_primary=TRUE",
+                    (product_id, variant_id),
+                )
+            row = conn.execute(
+                "INSERT INTO product_images (product_id,variant_id,image_url,alt_text,sort_order,is_primary) "
+                "VALUES (%s,%s,%s,%s,%s,%s) "
+                "RETURNING id,product_id,variant_id,image_url,alt_text,sort_order,is_primary,created_at",
+                (product_id, variant_id, image_url, alt_text or (file.filename or "")[:300] or None, sort_order, is_primary),
+            ).fetchone()
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Product image upload failed") from exc
 
 
 class VariantPriceUpdate(BaseModel):
