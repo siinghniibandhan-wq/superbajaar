@@ -36,8 +36,10 @@ export default function ProductCreateForm({ categories, onSaved, product = null 
     tax_rate: product.tax_rate == null ? "" : String(product.tax_rate),
   } : emptyForm);
   const [tab, setTab] = useState("information");
+  const [settingsLoading, setSettingsLoading] = useState(false);
   useEffect(() => {
-    if (!product) { setForm(emptyForm); return; }
+    if (!product) { setForm(emptyForm); setSettingsLoading(false); return; }
+    setSettingsLoading(true);
     setForm({
       ...emptyForm, ...product,
       category_id: product.category_id == null ? "" : String(product.category_id),
@@ -71,7 +73,7 @@ export default function ProductCreateForm({ categories, onSaved, product = null 
       const grouped = { region: [], state: [], warehouse: [], pincode: [] };
       (result.restrictions || []).forEach(item => { if (grouped[item.type]) grouped[item.type].push(item.value); });
       setRestrictionValues(Object.fromEntries(Object.entries(grouped).map(([key, values]) => [key, values.join(", ")])));
-    }).catch(e => setError(e.message || "Unable to load product settings."));
+    }).catch(e => setError(e.message || "Unable to load product settings.")).finally(() => setSettingsLoading(false));
   }, [product?.id]);
   const [definitions, setDefinitions] = useState([]);
   const [selected, setSelected] = useState({});
@@ -267,7 +269,7 @@ export default function ProductCreateForm({ categories, onSaved, product = null 
     <div className="sb-wizard-footer">
       <button type="button" className="sb-secondary" disabled={tab === TABS[0][0] || busy} onClick={() => setTab(TABS[Math.max(0, TABS.findIndex(item => item[0] === tab) - 1)][0])}>Previous</button>
       <span className="sb-muted">Step {TABS.findIndex(item => item[0] === tab) + 1} of {TABS.length}</span>
-      {tab !== "details" ? <button type="button" className="sb-primary" onClick={() => setTab(TABS[Math.min(TABS.length - 1, TABS.findIndex(item => item[0] === tab) + 1)][0])}>Next</button> : <button className="sb-primary" disabled={busy} type="submit">{busy ? "Saving product…" : product?.id ? "Save changes" : form.status === "draft" ? "Save draft" : "Save product"}</button>}
+      {tab !== "details" ? <button type="button" className="sb-primary" onClick={() => setTab(TABS[Math.min(TABS.length - 1, TABS.findIndex(item => item[0] === tab) + 1)][0])}>Next</button> : <button className="sb-primary" disabled={busy || settingsLoading} type="submit">{settingsLoading ? "Loading existing settings…" : busy ? "Saving product…" : product?.id ? "Save changes" : form.status === "draft" ? "Save draft" : "Save product"}</button>}
     </div>
   </form>;
 }
