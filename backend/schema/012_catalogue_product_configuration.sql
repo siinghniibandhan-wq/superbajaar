@@ -52,8 +52,6 @@ CREATE TABLE IF NOT EXISTS public.tax_rates (
     CONSTRAINT tax_rates_label_check CHECK (length(trim(label)) > 0)
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS tax_rates_rate_unique_idx ON public.tax_rates(rate);
-
 INSERT INTO public.tax_rates (code, label, rate)
 VALUES
     ('GST-0', 'GST 0%', 0),
