@@ -424,6 +424,7 @@ export default function Storefront() {
   const visibleVariants = useMemo(() => {
     const term = search.trim().toLowerCase();
     return variants.filter(v => {
+      if (v.is_active === false) return false;
       const product = productById.get(Number(v.product_id));
       if (!product) return false;
       if (categoryId || routeCategoryName) {
@@ -468,7 +469,7 @@ export default function Storefront() {
   }, [categories, variants, productById]);
   const newArrivals = useMemo(() => assignedSectionProducts("New Arrivals"), [assignedSectionProducts]);
   const bestSellers = useMemo(() => assignedSectionProducts("Best Sellers"), [assignedSectionProducts]);
-  const recentVariants = useMemo(() => recentlyViewed.map(item => variants.find(v => Number(v.id) === Number(item.variantId))).filter(Boolean).filter((variant, index, items) => items.findIndex(item => Number(item.product_id) === Number(variant.product_id)) === index).slice(0,8), [recentlyViewed, variants]);
+  const recentVariants = useMemo(() => recentlyViewed.map(item => variants.find(v => Number(v.id) === Number(item.variantId))).filter(Boolean).filter(variant => variant.is_active !== false).filter((variant, index, items) => items.findIndex(item => Number(item.product_id) === Number(variant.product_id)) === index).slice(0,8), [recentlyViewed, variants]);
   const categorySubcategories = useMemo(() => {
     const parent = displayCategories.find(c => String(c.name || "").trim().toLowerCase() === String(routeCategoryName).trim().toLowerCase());
     if (!parent) return [];
@@ -492,6 +493,7 @@ export default function Storefront() {
   const dealVariants = useMemo(() => {
     const term = search.trim().toLowerCase();
     const discounted = variants.filter(v => {
+      if (v.is_active === false) return false;
       const p = productById.get(Number(v.product_id)) || {};
       const price = Number(v.selling_price ?? v.price ?? 0);
       const compare = Number(v.compare_at_price ?? v.original_price ?? v.mrp ?? p.compare_at_price ?? p.original_price ?? p.mrp ?? 0);
