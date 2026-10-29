@@ -52,6 +52,8 @@ async def require_active_session(request: Request) -> None:
     public = {prefix + "/health", prefix + "/auth/login", prefix + "/customer-auth/register", prefix + "/customer-auth/login"}
     if method_is_public_serviceability(request.method, path, prefix):
         return
+    if request.method == "GET" and path.startswith(prefix + "/catalogue/images/"):
+        return
     # Public storefront support portal; tracking requires matching contact details.
     if path == prefix + "/loyalty/partner-enquiries" and request.method == "POST":
         return
