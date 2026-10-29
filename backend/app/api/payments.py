@@ -101,6 +101,40 @@ def list_payments(
         raise _db_error(exc) from exc
 
 
+@router.get("/reconciliation")
+def payment_reconciliation():
+    """Summarise recorded payment states; this is not a bank or gateway settlement reconciliation."""
+    try:
+        with _connect() as conn:
+            rows = conn.execute(
+                "SELECT status, count(*) AS payment_count, COALESCE(sum(amount), 0) AS amount "
+                "FROM payments GROUP BY status ORDER BY status"
+            ).fetchall()
+            order_rows = conn.execute(
+                "SELECT count(*) AS order_count, COALESCE(sum(total), 0) AS order_value "
+                "FROM orders WHERE status <> 'cancelled'"
+            ).fetchone()
+            captured = conn.execute(
+                "SELECT COALESCE(sum(amount), 0) AS amount FROM payments WHERE status='captured'"
+            ).fetchone()["amount"]
+            refunded = conn.execute(
+                "SELECT COALESCE(sum(amount), 0) AS amount FROM payments WHERE status='refunded'"
+            ).fetchone()["amount"]
+        by_status = {row["status"]: {"count": row["payment_count"], "amount": row["amount"]} for row in rows}
+        return {
+            "scope": "recorded_application_data_only",
+            "gateway_or_bank_reconciled": False,
+            "orders": {"count": order_rows["order_count"], "value": order_rows["order_value"]},
+            "payments_by_status": by_status,
+            "captured_amount_recorded": captured,
+            "refunded_amount_recorded": refunded,
+            "net_captured_amount_recorded": captured - refunded,
+            "note": "Amounts reflect application records only; provider settlement, fees, chargebacks and bank deposits are not verified.",
+        }
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
 @router.post("", status_code=201)
 def create_payment(payload: PaymentCreate):
     try:
