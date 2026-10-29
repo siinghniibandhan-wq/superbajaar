@@ -5,6 +5,37 @@ import CatalogueVariantsPanel from "./CatalogueVariantsPanel.jsx";
 import ProductImagesPanel from "./ProductImagesPanel.jsx";
 import "./catalogue.css";
 
+function categoryPath(category, categories) {
+  const parts = [category.name];
+  let parentId = category.parent_id;
+  while (parentId) {
+    const parent = categories.find(item => Number(item.id) === Number(parentId));
+    if (!parent) break;
+    parts.unshift(parent.name);
+    parentId = parent.parent_id;
+  }
+  return parts.join(" → ");
+}
+
+function CategoryTreeNode({ item, categories, depth, onEdit, onArchive, onDelete, onAddChild }) {
+  const children = categories.filter(child => Number(child.parent_id) === Number(item.id));
+  return <div key={item.id}>
+    <article className={"sb-strip-row sb-category-row" + (depth ? " sb-strip-child" : "")} style={{ marginLeft: depth * 18 }}>
+      <div className="sb-strip-icon" aria-hidden="true">{depth ? "↳" : "▦"}</div>
+      <div className="sb-strip-main"><strong>{item.name}</strong><small>/{item.slug} · {depth ? "Level " + (depth + 1) : "Root category"}</small></div>
+      <span className="sb-strip-meta">{children.length} subcategories</span>
+      <div className="sb-category-actions">
+        <button type="button" className="sb-row-action" onClick={() => onAddChild(item)} aria-label={"Add subcategory under " + item.name}>+ Child</button>
+        <button type="button" className="sb-row-action" onClick={() => onEdit(item)} aria-label={"Edit " + item.name}>Edit</button>
+        <button type="button" className="sb-row-action" onClick={() => onArchive(item)} aria-label={"Archive " + item.name}>Archive</button>
+        <button type="button" className="sb-row-action sb-row-action-danger" onClick={() => onDelete(item)} aria-label={"Delete " + item.name}>Delete</button>
+      </div>
+    </article>
+    {children.map(child => <CategoryTreeNode key={child.id} item={child} categories={categories} depth={depth + 1} onEdit={onEdit} onArchive={onArchive} onDelete={onDelete} onAddChild={onAddChild} />)}
+  </div>;
+}
+
+
 export default function CatalogueWorkspace({ onBack }) {
   const [activeTab, setActiveTab] = useState("catalogue");
   const [categories, setCategories] = useState([]);
@@ -101,8 +132,23 @@ export default function CatalogueWorkspace({ onBack }) {
     }
   }
 
-  const parentCategories = categories.filter(item => !item.parent_id);
+  const rootCategories = categories.filter(item => !item.parent_id);
   const childrenOf = id => categories.filter(child => Number(child.parent_id) === Number(id));
+  function descendantIds(categoryId) {
+    const found = new Set([Number(categoryId)]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const item of categories) {
+        if (item.parent_id && found.has(Number(item.parent_id)) && !found.has(Number(item.id))) {
+          found.add(Number(item.id));
+          changed = true;
+        }
+      }
+    }
+    return found;
+  }
+  const excludedParentIds = editingCategory ? descendantIds(editingCategory.id) : new Set();
 
   return <section className="sb-workspace">
     <button className="sb-back" onClick={onBack} type="button">← All workspaces</button>
@@ -148,15 +194,12 @@ export default function CatalogueWorkspace({ onBack }) {
         <div className="sb-form-grid">
           <label>Name<input required maxLength="160" value={name} onChange={e => {setName(e.target.value); setSlug(e.target.value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""));}} /></label>
           <label>Slug (automatic)<input required pattern="[a-z0-9]+(-[a-z0-9]+)*" value={slug} readOnly aria-readonly="true" /><small className="sb-muted">Generated from the category name.</small></label>
-          <label className="sb-span-all">Parent category (optional)<select value={parentId} onChange={e => setParentId(e.target.value)}><option value="">None — create a main category</option>{parentCategories.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><small className="sb-muted">Choose a parent to create a subcategory.</small></label>
+          <label className="sb-span-all">Parent category (optional)<select value={parentId} onChange={e => setParentId(e.target.value)}><option value="">None — create a main category</option>{categories.filter(item => !excludedParentIds.has(Number(item.id))).map(item => <option key={item.id} value={item.id}>{categoryPath(item, categories)}</option>)}</select><small className="sb-muted">Choose any category as the parent. There is no fixed nesting level.</small></label>
         </div>
         <div className="sb-category-form-actions"><button className="sb-primary" type="submit">{editingCategory ? "Save changes" : "Create category"}</button><button className="sb-secondary" type="button" onClick={resetCategoryForm}>Cancel</button></div>
       </form>}
-      <div className="sb-strip-list" aria-label="Category list">
-        {parentCategories.length ? parentCategories.map(item => <div key={item.id}>
-          <article className="sb-strip-row sb-category-row"><div className="sb-strip-icon" aria-hidden="true"><span>▦</span></div><div className="sb-strip-main"><strong>{item.name}</strong><small>/{item.slug} · Parent category</small></div><span className="sb-strip-meta">{childrenOf(item.id).length} subcategories</span><div className="sb-category-actions"><button type="button" className="sb-row-action" onClick={() => startEditCategory(item)} aria-label={"Edit " + item.name}>Edit</button><button type="button" className="sb-row-action" onClick={() => archiveCategory(item)} aria-label={"Archive " + item.name}>Archive</button><button type="button" className="sb-row-action sb-row-action-danger" onClick={() => deleteCategory(item)} aria-label={"Delete " + item.name}>Delete</button></div></article>
-          {childrenOf(item.id).map(child => <article className="sb-strip-row sb-strip-child sb-category-row" key={child.id}><div className="sb-strip-icon" aria-hidden="true">↳</div><div className="sb-strip-main"><strong>{child.name}</strong><small>/{child.slug} · Subcategory of {item.name}</small></div><div className="sb-category-actions"><button type="button" className="sb-row-action" onClick={() => startEditCategory(child)} aria-label={"Edit " + child.name}>Edit</button><button type="button" className="sb-row-action" onClick={() => archiveCategory(child)} aria-label={"Archive " + child.name}>Archive</button><button type="button" className="sb-row-action sb-row-action-danger" onClick={() => deleteCategory(child)} aria-label={"Delete " + child.name}>Delete</button></div></article>)}
-        </div>) : <p className="sb-empty">No categories found. Select Add category to create one.</p>}
+      <div className="sb-strip-list" aria-label="Category tree">
+        {rootCategories.length ? rootCategories.map(item => <CategoryTreeNode key={item.id} item={item} categories={categories} depth={0} onEdit={startEditCategory} onArchive={archiveCategory} onDelete={deleteCategory} onAddChild={item => { setEditingCategory(null); setName(""); setSlug(""); setParentId(String(item.id)); setShowCategoryForm(true); setActiveTab("categories"); setError(""); setMessage(""); }} />) : <p className="sb-empty">No categories found. Select Add category to create one.</p>}
       </div>
     </>}
 
