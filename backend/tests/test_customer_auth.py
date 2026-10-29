@@ -85,20 +85,47 @@ def test_customer_auth_rate_limit_blocks_sixth_attempt_for_same_ip(monkeypatch):
         assert "Retry-After" in exc.headers
 
 
-def test_customer_auth_rate_limit_applies_to_identifier_across_ips(monkeypatch):
+def test_customer_auth_identifier_limit_is_scoped_to_ip(monkeypatch):
     from fastapi import HTTPException
     from app.api import customer_auth
 
     monkeypatch.setattr(customer_auth, "_RATE_LIMIT_BUCKETS", {})
-    for index in range(5):
-        request = _request_with_peer(f"198.51.100.{index + 1}")
-        customer_auth._enforce_rate_limit(request, "login", ["person@example.com"])
-    request = _request_with_peer("198.51.100.99")
+    first_ip = _request_with_peer("198.51.100.1")
+    for _ in range(5):
+        customer_auth._enforce_rate_limit(first_ip, "login", ["person@example.com"])
     try:
-        customer_auth._enforce_rate_limit(request, "login", ["person@example.com"])
-        assert False, "sixth attempt for the same identifier should be rate limited"
+        customer_auth._enforce_rate_limit(first_ip, "login", ["person@example.com"])
+        assert False, "sixth failed attempt from the same IP should be rate limited"
     except HTTPException as exc:
         assert exc.status_code == 429
+
+    # A different IP must not be able to consume the victim's identifier bucket.
+    second_ip = _request_with_peer("198.51.100.99")
+    customer_auth._enforce_rate_limit(second_ip, "login", ["person@example.com"])
+
+
+def test_login_precheck_does_not_count_successful_attempts(monkeypatch):
+    from app.api import customer_auth
+
+    monkeypatch.setattr(customer_auth, "_RATE_LIMIT_BUCKETS", {})
+    request = _request_with_peer("198.51.100.50")
+    for _ in range(10):
+        customer_auth._enforce_rate_limit(
+            request, "login", ["person@example.com"], record=False
+        )
+    assert customer_auth._RATE_LIMIT_BUCKETS == {}
+
+
+def test_customer_auth_rate_limit_bucket_store_is_capped(monkeypatch):
+    from app.api import customer_auth
+
+    monkeypatch.setattr(customer_auth, "_RATE_LIMIT_BUCKETS", {})
+    monkeypatch.setattr(customer_auth, "RATE_LIMIT_MAX_BUCKETS", 2)
+    request = _request_with_peer("198.51.100.60")
+    customer_auth._enforce_rate_limit(request, "register", ["one@example.com"])
+    customer_auth._enforce_rate_limit(request, "register", ["two@example.com"])
+    customer_auth._enforce_rate_limit(request, "register", ["three@example.com"])
+    assert len(customer_auth._RATE_LIMIT_BUCKETS) <= 2
 
 
 def test_customer_registration_rejects_phone_with_letters():
@@ -109,3 +136,40 @@ def test_customer_registration_rejects_phone_with_letters():
         "password": "strong-enough-password",
     })
     assert response.status_code == 422
+
+
+
+def test_customer_registration_rejects_name_over_max_length():
+    response = client.post("/api/customer-auth/register", json={
+        "full_name": "A" * 201,
+        "email": "longname@example.com",
+        "phone": "9876543210",
+        "password": "strong-enough-password",
+    })
+    assert response.status_code == 422
+
+
+def test_customer_registration_rejects_password_over_max_length():
+    response = client.post("/api/customer-auth/register", json={
+        "full_name": "Test Customer",
+        "email": "longpassword@example.com",
+        "phone": "9876543210",
+        "password": "x" * 1025,
+    })
+    assert response.status_code == 422
+
+
+def test_phone_formats_normalize_to_same_indian_number():
+    from app.api.customer_auth import CustomerRegister
+
+    common = {
+        "full_name": "Test Customer",
+        "email": "phone@example.com",
+        "password": "strong-enough-password",
+    }
+    numbers = ["9876543210", "+91 98765 43210", "098765 43210"]
+    normalized = [
+        CustomerRegister(**{**common, "phone": number}).phone
+        for number in numbers
+    ]
+    assert normalized == ["+919876543210"] * 3
