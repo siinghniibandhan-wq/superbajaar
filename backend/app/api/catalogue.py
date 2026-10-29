@@ -109,6 +109,13 @@ class VariantCreate(BaseModel):
             raise ValueError("SKU cannot be blank")
         return value.strip()
 
+    @field_validator("sku")
+    @classmethod
+    def normalize_optional_sku(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        return value.strip()
+
     @field_validator("mrp")
     @classmethod
     def mrp_not_below_selling_price(cls, value, info):
