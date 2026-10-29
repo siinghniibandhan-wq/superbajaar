@@ -422,7 +422,7 @@ export default function Storefront() {
       return !term || [v.product_name, product.name, v.sku, product.brand].some(x => String(x || "").toLowerCase().includes(term));
     });
   }, [variants, productById, categoryId, routeCategoryName, search, displayCategories]);
-  const displayedVariants = isWishlistPage ? visibleVariants.filter(v => wishlist.some(id => Number(id) === Number(v.id))) : visibleVariants;
+  const displayedVariants = (isWishlistPage ? visibleVariants.filter(v => wishlist.some(id => Number(id) === Number(v.id))) : visibleVariants).filter((variant, index, items) => items.findIndex(item => Number(item.product_id) === Number(variant.product_id)) === index);
   const rememberViewed = variant => {
     const entry = { variantId: variant.id, productId: variant.product_id, viewedAt: Date.now() };
     setRecentlyViewed(old => {
@@ -524,13 +524,21 @@ export default function Storefront() {
     const product = productById.get(Number(variant.product_id));
     const categoryName = product?.category_name || product?.category || orderedCategories.find(c => String(c.id) === String(product?.category_id))?.name;
     const tile = categoryArt[categoryName] || art[0];
-    const saved = wishlist.some(id => Number(id) === Number(variant.id));
-    return <article className="storefront-product-card" key={variant.id}>
-      <div className="storefront-product-art"><span>{tile.icon}</span><button type="button" className={"storefront-wishlist " + (saved ? "is-saved" : "")} aria-label={(saved ? "Remove from" : "Add to") + " wishlist: " + (product?.name || variant.sku)} aria-pressed={saved} onClick={() => setWishlist(old => old.some(id => Number(id) === Number(variant.id)) ? old.filter(id => Number(id) !== Number(variant.id)) : [...old, Number(variant.id)])}><Heart size={19} strokeWidth={1.9} fill={saved ? "currentColor" : "none"} /></button></div>
+    const productVariants = variants.filter(item => Number(item.product_id) === Number(variant.product_id) && item.is_active !== false);
+    const hasSelectableVariants = productVariants.some(item => Object.keys(item.attributes || {}).length > 0);
+    const prices = productVariants.map(item => Number(item.selling_price || 0));
+    const minPrice = prices.length ? Math.min(...prices) : Number(variant.selling_price || 0);
+    const maxPrice = prices.length ? Math.max(...prices) : minPrice;
+    const saved = productVariants.some(item => wishlist.some(id => Number(id) === Number(item.id)));
+    const openDetails = () => { rememberViewed(variant); setSelectedProduct(variant); };
+    return <article className="storefront-product-card" key={variant.product_id}>
+      <div className="storefront-product-art"><span>{tile.icon}</span><button type="button" className={"storefront-wishlist " + (saved ? "is-saved" : "")} aria-label={(saved ? "Remove from" : "Add to") + " wishlist: " + (product?.name || variant.sku)} aria-pressed={saved} onClick={() => setWishlist(old => saved ? old.filter(id => !productVariants.some(item => Number(item.id) === Number(id))) : [...new Set([...old, ...productVariants.map(item => Number(item.id))])])}><Heart size={19} strokeWidth={1.9} fill={saved ? "currentColor" : "none"} /></button></div>
       <small>{product?.brand || product?.name || "Super Bajaar"}</small>
-      <h3><button type="button" className="storefront-product-title" onClick={() => { rememberViewed(variant); setSelectedProduct(variant); }}>{product?.name || variant.product_name || variant.sku}</button></h3>
-      <p className="storefront-sku">{variant.sku}</p><strong>{money(variant.selling_price)}</strong><span className="storefront-product-coins"><Coins size={14} /> Earn up to {Math.floor(Number(variant.selling_price || 0) / 100 * Number((loyaltyRules.find(rule => rule.scope_type === "product" && Number(rule.scope_id) === Number(product?.id)) || loyaltyRules.find(rule => rule.scope_type === "category" && Number(rule.scope_id) === Number(product?.category_id)) || loyaltyRules.find(rule => rule.scope_type === "default"))?.coins_per_100 ?? loyaltyDefaultRate))} Super Coins</span>
-      <button type="button" className="storefront-add" onClick={() => addToCart(variant)}><ShoppingBag size={17} strokeWidth={2} /> Add to basket</button>
+      <h3><button type="button" className="storefront-product-title" onClick={openDetails}>{product?.name || variant.product_name || variant.sku}</button></h3>
+      <p className="storefront-sku">{hasSelectableVariants ? "Choose colour, size or weight" : (variant.sku || "Standard product")}</p>
+      <strong>{minPrice === maxPrice ? money(minPrice) : money(minPrice) + " – " + money(maxPrice)}</strong>
+      <span className="storefront-product-coins"><Coins size={14} /> Earn up to {Math.floor(Number(minPrice || 0) / 100 * Number((loyaltyRules.find(rule => rule.scope_type === "product" && Number(rule.scope_id) === Number(product?.id)) || loyaltyRules.find(rule => rule.scope_type === "category" && Number(rule.scope_id) === Number(product?.category_id)) || loyaltyRules.find(rule => rule.scope_type === "default"))?.coins_per_100 ?? loyaltyDefaultRate))} Super Coins</span>
+      {hasSelectableVariants ? <button type="button" className="storefront-add" onClick={openDetails}>Choose options</button> : <button type="button" className="storefront-add" onClick={() => addToCart(variant)}><ShoppingBag size={17} strokeWidth={2} /> Add to basket</button>}
     </article>;
   }
   function renderDiscoverySection(title, subtitle, items, emptyText, icon) {
