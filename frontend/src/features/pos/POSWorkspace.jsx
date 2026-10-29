@@ -30,6 +30,24 @@ export default function POSWorkspace({ onBack }) {
     const term = search.trim().toLowerCase();
     return variants.filter(v => v.is_active !== false && (!term || [v.sku, v.product_name, v.name, v.brand].some(x => String(x || "").toLowerCase().includes(term))));
   }, [variants]);
+  const groupedVisible = useMemo(() => {
+    const groups = new Map();
+    for (const variant of visible) {
+      const key = String(variant.product_id);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(variant);
+    }
+    return [...groups.values()].map(items => ({
+      productId: items[0].product_id,
+      productName: items[0].product_name || items[0].name || ("Product " + items[0].product_id),
+      variants: items,
+      selected: items.find(v => String(v.id) === String(selectedVariantByProduct[String(items[0].product_id)])) || items[0],
+    }));
+  }, [visible, selectedVariantByProduct]);
+  const variantLabel = v => {
+    const attrs = Object.entries(v.attributes || {}).map(([key, value]) => (Array.isArray(value) ? value.join(", ") : String(value)));
+    return attrs.length ? attrs.join(" / ") + (v.sku ? " · " + v.sku : "") : (v.sku || "Default");
+  };
   const total = cart.reduce((sum, line) => sum + Number(line.selling_price || 0) * line.quantity, 0);
 
   function add(variant) {
