@@ -157,3 +157,12 @@ def test_image_upload_rejects_mime_signature_mismatch_before_database_access():
     )
     assert response.status_code == 415
     assert "contents do not match" in response.json()["detail"]
+
+
+def test_tax_rate_lookup_requires_database_configuration(monkeypatch):
+    from app.api import catalogue
+
+    monkeypatch.setattr(catalogue.settings, "database_url", "")
+    response = client.get("/api/catalogue/tax-rates")
+    assert response.status_code == 503
+    assert "database" in response.json()["detail"].lower()
