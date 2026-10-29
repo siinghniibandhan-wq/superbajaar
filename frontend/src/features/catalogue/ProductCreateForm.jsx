@@ -28,7 +28,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
   const chosenAttributes = useMemo(() => definitions.filter(def => def.is_variant_attribute && (selected[def.code] || []).length), [definitions, selected]);
   const variantCombinations = useMemo(() => {
     if (!chosenAttributes.length) return [{}];
-    return combinations(chosenAttributes.map(def => ({ code: def.code, values: selected[def.code] || [] })));
+    return combinations(chosenAttributes.map(def => ({ code: def.code, values: def.value_type === "multi_select" ? [[...(selected[def.code] || [])]] : (selected[def.code] || []) })));
   }, [chosenAttributes, selected]);
 
   function toggleValue(def, value) {
