@@ -1,5 +1,6 @@
 """PostgreSQL-backed catalogue, attribute and variant API foundation."""
 from typing import Any
+import re
 
 import psycopg
 from fastapi import APIRouter, HTTPException, Query, Request
