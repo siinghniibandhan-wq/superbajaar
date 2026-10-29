@@ -14,6 +14,7 @@ export default function POSWorkspace({ onBack }) {
   const [notice, setNotice] = useState("");
   const [receipt, setReceipt] = useState(null);
   const [search, setSearch] = useState("");
+  const [selectedVariantByProduct, setSelectedVariantByProduct] = useState({});
 
   async function load() {
     setLoading(true); setError("");
