@@ -317,6 +317,33 @@ def create_attribute(payload: AttributeCreate):
         raise _db_error(exc) from exc
 
 
+class AttributeOptionsUpdate(BaseModel):
+    options: list[Any] = Field(max_length=200)
+
+@router.put("/attributes/{attribute_id}/options")
+def update_attribute_options(attribute_id: int, payload: AttributeOptionsUpdate):
+    try:
+        with _connection() as conn:
+            row = conn.execute("SELECT id, name, value_type, options, is_active FROM product_attributes WHERE id=%s", (attribute_id,)).fetchone()
+            if row is None or not row["is_active"]:
+                raise HTTPException(status_code=404, detail="Active attribute not found")
+            if row["value_type"] not in {"select", "multi_select", "colour", "size"}:
+                raise HTTPException(status_code=422, detail="This attribute type does not support options")
+            combined = list(row["options"] or [])
+            for option in payload.options:
+                if not isinstance(option, (str, int, float, bool)):
+                    raise HTTPException(status_code=422, detail="Attribute options must be simple scalar values")
+                if str(option).strip() and str(option) not in {str(item) for item in combined}:
+                    combined.append(option)
+            if not combined:
+                raise HTTPException(status_code=422, detail="At least one option is required")
+            updated = conn.execute("UPDATE product_attributes SET options=%s::jsonb WHERE id=%s RETURNING id,name,code,value_type,options,is_active", (__import__("json").dumps(combined), attribute_id)).fetchone()
+        return updated
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
 @router.get("/attributes")
 def list_attributes(limit: int = Query(default=100, ge=1, le=500), offset: int = Query(default=0, ge=0)):
     with _connection() as conn:
