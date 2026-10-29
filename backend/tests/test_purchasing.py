@@ -59,3 +59,17 @@ def test_purchase_order_cancel_requires_database_configuration(monkeypatch):
 def test_purchase_order_cancel_rejects_non_integer_id():
     response = client.post("/api/purchasing/orders/not-a-number/cancel")
     assert response.status_code == 422
+
+
+def test_purchase_order_approval_requires_database_configuration(monkeypatch):
+    from app.api import purchasing
+
+    monkeypatch.setattr(purchasing.settings, "database_url", "")
+    response = client.post("/api/purchasing/orders/1/approve")
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Purchasing database is not configured"
+
+
+def test_purchase_order_approval_rejects_non_integer_id():
+    response = client.post("/api/purchasing/orders/not-a-number/approve")
+    assert response.status_code == 422
