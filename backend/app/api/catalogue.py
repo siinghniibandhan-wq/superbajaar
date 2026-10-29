@@ -558,6 +558,28 @@ def create_variant(product_id: int, payload: VariantCreate):
                 raise HTTPException(status_code=422, detail=f"Unknown or non-variant attributes: {', '.join(unknown)}")
             for code, value in payload.attributes.items():
                 _validate_attribute_value(conn, by_code[code], value)
+            empty_defaults = []
+            if payload.attributes:
+                empty_defaults = conn.execute(
+                    "SELECT id FROM product_variants WHERE product_id=%s AND is_active=TRUE AND attributes='{}'::jsonb FOR UPDATE",
+                    (product_id,),
+                ).fetchall()
+                for default in empty_defaults:
+                    has_live_stock = conn.execute(
+                        "SELECT 1 FROM inventory_balances WHERE variant_id=%s AND (on_hand > 0 OR reserved > 0) LIMIT 1",
+                        (default["id"],),
+                    ).fetchone()
+                    has_open_purchase = conn.execute(
+                        "SELECT 1 FROM purchase_order_lines pol JOIN purchase_orders po ON po.id=pol.purchase_order_id "
+                        "WHERE pol.variant_id=%s AND pol.quantity_received < pol.quantity_ordered "
+                        "AND po.status IN ('draft','ordered','partially_received') LIMIT 1",
+                        (default["id"],),
+                    ).fetchone()
+                    if has_live_stock or has_open_purchase:
+                        raise HTTPException(
+                            status_code=409,
+                            detail="This product has an empty default variant with stock or open purchasing. Transfer its stock and close or reassign open purchase lines before adding selectable variants.",
+                        )
             sku = payload.sku.strip() if payload.sku else _generate_variant_sku(conn, product_id, payload.attributes)
             row = conn.execute(
                 "INSERT INTO product_variants (product_id, sku, barcode, attributes, selling_price, mrp, cost_price) "
@@ -565,6 +587,12 @@ def create_variant(product_id: int, payload: VariantCreate):
                 "RETURNING id, product_id, sku, barcode, attributes, selling_price, mrp, cost_price, is_active, created_at, updated_at",
                 (product_id, sku, payload.barcode, __import__("json").dumps(payload.attributes), payload.selling_price, payload.mrp, payload.cost_price),
             ).fetchone()
+            if payload.attributes and empty_defaults:
+                conn.execute(
+                    "UPDATE product_variants SET is_active=FALSE, updated_at=now() "
+                    "WHERE id = ANY(%s) AND is_active=TRUE",
+                    ([item["id"] for item in empty_defaults],),
+                )
         return row
     except HTTPException:
         raise
