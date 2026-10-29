@@ -17,6 +17,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
   const [newOptions, setNewOptions] = useState({});
   const [activeTab, setActiveTab] = useState("general");
   const [availabilityRules, setAvailabilityRules] = useState([]);
+  const [stockLocations, setStockLocations] = useState([]);
   const [ruleDraft, setRuleDraft] = useState({ channel: "website", region_code: "", pincode: "", location_id: "", is_allowed: true });
   const [imageProducts, setImageProducts] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -30,6 +31,9 @@ export default function ProductCreateForm({ categories = [], product = null, onS
     setDefinitions(result.items || []);
   }
   useEffect(() => { loadDefinitions().catch(e => setError(e.message || "Unable to load attributes.")); }, []);
+  useEffect(() => {
+    apiRequest("/catalogue/stock-locations").then(result => setStockLocations(result.items || [])).catch(() => setStockLocations([]));
+  }, []);
   useEffect(() => {
     if (!product?.id) return;
     apiRequest("/catalogue/products/" + product.id + "/availability-rules")
@@ -135,7 +139,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
           <label>Channel<select value={ruleDraft.channel} onChange={e=>setRuleDraft(v=>({...v,channel:e.target.value}))}><option value="website">Website</option><option value="pos">POS</option></select></label>
           <label>Region code (optional)<input value={ruleDraft.region_code} onChange={e=>setRuleDraft(v=>({...v,region_code:e.target.value}))} placeholder="e.g. IN-JH"/></label>
           <label>Pincode (optional)<input inputMode="numeric" maxLength="6" pattern="[0-9]{6}" value={ruleDraft.pincode} onChange={e=>setRuleDraft(v=>({...v,pincode:e.target.value.replace(/\D/g,"")}))} placeholder="6-digit pincode"/></label>
-          <label>Stock location ID (optional)<input type="number" min="1" value={ruleDraft.location_id} onChange={e=>setRuleDraft(v=>({...v,location_id:e.target.value}))} placeholder="Existing location ID"/></label>
+          <label>Warehouse / store (optional)<select value={ruleDraft.location_id} onChange={e=>setRuleDraft(v=>({...v,location_id:e.target.value}))}><option value="">No location restriction</option>{stockLocations.map(location=><option key={location.id} value={location.id}>{location.name} · {location.location_type}{location.pin_code ? " · "+location.pin_code : ""} · #{location.id}</option>)}</select></label>
         </div>
         <button type="button" className="sb-secondary" onClick={()=>{if(!ruleDraft.region_code.trim()&&!ruleDraft.pincode&&!ruleDraft.location_id){setError("Enter a region, pincode or stock location ID.");return;} if(ruleDraft.pincode&& !/^\d{6}$/.test(ruleDraft.pincode)){setError("Pincode must contain exactly six digits.");return;} setAvailabilityRules(old=>[...old,{...ruleDraft,region_code:ruleDraft.region_code.trim(),pincode:ruleDraft.pincode||"",location_id:ruleDraft.location_id||"",id:"new-"+Date.now()}]);setRuleDraft(v=>({...v,region_code:"",pincode:"",location_id:""}));setError("");}}>Add restriction</button>
         {availabilityRules.length ? <div className="sb-strip-list">{availabilityRules.map((rule,index)=><article className="sb-strip-row" key={rule.id || index}><div className="sb-strip-main"><strong>{rule.channel.toUpperCase()} · {rule.is_allowed===false?"Blocked":"Allowed"}</strong><small>{[rule.region_code,rule.pincode,rule.location_id?"Location #"+rule.location_id:""].filter(Boolean).join(" · ")}</small></div><button type="button" className="sb-row-action" onClick={()=>setAvailabilityRules(old=>old.filter((_,i)=>i!==index))}>Remove</button></article>)}</div>:<p className="sb-empty">No region, pincode or warehouse restrictions configured.</p>}
