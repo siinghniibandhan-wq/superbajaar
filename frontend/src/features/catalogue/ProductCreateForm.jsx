@@ -2,7 +2,19 @@ import { useEffect, useMemo, useState } from "react";
 import { apiRequest } from "../../services/api.js";
 import ProductImagesPanel from "./ProductImagesPanel.jsx";
 
-const EMPTY = { name: "", slug: "", brand: "", category_id: "", description: "", tax_code: "", tax_rate: "", selling_price: "", mrp: "", is_pos_available: true, is_website_available: true, delivery_options: ["standard"] };
+const EMPTY = { name: "", slug: "", brand: "", category_id: "", category_ids: [], description: "", tax_code: "", tax_rate: "", selling_price: "", mrp: "", is_pos_available: true, is_website_available: true, delivery_options: ["standard"] };
+
+function categoryPath(category, categories) {
+  const parts = [category.name];
+  let parentId = category.parent_id;
+  while (parentId) {
+    const parent = categories.find(item => Number(item.id) === Number(parentId));
+    if (!parent) break;
+    parts.unshift(parent.name);
+    parentId = parent.parent_id;
+  }
+  return parts.join(" → ");
+}
 const OPTION_TYPES = ["select", "multi_select", "colour", "size"];
 function ProductImagesEmbedded({ product }) { return <ProductImagesPanel products={[product]} initialProductId={product.id} embedded />; }
 
@@ -11,7 +23,7 @@ function combinations(items) {
 }
 
 export default function ProductCreateForm({ categories = [], product = null, onSaved }) {
-  const [form, setForm] = useState(product ? { ...EMPTY, ...product, category_id: product.category_id ? String(product.category_id) : "" } : EMPTY);
+  const [form, setForm] = useState(product ? { ...EMPTY, ...product, category_id: product.category_id ? String(product.category_id) : "", category_ids: (product.category_ids?.length ? product.category_ids : (product.category_id ? [product.category_id] : [])).map(String) } : EMPTY);
   const [definitions, setDefinitions] = useState([]);
   const [selected, setSelected] = useState({});
   const [newOptions, setNewOptions] = useState({});
@@ -75,7 +87,9 @@ export default function ProductCreateForm({ categories = [], product = null, onS
         setActiveTab("general");
         throw new Error("Enter a valid selling price and an MRP equal to or higher than the selling price.");
       }
-      const payload = { name: form.name.trim(), slug: form.slug, brand: form.brand || null, category_id: form.category_id ? Number(form.category_id) : null, description: form.description || null, tax_code: form.tax_code || null, tax_rate: form.tax_rate === "" ? null : Number(form.tax_rate), is_pos_available: Boolean(form.is_pos_available), is_website_available: Boolean(form.is_website_available), delivery_options: form.delivery_options?.length ? form.delivery_options : ["standard"], status: product?.status || "active" };
+      const selectedCategoryIds = [...new Set((form.category_ids || []).map(Number).filter(Number.isInteger))];
+      const primaryCategoryId = selectedCategoryIds[0] || (form.category_id ? Number(form.category_id) : null);
+      const payload = { name: form.name.trim(), slug: form.slug, brand: form.brand || null, category_id: primaryCategoryId, category_ids: selectedCategoryIds, description: form.description || null, tax_code: form.tax_code || null, tax_rate: form.tax_rate === "" ? null : Number(form.tax_rate), is_pos_available: Boolean(form.is_pos_available), is_website_available: Boolean(form.is_website_available), delivery_options: form.delivery_options?.length ? form.delivery_options : ["standard"], status: product?.status || "active" };
       savedProduct = await apiRequest(product?.id ? "/catalogue/products/" + product.id : "/catalogue/products", { method: product?.id ? "PUT" : "POST", body: JSON.stringify(payload) });
       // Editing updates only the product record. It must not duplicate existing variants.
       if (!product?.id) {
@@ -117,8 +131,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
         <label>Product name *<input required maxLength="240" value={form.name} onChange={e => { const name=e.target.value; setForm(old => ({...old,name,slug:slugify(name)})); }} /></label>
         <label>Slug (automatic)<input required pattern="[a-z0-9]+(-[a-z0-9]+)*" value={form.slug} readOnly aria-readonly="true" /></label>
         <label>Brand<input maxLength="160" value={form.brand || ""} onChange={e => change("brand", e.target.value)} /></label>
-        <label>Category<select value={(() => { const current = categories.find(item => String(item.id) === String(form.category_id)); return current?.parent_id ? String(current.parent_id) : (form.category_id || ""); })()} onChange={e => { const parent = e.target.value; change("category_id", parent); }}><option value="">No category</option>{categories.filter(item => !item.parent_id).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-        <label>Subcategory<select value={(() => { const current = categories.find(item => String(item.id) === String(form.category_id)); return current?.parent_id ? String(current.id) : ""; })()} disabled={!categories.some(item => String(item.id) === String(form.category_id) && !item.parent_id) && !categories.some(item => String(item.parent_id) === String(form.category_id))} onChange={e => change("category_id", e.target.value || (() => { const current = categories.find(item => String(item.id) === String(form.category_id)); return current?.parent_id ? String(current.parent_id) : form.category_id; })())}><option value="">None</option>{categories.filter(item => String(item.parent_id) === String((() => { const current = categories.find(category => String(category.id) === String(form.category_id)); return current?.parent_id ? current.parent_id : form.category_id; })())).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <label className="sb-span-all">Categories (select multiple)<select multiple size={Math.min(Math.max(categories.length, 4), 10)} value={form.category_ids || []} onChange={e => { const ids = Array.from(e.target.selectedOptions, option => option.value); setForm(old => ({ ...old, category_ids: ids, category_id: ids[0] || "" })); }} aria-label="Select multiple product categories">{categories.map(item => <option key={item.id} value={String(item.id)}>{categoryPath(item, categories)}</option>)}</select><small className="sb-muted">Select multiple categories, including parent or deeply nested categories. Use Ctrl/Command for multiple selection on desktop; on mobile, tap selected items to toggle where supported.</small>{(form.category_ids || []).length > 0 && <small className="sb-muted">Selected: {(form.category_ids || []).map(id => categories.find(item => String(item.id) === String(id))).filter(Boolean).map(item => categoryPath(item, categories)).join(" · ")}</small>}</label>
         <div className="sb-span-all"><h3>Price &amp; Tax</h3></div>
         <label>Selling price (₹) *<input required type="number" min="0" step="0.01" value={form.selling_price} onChange={e => change("selling_price", e.target.value)} /></label>
         <label>MRP (₹) *<input required type="number" min="0" step="0.01" value={form.mrp} onChange={e => change("mrp", e.target.value)} /></label>
