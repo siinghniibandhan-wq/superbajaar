@@ -34,6 +34,17 @@ class ProductCreate(BaseModel):
     tax_code: str | None = Field(default=None, max_length=32)
     tax_rate: float | None = Field(default=None, ge=0, le=100)
     status: str = Field(default="active", pattern=r"^(draft|active)$")
+    is_pos_available: bool = True
+    is_website_available: bool = True
+    delivery_options: list[str] = Field(default_factory=lambda: ["standard"], max_length=2)
+
+    @field_validator("delivery_options")
+    @classmethod
+    def valid_delivery_options(cls, value: list[str]) -> list[str]:
+        allowed = {"standard", "express"}
+        if not value or len(set(value)) != len(value) or any(item not in allowed for item in value):
+            raise ValueError("Select Standard and/or Express delivery")
+        return value
 
     @field_validator("name")
     @classmethod
@@ -268,7 +279,7 @@ def list_products(
     params.extend([limit, offset])
     with _connection() as conn:
         rows = conn.execute(
-            "SELECT p.id, p.category_id, p.name, p.slug, p.description, p.brand, p.status, p.tax_code, p.tax_rate, p.created_at, p.updated_at, "
+            "SELECT p.id, p.category_id, p.name, p.slug, p.description, p.brand, p.status, p.tax_code, p.tax_rate, p.is_pos_available, p.is_website_available, p.delivery_options, p.created_at, p.updated_at, "
             "(SELECT COUNT(*) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS variant_count, "
             "(SELECT MIN(v.selling_price) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS min_selling_price, "
             "(SELECT MAX(v.selling_price) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS max_selling_price "
@@ -282,10 +293,10 @@ def create_product(payload: ProductCreate):
     try:
         with _connection() as conn:
             row = conn.execute(
-                "INSERT INTO products (category_id, name, slug, description, brand, tax_code, tax_rate, status) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
-                "RETURNING id, category_id, name, slug, description, brand, status, tax_code, tax_rate, created_at, updated_at",
-                (payload.category_id, payload.name, payload.slug, payload.description, payload.brand, payload.tax_code, payload.tax_rate, payload.status),
+                "INSERT INTO products (category_id, name, slug, description, brand, tax_code, tax_rate, status, is_pos_available, is_website_available, delivery_options) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                "RETURNING id, category_id, name, slug, description, brand, status, tax_code, tax_rate, is_pos_available, is_website_available, delivery_options, created_at, updated_at",
+                (payload.category_id, payload.name, payload.slug, payload.description, payload.brand, payload.tax_code, payload.tax_rate, payload.status, payload.is_pos_available, payload.is_website_available, payload.delivery_options),
             ).fetchone()
         return row
     except psycopg.Error as exc:
@@ -299,7 +310,7 @@ class ProductUpdate(ProductCreate):
 def update_product(product_id: int, payload: ProductUpdate):
     try:
         with _connection() as conn:
-            row = conn.execute("UPDATE products SET category_id=%s,name=%s,slug=%s,description=%s,brand=%s,tax_code=%s,tax_rate=%s,status=%s,updated_at=now() WHERE id=%s RETURNING id,category_id,name,slug,description,brand,status,tax_code,tax_rate,created_at,updated_at", (payload.category_id,payload.name,payload.slug,payload.description,payload.brand,payload.tax_code,payload.tax_rate,payload.status,product_id)).fetchone()
+            row = conn.execute("UPDATE products SET category_id=%s,name=%s,slug=%s,description=%s,brand=%s,tax_code=%s,tax_rate=%s,status=%s,is_pos_available=%s,is_website_available=%s,delivery_options=%s,updated_at=now() WHERE id=%s RETURNING id,category_id,name,slug,description,brand,status,tax_code,tax_rate,is_pos_available,is_website_available,delivery_options,created_at,updated_at", (payload.category_id,payload.name,payload.slug,payload.description,payload.brand,payload.tax_code,payload.tax_rate,payload.status,payload.is_pos_available,payload.is_website_available,payload.delivery_options,product_id)).fetchone()
             if row is None:
                 raise HTTPException(status_code=404, detail="Product not found")
         return row
