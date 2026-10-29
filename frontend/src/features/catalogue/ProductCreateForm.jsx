@@ -102,6 +102,16 @@ export default function ProductCreateForm({ categories = [], product = null, onS
         setActiveTab("general");
         throw new Error("Enter a valid selling price and an MRP equal to or higher than the selling price before creating variants.");
       }
+      for (const attrs of variantCombinations) {
+        const row = variantPricing[combinationKey(attrs)] || {};
+        const variantPrice = row.selling_price === undefined || row.selling_price === "" ? price : Number(row.selling_price);
+        const variantMrp = row.mrp === undefined || row.mrp === "" ? mrp : Number(row.mrp);
+        const variantCost = row.cost_price === undefined || row.cost_price === "" ? null : Number(row.cost_price);
+        if ((!product?.id || chosenAttributes.length) && (!Number.isFinite(variantPrice) || !Number.isFinite(variantMrp) || variantPrice < 0 || variantMrp < variantPrice || (variantCost !== null && (!Number.isFinite(variantCost) || variantCost < 0)))) {
+          setActiveTab("attributes");
+          throw new Error("Check each variant's selling price, MRP and cost price. MRP must be at least the selling price.");
+        }
+      }
       const payload = { name: form.name.trim(), slug: form.slug, brand: form.brand || null, category_id: form.category_id ? Number(form.category_id) : null, description: form.description || null, tax_code: form.tax_code || null, tax_rate: form.tax_rate === "" ? null : Number(form.tax_rate), is_pos_available: Boolean(form.is_pos_available), is_website_available: Boolean(form.is_website_available), delivery_options: form.delivery_options?.length ? form.delivery_options : ["standard"], status: product?.status || "active" };
       savedProduct = await apiRequest(product?.id ? "/catalogue/products/" + product.id : "/catalogue/products", { method: product?.id ? "PUT" : "POST", body: JSON.stringify(payload) });
       for (const def of chosenAttributes) {
