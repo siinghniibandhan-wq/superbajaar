@@ -33,7 +33,7 @@ class ProductCreate(BaseModel):
     brand: str | None = Field(default=None, max_length=160)
     tax_code: str | None = Field(default=None, max_length=32)
     tax_rate: float | None = Field(default=None, ge=0, le=100)
-    status: str = Field(default="active", pattern=r"^(draft|active)$")
+    status: str = Field(default="active", pattern=r"^(draft|active|archived)$")
 
     @field_validator("name")
     @classmethod
@@ -268,8 +268,11 @@ def list_products(
     params.extend([limit, offset])
     with _connection() as conn:
         rows = conn.execute(
-            "SELECT id, category_id, name, slug, description, brand, status, tax_code, tax_rate, created_at, updated_at "
-            f"FROM products {where} ORDER BY name LIMIT %s OFFSET %s", tuple(params)
+            "SELECT p.id, p.category_id, p.name, p.slug, p.description, p.brand, p.status, p.tax_code, p.tax_rate, p.created_at, p.updated_at, "
+            "(SELECT COUNT(*) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS variant_count, "
+            "(SELECT MIN(v.selling_price) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS min_selling_price, "
+            "(SELECT MAX(v.selling_price) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS max_selling_price "
+            f"FROM products p {where} ORDER BY p.name LIMIT %s OFFSET %s", tuple(params)
         ).fetchall()
     return {"items": rows, "limit": limit, "offset": offset}
 
@@ -285,6 +288,42 @@ def create_product(payload: ProductCreate):
                 (payload.category_id, payload.name, payload.slug, payload.description, payload.brand, payload.tax_code, payload.tax_rate, payload.status),
             ).fetchone()
         return row
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+class ProductUpdate(ProductCreate):
+    pass
+
+
+@router.put("/products/{product_id}")
+def update_product(product_id: int, payload: ProductUpdate):
+    try:
+        with _connection() as conn:
+            row = conn.execute(
+                "UPDATE products SET category_id=%s, name=%s, slug=%s, description=%s, brand=%s, tax_code=%s, tax_rate=%s, status=%s, updated_at=now() "
+                "WHERE id=%s RETURNING id, category_id, name, slug, description, brand, status, tax_code, tax_rate, created_at, updated_at",
+                (payload.category_id, payload.name, payload.slug, payload.description, payload.brand, payload.tax_code, payload.tax_rate, payload.status, product_id),
+            ).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Product not found")
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.post("/products/{product_id}/archive")
+def archive_product(product_id: int):
+    try:
+        with _connection() as conn:
+            row = conn.execute("UPDATE products SET status='archived', updated_at=now() WHERE id=%s AND status <> 'archived' RETURNING id, name, status", (product_id,)).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Product not found or already archived")
+        return row
+    except HTTPException:
+        raise
     except psycopg.Error as exc:
         raise _db_error(exc) from exc
 
@@ -313,6 +352,50 @@ def create_attribute(payload: AttributeCreate):
                 (payload.name, payload.code, payload.value_type, payload.is_variant_attribute, payload.is_required, __import__("json").dumps(payload.options)),
             ).fetchone()
         return row
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+class AttributeOptionsUpdate(BaseModel):
+    options: list[Any] = Field(max_length=200)
+
+
+@router.put("/attributes/{attribute_id}/options")
+def update_attribute_options(attribute_id: int, payload: AttributeOptionsUpdate):
+    try:
+        with _connection() as conn:
+            row = conn.execute("SELECT id, name, value_type, options, is_active FROM product_attributes WHERE id=%s FOR UPDATE", (attribute_id,)).fetchone()
+            if row is None or not row["is_active"]:
+                raise HTTPException(status_code=404, detail="Active attribute not found")
+            if row["value_type"] not in {"select", "multi_select", "colour", "size"}:
+                raise HTTPException(status_code=422, detail="This attribute type does not support options")
+            combined = list(row["options"] or [])
+            for option in payload.options:
+                if not isinstance(option, (str, int, float, bool)):
+                    raise HTTPException(status_code=422, detail="Attribute options must be simple scalar values")
+                option_text = str(option).strip()
+                if option_text and option_text.casefold() not in {str(item).casefold() for item in combined}:
+                    combined.append(option_text)
+            if not combined:
+                raise HTTPException(status_code=422, detail="At least one option is required")
+            updated = conn.execute("UPDATE product_attributes SET options=%s::jsonb WHERE id=%s RETURNING id,name,code,value_type,options,is_active", (__import__("json").dumps(combined), attribute_id)).fetchone()
+        return updated
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.post("/attributes/{attribute_id}/archive")
+def archive_attribute(attribute_id: int):
+    try:
+        with _connection() as conn:
+            row = conn.execute("UPDATE product_attributes SET is_active=FALSE WHERE id=%s AND is_active=TRUE RETURNING id,name,code,is_active", (attribute_id,)).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Active attribute not found")
+        return row
+    except HTTPException:
+        raise
     except psycopg.Error as exc:
         raise _db_error(exc) from exc
 
@@ -448,6 +531,54 @@ class VariantPriceUpdate(BaseModel):
         if selling_price is not None and value < selling_price:
             raise ValueError("MRP cannot be lower than selling price")
         return value
+
+
+class VariantUpdate(VariantCreate):
+    pass
+
+
+@router.put("/variants/{variant_id}")
+def update_variant(variant_id: int, payload: VariantUpdate):
+    try:
+        with _connection() as conn:
+            current = conn.execute("SELECT id, product_id FROM product_variants WHERE id=%s AND is_active=TRUE FOR UPDATE", (variant_id,)).fetchone()
+            if current is None:
+                raise HTTPException(status_code=404, detail="Active variant not found")
+            definitions = conn.execute("SELECT code,name,value_type,options,is_required FROM product_attributes WHERE is_active=TRUE AND is_variant_attribute=TRUE").fetchall()
+            by_code = {row["code"]: row for row in definitions}
+            unknown = sorted(set(payload.attributes) - set(by_code))
+            if unknown:
+                raise HTTPException(status_code=422, detail=f"Unknown or non-variant attributes: {', '.join(unknown)}")
+            for code, definition in by_code.items():
+                if definition["is_required"] and code not in payload.attributes:
+                    raise HTTPException(status_code=422, detail=f"Required variant attribute '{code}' is missing")
+            for code, value in payload.attributes.items():
+                _validate_attribute_value(conn, by_code[code], value)
+            sku = payload.sku or _generate_variant_sku(conn, current["product_id"], payload.attributes)
+            row = conn.execute(
+                "UPDATE product_variants SET sku=%s, barcode=%s, attributes=%s::jsonb, selling_price=%s, mrp=%s, cost_price=%s, updated_at=now() "
+                "WHERE id=%s RETURNING id, product_id, sku, barcode, attributes, selling_price, mrp, cost_price, is_active, created_at, updated_at",
+                (sku, payload.barcode, __import__("json").dumps(payload.attributes), payload.selling_price, payload.mrp, payload.cost_price, variant_id),
+            ).fetchone()
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.post("/variants/{variant_id}/archive")
+def archive_variant(variant_id: int):
+    try:
+        with _connection() as conn:
+            row = conn.execute("UPDATE product_variants SET is_active=FALSE, updated_at=now() WHERE id=%s AND is_active=TRUE RETURNING id,product_id,sku,is_active", (variant_id,)).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Active variant not found")
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
 
 
 @router.get("/variants")
