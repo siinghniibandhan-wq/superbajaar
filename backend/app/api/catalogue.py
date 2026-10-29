@@ -290,6 +290,7 @@ def list_products(
         params.append(category_id)
     if getattr(request.state, "public_catalogue", False):
         status = "active"
+        clauses.append("website_enabled = TRUE")
     if status != "all":
         clauses.append("status = %s")
         params.append(status)
@@ -695,14 +696,15 @@ def archive_variant(variant_id: int):
 
 
 @router.get("/variants")
-def list_all_variants(limit: int = Query(default=200, ge=1, le=500), offset: int = Query(default=0, ge=0)):
+def list_all_variants(request: Request, limit: int = Query(default=200, ge=1, le=500), offset: int = Query(default=0, ge=0)):
     try:
+        public_filter = " AND p.website_enabled = TRUE" if getattr(request.state, "public_catalogue", False) else ""
         with _connection() as conn:
             rows = conn.execute(
                 "SELECT v.id, v.product_id, p.name AS product_name, v.sku, v.barcode, v.attributes, "
                 "v.selling_price, v.mrp, v.cost_price, v.is_active "
                 "FROM product_variants v JOIN products p ON p.id = v.product_id "
-                "WHERE v.is_active = TRUE AND p.status = 'active' ORDER BY p.name, v.sku LIMIT %s OFFSET %s",
+                "WHERE v.is_active = TRUE AND p.status = 'active' " + public_filter + " ORDER BY p.name, v.sku LIMIT %s OFFSET %s",
                 (limit, offset),
             ).fetchall()
         return {"items": rows, "limit": limit, "offset": offset}
