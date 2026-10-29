@@ -27,9 +27,26 @@ function combinations(definitions, selected) {
   }, [{}]);
 }
 
-export default function ProductCreateForm({ categories, onSaved }) {
-  const [form, setForm] = useState(emptyForm);
+export default function ProductCreateForm({ categories, onSaved, product = null }) {
+  const [form, setForm] = useState(() => product ? {
+    ...emptyForm, ...product,
+    category_id: product.category_id == null ? "" : String(product.category_id),
+    mrp: product.max_mrp == null ? "" : String(product.max_mrp),
+    selling_price: product.min_selling_price == null ? "" : String(product.min_selling_price),
+    tax_rate: product.tax_rate == null ? "" : String(product.tax_rate),
+  } : emptyForm);
   const [tab, setTab] = useState("information");
+  useEffect(() => {
+    if (!product) { setForm(emptyForm); return; }
+    setForm({
+      ...emptyForm, ...product,
+      category_id: product.category_id == null ? "" : String(product.category_id),
+      mrp: product.max_mrp == null ? "" : String(product.max_mrp),
+      selling_price: product.min_selling_price == null ? "" : String(product.min_selling_price),
+      tax_rate: product.tax_rate == null ? "" : String(product.tax_rate),
+    });
+    setTab("information");
+  }, [product?.id]);
   const [definitions, setDefinitions] = useState([]);
   const [selected, setSelected] = useState({});
   const [newOptions, setNewOptions] = useState({});
@@ -86,14 +103,15 @@ export default function ProductCreateForm({ categories, onSaved }) {
     setBusy(true);
     let product = null;
     try {
-      product = await apiRequest("/catalogue/products", {
-        method: "POST",
-        body: JSON.stringify({
-          name: form.name.trim(), slug: form.slug || slugify(form.name), brand: form.brand || null,
-          category_id: form.category_id ? Number(form.category_id) : null,
-          description: form.description || null, tax_code: form.tax_code || null,
-          tax_rate: form.tax_rate === "" ? null : Number(form.tax_rate), status: form.status,
-        }),
+      const productPayload = {
+        name: form.name.trim(), slug: form.slug || slugify(form.name), brand: form.brand || null,
+        category_id: form.category_id ? Number(form.category_id) : null,
+        description: form.description || null, tax_code: form.tax_code || null,
+        tax_rate: form.tax_rate === "" ? null : Number(form.tax_rate), status: form.status,
+      };
+      product = await apiRequest(product?.id ? "/catalogue/products/" + product.id : "/catalogue/products", {
+        method: product?.id ? "PUT" : "POST",
+        body: JSON.stringify(productPayload),
       });
       const baseAttributes = definitions.filter(def => !def.is_variant_attribute && (selected[def.code] || []).length);
       for (const def of baseAttributes) {
@@ -103,33 +121,40 @@ export default function ProductCreateForm({ categories, onSaved }) {
           method: "PUT", body: JSON.stringify({ value }),
         });
       }
+      const existingResult = product?.id ? await apiRequest("/catalogue/products/" + product.id + "/variants") : { items: [] };
+      const existingByCombination = new Map((existingResult.items || []).filter(item => item.is_active).map(item => [JSON.stringify(Object.fromEntries(Object.entries(item.attributes || {}).sort(([a],[b]) => a.localeCompare(b)))), item]));
       for (const attrs of variantCombinations) {
+        const key = JSON.stringify(Object.fromEntries(Object.entries(attrs).sort(([a],[b]) => a.localeCompare(b))));
+        if (existingByCombination.has(key)) continue;
         await apiRequest("/catalogue/products/" + product.id + "/variants", {
           method: "POST",
           body: JSON.stringify({ attributes: attrs, selling_price: sellingPrice, mrp, cost_price: costPrice }),
         });
       }
       if (imageUrl.trim()) {
-        await apiRequest("/catalogue/products/" + product.id + "/images", {
-          method: "POST",
-          body: JSON.stringify({ image_url: imageUrl.trim(), alt_text: imageAlt || null, variant_id: null, sort_order: 0 }),
-        });
+        const currentImages = await apiRequest("/catalogue/products/" + product.id + "/images");
+        if (!(currentImages.items || []).some(item => item.image_url === imageUrl.trim() && item.variant_id == null)) {
+          await apiRequest("/catalogue/products/" + product.id + "/images", {
+            method: "POST",
+            body: JSON.stringify({ image_url: imageUrl.trim(), alt_text: imageAlt || null, variant_id: null, sort_order: 0 }),
+          });
+        }
       }
       const notes = [];
       if (variantCombinations.length) notes.push(variantCombinations.length + " variant(s) created");
       if (!posEnabled || !websiteEnabled || !standardDelivery || expressDelivery) {
         notes.push("POS/Website and delivery selections are not persisted yet because the current Catalogue API has no corresponding settings endpoint");
       }
-      setNotice("Product saved successfully" + (notes.length ? ". " + notes.join("; ") + "." : "."));
-      setForm(emptyForm); setSelected({}); setImageUrl(""); setImageAlt(""); setTab("information");
-      await onSaved?.();
+      setNotice((product?.id ? "Product updated successfully" : "Product saved successfully") + (notes.length ? ". " + notes.join("; ") + "." : "."));
+      if (!product?.id) { setForm(emptyForm); setSelected({}); setImageUrl(""); setImageAlt(""); setTab("information"); }
+      await onSaved?.(product);
     } catch (e) {
       setError((e.message || "Unable to save product.") + (product ? " The product record was created; review its variants/images before retrying to avoid duplicates." : ""));
     } finally { setBusy(false); }
   }
 
   return <form className="sb-form sb-product-wizard" onSubmit={submit}>
-    <div className="sb-wizard-heading"><div><h2>Add product</h2><p className="sb-muted">Complete the product details in the tabs below. Your selections stay in place as you move between tabs.</p></div></div>
+    <div className="sb-wizard-heading"><div><h2>{product?.id ? "Edit product" : "Add product"}</h2><p className="sb-muted">Complete the product details in the tabs below. Your selections stay in place as you move between tabs.</p></div></div>
     {error && <p role="alert" className="sb-alert">{error}</p>}
     {notice && <p role="status" className="sb-success">{notice}</p>}
     <nav className="sb-wizard-tabs" aria-label="Product creation steps">
@@ -196,7 +221,7 @@ export default function ProductCreateForm({ categories, onSaved }) {
     <div className="sb-wizard-footer">
       <button type="button" className="sb-secondary" disabled={tab === TABS[0][0] || busy} onClick={() => setTab(TABS[Math.max(0, TABS.findIndex(item => item[0] === tab) - 1)][0])}>Previous</button>
       <span className="sb-muted">Step {TABS.findIndex(item => item[0] === tab) + 1} of {TABS.length}</span>
-      {tab !== "details" ? <button type="button" className="sb-primary" onClick={() => setTab(TABS[Math.min(TABS.length - 1, TABS.findIndex(item => item[0] === tab) + 1)][0])}>Next</button> : <button className="sb-primary" disabled={busy} type="submit">{busy ? "Saving product…" : form.status === "draft" ? "Save draft" : "Save product"}</button>}
+      {tab !== "details" ? <button type="button" className="sb-primary" onClick={() => setTab(TABS[Math.min(TABS.length - 1, TABS.findIndex(item => item[0] === tab) + 1)][0])}>Next</button> : <button className="sb-primary" disabled={busy} type="submit">{busy ? "Saving product…" : product?.id ? "Save changes" : form.status === "draft" ? "Save draft" : "Save product"}</button>}
     </div>
   </form>;
 }
