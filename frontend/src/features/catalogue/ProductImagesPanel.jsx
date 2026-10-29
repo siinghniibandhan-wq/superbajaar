@@ -9,6 +9,7 @@ export default function ProductImagesPanel({ products = [], initialProductId = "
   const [imageUrl, setImageUrl] = useState("");
   const [altText, setAltText] = useState("");
   const [sortOrder, setSortOrder] = useState("0");
+  const [isPrimary, setIsPrimary] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -38,9 +39,10 @@ export default function ProductImagesPanel({ products = [], initialProductId = "
           image_url: imageUrl, alt_text: altText || null,
           variant_id: variantId ? Number(variantId) : null,
           sort_order: Number(sortOrder),
+          is_primary: isPrimary,
         }),
       });
-      setImageUrl(""); setAltText(""); setVariantId(""); setSortOrder("0");
+      setImageUrl(""); setAltText(""); setVariantId(""); setSortOrder("0"); setIsPrimary(false);
       setMessage("Image reference saved."); await loadImages(productId);
     } catch (e) { setError(e.message || "Unable to save image reference."); }
     finally { setBusy(false); }
@@ -49,7 +51,7 @@ export default function ProductImagesPanel({ products = [], initialProductId = "
   const ImageForm = embedded ? "div" : "form";
   return <section className="sb-data-card">
     <h2>{embedded ? "Product & variant images" : "Product & variant images"}</h2>
-    <p className="sb-muted">Add an HTTPS/HTTP image URL. This stores image metadata only; upload/storage hosting is not configured yet.</p>
+    <p className="sb-muted">Add an image URL to the parent product or a specific variant. Each gallery can have one designated cover image. Direct file upload still requires configured object storage.</p>
     {error && <p className="sb-alert" role="alert">{error}</p>}
     {message && <p className="sb-success" role="status">{message}</p>}
     {!embedded && <div className="sb-form-grid"><label>Product<select value={productId} onChange={e=>setProductId(e.target.value)}><option value="">Choose product</option>{products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label></div>}
@@ -59,9 +61,10 @@ export default function ProductImagesPanel({ products = [], initialProductId = "
         <label>Alt text<input maxLength="300" value={altText} onChange={e=>setAltText(e.target.value)}/></label>
         <label>Variant (optional)<select value={variantId} onChange={e=>setVariantId(e.target.value)}><option value="">Product-level image</option>{variants.map(v=><option key={v.id} value={v.id}>{v.sku}</option>)}</select></label>
         <label>Sort order<input type="number" min="0" max="10000" value={sortOrder} onChange={e=>setSortOrder(e.target.value)}/></label>
+        <label className="sb-check"><input type="checkbox" checked={isPrimary} onChange={e=>setIsPrimary(e.target.checked)}/> Set as main cover image</label>
       </div>
       <button className="sb-primary" disabled={busy || !productId} type={embedded ? "button" : "submit"} onClick={embedded ? () => submit({ preventDefault: () => {} }) : undefined}>{busy ? "Saving…" : "Add image reference"}</button>
     </ImageForm>
-    {images.length ? <div className="sb-image-grid">{images.map(image=><article className="sb-image-item" key={image.id}><img src={image.image_url} alt={image.alt_text || ""} loading="lazy" onError={e=>{e.currentTarget.style.display="none";}}/><div><strong>{image.alt_text || "Product image"}</strong><small>{image.variant_id ? "Variant #" + image.variant_id : "Product-level"} · Order {image.sort_order}</small><a href={image.image_url} target="_blank" rel="noreferrer">Open image</a></div></article>)}</div> : <p className="sb-empty">No images saved for this product.</p>}
+    {images.length ? <div className="sb-image-grid">{images.map(image=><article className="sb-image-item" key={image.id}><img src={image.image_url} alt={image.alt_text || ""} loading="lazy" onError={e=>{e.currentTarget.style.display="none";}}/><div><strong>{image.alt_text || "Product image"}{image.is_primary ? " · Main cover" : ""}</strong><small>{image.variant_id ? "Variant #" + image.variant_id : "Product-level"} · Order {image.sort_order}</small><a href={image.image_url} target="_blank" rel="noreferrer">Open image</a></div></article>)}</div> : <p className="sb-empty">No images saved for this product.</p>}
   </section>;
 }
