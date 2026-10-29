@@ -171,3 +171,31 @@ def update_shipment_status(shipment_id: int, payload: DeliveryStatusUpdate):
         raise
     except psycopg.Error as exc:
         raise _db_error(exc) from exc
+
+
+
+@router.get("/shipments/{shipment_id}/history")
+def shipment_status_history(
+    shipment_id: int,
+    limit: int = Query(default=100, ge=1, le=500),
+):
+    """Return the recorded status transitions for a shipment in chronological order."""
+    try:
+        with _connect() as conn:
+            shipment = conn.execute(
+                "SELECT id, shipment_reference FROM deliveries WHERE id = %s",
+                (shipment_id,),
+            ).fetchone()
+            if shipment is None:
+                raise HTTPException(status_code=404, detail="Shipment not found")
+            rows = conn.execute(
+                "SELECT id, from_status, to_status, note, changed_at "
+                "FROM delivery_status_history WHERE delivery_id = %s "
+                "ORDER BY changed_at DESC, id DESC LIMIT %s",
+                (shipment_id, limit),
+            ).fetchall()
+        return {"shipment_id": shipment_id, "shipment_reference": shipment["shipment_reference"], "items": rows}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
