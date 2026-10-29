@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+import pytest
 
 from app.main import app
 
@@ -113,3 +114,28 @@ def test_category_sku_codes_match_superbajaar_categories():
     assert _category_sku_code("Fashion") == "FS"
     assert _category_sku_code("Grocery") == "GR"
     assert _category_sku_code("Personal Care") == "PC"
+
+
+def test_attribute_presentation_style_defaults_to_text():
+    from app.api.catalogue import AttributeCreate
+
+    payload = AttributeCreate(name="Shade", code="shade", value_type="select", options=["Red", "Blue"])
+    assert payload.display_style == "text"
+
+
+def test_pincode_restriction_requires_six_digits():
+    from app.api.catalogue import ProductAvailabilityUpdate
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        ProductAvailabilityUpdate(restrictions=[{"type": "pincode", "value": "1234AB"}])
+
+
+def test_product_configuration_defaults_channels_and_delivery():
+    from app.api.catalogue import ProductCreate
+
+    payload = ProductCreate(name="Juice", slug="juice")
+    assert payload.pos_enabled is True
+    assert payload.website_enabled is True
+    assert payload.standard_delivery_enabled is True
+    assert payload.express_delivery_enabled is False
