@@ -19,7 +19,9 @@ from app.core.config import settings
 router = APIRouter(prefix="/customer-auth", tags=["customer authentication"])
 TOKEN_TTL_HOURS = 24 * 30
 RATE_LIMIT_ATTEMPTS = 5
+RATE_LIMIT_IP_ATTEMPTS = 20
 RATE_LIMIT_WINDOW_SECONDS = 10 * 60
+RATE_LIMIT_MAX_BUCKETS = 10_000
 _RATE_LIMIT_BUCKETS: dict[str, list[float]] = {}
 _RATE_LIMIT_LOCK = threading.Lock()
 _GENERIC_DUPLICATE_DETAIL = "Unable to create an account with these details."
@@ -38,18 +40,28 @@ def _client_ip(request: Request) -> str:
         return peer
 
 
-def _enforce_rate_limit(request: Request, action: str, identifiers: list[str]) -> None:
-    """Apply per-process limits to the client IP and normalized account identifiers."""
+def _rate_limit_keys(request: Request, action: str, identifiers: list[str]) -> list[tuple[str, int]]:
+    """Scope identifier counters to the IP so one remote client cannot lock out an account globally."""
+    client_ip = _client_ip(request)
+    keys: list[tuple[str, int]] = [(f"{action}:ip:{client_ip}", RATE_LIMIT_IP_ATTEMPTS)]
+    for value in identifiers:
+        if value and value.strip():
+            fingerprint = hashlib.sha256(
+                f"{client_ip}|{value.strip().lower()}".encode("utf-8")
+            ).hexdigest()
+            keys.append((f"{action}:id:{fingerprint}", RATE_LIMIT_ATTEMPTS))
+    return keys
+
+
+def _enforce_rate_limit(
+    request: Request, action: str, identifiers: list[str], *, record: bool = True
+) -> None:
+    """Apply per-process limits; login callers can record only failed attempts."""
     now = time.monotonic()
     cutoff = now - RATE_LIMIT_WINDOW_SECONDS
-    ip_key = f"{action}:ip:{_client_ip(request)}"
-    identifier_keys = [
-        f"{action}:id:{hashlib.sha256(value.strip().lower().encode('utf-8')).hexdigest()}"
-        for value in identifiers if value and value.strip()
-    ]
-    keys = [ip_key, *identifier_keys]
+    keys = _rate_limit_keys(request, action, identifiers)
     with _RATE_LIMIT_LOCK:
-        # Prune expired entries and bound memory use during sustained abuse.
+        # Expire old entries and cap the dictionary so random identifiers cannot grow it indefinitely.
         for key in list(_RATE_LIMIT_BUCKETS):
             recent = [stamp for stamp in _RATE_LIMIT_BUCKETS[key] if stamp > cutoff]
             if recent:
@@ -57,20 +69,32 @@ def _enforce_rate_limit(request: Request, action: str, identifiers: list[str]) -
             else:
                 del _RATE_LIMIT_BUCKETS[key]
         retry_after = max(
-            (int(max(1, bucket[0] + RATE_LIMIT_WINDOW_SECONDS - now))
-             for key in keys
-             if len(bucket := _RATE_LIMIT_BUCKETS.get(key, [])) >= RATE_LIMIT_ATTEMPTS),
+            (
+                int(max(1, bucket[0] + RATE_LIMIT_WINDOW_SECONDS - now))
+                for key, limit in keys
+                if len(bucket := _RATE_LIMIT_BUCKETS.get(key, [])) >= limit
+            ),
             default=0,
         )
         if retry_after:
-            logger.warning("Customer auth rate limit exceeded: action=%s client_ip=%s", action, _client_ip(request))
+            logger.warning(
+                "Customer auth rate limit exceeded: action=%s client_ip=%s",
+                action, _client_ip(request),
+            )
             raise HTTPException(
                 status_code=429,
                 detail="Too many attempts. Please try again in a few minutes.",
                 headers={"Retry-After": str(retry_after)},
             )
-        for key in keys:
-            _RATE_LIMIT_BUCKETS.setdefault(key, []).append(now)
+        if record:
+            for key, _limit in keys:
+                if key not in _RATE_LIMIT_BUCKETS and len(_RATE_LIMIT_BUCKETS) >= RATE_LIMIT_MAX_BUCKETS:
+                    oldest_key = min(
+                        _RATE_LIMIT_BUCKETS,
+                        key=lambda item: _RATE_LIMIT_BUCKETS[item][0],
+                    )
+                    del _RATE_LIMIT_BUCKETS[oldest_key]
+                _RATE_LIMIT_BUCKETS.setdefault(key, []).append(now)
 
 
 def _connect():
@@ -267,7 +291,7 @@ def register(payload: CustomerRegister, request: Request):
 
 @router.post("/login")
 def login(payload: CustomerLogin, request: Request):
-    _enforce_rate_limit(request, "login", [str(payload.email)])
+    _enforce_rate_limit(request, "login", [str(payload.email)], record=False)
     if len(settings.jwt_secret_key) < 32:
         raise HTTPException(status_code=503, detail="Customer authentication is not configured")
     email = str(payload.email).strip().lower()
@@ -280,6 +304,7 @@ def login(payload: CustomerLogin, request: Request):
                     (email,),
                 ).fetchone()
                 if not customer or not customer["is_active"] or not _password_matches(payload.password, customer["password_hash"]):
+                    _enforce_rate_limit(request, "login", [email], record=True)
                     raise HTTPException(status_code=401, detail="Invalid email or password")
                 session = _issue_session(conn, customer)
         return {**session, "customer": _public_customer(customer)}
