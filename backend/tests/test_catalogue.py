@@ -90,3 +90,26 @@ def test_category_accepts_parent_id_for_subcategory():
 
     payload = CategoryCreate(name="Tea", slug="tea", parent_id=10)
     assert payload.parent_id == 10
+
+
+
+def test_variant_sku_is_optional_for_server_generation():
+    from app.api.catalogue import VariantCreate
+
+    payload = VariantCreate(selling_price=199, attributes={"colour": "Black", "size": "L"})
+    assert payload.sku is None
+
+
+def test_blank_variant_sku_uses_server_generation():
+    from app.api.catalogue import VariantCreate
+
+    payload = VariantCreate(sku="   ", selling_price=199)
+    assert payload.sku is None
+
+
+def test_category_sku_codes_match_superbajaar_categories():
+    from app.api.catalogue import _category_sku_code
+
+    assert _category_sku_code("Fashion") == "FS"
+    assert _category_sku_code("Grocery") == "GR"
+    assert _category_sku_code("Personal Care") == "PC"
