@@ -70,3 +70,5 @@
 .sb-colour-swatch{display:inline-block;width:15px;height:15px;border:1px solid #d8d0df;border-radius:50%;flex:0 0 15px}
 .sb-inline-style{display:flex;align-items:center;gap:6px;font-size:10px;color:#81768f}
 .sb-inline-style select{max-width:125px;min-height:30px;border:1px solid #e5ddec;border-radius:7px;background:#fff;color:#554b64;padding:4px;font:inherit}
+
+.sb-attribute-dropdown{width:100%;min-height:100px;padding:8px;border:1px solid #e5ddec;border-radius:10px;background:#fff;color:#29243b;font:inherit}
