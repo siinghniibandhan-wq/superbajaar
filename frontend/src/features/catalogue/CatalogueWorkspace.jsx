@@ -3,38 +3,8 @@ import { apiRequest } from "../../services/api.js";
 import ProductCreateForm from "./ProductCreateForm.jsx";
 import CatalogueVariantsPanel from "./CatalogueVariantsPanel.jsx";
 import ProductImagesPanel from "./ProductImagesPanel.jsx";
+import CatalogueModal from "./CatalogueModal.jsx";
 import "./catalogue.css";
-
-function categoryPath(category, categories) {
-  const parts = [category.name];
-  let parentId = category.parent_id;
-  while (parentId) {
-    const parent = categories.find(item => Number(item.id) === Number(parentId));
-    if (!parent) break;
-    parts.unshift(parent.name);
-    parentId = parent.parent_id;
-  }
-  return parts.join(" → ");
-}
-
-function CategoryTreeNode({ item, categories, depth, onEdit, onArchive, onDelete, onAddChild }) {
-  const children = categories.filter(child => Number(child.parent_id) === Number(item.id));
-  return <div key={item.id}>
-    <article className={"sb-strip-row sb-category-row" + (depth ? " sb-strip-child" : "")} style={{ marginLeft: depth * 18 }}>
-      <div className="sb-strip-icon" aria-hidden="true">{depth ? "↳" : "▦"}</div>
-      <div className="sb-strip-main"><strong>{item.name}</strong><small>/{item.slug} · {depth ? "Level " + (depth + 1) : "Root category"}</small></div>
-      <span className="sb-strip-meta">{children.length} subcategories</span>
-      <div className="sb-category-actions">
-        <button type="button" className="sb-row-action" onClick={() => onAddChild(item)} aria-label={"Add subcategory under " + item.name}>+ Child</button>
-        <button type="button" className="sb-row-action" onClick={() => onEdit(item)} aria-label={"Edit " + item.name}>Edit</button>
-        <button type="button" className="sb-row-action" onClick={() => onArchive(item)} aria-label={"Archive " + item.name}>Archive</button>
-        <button type="button" className="sb-row-action sb-row-action-danger" onClick={() => onDelete(item)} aria-label={"Delete " + item.name}>Delete</button>
-      </div>
-    </article>
-    {children.map(child => <CategoryTreeNode key={child.id} item={child} categories={categories} depth={depth + 1} onEdit={onEdit} onArchive={onArchive} onDelete={onDelete} onAddChild={onAddChild} />)}
-  </div>;
-}
-
 
 export default function CatalogueWorkspace({ onBack }) {
   const [activeTab, setActiveTab] = useState("catalogue");
@@ -42,9 +12,11 @@ export default function CatalogueWorkspace({ onBack }) {
   const [products, setProducts] = useState([]);
   const [showProductForm, setShowProductForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
+  const [productFormBusy, setProductFormBusy] = useState(false);
   const [selectedVariantProductId, setSelectedVariantProductId] = useState("");
   const [showCategoryForm, setShowCategoryForm] = useState(false);
   const [editingCategory, setEditingCategory] = useState(null);
+  const [categoryFormBusy, setCategoryFormBusy] = useState(false);
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [parentId, setParentId] = useState("");
@@ -54,7 +26,7 @@ export default function CatalogueWorkspace({ onBack }) {
   async function refresh() {
     try {
       const [c, p] = await Promise.all([
-        apiRequest("/catalogue/categories"),
+        apiRequest("/catalogue/categories?limit=500"),
         apiRequest("/catalogue/products?status=all"),
       ]);
       setCategories(c.items || []);
@@ -67,88 +39,91 @@ export default function CatalogueWorkspace({ onBack }) {
 
   useEffect(() => { refresh(); }, []);
 
-  function resetCategoryForm() {
-    setName("");
-    setSlug("");
-    setParentId("");
-    setEditingCategory(null);
-    setShowCategoryForm(false);
-  }
-
-  function startEditCategory(item) {
-    setEditingCategory(item);
-    setName(item.name || "");
-    setSlug(item.slug || "");
-    setParentId(item.parent_id ? String(item.parent_id) : "");
+  function openCategoryForm(category = null, selectedParentId = "") {
+    setEditingCategory(category);
+    setName(category?.name || "");
+    setSlug(category?.slug || "");
+    setParentId(category?.parent_id ? String(category.parent_id) : selectedParentId);
     setShowCategoryForm(true);
     setError("");
     setMessage("");
   }
 
-  async function createCategory(event) {
+  function closeCategoryForm() {
+    if (categoryFormBusy) return;
+    if ((name || slug) && !window.confirm("Discard unsaved category changes?")) return;
+    setShowCategoryForm(false);
+    setEditingCategory(null);
+    setName("");
+    setSlug("");
+    setParentId("");
+  }
+
+  async function saveCategory(event) {
     event.preventDefault();
+    setCategoryFormBusy(true);
     setError("");
     setMessage("");
     try {
-      const isEditing = Boolean(editingCategory);
-      await apiRequest(isEditing ? "/catalogue/categories/" + editingCategory.id : "/catalogue/categories", {
-        method: isEditing ? "PUT" : "POST",
+      const savedParentId = parentId;
+      await apiRequest(editingCategory ? "/catalogue/categories/" + editingCategory.id : "/catalogue/categories", {
+        method: editingCategory ? "PUT" : "POST",
         body: JSON.stringify({ name, slug, parent_id: parentId ? Number(parentId) : null }),
       });
-      const wasSubcategory = Boolean(parentId);
-      resetCategoryForm();
-      setMessage(isEditing ? "Category updated." : wasSubcategory ? "Subcategory created." : "Category created.");
+      setName("");
+      setSlug("");
+      setParentId("");
+      setShowCategoryForm(false);
+      setEditingCategory(null);
+      setMessage(editingCategory ? "Category updated." : savedParentId ? "Subcategory created." : "Category created.");
       await refresh();
     } catch (e) {
-      setError(e.message || (editingCategory ? "Unable to update category" : "Unable to create category"));
-    }
+      setError(e.message || "Unable to save category");
+    } finally { setCategoryFormBusy(false); }
   }
 
-  async function archiveCategory(item) {
-    if (!window.confirm("Archive category '" + item.name + "'? Its records will be preserved.")) return;
-    setError("");
-    setMessage("");
-    try {
-      await apiRequest("/catalogue/categories/" + item.id + "/archive", { method: "POST" });
-      if (editingCategory?.id === item.id) resetCategoryForm();
-      setMessage("Category archived.");
-      await refresh();
-    } catch (e) {
-      setError(e.message || "Unable to archive category");
-    }
-  }
-
-  async function deleteCategory(item) {
-    if (!window.confirm("Permanently delete category '" + item.name + "'? This works only when no products or subcategories depend on it.")) return;
-    setError("");
-    setMessage("");
-    try {
-      await apiRequest("/catalogue/categories/" + item.id, { method: "DELETE" });
-      if (editingCategory?.id === item.id) resetCategoryForm();
-      setMessage("Category deleted.");
-      await refresh();
-    } catch (e) {
-      setError(e.message || "Unable to delete category. Archive it if it is in use.");
-    }
-  }
-
-  const rootCategories = categories.filter(item => !item.parent_id);
   const childrenOf = id => categories.filter(child => Number(child.parent_id) === Number(id));
-  function descendantIds(categoryId) {
-    const found = new Set([Number(categoryId)]);
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (const item of categories) {
-        if (item.parent_id && found.has(Number(item.parent_id)) && !found.has(Number(item.id))) {
-          found.add(Number(item.id));
-          changed = true;
-        }
+  const descendantIds = (categoryId, found = new Set()) => {
+    for (const child of childrenOf(categoryId)) {
+      if (!found.has(Number(child.id))) {
+        found.add(Number(child.id));
+        descendantIds(child.id, found);
       }
     }
     return found;
+  };
+  const excludedParentIds = editingCategory
+    ? new Set([Number(editingCategory.id), ...descendantIds(editingCategory.id)])
+    : new Set();
+  const categoryParents = categories.filter(item => !excludedParentIds.has(Number(item.id)));
+  function closeProductForm() {
+    if (productFormBusy) return;
+    if (!window.confirm("Close this product form? Unsaved changes will be lost.")) return;
+    setShowProductForm(false);
+    setEditingProduct(null);
   }
-  const excludedParentIds = editingCategory ? descendantIds(editingCategory.id) : new Set();
+  const categoryPathFor = category => {
+    const path = [];
+    const seen = new Set();
+    let current = category;
+    while (current && !seen.has(Number(current.id))) {
+      seen.add(Number(current.id));
+      path.unshift(current.name);
+      current = categories.find(value => Number(value.id) === Number(current.parent_id));
+    }
+    return path;
+  };
+  const renderCategory = (item, depth = 0) => <div key={item.id}>
+    <article className="sb-strip-row">
+      <div className="sb-strip-icon" aria-hidden="true">{depth ? "↳" : <span>▦</span>}</div>
+      <div className="sb-strip-main"><strong>{item.name}</strong><small>/{item.slug}{item.parent_id ? " · Subcategory" : " · Parent category"}</small></div>
+      <div className="sb-category-actions">
+        <button type="button" className="sb-row-action" onClick={() => openCategoryForm(item)}>Edit</button>
+        <button type="button" className="sb-row-action" onClick={() => openCategoryForm(null, String(item.id))}>Add child</button>
+      </div>
+    </article>
+    {childrenOf(item.id).map(child => <div className="sb-category-nested" key={child.id}>{renderCategory(child, depth + 1)}</div>)}
+  </div>;
 
   return <section className="sb-workspace">
     <button className="sb-back" onClick={onBack} type="button">← All workspaces</button>
@@ -168,38 +143,75 @@ export default function CatalogueWorkspace({ onBack }) {
     {activeTab === "catalogue" && <>
       <div className="sb-catalogue-toolbar">
         <div><h2>All products</h2><p className="sb-muted">Products loaded from the backend API.</p></div>
-        <button className="sb-primary" type="button" onClick={() => { setEditingProduct(null); setShowProductForm(value => !value); }}>{showProductForm ? "Cancel" : "+ Add product"}</button>
+        <button className="sb-primary" type="button" onClick={() => { setEditingProduct(null); setShowProductForm(true); }}>+ Add product</button>
       </div>
-      {showProductForm && <ProductCreateForm categories={categories} product={editingProduct} onSaved={async () => { await refresh(); setShowProductForm(false); setEditingProduct(null); }} />}
+      <CatalogueModal
+        open={showProductForm}
+        title={editingProduct ? "Edit product" : "Add product"}
+        className="sb-product-modal"
+        onRequestClose={closeProductForm}
+        footer={<>
+          <button type="submit" form="catalogue-product-form" className="sb-primary" disabled={productFormBusy}>{productFormBusy ? "Saving…" : editingProduct ? "Save product" : "Save product and variants"}</button>
+          <button type="button" className="sb-secondary" disabled={productFormBusy} onClick={closeProductForm}>Cancel</button>
+        </>}
+      >
+        {showProductForm && <ProductCreateForm
+          categories={categories}
+          product={editingProduct}
+          onBusyChange={setProductFormBusy}
+          onSaved={async () => { await refresh(); setShowProductForm(false); setEditingProduct(null); }}
+        />}
+      </CatalogueModal>
       <div className="sb-strip-list" aria-label="Product list">
-        {products.length ? products.map(item => <article className="sb-strip-row" key={item.id}>
+        {products.length ? products.map(item => {
+          const category = categories.find(value => Number(value.id) === Number(item.category_id));
+          const detail = [item.brand, categoryPathFor(category).join(" · ")].filter(Boolean).join(" · ") || "No brand or category";
+          return <article className="sb-strip-row sb-product-card" key={item.id}>
           <div className="sb-strip-icon" aria-hidden="true">S</div>
-          <div className="sb-strip-main"><strong>{item.name}</strong><small>{item.brand || "No brand"} · {((item.category_ids?.length ? item.category_ids : (item.category_id ? [item.category_id] : [])).map(id => categories.find(category => Number(category.id) === Number(id))).filter(Boolean).map(category => categoryPath(category, categories)).join(" · ")) || "Uncategorised"}</small><button type="button" className="sb-row-action" onClick={() => { setSelectedVariantProductId(String(item.id)); setActiveTab("attributes"); }}> {item.variant_count || 0} Variants </button><b>{item.min_selling_price == null ? "Price not set" : item.min_selling_price === item.max_selling_price ? "₹" + Number(item.min_selling_price).toFixed(2) : "₹" + Number(item.min_selling_price).toFixed(2) + " – ₹" + Number(item.max_selling_price).toFixed(2)}</b></div>
+          <div className="sb-strip-main">
+            <strong>{item.name}</strong>
+            <small>{detail}</small>
+            <button type="button" className="sb-variant-pill" onClick={() => { setSelectedVariantProductId(String(item.id)); setActiveTab("attributes"); }}>{item.variant_count ?? 0} Variants</button>
+            <b className="sb-product-price">{item.min_selling_price == null ? "Price not set" : item.min_selling_price === item.max_selling_price ? "₹" + Number(item.min_selling_price).toFixed(2) : "₹" + Number(item.min_selling_price).toFixed(2) + " – ₹" + Number(item.max_selling_price).toFixed(2)}</b>
+            <small className="sb-product-stock">Available stock · {item.available_stock == null ? "Not recorded" : Number(item.available_stock).toLocaleString(undefined, { maximumFractionDigits: 3 }) + " across active locations"}</small>
+          </div>
           <span className={"sb-status-pill sb-status-" + item.status}>{item.status}</span>
-          <button type="button" className="sb-row-action" onClick={() => { setEditingProduct(item); setShowProductForm(true); }}>Edit</button>
-          {item.status !== "archived" && <button type="button" className="sb-row-action" onClick={async () => { if (!window.confirm("Archive " + item.name + "?")) return; try { await apiRequest("/catalogue/products/" + item.id + "/archive", {method:"POST"}); await refresh(); } catch (e) { setError(e.message || "Unable to archive product"); } }}>Archive</button>}
-          <span className="sb-strip-meta">#{item.id}</span>
-        </article>) : <p className="sb-empty">No products found. Select Add product to create your first product.</p>}
+          <button type="button" className="sb-row-action sb-product-edit" onClick={() => { setEditingProduct(item); setShowProductForm(true); }}>Edit</button>
+          {item.status !== "archived" && <button type="button" className="sb-row-action sb-product-archive" onClick={async () => { if (!window.confirm("Archive " + item.name + "?")) return; try { await apiRequest("/catalogue/products/" + item.id + "/archive", {method:"POST"}); await refresh(); } catch (e) { setError(e.message || "Unable to archive product"); } }}>Archive</button>}
+          <span className="sb-strip-meta sb-product-id">#{item.id}</span>
+        </article>;
+        }) : <p className="sb-empty">No products found. Select Add product to create your first product.</p>}
       </div>
-      
+
     </>}
 
     {activeTab === "categories" && <>
       <div className="sb-catalogue-toolbar">
         <div><h2>All categories</h2><p className="sb-muted">Organise parent categories and subcategories.</p></div>
-        <button className="sb-primary" type="button" onClick={() => { if (showCategoryForm) resetCategoryForm(); else { setEditingCategory(null); setName(""); setSlug(""); setParentId(""); setShowCategoryForm(true); } }}>{showCategoryForm && !editingCategory ? "Cancel" : "+ Add category"}</button>
+        <button className="sb-primary" type="button" onClick={() => openCategoryForm()}>+ Add category</button>
       </div>
-      {showCategoryForm && <form className="sb-form" onSubmit={createCategory}>
-        <h2>{editingCategory ? "Edit category" : "Create category"}</h2>
-        <div className="sb-form-grid">
-          <label>Name<input required maxLength="160" value={name} onChange={e => {setName(e.target.value); setSlug(e.target.value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""));}} /></label>
-          <label>Slug (automatic)<input required pattern="[a-z0-9]+(-[a-z0-9]+)*" value={slug} readOnly aria-readonly="true" /><small className="sb-muted">Generated from the category name.</small></label>
-          <label className="sb-span-all">Parent category (optional)<select value={parentId} onChange={e => setParentId(e.target.value)}><option value="">None — create a main category</option>{categories.filter(item => !excludedParentIds.has(Number(item.id))).map(item => <option key={item.id} value={item.id}>{categoryPath(item, categories)}</option>)}</select><small className="sb-muted">Choose any category as the parent. There is no fixed nesting level.</small></label>
-        </div>
-        <div className="sb-category-form-actions"><button className="sb-primary" type="submit">{editingCategory ? "Save changes" : "Create category"}</button><button className="sb-secondary" type="button" onClick={resetCategoryForm}>Cancel</button></div>
-      </form>}
-      <div className="sb-strip-list" aria-label="Category tree">
-        {rootCategories.length ? rootCategories.map(item => <CategoryTreeNode key={item.id} item={item} categories={categories} depth={0} onEdit={startEditCategory} onArchive={archiveCategory} onDelete={deleteCategory} onAddChild={item => { setEditingCategory(null); setName(""); setSlug(""); setParentId(String(item.id)); setShowCategoryForm(true); setActiveTab("categories"); setError(""); setMessage(""); }} />) : <p className="sb-empty">No categories found. Select Add category to create one.</p>}
+      <CatalogueModal
+        open={showCategoryForm}
+        title={editingCategory ? "Edit category" : parentId ? "Add child category" : "Add category"}
+        onRequestClose={closeCategoryForm}
+        footer={<>
+          <button type="submit" form="catalogue-category-form" className="sb-primary" disabled={categoryFormBusy}>{categoryFormBusy ? "Saving…" : editingCategory ? "Save category" : "Create category"}</button>
+          <button type="button" className="sb-secondary" disabled={categoryFormBusy} onClick={closeCategoryForm}>Cancel</button>
+        </>}
+      >
+        {showCategoryForm && <>
+          {error && <p className="sb-alert" role="alert">{error}</p>}
+          <form id="catalogue-category-form" className="sb-form sb-modal-form" onSubmit={saveCategory}>
+          <div className="sb-form-grid">
+            <label>Name<input required maxLength="160" value={name} onChange={e => {setName(e.target.value); setSlug(e.target.value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""));}} /></label>
+            <label>Slug (automatic)<input required pattern="[a-z0-9]+(-[a-z0-9]+)*" value={slug} readOnly aria-readonly="true" /><small className="sb-muted">Generated from the category name.</small></label>
+            <label className="sb-span-all">Parent category (optional)<select value={parentId} onChange={e => setParentId(e.target.value)}><option value="">None — create a main category</option>{categoryParents.map(item => <option key={item.id} value={item.id}>{categoryPathFor(item).join(" · ")}</option>)}</select><small className="sb-muted">Choose a parent to create a category at any depth.</small></label>
+          </div>
+          </form>
+        </>}
+      </CatalogueModal>
+      <div className="sb-strip-list" aria-label="Category list">
+        {categories.some(item => !item.parent_id) ? categories.filter(item => !item.parent_id).map(item => renderCategory(item)) : <p className="sb-empty">No categories found. Select Add category to create one.</p>}
       </div>
     </>}
 

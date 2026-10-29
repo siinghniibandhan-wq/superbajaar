@@ -1,17 +1,12 @@
 import { useEffect, useState } from "react";
 import { apiRequest } from "../../services/api.js";
+import CatalogueModal from "./CatalogueModal.jsx";
 
-const initialAttribute = { name: "", code: "", value_type: "select", is_variant_attribute: true, is_required: true, options: "" };
+const initialAttribute = { name: "", code: "", value_type: "text", is_variant_attribute: true, is_required: true, options: "" };
 const initialVariant = { sku: "", barcode: "", attributes: "{}", selling_price: "", mrp: "", cost_price: "" };
 
 function skuToken(value, limit = 8) {
   return String(value || "").toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, limit).replace(/-$/g, "") || "GEN";
-}
-
-function attributeCode(value) {
-  let code = String(value || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-  if (code && /^[0-9]/.test(code)) code = "attribute_" + code;
-  return code;
 }
 
 function categoryCode(name) {
@@ -33,7 +28,7 @@ function skuPreview(product, categories, attributes, version) {
   return ["SB", categoryCode(parentCategory?.name || category?.name), deptCode, skuToken(product.brand), skuToken(productCode, 6), String(product.id).padStart(5, "0"), ...values, "V" + String(version).padStart(2, "0")].join("-");
 }
 
-export default function CatalogueVariantsPanel({ products, categories = [], mode = "all", initialProductId = "" }) {
+export default function CatalogueVariantsPanel({ products, categories = [], initialProductId = "" }) {
   const [definitions, setDefinitions] = useState([]);
   const [productId, setProductId] = useState(initialProductId);
   const [variants, setVariants] = useState([]);
@@ -44,6 +39,15 @@ export default function CatalogueVariantsPanel({ products, categories = [], mode
   const [busy, setBusy] = useState(false);
   const [editingVariant, setEditingVariant] = useState(null);
   const [viewingVariant, setViewingVariant] = useState(null);
+  const [showAttributeForm, setShowAttributeForm] = useState(false);
+
+  function closeAttributeForm() {
+    if (busy) return;
+    if (JSON.stringify(attribute) !== JSON.stringify(initialAttribute) && !window.confirm("Discard unsaved attribute changes?")) return;
+    setAttribute(initialAttribute);
+    setError("");
+    setShowAttributeForm(false);
+  }
 
   async function loadDefinitions() {
     try { const result = await apiRequest("/catalogue/attributes"); setDefinitions(result.items || []); }
@@ -62,9 +66,13 @@ export default function CatalogueVariantsPanel({ products, categories = [], mode
     event.preventDefault(); setBusy(true); setError(""); setNotice("");
     try {
       const optionTypes = ["select", "multi_select", "colour", "size"];
-      const payload = { ...attribute, options: optionTypes.includes(attribute.value_type) ? attribute.options.split(",").map(x => x.trim()).filter(Boolean) : [] };
+      const options = optionTypes.includes(attribute.value_type) ? attribute.options.split(",").map(x => x.trim()).filter(Boolean) : [];
+      if (optionTypes.includes(attribute.value_type) && !options.length) {
+        throw new Error("Enter at least one option for this attribute type.");
+      }
+      const payload = { ...attribute, name: attribute.name.trim(), options };
       await apiRequest("/catalogue/attributes", { method: "POST", body: JSON.stringify(payload) });
-      setAttribute(initialAttribute); setNotice("Attribute definition saved."); await loadDefinitions();
+      setAttribute(initialAttribute); setShowAttributeForm(false); setNotice("Attribute definition saved."); await loadDefinitions();
     } catch (e) { setError(e.message || "Unable to save attribute."); }
     finally { setBusy(false); }
   }
@@ -90,30 +98,43 @@ export default function CatalogueVariantsPanel({ products, categories = [], mode
   }
 
   return <section className="sb-data-card">
-    <h2>Attributes & variants</h2>
+    <div className="sb-data-heading">
+      <h2>Attributes & variants</h2>
+      <button type="button" className="sb-primary" onClick={() => { setError(""); setShowAttributeForm(true); }}>+ Add attribute</button>
+    </div>
     {error && <p className="sb-alert" role="alert">{error}</p>}
     {notice && <p className="sb-success" role="status">{notice}</p>}
-    <form className="sb-form sb-form-inner" onSubmit={createAttribute}>
-      <h3>Create attribute definition</h3>
-      <div className="sb-form-grid">
-        <label>Name<input required value={attribute.name} onChange={e=>setAttribute(v=>({...v,name:e.target.value,code:attributeCode(e.target.value)}))}/></label>
-        <label>Code (automatic)<input required pattern="[a-z][a-z0-9_]*" value={attribute.code} readOnly aria-readonly="true"/><small className="sb-muted">Generated automatically from the attribute name.</small></label>
-        <label>Type<select value={attribute.value_type} onChange={e=>setAttribute(v=>({...v,value_type:e.target.value,options:""}))}>{["text","number","boolean","date","select","multi_select","colour","size"].map(x=><option key={x}>{x}</option>)}</select></label>
-        <label>Options (comma-separated)<input value={attribute.options} disabled={!["select","multi_select","colour","size"].includes(attribute.value_type)} placeholder={attribute.value_type === "colour" ? "Black, White, Blue" : attribute.value_type === "size" ? "S, M, L" : "Option 1, Option 2"} onChange={e=>setAttribute(v=>({...v,options:e.target.value}))}/><small className="sb-muted">{["select","multi_select","colour","size"].includes(attribute.value_type) ? "Enter the allowed values separated by commas." : "To enter options, change Type to Select, Multi-select, Colour or Size."}</small></label>
-      </div>
-      <label className="sb-check"><input type="checkbox" checked={attribute.is_variant_attribute} onChange={e=>setAttribute(v=>({...v,is_variant_attribute:e.target.checked}))}/> Used to define variant combinations</label>
-      <label className="sb-check"><input type="checkbox" checked={attribute.is_required} onChange={e=>setAttribute(v=>({...v,is_required:e.target.checked}))}/> Required attribute</label>
-      <button className="sb-primary" disabled={busy} type="submit">{busy ? "Saving…" : "Save attribute"}</button>
-    </form>
-    {mode === "attributes" ? <div className="sb-strip-list" aria-label="Attribute definitions">
+    <CatalogueModal
+      open={showAttributeForm}
+      title="Create attribute definition"
+      onRequestClose={closeAttributeForm}
+      footer={<>
+        <button type="submit" form="catalogue-attribute-form" className="sb-primary" disabled={busy}>{busy ? "Saving…" : "Save attribute"}</button>
+        <button type="button" className="sb-secondary" disabled={busy} onClick={closeAttributeForm}>Cancel</button>
+      </>}
+    >
+      {showAttributeForm && <>
+        {error && <p className="sb-alert" role="alert">{error}</p>}
+        <form id="catalogue-attribute-form" className="sb-form sb-modal-form" onSubmit={createAttribute}>
+        <div className="sb-form-grid">
+          <label>Name<input required value={attribute.name} onChange={e=>setAttribute(v=>({...v,name:e.target.value,code:e.target.value.toLowerCase().trim().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").replace(/^([0-9])/,"attr_$1") || "attribute"}))}/></label>
+          <label>Code (automatic)<input required pattern="[a-z][a-z0-9_]*" value={attribute.code} readOnly aria-readonly="true"/><small className="sb-muted">Generated from the attribute name.</small></label>
+          <label>Type<select value={attribute.value_type} onChange={e=>setAttribute(v=>({...v,value_type:e.target.value,options:""}))}>{["text","number","boolean","date","select","multi_select","colour","size"].map(x=><option key={x}>{x}</option>)}</select></label>
+          <label>Options (comma-separated)<input required={["select","multi_select","colour","size"].includes(attribute.value_type)} value={attribute.options} disabled={!["select","multi_select","colour","size"].includes(attribute.value_type)} placeholder="S, M, L" onChange={e=>setAttribute(v=>({...v,options:e.target.value}))}/></label>
+        </div>
+        <label className="sb-check"><input type="checkbox" checked={attribute.is_variant_attribute} onChange={e=>setAttribute(v=>({...v,is_variant_attribute:e.target.checked}))}/> Used to define variant combinations</label>
+        <label className="sb-check"><input type="checkbox" checked={attribute.is_required} onChange={e=>setAttribute(v=>({...v,is_required:e.target.checked}))}/> Required attribute</label>
+        </form>
+      </>}
+    </CatalogueModal>
+    <div className="sb-strip-list" aria-label="Attribute definitions">
       {definitions.length ? definitions.map(definition => <article className="sb-strip-row" key={definition.id}>
         <div className="sb-strip-icon" aria-hidden="true">Aa</div>
         <div className="sb-strip-main"><strong>{definition.name}</strong><small>{definition.code} · {definition.value_type}{definition.options?.length ? " · " + definition.options.join(", ") : ""}</small></div>
         <span className="sb-status-pill">{definition.is_required ? "Required" : "Optional"}</span>
         {definition.is_variant_attribute && <span className="sb-strip-meta">Variant</span>}
-      </article>) : <p className="sb-empty">No attributes found. Select Save attribute after completing the form above.</p>}
-    </div> : <p className="sb-muted">Active attributes: {definitions.map(d=>d.code + " (" + d.value_type + ")").join(", ") || "None yet"}</p>}
-    {mode !== "attributes" && <>
+      </article>) : <p className="sb-empty">No attributes found. Select Add attribute to create one.</p>}
+    </div>
     <div className="sb-form-grid">
       <label>Product for variants<select value={productId} onChange={e=>setProductId(e.target.value)}><option value="">Choose product</option>{products.map(p=><option key={p.id} value={p.id}>{p.name} · #{p.id}</option>)}</select></label>
     </div>
@@ -146,6 +167,5 @@ export default function CatalogueVariantsPanel({ products, categories = [], mode
       {v.is_active && <button type="button" className="sb-row-action" onClick={() => { setEditingVariant(v); setViewingVariant(null); setVariant({sku:v.sku || "", barcode:v.barcode || "", attributes:JSON.stringify(v.attributes || {}, null, 2), selling_price:String(v.selling_price ?? ""), mrp:v.mrp == null ? "" : String(v.mrp), cost_price:v.cost_price == null ? "" : String(v.cost_price)}); }}>Edit</button>}
       {v.is_active && <button type="button" className="sb-row-action" onClick={async () => { if (!window.confirm("Archive variant " + v.sku + "? This will not archive the product or other variants.")) return; setError(""); try { await apiRequest("/catalogue/variants/" + v.id + "/archive", {method:"POST"}); setNotice("Variant archived."); await loadVariants(productId); } catch(e) { setError(e.message || "Unable to archive variant."); } }}>Archive</button>}
     </article>)}</div> : <p className="sb-empty">Choose a product to load its variants.</p>}
-    </>}
   </section>;
 }

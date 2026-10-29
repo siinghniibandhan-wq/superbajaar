@@ -5,14 +5,6 @@ from app.main import app
 client = TestClient(app)
 
 
-def test_category_management_routes_are_registered_in_openapi():
-    paths = app.openapi()["paths"]
-
-    assert "put" in paths["/api/catalogue/categories/{category_id}"]
-    assert "post" in paths["/api/catalogue/categories/{category_id}/archive"]
-    assert "delete" in paths["/api/catalogue/categories/{category_id}"]
-
-
 def test_catalogue_requires_database_configuration(monkeypatch):
     from app.api import catalogue
 
@@ -24,6 +16,11 @@ def test_catalogue_requires_database_configuration(monkeypatch):
 
 def test_category_rejects_invalid_slug_before_database_access():
     response = client.post("/api/catalogue/categories", json={"name": "Drinks", "slug": "Not A Valid Slug"})
+    assert response.status_code == 422
+
+
+def test_category_update_rejects_invalid_slug_before_database_access():
+    response = client.put("/api/catalogue/categories/1", json={"name": "Drinks", "slug": "Not A Valid Slug"})
     assert response.status_code == 422
 
 
@@ -93,6 +90,13 @@ def test_product_rejects_unsupported_status_before_database_access():
     assert response.status_code == 422
 
 
+def test_archived_product_status_is_valid_for_product_updates():
+    from app.api.catalogue import ProductUpdate
+
+    payload = ProductUpdate(name="Juice", slug="juice", status="archived")
+    assert payload.status == "archived"
+
+
 def test_category_accepts_parent_id_for_subcategory():
     from app.api.catalogue import CategoryCreate
 
@@ -121,29 +125,3 @@ def test_category_sku_codes_match_superbajaar_categories():
     assert _category_sku_code("Fashion") == "FS"
     assert _category_sku_code("Grocery") == "GR"
     assert _category_sku_code("Personal Care") == "PC"
-
-
-def test_category_update_rejects_invalid_slug_before_database_access():
-    response = client.put("/api/catalogue/categories/1", json={"name": "Drinks", "slug": "Not A Valid Slug"})
-    assert response.status_code == 422
-
-
-def test_category_update_rejects_blank_name_before_database_access():
-    response = client.put("/api/catalogue/categories/1", json={"name": "   ", "slug": "drinks"})
-    assert response.status_code == 422
-
-
-def test_category_archive_requires_database_configuration(monkeypatch):
-    from app.api import catalogue
-
-    monkeypatch.setattr(catalogue.settings, "database_url", "")
-    response = client.post("/api/catalogue/categories/1/archive")
-    assert response.status_code == 503
-
-
-def test_category_delete_requires_database_configuration(monkeypatch):
-    from app.api import catalogue
-
-    monkeypatch.setattr(catalogue.settings, "database_url", "")
-    response = client.delete("/api/catalogue/categories/1")
-    assert response.status_code == 503
