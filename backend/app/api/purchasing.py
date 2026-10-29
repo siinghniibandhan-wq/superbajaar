@@ -171,7 +171,7 @@ def create_purchase_order(payload: PurchaseCreate):
                     raise HTTPException(422, "One or more variants are missing or inactive")
                 subtotal = sum((line.quantity * line.unit_cost for line in payload.lines), Decimal("0"))
                 number = "PO-" + uuid.uuid4().hex[:12].upper()
-                po = conn.execute("INSERT INTO purchase_orders(purchase_number,supplier_id,location_id,status,subtotal,notes) VALUES(%s,%s,%s,'ordered',%s,%s) RETURNING id,purchase_number,supplier_id,location_id,status,subtotal,notes,created_at", (number,payload.supplier_id,payload.location_id,subtotal,payload.notes)).fetchone()
+                po = conn.execute("INSERT INTO purchase_orders(purchase_number,supplier_id,location_id,status,subtotal,notes) VALUES(%s,%s,%s,'draft',%s,%s) RETURNING id,purchase_number,supplier_id,location_id,status,subtotal,notes,created_at", (number,payload.supplier_id,payload.location_id,subtotal,payload.notes)).fetchone()
                 for line in payload.lines:
                     conn.execute("INSERT INTO purchase_order_lines(purchase_order_id,variant_id,quantity_ordered,unit_cost) VALUES(%s,%s,%s,%s)", (po["id"],line.variant_id,line.quantity,line.unit_cost))
         return po
@@ -241,6 +241,33 @@ def cancel_purchase_order(purchase_id: int):
             **row,
             "message": "Remaining quantities cancelled. Previously received inventory remains unchanged.",
         }
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+
+@router.post("/orders/{purchase_id}/approve")
+def approve_purchase_order(purchase_id: int):
+    """Approve a draft purchase order and release it to the supplier-order stage."""
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                po = conn.execute(
+                    "SELECT id, purchase_number, status FROM purchase_orders WHERE id = %s FOR UPDATE",
+                    (purchase_id,),
+                ).fetchone()
+                if po is None:
+                    raise HTTPException(404, "Purchase order not found")
+                if po["status"] != "draft":
+                    raise HTTPException(409, "Only draft purchase orders can be approved")
+                row = conn.execute(
+                    "UPDATE purchase_orders SET status = 'ordered', updated_at = now() "
+                    "WHERE id = %s RETURNING id, purchase_number, status, updated_at",
+                    (purchase_id,),
+                ).fetchone()
+        return {**row, "message": "Purchase order approved and released to the ordered stage."}
     except HTTPException:
         raise
     except psycopg.Error as exc:
