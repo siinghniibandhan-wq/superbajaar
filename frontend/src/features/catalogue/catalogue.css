@@ -40,3 +40,10 @@
 .sb-row-action{border:1px solid #ded0ed;background:#fff;border-radius:9px;padding:7px 9px;color:#713bc2;font-size:11px;font-weight:700;cursor:pointer}
 .sb-strip-main b{font-size:12px;color:#713bc2}
 @media(max-width:560px){.sb-add-option{align-items:stretch;flex-direction:column}.sb-row-action{padding:7px}}
+
+/* Category actions: visible and usable on desktop and narrow screens. */
+.sb-category-row{flex-wrap:wrap}
+.sb-category-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.sb-row-action-danger{border-color:#f0c8ce;color:#a82f45}
+.sb-category-form-actions{display:flex;gap:8px;flex-wrap:wrap}
+@media(max-width:560px){.sb-category-row .sb-strip-main{flex-basis:calc(100% - 54px)}.sb-category-row .sb-category-actions{width:100%;padding-left:42px}.sb-category-row .sb-strip-meta{margin-left:auto}.sb-category-actions .sb-row-action{font-size:11px;padding:8px 10px}}

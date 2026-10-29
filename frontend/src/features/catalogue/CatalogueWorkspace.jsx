@@ -13,6 +13,7 @@ export default function CatalogueWorkspace({ onBack }) {
   const [editingProduct, setEditingProduct] = useState(null);
   const [selectedVariantProductId, setSelectedVariantProductId] = useState("");
   const [showCategoryForm, setShowCategoryForm] = useState(false);
+  const [editingCategory, setEditingCategory] = useState(null);
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [parentId, setParentId] = useState("");
@@ -35,23 +36,68 @@ export default function CatalogueWorkspace({ onBack }) {
 
   useEffect(() => { refresh(); }, []);
 
+  function resetCategoryForm() {
+    setName("");
+    setSlug("");
+    setParentId("");
+    setEditingCategory(null);
+    setShowCategoryForm(false);
+  }
+
+  function startEditCategory(item) {
+    setEditingCategory(item);
+    setName(item.name || "");
+    setSlug(item.slug || "");
+    setParentId(item.parent_id ? String(item.parent_id) : "");
+    setShowCategoryForm(true);
+    setError("");
+    setMessage("");
+  }
+
   async function createCategory(event) {
     event.preventDefault();
     setError("");
     setMessage("");
     try {
-      await apiRequest("/catalogue/categories", {
-        method: "POST",
+      const isEditing = Boolean(editingCategory);
+      await apiRequest(isEditing ? "/catalogue/categories/" + editingCategory.id : "/catalogue/categories", {
+        method: isEditing ? "PUT" : "POST",
         body: JSON.stringify({ name, slug, parent_id: parentId ? Number(parentId) : null }),
       });
-      setName("");
-      setSlug("");
-      setParentId("");
-      setShowCategoryForm(false);
-      setMessage(parentId ? "Subcategory created." : "Category created.");
+      const wasSubcategory = Boolean(parentId);
+      resetCategoryForm();
+      setMessage(isEditing ? "Category updated." : wasSubcategory ? "Subcategory created." : "Category created.");
       await refresh();
     } catch (e) {
-      setError(e.message || "Unable to create category");
+      setError(e.message || (editingCategory ? "Unable to update category" : "Unable to create category"));
+    }
+  }
+
+  async function archiveCategory(item) {
+    if (!window.confirm("Archive category '" + item.name + "'? Its records will be preserved.")) return;
+    setError("");
+    setMessage("");
+    try {
+      await apiRequest("/catalogue/categories/" + item.id + "/archive", { method: "POST" });
+      if (editingCategory?.id === item.id) resetCategoryForm();
+      setMessage("Category archived.");
+      await refresh();
+    } catch (e) {
+      setError(e.message || "Unable to archive category");
+    }
+  }
+
+  async function deleteCategory(item) {
+    if (!window.confirm("Permanently delete category '" + item.name + "'? This works only when no products or subcategories depend on it.")) return;
+    setError("");
+    setMessage("");
+    try {
+      await apiRequest("/catalogue/categories/" + item.id, { method: "DELETE" });
+      if (editingCategory?.id === item.id) resetCategoryForm();
+      setMessage("Category deleted.");
+      await refresh();
+    } catch (e) {
+      setError(e.message || "Unable to delete category. Archive it if it is in use.");
     }
   }
 
@@ -95,21 +141,21 @@ export default function CatalogueWorkspace({ onBack }) {
     {activeTab === "categories" && <>
       <div className="sb-catalogue-toolbar">
         <div><h2>All categories</h2><p className="sb-muted">Organise parent categories and subcategories.</p></div>
-        <button className="sb-primary" type="button" onClick={() => setShowCategoryForm(value => !value)}>{showCategoryForm ? "Cancel" : "+ Add category"}</button>
+        <button className="sb-primary" type="button" onClick={() => { if (showCategoryForm) resetCategoryForm(); else { setEditingCategory(null); setName(""); setSlug(""); setParentId(""); setShowCategoryForm(true); } }}>{showCategoryForm && !editingCategory ? "Cancel" : "+ Add category"}</button>
       </div>
       {showCategoryForm && <form className="sb-form" onSubmit={createCategory}>
-        <h2>Create category</h2>
+        <h2>{editingCategory ? "Edit category" : "Create category"}</h2>
         <div className="sb-form-grid">
           <label>Name<input required maxLength="160" value={name} onChange={e => {setName(e.target.value); setSlug(e.target.value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""));}} /></label>
           <label>Slug (automatic)<input required pattern="[a-z0-9]+(-[a-z0-9]+)*" value={slug} readOnly aria-readonly="true" /><small className="sb-muted">Generated from the category name.</small></label>
           <label className="sb-span-all">Parent category (optional)<select value={parentId} onChange={e => setParentId(e.target.value)}><option value="">None — create a main category</option>{parentCategories.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><small className="sb-muted">Choose a parent to create a subcategory.</small></label>
         </div>
-        <button className="sb-primary" type="submit">Create category</button>
+        <div className="sb-category-form-actions"><button className="sb-primary" type="submit">{editingCategory ? "Save changes" : "Create category"}</button><button className="sb-secondary" type="button" onClick={resetCategoryForm}>Cancel</button></div>
       </form>}
       <div className="sb-strip-list" aria-label="Category list">
         {parentCategories.length ? parentCategories.map(item => <div key={item.id}>
-          <article className="sb-strip-row"><div className="sb-strip-icon" aria-hidden="true"><span>▦</span></div><div className="sb-strip-main"><strong>{item.name}</strong><small>/{item.slug} · Parent category</small></div><span className="sb-strip-meta">{childrenOf(item.id).length} subcategories</span></article>
-          {childrenOf(item.id).map(child => <article className="sb-strip-row sb-strip-child" key={child.id}><div className="sb-strip-icon" aria-hidden="true">↳</div><div className="sb-strip-main"><strong>{child.name}</strong><small>/{child.slug} · Subcategory of {item.name}</small></div></article>)}
+          <article className="sb-strip-row sb-category-row"><div className="sb-strip-icon" aria-hidden="true"><span>▦</span></div><div className="sb-strip-main"><strong>{item.name}</strong><small>/{item.slug} · Parent category</small></div><span className="sb-strip-meta">{childrenOf(item.id).length} subcategories</span><div className="sb-category-actions"><button type="button" className="sb-row-action" onClick={() => startEditCategory(item)} aria-label={"Edit " + item.name}>Edit</button><button type="button" className="sb-row-action" onClick={() => archiveCategory(item)} aria-label={"Archive " + item.name}>Archive</button><button type="button" className="sb-row-action sb-row-action-danger" onClick={() => deleteCategory(item)} aria-label={"Delete " + item.name}>Delete</button></div></article>
+          {childrenOf(item.id).map(child => <article className="sb-strip-row sb-strip-child sb-category-row" key={child.id}><div className="sb-strip-icon" aria-hidden="true">↳</div><div className="sb-strip-main"><strong>{child.name}</strong><small>/{child.slug} · Subcategory of {item.name}</small></div><div className="sb-category-actions"><button type="button" className="sb-row-action" onClick={() => startEditCategory(child)} aria-label={"Edit " + child.name}>Edit</button><button type="button" className="sb-row-action" onClick={() => archiveCategory(child)} aria-label={"Archive " + child.name}>Archive</button><button type="button" className="sb-row-action sb-row-action-danger" onClick={() => deleteCategory(child)} aria-label={"Delete " + child.name}>Delete</button></div></article>)}
         </div>) : <p className="sb-empty">No categories found. Select Add category to create one.</p>}
       </div>
     </>}
