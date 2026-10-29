@@ -5,6 +5,14 @@ from app.main import app
 client = TestClient(app)
 
 
+def test_category_management_routes_are_registered_in_openapi():
+    paths = app.openapi()["paths"]
+
+    assert "put" in paths["/api/catalogue/categories/{category_id}"]
+    assert "post" in paths["/api/catalogue/categories/{category_id}/archive"]
+    assert "delete" in paths["/api/catalogue/categories/{category_id}"]
+
+
 def test_catalogue_requires_database_configuration(monkeypatch):
     from app.api import catalogue
 
