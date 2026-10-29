@@ -26,17 +26,3 @@
 .sb-catalogue-tools{margin-top:18px;border:1px solid #e9e2f1;border-radius:14px;background:#fff;padding:14px}
 .sb-catalogue-tools summary{cursor:pointer;font-size:13px;font-weight:700;color:#713bc2}
 @media(max-width:560px){.sb-catalogue-toolbar{align-items:flex-start}.sb-catalogue-toolbar .sb-primary{padding:10px 12px;white-space:nowrap}.sb-strip-row{gap:8px;padding:10px}.sb-strip-icon{width:34px;height:34px;flex-basis:34px}.sb-strip-meta{white-space:normal;text-align:right}.sb-status-pill{font-size:9px}}
-
-.sb-form textarea{width:100%;min-height:96px;padding:10px 11px;border:1px solid #e5ddec;border-radius:10px;background:#fff;color:#29243b;font:inherit;resize:vertical}
-.sb-product-attributes{border:1px solid #e9e2f1;border-radius:14px;padding:16px;margin:16px 0;background:#fcfbfe}
-.sb-product-attributes h3{font:700 14px Manrope,sans-serif;margin:0 0 8px;color:#30263e}
-.sb-attribute-picker{display:grid;gap:8px;padding:12px 0;border-top:1px solid #eee8f4}
-.sb-attribute-picker>strong{font-size:13px;color:#40384e}
-.sb-option-chips{display:flex;gap:8px;flex-wrap:wrap}
-.sb-option-chip{display:flex!important;grid-template-columns:16px auto!important;align-items:center;gap:6px!important;border:1px solid #e5ddec;border-radius:999px;padding:7px 10px;background:#fff;cursor:pointer}
-.sb-option-chip input{width:14px;min-height:14px;margin:0}
-.sb-add-option{display:flex;gap:8px;align-items:center}
-.sb-add-option input{flex:1;min-width:0}
-.sb-row-action{border:1px solid #ded0ed;background:#fff;border-radius:9px;padding:7px 9px;color:#713bc2;font-size:11px;font-weight:700;cursor:pointer}
-.sb-strip-main b{font-size:12px;color:#713bc2}
-@media(max-width:560px){.sb-add-option{align-items:stretch;flex-direction:column}.sb-row-action{padding:7px}}
