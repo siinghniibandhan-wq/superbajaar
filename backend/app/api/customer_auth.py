@@ -1,6 +1,11 @@
 """Customer-facing authentication and referral tracking, separate from staff/admin auth."""
 from datetime import datetime, timedelta, timezone
+import hashlib
+import ipaddress
+import re
 import secrets
+import threading
+import time
 
 import psycopg
 from fastapi import APIRouter, HTTPException, Request
@@ -12,6 +17,57 @@ from app.core.config import settings
 
 router = APIRouter(prefix="/customer-auth", tags=["customer authentication"])
 TOKEN_TTL_HOURS = 24 * 30
+RATE_LIMIT_ATTEMPTS = 5
+RATE_LIMIT_WINDOW_SECONDS = 10 * 60
+_RATE_LIMIT_BUCKETS: dict[str, list[float]] = {}
+_RATE_LIMIT_LOCK = threading.Lock()
+_GENERIC_DUPLICATE_DETAIL = "Unable to create an account with these details."
+
+
+def _client_ip(request: Request) -> str:
+    """Use X-Real-IP only for requests received directly from local Nginx."""
+    peer = request.client.host if request.client else "unknown"
+    if peer not in {"127.0.0.1", "::1"}:
+        return peer
+    forwarded = request.headers.get("x-real-ip", "").strip()
+    try:
+        return str(ipaddress.ip_address(forwarded))
+    except ValueError:
+        return peer
+
+
+def _enforce_rate_limit(request: Request, action: str, identifiers: list[str]) -> None:
+    """Apply per-process limits to the client IP and normalized account identifiers."""
+    now = time.monotonic()
+    cutoff = now - RATE_LIMIT_WINDOW_SECONDS
+    ip_key = f"{action}:ip:{_client_ip(request)}"
+    identifier_keys = [
+        f"{action}:id:{hashlib.sha256(value.strip().lower().encode('utf-8')).hexdigest()}"
+        for value in identifiers if value and value.strip()
+    ]
+    keys = [ip_key, *identifier_keys]
+    with _RATE_LIMIT_LOCK:
+        # Prune expired entries and bound memory use during sustained abuse.
+        for key in list(_RATE_LIMIT_BUCKETS):
+            recent = [stamp for stamp in _RATE_LIMIT_BUCKETS[key] if stamp > cutoff]
+            if recent:
+                _RATE_LIMIT_BUCKETS[key] = recent
+            else:
+                del _RATE_LIMIT_BUCKETS[key]
+        retry_after = max(
+            (int(max(1, bucket[0] + RATE_LIMIT_WINDOW_SECONDS - now))
+             for key in keys
+             if len(bucket := _RATE_LIMIT_BUCKETS.get(key, [])) >= RATE_LIMIT_ATTEMPTS),
+            default=0,
+        )
+        if retry_after:
+            raise HTTPException(
+                status_code=429,
+                detail="Too many attempts. Please try again in a few minutes.",
+                headers={"Retry-After": str(retry_after)},
+            )
+        for key in keys:
+            _RATE_LIMIT_BUCKETS.setdefault(key, []).append(now)
 
 
 def _connect():
@@ -55,6 +111,8 @@ class CustomerRegister(BaseModel):
     @classmethod
     def clean_phone(cls, value):
         value = " ".join(value.split())
+        if not re.fullmatch(r"\+?[0-9\s().-]+", value):
+            raise ValueError("Enter a valid mobile number")
         digits = "".join(ch for ch in value if ch.isdigit())
         if len(digits) < 7 or len(digits) > 15:
             raise ValueError("Enter a valid mobile number")
@@ -109,7 +167,8 @@ def _public_customer(row):
 
 
 @router.post("/register", status_code=201)
-def register(payload: CustomerRegister):
+def register(payload: CustomerRegister, request: Request):
+    _enforce_rate_limit(request, "register", [str(payload.email), payload.phone])
     if len(settings.jwt_secret_key) < 32:
         raise HTTPException(status_code=503, detail="Customer authentication is not configured")
     email = str(payload.email).strip().lower()
@@ -132,7 +191,7 @@ def register(payload: CustomerRegister):
                     (email, phone_digits),
                 ).fetchone()
                 if existing:
-                    raise HTTPException(status_code=409, detail="An account with this email or mobile number already exists. Please sign in or use your own contact details.")
+                    raise HTTPException(status_code=409, detail=_GENERIC_DUPLICATE_DETAIL)
                 # Reject returning buyers by checking legacy customer/order/loyalty records
                 # only where the expected contact columns exist in this deployment.
                 legacy_columns = conn.execute(
@@ -156,8 +215,7 @@ def register(payload: CustomerRegister):
                         (value,),
                     ).fetchone()
                     if found:
-                        label = "email address" if col in ("email", "customer_email") else "mobile number"
-                        raise HTTPException(status_code=409, detail=f"This {label} is already associated with an existing Super Bajaar customer record.")
+                        raise HTTPException(status_code=409, detail=_GENERIC_DUPLICATE_DETAIL)
                 referrer = None
                 referral_code = payload.referral_code
                 if referral_code:
@@ -199,13 +257,14 @@ def register(payload: CustomerRegister):
     except HTTPException:
         raise
     except psycopg.errors.UniqueViolation as exc:
-        raise HTTPException(status_code=409, detail="An account with this email or referral code already exists") from exc
+        raise HTTPException(status_code=409, detail=_GENERIC_DUPLICATE_DETAIL) from exc
     except psycopg.Error as exc:
         raise HTTPException(status_code=503, detail="Could not create customer account; verify customer-account migrations") from exc
 
 
 @router.post("/login")
-def login(payload: CustomerLogin):
+def login(payload: CustomerLogin, request: Request):
+    _enforce_rate_limit(request, "login", [str(payload.email)])
     if len(settings.jwt_secret_key) < 32:
         raise HTTPException(status_code=503, detail="Customer authentication is not configured")
     email = str(payload.email).strip().lower()
