@@ -21,9 +21,10 @@ function skuPreview(product, categories, attributes, version) {
   const normalized = Object.fromEntries(Object.entries(attributes || {}).map(([key, value]) => [key.toLowerCase(), value]));
   const department = String(normalized.gender || normalized.department || normalized.audience || category?.name || "").toLowerCase();
   const deptCode = ["m", "men", "mens", "male", "man"].includes(department) ? "M" : ["w", "women", "womens", "female", "woman"].includes(department) ? "W" : ["k", "kids", "kid", "children", "child"].includes(department) ? "K" : "U";
-  const initials = String(product.name || "").toUpperCase().replace(/-/g, " ").split(/\\s+/).filter(Boolean).slice(0, 4).map(word => word[0]).join("") || "PROD";
+  const productName = String(product.name || "").toUpperCase();
+  const productCode = productName.includes("T-SHIRT") || productName.includes("TSHIRT") || productName.includes("TEE") ? "TSH" : productName.includes("RICE") ? "RIC" : productName.includes("JEAN") || productName.includes("DENIM") ? "JNS" : productName.includes("SNEAKER") || productName.includes("SHOE") || productName.includes("FOOTWEAR") ? "SH" : productName.includes("DRESS") ? "DRS" : productName.includes("PHONE") ? "PHN" : productName.includes("LAPTOP") || productName.includes("NOTEBOOK") ? "LTP" : productName.includes("DETERGENT") ? "DTR" : productName.includes("MILK") ? "MLK" : productName.replace(/-/g, " ").split(/\\s+/).filter(Boolean).slice(0, 4).map(word => word[0]).join("") || "PROD";
   const values = Object.keys(attributes || {}).sort().flatMap(key => Array.isArray(attributes[key]) ? attributes[key] : [attributes[key]]).filter(value => ["string", "number"].includes(typeof value) && String(value).trim()).slice(0, 4).map(value => skuToken(value));
-  return ["SB", categoryCode(parentCategory?.name || category?.name), deptCode, skuToken(product.brand), skuToken(initials, 6), String(product.id).padStart(5, "0"), ...values, "V" + String(version).padStart(2, "0")].join("-");
+  return ["SB", categoryCode(parentCategory?.name || category?.name), deptCode, skuToken(product.brand), skuToken(productCode, 6), String(product.id).padStart(5, "0"), ...values, "V" + String(version).padStart(2, "0")].join("-");
 }
 
 export default function CatalogueVariantsPanel({ products, categories = [] }) {
