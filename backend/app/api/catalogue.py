@@ -33,6 +33,7 @@ class ProductCreate(BaseModel):
     brand: str | None = Field(default=None, max_length=160)
     tax_code: str | None = Field(default=None, max_length=32)
     tax_rate: float | None = Field(default=None, ge=0, le=100)
+    status: str = Field(default="active", pattern=r"^(draft|active)$")
 
     @field_validator("name")
     @classmethod
@@ -94,7 +95,7 @@ class AttributeValueCreate(BaseModel):
 
 
 class VariantCreate(BaseModel):
-    sku: str = Field(min_length=1, max_length=100)
+    sku: str | None = Field(default=None, max_length=100)
     barcode: str | None = Field(default=None, max_length=100)
     attributes: dict[str, Any] = Field(default_factory=dict)
     selling_price: float = Field(ge=0)
@@ -103,9 +104,9 @@ class VariantCreate(BaseModel):
 
     @field_validator("sku")
     @classmethod
-    def sku_not_blank(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("SKU cannot be blank")
+    def normalize_optional_sku(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
         return value.strip()
 
     @field_validator("mrp")
@@ -143,6 +144,63 @@ def _require_product(conn, product_id: int) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="Product not found")
     return row
 
+
+def _sku_token(value: Any, limit: int = 8) -> str:
+    import re
+    token = re.sub(r"[^A-Z0-9]+", "-", str(value or "").upper()).strip("-")
+    return token[:limit].strip("-") or "GEN"
+
+def _category_sku_code(category_name: str | None) -> str:
+    import re
+    slug = re.sub(r"[^a-z0-9]+", "-", (category_name or "").lower()).strip("-")
+    mappings = {"fashion": "FS", "clothing": "FS", "apparel": "FS", "footwear": "FS", "grocery": "GR", "groceries": "GR", "electronics": "EL", "personal-care": "PC", "beauty": "PC", "pet-care": "PT", "fresh-products": "FR", "fresh": "FR", "home-kitchen": "HK"}
+    if slug in mappings:
+        return mappings[slug]
+    return "".join(part[0] for part in slug.split("-") if part)[:3].upper() or "OT"
+
+def _generate_variant_sku(conn, product_id: int, attributes: dict[str, Any]) -> str:
+    product = conn.execute("SELECT p.id, p.name, p.brand, COALESCE(parent.name, c.name) AS category_name, c.name AS subcategory_name FROM products p LEFT JOIN categories c ON c.id = p.category_id LEFT JOIN categories parent ON parent.id = c.parent_id WHERE p.id = %s", (product_id,)).fetchone()
+    if product is None:
+        raise HTTPException(status_code=404, detail="Product not found")
+    category_code = _category_sku_code(product["category_name"])
+    normalized = {str(key).lower(): value for key, value in attributes.items()}
+    department = str(next((normalized[key] for key in ("gender", "department", "audience") if key in normalized), product["subcategory_name"] or "")).strip().lower()
+    department_code = "M" if department in {"m", "men", "mens", "male", "man"} else "W" if department in {"w", "women", "womens", "female", "woman"} else "K" if department in {"k", "kids", "kid", "children", "child"} else "U"
+    brand_code = _sku_token(product["brand"], 8)
+    product_name = str(product["name"]).upper()
+    product_type_codes = [
+        (("T-SHIRT", "TSHIRT", "TEE"), "TSH"),
+        (("RICE",), "RIC"),
+        (("JEAN", "DENIM"), "JNS"),
+        (("SNEAKER", "SHOE", "FOOTWEAR"), "SH"),
+        (("DRESS",), "DRS"),
+        (("PHONE", "SMARTPHONE"), "PHN"),
+        (("LAPTOP", "NOTEBOOK"), "LTP"),
+        (("DETERGENT",), "DTR"),
+        (("MILK",), "MLK"),
+    ]
+    product_code = next((code for terms, code in product_type_codes if any(term in product_name for term in terms)), "")
+    if not product_code:
+        words = [word for word in product_name.replace("-", " ").split() if word]
+        product_code = _sku_token("".join(word[0] for word in words[:4]) or "PROD", 6)
+    variant_tokens = []
+    for key in sorted(attributes):
+        value = attributes[key]
+        if isinstance(value, (str, int, float)) and str(value).strip():
+            variant_tokens.append(_sku_token(value, 8))
+        elif isinstance(value, list):
+            variant_tokens.extend(_sku_token(item, 8) for item in value if str(item).strip())
+    base = f"SB-{category_code}-{department_code}-{brand_code}-{product_code}-{int(product_id):05d}"
+    if variant_tokens:
+        base += "-" + "-".join(variant_tokens[:4])
+    existing = conn.execute("SELECT sku FROM product_variants WHERE product_id = %s ORDER BY id", (product_id,)).fetchall()
+    version = len(existing) + 1
+    while True:
+        candidate = f"{base}-V{version:02d}"
+        collision = conn.execute("SELECT 1 FROM product_variants WHERE sku = %s LIMIT 1", (candidate,)).fetchone()
+        if collision is None:
+            return candidate
+        version += 1
 
 def _validate_attribute_value(conn, attribute: dict[str, Any], value: Any) -> None:
     kind = attribute["value_type"]
@@ -221,10 +279,10 @@ def create_product(payload: ProductCreate):
     try:
         with _connection() as conn:
             row = conn.execute(
-                "INSERT INTO products (category_id, name, slug, description, brand, tax_code, tax_rate) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s) "
+                "INSERT INTO products (category_id, name, slug, description, brand, tax_code, tax_rate, status) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
                 "RETURNING id, category_id, name, slug, description, brand, status, tax_code, tax_rate, created_at, updated_at",
-                (payload.category_id, payload.name, payload.slug, payload.description, payload.brand, payload.tax_code, payload.tax_rate),
+                (payload.category_id, payload.name, payload.slug, payload.description, payload.brand, payload.tax_code, payload.tax_rate, payload.status),
             ).fetchone()
         return row
     except psycopg.Error as exc:
@@ -322,11 +380,12 @@ def create_variant(product_id: int, payload: VariantCreate):
                     raise HTTPException(status_code=422, detail=f"Required variant attribute '{code}' is missing")
             for code, value in payload.attributes.items():
                 _validate_attribute_value(conn, by_code[code], value)
+            sku = payload.sku.strip() if payload.sku else _generate_variant_sku(conn, product_id, payload.attributes)
             row = conn.execute(
                 "INSERT INTO product_variants (product_id, sku, barcode, attributes, selling_price, mrp, cost_price) "
                 "VALUES (%s, %s, %s, %s::jsonb, %s, %s, %s) "
                 "RETURNING id, product_id, sku, barcode, attributes, selling_price, mrp, cost_price, is_active, created_at, updated_at",
-                (product_id, payload.sku, payload.barcode, __import__("json").dumps(payload.attributes), payload.selling_price, payload.mrp, payload.cost_price),
+                (product_id, sku, payload.barcode, __import__("json").dumps(payload.attributes), payload.selling_price, payload.mrp, payload.cost_price),
             ).fetchone()
         return row
     except HTTPException:

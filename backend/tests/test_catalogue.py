@@ -69,3 +69,47 @@ def test_variant_price_update_rejects_negative_cost_price():
         "selling_price": 50, "mrp": 50, "cost_price": -1,
     })
     assert response.status_code == 422
+
+
+def test_product_status_defaults_to_active():
+    from app.api.catalogue import ProductCreate
+
+    payload = ProductCreate(name="Juice", slug="juice")
+    assert payload.status == "active"
+
+
+def test_product_rejects_unsupported_status_before_database_access():
+    response = client.post("/api/catalogue/products", json={
+        "name": "Juice", "slug": "juice", "status": "published",
+    })
+    assert response.status_code == 422
+
+
+def test_category_accepts_parent_id_for_subcategory():
+    from app.api.catalogue import CategoryCreate
+
+    payload = CategoryCreate(name="Tea", slug="tea", parent_id=10)
+    assert payload.parent_id == 10
+
+
+
+def test_variant_sku_is_optional_for_server_generation():
+    from app.api.catalogue import VariantCreate
+
+    payload = VariantCreate(selling_price=199, attributes={"colour": "Black", "size": "L"})
+    assert payload.sku is None
+
+
+def test_blank_variant_sku_uses_server_generation():
+    from app.api.catalogue import VariantCreate
+
+    payload = VariantCreate(sku="   ", selling_price=199)
+    assert payload.sku is None
+
+
+def test_category_sku_codes_match_superbajaar_categories():
+    from app.api.catalogue import _category_sku_code
+
+    assert _category_sku_code("Fashion") == "FS"
+    assert _category_sku_code("Grocery") == "GR"
+    assert _category_sku_code("Personal Care") == "PC"
