@@ -2,9 +2,10 @@
 from typing import Any
 
 import psycopg
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from psycopg.rows import dict_row
 from pydantic import BaseModel, Field, field_validator
+from uuid import uuid4
 
 from app.core.config import settings
 
@@ -90,6 +91,7 @@ class ProductImageCreate(BaseModel):
     alt_text: str | None = Field(default=None, max_length=300)
     variant_id: int | None = Field(default=None, gt=0)
     sort_order: int = Field(default=0, ge=0, le=10000)
+    is_primary: bool = False
 
     @field_validator("image_url")
     @classmethod
@@ -332,6 +334,7 @@ def list_products(
             "(SELECT MIN(v.selling_price) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS min_selling_price, "
             "(SELECT MAX(v.selling_price) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS max_selling_price, "
             "(SELECT MIN(v.mrp) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS min_mrp, "
+            "(SELECT pi.image_url FROM product_images pi WHERE pi.product_id=p.id AND pi.variant_id IS NULL ORDER BY pi.is_primary DESC, pi.sort_order, pi.id LIMIT 1) AS image_url, "
             f"{stock_projection} "
             f"FROM products p {where} ORDER BY p.name LIMIT %s OFFSET %s", tuple(params)
         ).fetchall()
@@ -556,6 +559,41 @@ def create_variant(product_id: int, payload: VariantCreate):
                 raise HTTPException(status_code=422, detail=f"Unknown or non-variant attributes: {', '.join(unknown)}")
             for code, value in payload.attributes.items():
                 _validate_attribute_value(conn, by_code[code], value)
+            duplicate = conn.execute(
+                "SELECT id FROM product_variants WHERE product_id=%s AND is_active=TRUE AND attributes=%s::jsonb LIMIT 1",
+                (product_id, __import__("json").dumps(payload.attributes)),
+            ).fetchone()
+            if duplicate is not None:
+                raise HTTPException(status_code=409, detail="This product already has an active variant with the selected attribute combination")
+            if not payload.attributes:
+                has_configured_variants = conn.execute(
+                    "SELECT 1 FROM product_variants WHERE product_id=%s AND is_active=TRUE AND attributes <> '{}'::jsonb LIMIT 1",
+                    (product_id,),
+                ).fetchone()
+                if has_configured_variants:
+                    raise HTTPException(status_code=409, detail="A product with selectable variants cannot have an additional empty default variant")
+            empty_defaults = []
+            if payload.attributes:
+                empty_defaults = conn.execute(
+                    "SELECT id FROM product_variants WHERE product_id=%s AND is_active=TRUE AND attributes='{}'::jsonb FOR UPDATE",
+                    (product_id,),
+                ).fetchall()
+                for default in empty_defaults:
+                    has_live_stock = conn.execute(
+                        "SELECT 1 FROM inventory_balances WHERE variant_id=%s AND (on_hand > 0 OR reserved > 0) LIMIT 1",
+                        (default["id"],),
+                    ).fetchone()
+                    has_open_purchase = conn.execute(
+                        "SELECT 1 FROM purchase_order_lines pol JOIN purchase_orders po ON po.id=pol.purchase_order_id "
+                        "WHERE pol.variant_id=%s AND pol.quantity_received < pol.quantity_ordered "
+                        "AND po.status IN ('draft','ordered','partially_received') LIMIT 1",
+                        (default["id"],),
+                    ).fetchone()
+                    if has_live_stock or has_open_purchase:
+                        raise HTTPException(
+                            status_code=409,
+                            detail="This product has an empty default variant with stock or open purchasing. Transfer its stock and close or reassign open purchase lines before adding selectable variants.",
+                        )
             sku = payload.sku.strip() if payload.sku else _generate_variant_sku(conn, product_id, payload.attributes)
             row = conn.execute(
                 "INSERT INTO product_variants (product_id, sku, barcode, attributes, selling_price, mrp, cost_price) "
@@ -563,6 +601,12 @@ def create_variant(product_id: int, payload: VariantCreate):
                 "RETURNING id, product_id, sku, barcode, attributes, selling_price, mrp, cost_price, is_active, created_at, updated_at",
                 (product_id, sku, payload.barcode, __import__("json").dumps(payload.attributes), payload.selling_price, payload.mrp, payload.cost_price),
             ).fetchone()
+            if payload.attributes and empty_defaults:
+                conn.execute(
+                    "UPDATE product_variants SET is_active=FALSE, updated_at=now() "
+                    "WHERE id = ANY(%s) AND is_active=TRUE",
+                    ([item["id"] for item in empty_defaults],),
+                )
         return row
     except HTTPException:
         raise
@@ -594,11 +638,24 @@ def update_variant(variant_id: int, payload: VariantUpdate):
                 raise HTTPException(status_code=422, detail=f"Unknown or non-variant attributes: {', '.join(unknown)}")
             for code, value in payload.attributes.items():
                 _validate_attribute_value(conn, by_code[code], value)
+            duplicate = conn.execute(
+                "SELECT id FROM product_variants WHERE product_id=%s AND id<>%s AND is_active=TRUE AND attributes=%s::jsonb LIMIT 1",
+                (current["product_id"], variant_id, __import__("json").dumps(payload.attributes)),
+            ).fetchone()
+            if duplicate is not None:
+                raise HTTPException(status_code=409, detail="This product already has an active variant with the selected attribute combination")
+            if not payload.attributes:
+                has_configured_variants = conn.execute(
+                    "SELECT 1 FROM product_variants WHERE product_id=%s AND id<>%s AND is_active=TRUE AND attributes <> '{}'::jsonb LIMIT 1",
+                    (current["product_id"], variant_id),
+                ).fetchone()
+                if has_configured_variants:
+                    raise HTTPException(status_code=409, detail="A product with selectable variants cannot have an additional empty default variant")
             row = conn.execute(
-                "UPDATE product_variants SET barcode=%s, attributes=%s::jsonb, selling_price=%s, mrp=%s, "
+                "UPDATE product_variants SET sku=COALESCE(%s, sku), barcode=%s, attributes=%s::jsonb, selling_price=%s, mrp=%s, "
                 "cost_price=%s, updated_at=now() WHERE id=%s "
                 "RETURNING id, product_id, sku, barcode, attributes, selling_price, mrp, cost_price, is_active, updated_at",
-                (payload.barcode, __import__("json").dumps(payload.attributes), payload.selling_price,
+                (payload.sku, payload.barcode, __import__("json").dumps(payload.attributes), payload.selling_price,
                  payload.mrp, payload.cost_price, variant_id),
             ).fetchone()
         return row
@@ -633,8 +690,8 @@ def list_product_images(product_id: int):
         with _connection() as conn:
             _require_product(conn, product_id)
             rows = conn.execute(
-                "SELECT id, product_id, variant_id, image_url, alt_text, sort_order, created_at "
-                "FROM product_images WHERE product_id = %s ORDER BY sort_order, id",
+                "SELECT id, product_id, variant_id, image_url, alt_text, sort_order, is_primary, created_at "
+                "FROM product_images WHERE product_id = %s ORDER BY variant_id NULLS FIRST, is_primary DESC, sort_order, id",
                 (product_id,),
             ).fetchall()
         return {"items": rows}
@@ -656,17 +713,129 @@ def create_product_image(product_id: int, payload: ProductImageCreate):
                 ).fetchone()
                 if variant is None:
                     raise HTTPException(status_code=422, detail="Image variant must belong to the selected product")
+            if payload.is_primary:
+                conn.execute(
+                    "UPDATE product_images SET is_primary=FALSE "
+                    "WHERE product_id=%s AND variant_id IS NOT DISTINCT FROM %s AND is_primary=TRUE",
+                    (product_id, payload.variant_id),
+                )
             row = conn.execute(
-                "INSERT INTO product_images (product_id, variant_id, image_url, alt_text, sort_order) "
-                "VALUES (%s, %s, %s, %s, %s) "
-                "RETURNING id, product_id, variant_id, image_url, alt_text, sort_order, created_at",
-                (product_id, payload.variant_id, payload.image_url, payload.alt_text, payload.sort_order),
+                "INSERT INTO product_images (product_id, variant_id, image_url, alt_text, sort_order, is_primary) "
+                "VALUES (%s, %s, %s, %s, %s, %s) "
+                "RETURNING id, product_id, variant_id, image_url, alt_text, sort_order, is_primary, created_at",
+                (product_id, payload.variant_id, payload.image_url, payload.alt_text, payload.sort_order, payload.is_primary),
             ).fetchone()
         return row
     except HTTPException:
         raise
     except psycopg.Error as exc:
         raise _db_error(exc) from exc
+
+
+
+@router.put("/products/{product_id}/images/{image_id}/primary")
+def set_product_image_primary(product_id: int, image_id: int):
+    try:
+        with _connection() as conn:
+            _require_product(conn, product_id)
+            image = conn.execute(
+                "SELECT id, variant_id FROM product_images WHERE id=%s AND product_id=%s",
+                (image_id, product_id),
+            ).fetchone()
+            if image is None:
+                raise HTTPException(status_code=404, detail="Product image not found")
+            conn.execute(
+                "UPDATE product_images SET is_primary=FALSE "
+                "WHERE product_id=%s AND variant_id IS NOT DISTINCT FROM %s AND is_primary=TRUE",
+                (product_id, image["variant_id"]),
+            )
+            row = conn.execute(
+                "UPDATE product_images SET is_primary=TRUE WHERE id=%s "
+                "RETURNING id, product_id, variant_id, image_url, alt_text, sort_order, is_primary, created_at",
+                (image_id,),
+            ).fetchone()
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.post("/products/{product_id}/images/upload", status_code=201)
+async def upload_product_image(
+    product_id: int,
+    file: UploadFile = File(...),
+    variant_id: int | None = Form(default=None),
+    alt_text: str | None = Form(default=None, max_length=300),
+    sort_order: int = Form(default=0, ge=0, le=10000),
+    is_primary: bool = Form(default=False),
+):
+    """Upload an image to configured object storage and register its gallery record."""
+    allowed_types = {
+        "image/jpeg": "jpg",
+        "image/png": "png",
+        "image/webp": "webp",
+        "image/gif": "gif",
+    }
+    content_type = (file.content_type or "").lower()
+    if content_type not in allowed_types:
+        raise HTTPException(status_code=415, detail="Upload a JPEG, PNG, WebP or GIF image")
+    if not settings.media_bucket or not settings.media_public_base_url:
+        raise HTTPException(status_code=503, detail="Product image storage is not configured")
+    data = await file.read(10 * 1024 * 1024 + 1)
+    if not data:
+        raise HTTPException(status_code=422, detail="Image file is empty")
+    if len(data) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Image files must be 10 MB or smaller")
+    signatures = {
+        "image/jpeg": data.startswith(b"\xff\xd8\xff"),
+        "image/png": data.startswith(b"\x89PNG\r\n\x1a\n"),
+        "image/webp": len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP",
+        "image/gif": data.startswith((b"GIF87a", b"GIF89a")),
+    }
+    if not signatures[content_type]:
+        raise HTTPException(status_code=415, detail="The uploaded file content does not match its image type")
+    try:
+        with _connection() as conn:
+            _require_product(conn, product_id)
+            if variant_id is not None:
+                variant = conn.execute(
+                    "SELECT id FROM product_variants WHERE id=%s AND product_id=%s",
+                    (variant_id, product_id),
+                ).fetchone()
+                if variant is None:
+                    raise HTTPException(status_code=422, detail="Image variant must belong to the selected product")
+        import boto3
+        key = f"products/{product_id}/{uuid4().hex}.{allowed_types[content_type]}"
+        client = boto3.client("s3", region_name=settings.aws_region)
+        client.put_object(
+            Bucket=settings.media_bucket,
+            Key=key,
+            Body=data,
+            ContentType=content_type,
+            CacheControl="public, max-age=31536000, immutable",
+        )
+        image_url = settings.media_public_base_url.rstrip("/") + "/" + key
+        with _connection() as conn:
+            if is_primary:
+                conn.execute(
+                    "UPDATE product_images SET is_primary=FALSE "
+                    "WHERE product_id=%s AND variant_id IS NOT DISTINCT FROM %s AND is_primary=TRUE",
+                    (product_id, variant_id),
+                )
+            row = conn.execute(
+                "INSERT INTO product_images (product_id,variant_id,image_url,alt_text,sort_order,is_primary) "
+                "VALUES (%s,%s,%s,%s,%s,%s) "
+                "RETURNING id,product_id,variant_id,image_url,alt_text,sort_order,is_primary,created_at",
+                (product_id, variant_id, image_url, alt_text or (file.filename or "")[:300] or None, sort_order, is_primary),
+            ).fetchone()
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Product image upload failed") from exc
 
 
 class VariantPriceUpdate(BaseModel):
@@ -689,7 +858,9 @@ def list_all_variants(limit: int = Query(default=200, ge=1, le=500), offset: int
         with _connection() as conn:
             rows = conn.execute(
                 "SELECT v.id, v.product_id, p.name AS product_name, v.sku, v.barcode, v.attributes, "
-                "v.selling_price, v.mrp, v.cost_price, v.is_active "
+                "v.selling_price, v.mrp, v.cost_price, v.is_active, "
+                "(SELECT pi.image_url FROM product_images pi WHERE pi.product_id=p.id AND (pi.variant_id=v.id OR pi.variant_id IS NULL) "
+                "ORDER BY (pi.variant_id=v.id) DESC, pi.is_primary DESC, pi.sort_order, pi.id LIMIT 1) AS image_url "
                 "FROM product_variants v JOIN products p ON p.id = v.product_id "
                 "WHERE v.is_active = TRUE AND p.status = 'active' ORDER BY p.name, v.sku LIMIT %s OFFSET %s",
                 (limit, offset),

@@ -14,6 +14,7 @@ export default function POSWorkspace({ onBack }) {
   const [notice, setNotice] = useState("");
   const [receipt, setReceipt] = useState(null);
   const [search, setSearch] = useState("");
+  const [selectedVariantByProduct, setSelectedVariantByProduct] = useState({});
 
   async function load() {
     setLoading(true); setError("");
@@ -29,6 +30,24 @@ export default function POSWorkspace({ onBack }) {
     const term = search.trim().toLowerCase();
     return variants.filter(v => v.is_active !== false && (!term || [v.sku, v.product_name, v.name, v.brand].some(x => String(x || "").toLowerCase().includes(term))));
   }, [variants]);
+  const groupedVisible = useMemo(() => {
+    const groups = new Map();
+    for (const variant of visible) {
+      const key = String(variant.product_id);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(variant);
+    }
+    return [...groups.values()].map(items => ({
+      productId: items[0].product_id,
+      productName: items[0].product_name || items[0].name || ("Product " + items[0].product_id),
+      variants: items,
+      selected: items.find(v => String(v.id) === String(selectedVariantByProduct[String(items[0].product_id)])) || items[0],
+    }));
+  }, [visible, selectedVariantByProduct]);
+  const variantLabel = v => {
+    const attrs = Object.entries(v.attributes || {}).map(([key, value]) => (Array.isArray(value) ? value.join(", ") : String(value)));
+    return attrs.length ? attrs.join(" / ") + (v.sku ? " · " + v.sku : "") : (v.sku || "Default");
+  };
   const total = cart.reduce((sum, line) => sum + Number(line.selling_price || 0) * line.quantity, 0);
 
   function add(variant) {
@@ -84,8 +103,8 @@ export default function POSWorkspace({ onBack }) {
       <div className="sb-data-card">
         <div className="sb-data-heading"><h2>Catalogue</h2><button type="button" onClick={load} disabled={loading}>{loading ? "Loading…" : "Refresh"}</button></div>
         <label>Search product or SKU<input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search catalogue…" /></label>
-        {loading ? <p className="sb-empty">Loading variants…</p> : <div className="sb-pos-products">{visible.map(v => <button type="button" className="sb-pos-product" key={v.id} onClick={() => add(v)}><strong>{v.product_name || v.name || ("Variant " + v.id)}</strong><small>{v.sku || "No SKU"}</small><span>{money(v.selling_price)}</span></button>)}</div>}
-        {!loading && !visible.length && <p className="sb-empty">No matching active variants. Create a product variant in Catalogue first.</p>}
+        {loading ? <p className="sb-empty">Loading variants…</p> : <div className="sb-pos-products">{groupedVisible.map(group => <article className="sb-pos-product" key={group.productId}><strong>{group.productName}</strong>{group.variants.length > 1 ? <label>Variant<select aria-label={"Variant for " + group.productName} value={String(group.selected.id)} onChange={e => setSelectedVariantByProduct(old => ({ ...old, [String(group.productId)]: e.target.value }))}>{group.variants.map(v => <option key={v.id} value={v.id}>{variantLabel(v)}</option>)}</select></label> : <small>{variantLabel(group.selected)}</small>}<span>{money(group.selected.selling_price)}</span><button type="button" className="sb-primary" onClick={() => add(group.selected)}>Add to sale</button></article>)}</div>}
+        {!loading && !visible.length && <p className="sb-empty">No matching active products. Create a product in Catalogue first.</p>}
       </div>
       <div className="sb-data-card">
         <h2>Current sale ({cart.reduce((sum, line) => sum + line.quantity, 0)} items)</h2>
