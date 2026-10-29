@@ -31,8 +31,8 @@ export default function ProductCreateForm({ categories, onSaved }) {
     {error && <p role="alert" className="sb-alert">{error}</p>}
     {success && <p role="status" className="sb-success">{success}</p>}
     <div className="sb-form-grid">
-      <label>Product name<input required maxLength="240" value={form.name} onChange={e => {const name=e.target.value;setForm(old=>({...old,name,slug:old.slug || slugify(name)}));}} /></label>
-      <label>Slug<input required pattern="[a-z0-9]+(-[a-z0-9]+)*" value={form.slug} onChange={e=>change("slug",e.target.value)} /></label>
+      <label>Product name<input required maxLength="240" value={form.name} onChange={e => {const name=e.target.value;setForm(old=>({...old,name,slug:slugify(name)}));}} /></label>
+      <label>Slug (automatic)<input required pattern="[a-z0-9]+(-[a-z0-9]+)*" value={form.slug} readOnly aria-readonly="true" /><small className="sb-muted">Generated from the product name.</small></label>
       <label>Brand<input maxLength="160" value={form.brand} onChange={e=>change("brand",e.target.value)} /></label>
       <label>Category<select value={form.category_id} onChange={e=>change("category_id",e.target.value)}><option value="">No category</option>{categories.map(c=><option key={c.id} value={c.id}>{c.parent_id ? "↳ " : ""}{c.name}</option>)}</select></label>
       <label>Tax code<input maxLength="32" value={form.tax_code} onChange={e=>change("tax_code",e.target.value)} /></label>
