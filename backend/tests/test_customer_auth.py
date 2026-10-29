@@ -173,3 +173,90 @@ def test_phone_formats_normalize_to_same_indian_number():
         for number in numbers
     ]
     assert normalized == ["+919876543210"] * 3
+
+
+
+class _FakeCursor:
+    def __init__(self, row=None, rows=None):
+        self._row = row
+        self._rows = rows or []
+
+    def fetchone(self):
+        return self._row
+
+    def fetchall(self):
+        return self._rows
+
+
+class _FakeConnection:
+    def __init__(self, *, existing=False, fail_customer_insert=False):
+        self.existing = existing
+        self.fail_customer_insert = fail_customer_insert
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def transaction(self):
+        return self
+
+    def execute(self, query, params=None):
+        from psycopg.errors import UniqueViolation
+
+        query_text = str(query)
+        if "SELECT id FROM customer_accounts WHERE lower(email)" in query_text:
+            return _FakeCursor(row={"id": 123} if self.existing else None)
+        if "information_schema.columns" in query_text:
+            return _FakeCursor(rows=[])
+        if "SELECT 1 FROM customer_accounts WHERE referral_code" in query_text:
+            return _FakeCursor(row=None)
+        if "INSERT INTO customer_accounts" in query_text and self.fail_customer_insert:
+            raise UniqueViolation("simulated unique constraint race")
+        return _FakeCursor(row=None, rows=[])
+
+
+def test_duplicate_customer_phone_returns_generic_409(monkeypatch):
+    from fastapi import HTTPException
+    from app.api import customer_auth
+
+    monkeypatch.setattr(customer_auth, "_RATE_LIMIT_BUCKETS", {})
+    monkeypatch.setattr(customer_auth.settings, "jwt_secret_key", "x" * 40)
+    monkeypatch.setattr(customer_auth, "_connect", lambda: _FakeConnection(existing=True))
+    payload = customer_auth.CustomerRegister(
+        full_name="Test Customer",
+        email="different@example.com",
+        phone="+91 98765 43210",
+        password="strong-enough-password",
+    )
+    try:
+        customer_auth.register(payload, _request_with_peer("198.51.100.80"))
+        assert False, "duplicate contact should return HTTP 409"
+    except HTTPException as exc:
+        assert exc.status_code == 409
+        assert exc.detail == customer_auth._GENERIC_DUPLICATE_DETAIL
+
+
+def test_registration_unique_constraint_race_returns_generic_409(monkeypatch):
+    from fastapi import HTTPException
+    from app.api import customer_auth
+
+    monkeypatch.setattr(customer_auth, "_RATE_LIMIT_BUCKETS", {})
+    monkeypatch.setattr(customer_auth.settings, "jwt_secret_key", "x" * 40)
+    monkeypatch.setattr(
+        customer_auth, "_connect",
+        lambda: _FakeConnection(fail_customer_insert=True),
+    )
+    payload = customer_auth.CustomerRegister(
+        full_name="Test Customer",
+        email="race@example.com",
+        phone="9876543210",
+        password="strong-enough-password",
+    )
+    try:
+        customer_auth.register(payload, _request_with_peer("198.51.100.81"))
+        assert False, "unique-constraint race should return HTTP 409"
+    except HTTPException as exc:
+        assert exc.status_code == 409
+        assert exc.detail == customer_auth._GENERIC_DUPLICATE_DETAIL
