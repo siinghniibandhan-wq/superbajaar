@@ -10,6 +10,8 @@ export default function CatalogueWorkspace({ onBack }) {
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
   const [showProductForm, setShowProductForm] = useState(false);
+  const [editingProduct, setEditingProduct] = useState(null);
+  const [selectedVariantProductId, setSelectedVariantProductId] = useState("");
   const [showCategoryForm, setShowCategoryForm] = useState(false);
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
@@ -74,22 +76,20 @@ export default function CatalogueWorkspace({ onBack }) {
     {activeTab === "catalogue" && <>
       <div className="sb-catalogue-toolbar">
         <div><h2>All products</h2><p className="sb-muted">Products loaded from the backend API.</p></div>
-        <button className="sb-primary" type="button" onClick={() => setShowProductForm(value => !value)}>{showProductForm ? "Cancel" : "+ Add product"}</button>
+        <button className="sb-primary" type="button" onClick={() => { setEditingProduct(null); setShowProductForm(value => !value); }}>{showProductForm ? "Cancel" : "+ Add product"}</button>
       </div>
-      {showProductForm && <ProductCreateForm categories={categories} onSaved={async () => { await refresh(); setShowProductForm(false); }} />}
+      {showProductForm && <ProductCreateForm categories={categories} product={editingProduct} onSaved={async () => { await refresh(); setShowProductForm(false); setEditingProduct(null); }} />}
       <div className="sb-strip-list" aria-label="Product list">
         {products.length ? products.map(item => <article className="sb-strip-row" key={item.id}>
           <div className="sb-strip-icon" aria-hidden="true">S</div>
-          <div className="sb-strip-main"><strong>{item.name}</strong><small>{item.brand || "No brand"} · {categories.find(category => Number(category.id) === Number(item.category_id))?.name || "Uncategorised"}</small></div>
+          <div className="sb-strip-main"><strong>{item.name}</strong><small>{item.brand || "No brand"} · {categories.find(category => Number(category.id) === Number(item.category_id))?.name || "Uncategorised"}</small><button type="button" className="sb-row-action" onClick={() => { setSelectedVariantProductId(String(item.id)); setActiveTab("attributes"); }}> {item.variant_count || 0} Variants </button><b>{item.min_selling_price == null ? "Price not set" : item.min_selling_price === item.max_selling_price ? "₹" + Number(item.min_selling_price).toFixed(2) : "₹" + Number(item.min_selling_price).toFixed(2) + " – ₹" + Number(item.max_selling_price).toFixed(2)}</b></div>
           <span className={"sb-status-pill sb-status-" + item.status}>{item.status}</span>
+          <button type="button" className="sb-row-action" onClick={() => { setEditingProduct(item); setShowProductForm(true); }}>Edit</button>
+          {item.status !== "archived" && <button type="button" className="sb-row-action" onClick={async () => { if (!window.confirm("Archive " + item.name + "?")) return; try { await apiRequest("/catalogue/products/" + item.id + "/archive", {method:"POST"}); await refresh(); } catch (e) { setError(e.message || "Unable to archive product"); } }}>Archive</button>}
           <span className="sb-strip-meta">#{item.id}</span>
         </article>) : <p className="sb-empty">No products found. Select Add product to create your first product.</p>}
       </div>
-      <details className="sb-catalogue-tools">
-        <summary>Variants, pricing and product images</summary>
-        <CatalogueVariantsPanel products={products} categories={categories} />
-        <ProductImagesPanel products={products} />
-      </details>
+      
     </>}
 
     {activeTab === "categories" && <>
@@ -118,7 +118,8 @@ export default function CatalogueWorkspace({ onBack }) {
       <div className="sb-catalogue-toolbar">
         <div><h2>Product attributes</h2><p className="sb-muted">Define properties such as colour, size and material.</p></div>
       </div>
-      <CatalogueVariantsPanel products={[]} categories={[]} mode="attributes" />
+      <CatalogueVariantsPanel products={products} categories={categories} initialProductId={selectedVariantProductId} />
+      <ProductImagesPanel products={products} />
     </>}
   </section>;
 }
