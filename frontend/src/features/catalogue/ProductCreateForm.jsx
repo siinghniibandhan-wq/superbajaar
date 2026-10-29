@@ -156,12 +156,13 @@ export default function ProductCreateForm({ categories, onSaved, product = null 
       for (const def of baseAttributes) {
         const values = selected[def.code] || [];
         const value = def.value_type === "multi_select" ? values : values[0];
-        if (value !== undefined) await apiRequest("/catalogue/products/" + product.id + "/attributes/" + def.id, {
+        if (value !== undefined) await apiRequest("/catalogue/products/" + savedProduct.id + "/attributes/" + def.id, {
           method: "PUT", body: JSON.stringify({ value }),
         });
       }
       const existingResult = isEditing ? await apiRequest("/catalogue/products/" + savedProduct.id + "/variants") : { items: [] };
       const existingByCombination = new Map((existingResult.items || []).filter(item => item.is_active).map(item => [JSON.stringify(Object.fromEntries(Object.entries(item.attributes || {}).sort(([a],[b]) => a.localeCompare(b)))), item]));
+      let variantsCreated = 0;
       for (const attrs of variantCombinations) {
         const key = JSON.stringify(Object.fromEntries(Object.entries(attrs).sort(([a],[b]) => a.localeCompare(b))));
         if (existingByCombination.has(key)) continue;
@@ -169,6 +170,7 @@ export default function ProductCreateForm({ categories, onSaved, product = null 
           method: "POST",
           body: JSON.stringify({ attributes: attrs, selling_price: sellingPrice, mrp, cost_price: costPrice }),
         });
+        variantsCreated += 1;
       }
       if (imageUrl.trim()) {
         const currentImages = await apiRequest("/catalogue/products/" + savedProduct.id + "/images");
@@ -180,7 +182,7 @@ export default function ProductCreateForm({ categories, onSaved, product = null 
         }
       }
       const notes = [];
-      if (variantCombinations.length) notes.push(variantCombinations.length + " variant(s) created");
+      if (variantsCreated) notes.push(variantsCreated + " new variant(s) created");
       setNotice((isEditing ? "Product updated successfully" : "Product saved successfully") + (notes.length ? ". " + notes.join("; ") + "." : "."));
       if (!isEditing) { setForm(emptyForm); setSelected({}); setImageUrl(""); setImageAlt(""); setTab("information"); }
       await onSaved?.(savedProduct);
