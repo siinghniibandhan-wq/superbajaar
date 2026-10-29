@@ -166,12 +166,12 @@ def _category_sku_code(category_name: str | None) -> str:
     return "".join(part[0] for part in slug.split("-") if part)[:3].upper() or "OT"
 
 def _generate_variant_sku(conn, product_id: int, attributes: dict[str, Any]) -> str:
-    product = conn.execute("SELECT p.id, p.name, p.brand, c.name AS category_name FROM products p LEFT JOIN categories c ON c.id = p.category_id WHERE p.id = %s", (product_id,)).fetchone()
+    product = conn.execute("SELECT p.id, p.name, p.brand, COALESCE(parent.name, c.name) AS category_name, c.name AS subcategory_name FROM products p LEFT JOIN categories c ON c.id = p.category_id LEFT JOIN categories parent ON parent.id = c.parent_id WHERE p.id = %s", (product_id,)).fetchone()
     if product is None:
         raise HTTPException(status_code=404, detail="Product not found")
     category_code = _category_sku_code(product["category_name"])
     normalized = {str(key).lower(): value for key, value in attributes.items()}
-    department = str(next((normalized[key] for key in ("gender", "department", "audience") if key in normalized), "")).strip().lower()
+    department = str(next((normalized[key] for key in ("gender", "department", "audience") if key in normalized), product["subcategory_name"] or "")).strip().lower()
     department_code = "M" if department in {"m", "men", "mens", "male", "man"} else "W" if department in {"w", "women", "womens", "female", "woman"} else "K" if department in {"k", "kids", "kid", "children", "child"} else "U"
     brand_code = _sku_token(product["brand"], 8)
     words = [word for word in str(product["name"]).upper().replace("-", " ").split() if word]
