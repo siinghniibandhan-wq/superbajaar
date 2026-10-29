@@ -459,12 +459,16 @@ export default function Storefront() {
     return categories.filter(c => [c.parent_id, c.parent_category_id, c.parentId].some(id => id != null && String(id) === String(parent.id)));
   }, [categories, displayCategories, routeCategoryName]);
   const subcategoryProductRows = useMemo(() => categorySubcategories.map(category => {
-    const items = variants.filter(variant => {
-      const product = productById.get(Number(variant.product_id));
+    const items = variants.filter((variant, index, allVariants) => {
+      const productId = Number(variant.product_id);
+      if (allVariants.findIndex(item => Number(item.product_id) === productId) !== index) return false;
+      const product = productById.get(productId);
       if (!product) return false;
       const productCategoryId = product.category_id ?? product.categoryId;
       const productCategoryName = product.category_name || product.category || "";
-      return (productCategoryId != null && String(productCategoryId) === String(category.id))
+      const assignedIds = Array.isArray(product.category_ids) ? product.category_ids.map(String) : [String(productCategoryId || "")];
+      return assignedIds.includes(String(category.id))
+        || (productCategoryId != null && String(productCategoryId) === String(category.id))
         || String(productCategoryName).trim().toLowerCase() === String(category.name || "").trim().toLowerCase();
     }).slice(0, 24);
     return { category, items };
@@ -746,7 +750,7 @@ export default function Storefront() {
         </div>
       </section>)}
       {routeCategoryName !== "Insurance" && <><div className="storefront-category-featured-heading"><div><span className="storefront-kicker">HANDPICKED FOR YOU</span><h2>Featured {routeCategoryName}</h2><p>Popular picks from this department.</p></div><button type="button" onClick={openCategoryListing}>View all <span>→</span></button></div>
-      {loading ? <p className="storefront-empty">Loading live products…</p> : visibleVariants.length ? <div className="storefront-category-featured-track">{visibleVariants.slice(0, 8).map(renderProductCard)}</div> : <p className="storefront-empty">No active products are available in this category yet.</p>}
+      {loading ? <p className="storefront-empty">Loading live products…</p> : visibleVariants.length ? <div className="storefront-category-featured-track">{displayedVariants.slice(0, 8).map(renderProductCard)}</div> : <p className="storefront-empty">No active products are available in this category yet.</p>}
       {bestSellers.length > 0 && <div className="storefront-category-featured-heading"><div><span className="storefront-kicker">CUSTOMER FAVOURITES</span><h2>Popular in {routeCategoryName}</h2></div><button type="button" onClick={openCategoryListing}>View all <span>→</span></button></div>}
       {bestSellers.length > 0 && <div className="storefront-category-featured-track">{bestSellers.slice(0, 8).map(renderProductCard)}</div>}</>}
     </section>}
