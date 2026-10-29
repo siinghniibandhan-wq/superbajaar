@@ -100,6 +100,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
         <label>Slug (automatic)<input required pattern="[a-z0-9]+(-[a-z0-9]+)*" value={form.slug} readOnly aria-readonly="true" /></label>
         <label>Brand<input maxLength="160" value={form.brand || ""} onChange={e => change("brand", e.target.value)} /></label>
         <label>Category<select value={form.category_id} onChange={e => change("category_id", e.target.value)}><option value="">No category</option>{categories.map(c => <option key={c.id} value={c.id}>{c.parent_id ? "↳ " : ""}{c.name}</option>)}</select></label>
+        <div className="sb-span-all"><h3>Price &amp; Tax</h3></div>
         <label>Selling price (₹) *<input required type="number" min="0" step="0.01" value={form.selling_price} onChange={e => change("selling_price", e.target.value)} /></label>
         <label>MRP (₹) *<input required type="number" min="0" step="0.01" value={form.mrp} onChange={e => change("mrp", e.target.value)} /></label>
         <label>Tax code<input maxLength="32" value={form.tax_code || ""} onChange={e => change("tax_code", e.target.value)} /></label>
