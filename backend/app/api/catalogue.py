@@ -174,8 +174,22 @@ def _generate_variant_sku(conn, product_id: int, attributes: dict[str, Any]) -> 
     department = str(next((normalized[key] for key in ("gender", "department", "audience") if key in normalized), product["subcategory_name"] or "")).strip().lower()
     department_code = "M" if department in {"m", "men", "mens", "male", "man"} else "W" if department in {"w", "women", "womens", "female", "woman"} else "K" if department in {"k", "kids", "kid", "children", "child"} else "U"
     brand_code = _sku_token(product["brand"], 8)
-    words = [word for word in str(product["name"]).upper().replace("-", " ").split() if word]
-    product_code = _sku_token("".join(word[0] for word in words[:4]) or "PROD", 6)
+    product_name = str(product["name"]).upper()
+    product_type_codes = [
+        (("T-SHIRT", "TSHIRT", "TEE"), "TSH"),
+        (("RICE",), "RIC"),
+        (("JEAN", "DENIM"), "JNS"),
+        (("SNEAKER", "SHOE", "FOOTWEAR"), "SH"),
+        (("DRESS",), "DRS"),
+        (("PHONE", "SMARTPHONE"), "PHN"),
+        (("LAPTOP", "NOTEBOOK"), "LTP"),
+        (("DETERGENT",), "DTR"),
+        (("MILK",), "MLK"),
+    ]
+    product_code = next((code for terms, code in product_type_codes if any(term in product_name for term in terms)), "")
+    if not product_code:
+        words = [word for word in product_name.replace("-", " ").split() if word]
+        product_code = _sku_token("".join(word[0] for word in words[:4]) or "PROD", 6)
     variant_tokens = []
     for key in sorted(attributes):
         value = attributes[key]
