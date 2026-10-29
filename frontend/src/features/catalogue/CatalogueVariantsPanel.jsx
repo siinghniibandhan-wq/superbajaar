@@ -4,7 +4,28 @@ import { apiRequest } from "../../services/api.js";
 const initialAttribute = { name: "", code: "", value_type: "select", is_variant_attribute: true, is_required: true, options: "" };
 const initialVariant = { sku: "", barcode: "", attributes: "{}", selling_price: "", mrp: "", cost_price: "" };
 
-export default function CatalogueVariantsPanel({ products }) {
+function skuToken(value, limit = 8) {
+  return String(value || "").toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, limit).replace(/-$/g, "") || "GEN";
+}
+
+function categoryCode(name) {
+  const slug = String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const codes = { fashion: "FS", clothing: "FS", apparel: "FS", footwear: "FS", grocery: "GR", groceries: "GR", electronics: "EL", "personal-care": "PC", beauty: "PC", "pet-care": "PT", "fresh-products": "FR", fresh: "FR", "home-kitchen": "HK" };
+  return codes[slug] || slug.split("-").filter(Boolean).map(part => part[0]).join("").slice(0, 3).toUpperCase() || "OT";
+}
+
+function skuPreview(product, categories, attributes, version) {
+  if (!product) return "Choose a product to generate its SKU";
+  const category = categories.find(item => Number(item.id) === Number(product.category_id));
+  const normalized = Object.fromEntries(Object.entries(attributes || {}).map(([key, value]) => [key.toLowerCase(), value]));
+  const department = String(normalized.gender || normalized.department || normalized.audience || "").toLowerCase();
+  const deptCode = ["m", "men", "mens", "male", "man"].includes(department) ? "M" : ["w", "women", "womens", "female", "woman"].includes(department) ? "W" : ["k", "kids", "kid", "children", "child"].includes(department) ? "K" : "U";
+  const initials = String(product.name || "").toUpperCase().replace(/-/g, " ").split(/\\s+/).filter(Boolean).slice(0, 4).map(word => word[0]).join("") || "PROD";
+  const values = Object.keys(attributes || {}).sort().flatMap(key => Array.isArray(attributes[key]) ? attributes[key] : [attributes[key]]).filter(value => ["string", "number"].includes(typeof value) && String(value).trim()).slice(0, 4).map(value => skuToken(value));
+  return ["SB", categoryCode(category?.name), deptCode, skuToken(product.brand), skuToken(initials, 6), String(product.id).padStart(5, "0"), ...values, "V" + String(version).padStart(2, "0")].join("-");
+}
+
+export default function CatalogueVariantsPanel({ products, categories = [] }) {
   const [definitions, setDefinitions] = useState([]);
   const [productId, setProductId] = useState("");
   const [variants, setVariants] = useState([]);
@@ -46,7 +67,7 @@ export default function CatalogueVariantsPanel({ products }) {
       await apiRequest("/catalogue/products/" + productId + "/variants", {
         method: "POST",
         body: JSON.stringify({
-          sku: variant.sku, barcode: variant.barcode || null, attributes,
+          barcode: variant.barcode || null, attributes,
           selling_price: Number(variant.selling_price),
           mrp: variant.mrp === "" ? null : Number(variant.mrp),
           cost_price: variant.cost_price === "" ? null : Number(variant.cost_price),
@@ -80,7 +101,7 @@ export default function CatalogueVariantsPanel({ products }) {
     <form className="sb-form sb-form-inner" onSubmit={createVariant}>
       <h3>Create SKU variant</h3>
       <div className="sb-form-grid">
-        <label>SKU<input required value={variant.sku} onChange={e=>setVariant(v=>({...v,sku:e.target.value}))}/></label>
+        <label className="sb-span-all">SKU (automatic)<input readOnly aria-readonly="true" value={skuPreview(products.find(p => String(p.id) === String(productId)), categories, (() => { try { return JSON.parse(variant.attributes || "{}"); } catch { return {}; } })(), variants.length + 1)} /><small className="sb-muted">Generated from category, department, brand, product ID and variant attributes. The server checks uniqueness when saving.</small></label>
         <label>Barcode<input value={variant.barcode} onChange={e=>setVariant(v=>({...v,barcode:e.target.value}))}/></label>
         <label>Selling price (₹)<input required type="number" min="0" step="0.01" value={variant.selling_price} onChange={e=>setVariant(v=>({...v,selling_price:e.target.value}))}/></label>
         <label>MRP (₹)<input type="number" min="0" step="0.01" value={variant.mrp} onChange={e=>setVariant(v=>({...v,mrp:e.target.value}))}/></label>
