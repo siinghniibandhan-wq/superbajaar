@@ -46,6 +46,15 @@ export default function ProductCreateForm({ categories, onSaved, product = null 
       tax_rate: product.tax_rate == null ? "" : String(product.tax_rate),
     });
     setTab("information");
+    setPosEnabled(product.pos_enabled !== false);
+    setWebsiteEnabled(product.website_enabled !== false);
+    setStandardDelivery(product.standard_delivery_enabled !== false);
+    setExpressDelivery(product.express_delivery_enabled === true);
+    apiRequest("/catalogue/products/" + product.id + "/availability").then(result => {
+      const grouped = { region: [], state: [], warehouse: [], pincode: [] };
+      (result.restrictions || []).forEach(item => { if (grouped[item.type]) grouped[item.type].push(item.value); });
+      setRestrictionValues(Object.fromEntries(Object.entries(grouped).map(([key, values]) => [key, values.join(", ")])));
+    }).catch(e => setError(e.message || "Unable to load product availability."));
   }, [product?.id]);
   const [definitions, setDefinitions] = useState([]);
   const [selected, setSelected] = useState({});
@@ -56,6 +65,7 @@ export default function ProductCreateForm({ categories, onSaved, product = null 
   const [websiteEnabled, setWebsiteEnabled] = useState(true);
   const [standardDelivery, setStandardDelivery] = useState(true);
   const [expressDelivery, setExpressDelivery] = useState(false);
+  const [restrictionValues, setRestrictionValues] = useState({ region: "", state: "", warehouse: "", pincode: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -109,10 +119,21 @@ export default function ProductCreateForm({ categories, onSaved, product = null 
         category_id: form.category_id ? Number(form.category_id) : null,
         description: form.description || null, tax_code: form.tax_code || null,
         tax_rate: form.tax_rate === "" ? null : Number(form.tax_rate), status: form.status,
+        pos_enabled: posEnabled, website_enabled: websiteEnabled,
+        standard_delivery_enabled: standardDelivery, express_delivery_enabled: expressDelivery,
       };
       savedProduct = await apiRequest(isEditing ? "/catalogue/products/" + product.id : "/catalogue/products", {
         method: isEditing ? "PUT" : "POST",
         body: JSON.stringify(productPayload),
+      });
+      const restrictions = Object.entries(restrictionValues).flatMap(([type, raw]) => raw.split(",").map(value => value.trim()).filter(Boolean).map(value => ({ type, value })));
+      await apiRequest("/catalogue/products/" + savedProduct.id + "/availability", {
+        method: "PUT",
+        body: JSON.stringify({
+          pos_enabled: posEnabled, website_enabled: websiteEnabled,
+          standard_delivery_enabled: standardDelivery, express_delivery_enabled: expressDelivery,
+          restrictions,
+        }),
       });
       const baseAttributes = definitions.filter(def => !def.is_variant_attribute && (selected[def.code] || []).length);
       for (const def of baseAttributes) {
@@ -143,9 +164,6 @@ export default function ProductCreateForm({ categories, onSaved, product = null 
       }
       const notes = [];
       if (variantCombinations.length) notes.push(variantCombinations.length + " variant(s) created");
-      if (!posEnabled || !websiteEnabled || !standardDelivery || expressDelivery) {
-        notes.push("POS/Website and delivery selections are not persisted yet because the current Catalogue API has no corresponding settings endpoint");
-      }
       setNotice((isEditing ? "Product updated successfully" : "Product saved successfully") + (notes.length ? ". " + notes.join("; ") + "." : "."));
       if (!isEditing) { setForm(emptyForm); setSelected({}); setImageUrl(""); setImageAlt(""); setTab("information"); }
       await onSaved?.(savedProduct);
@@ -193,20 +211,26 @@ export default function ProductCreateForm({ categories, onSaved, product = null 
         <label>Tax code<input maxLength="32" value={form.tax_code} onChange={e => change("tax_code", e.target.value)}/></label>
         <label>Tax rate (%)<input type="number" min="0" max="100" step="0.01" value={form.tax_rate} onChange={e => change("tax_rate", e.target.value)} placeholder="Enter configured rate"/></label>
       </div>
-      <p className="sb-muted">The current backend exposes product tax code/rate fields but no tax-rate lookup endpoint. The rate is entered here until the existing Tax Module provides a selectable API.</p>
+      <p className="sb-muted">The current backend exposes tax code and tax rate fields, but the repository has no tax-rate lookup endpoint. The rate remains manually entered until the existing Tax Module exposes one.</p>
     </section>}
 
     {tab === "availability" && <section className="sb-wizard-panel"><h3>Availability</h3>
       <p className="sb-muted">Choose the sales channels for this product.</p>
       <label className="sb-check"><input type="checkbox" checked={posEnabled} onChange={e => setPosEnabled(e.target.checked)}/> Available in POS</label>
       <label className="sb-check"><input type="checkbox" checked={websiteEnabled} onChange={e => setWebsiteEnabled(e.target.checked)}/> Available on Website</label>
-      <p className="sb-muted">Region, state, warehouse and pincode restrictions will require wiring to the existing availability model; this Catalogue API currently exposes no product-availability save endpoint.</p>
+      <div className="sb-form-grid">
+        <label>Regions (comma-separated)<input value={restrictionValues.region} onChange={e => setRestrictionValues(old => ({...old, region:e.target.value}))} placeholder="e.g. South, East"/></label>
+        <label>States (comma-separated)<input value={restrictionValues.state} onChange={e => setRestrictionValues(old => ({...old, state:e.target.value}))} placeholder="e.g. Karnataka, Jharkhand"/></label>
+        <label>Warehouse IDs (comma-separated)<input value={restrictionValues.warehouse} onChange={e => setRestrictionValues(old => ({...old, warehouse:e.target.value}))} placeholder="Active warehouse IDs"/></label>
+        <label>Pincodes (comma-separated)<input value={restrictionValues.pincode} onChange={e => setRestrictionValues(old => ({...old, pincode:e.target.value}))} placeholder="6-digit pincodes"/></label>
+      </div>
+      <p className="sb-muted">Leave all restriction fields empty to make the product available across the supported service area. Warehouse restrictions use active warehouse IDs.</p>
     </section>}
 
     {tab === "delivery" && <section className="sb-wizard-panel"><h3>Delivery</h3>
       <label className="sb-check"><input type="checkbox" checked={standardDelivery} onChange={e => setStandardDelivery(e.target.checked)}/> Standard delivery</label>
       <label className="sb-check"><input type="checkbox" checked={expressDelivery} onChange={e => setExpressDelivery(e.target.checked)}/> Express delivery</label>
-      <p className="sb-muted">These selections are displayed in the form but are not persisted because the current Catalogue API has no product-delivery settings endpoint.</p>
+      <p className="sb-muted">Delivery selections are saved with the product configuration.</p>
     </section>}
 
     {tab === "images" && <section className="sb-wizard-panel"><h3>Images</h3>
