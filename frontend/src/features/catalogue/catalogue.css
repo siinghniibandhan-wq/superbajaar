@@ -47,3 +47,5 @@
 .sb-row-action-danger{border-color:#f0c8ce;color:#a82f45}
 .sb-category-form-actions{display:flex;gap:8px;flex-wrap:wrap}
 @media(max-width:560px){.sb-category-row .sb-strip-main{flex-basis:calc(100% - 54px)}.sb-category-row .sb-category-actions{width:100%;padding-left:42px}.sb-category-row .sb-strip-meta{margin-left:auto}.sb-category-actions .sb-row-action{font-size:11px;padding:8px 10px}}
+
+.sb-category-multi-select{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:12px;border:1px solid #e5ddec;border-radius:12px;max-height:320px;overflow:auto}.sb-category-multi-select .sb-check{display:flex;align-items:flex-start;gap:8px;min-width:0;overflow-wrap:anywhere}.sb-category-multi-select .sb-check input{width:16px;min-width:16px;min-height:16px;margin:1px 0 0;accent-color:#713bc2}@media(max-width:600px){.sb-category-multi-select{grid-template-columns:minmax(0,1fr)}}
