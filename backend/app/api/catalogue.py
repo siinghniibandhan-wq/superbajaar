@@ -257,6 +257,45 @@ def create_category(payload: CategoryCreate):
         raise _db_error(exc) from exc
 
 
+class CategoryUpdate(CategoryCreate):
+    pass
+
+
+@router.put("/categories/{category_id}")
+def update_category(category_id: int, payload: CategoryUpdate):
+    try:
+        with _connection() as conn:
+            current = conn.execute(
+                "SELECT id FROM categories WHERE id=%s AND is_active=TRUE FOR UPDATE",
+                (category_id,),
+            ).fetchone()
+            if current is None:
+                raise HTTPException(status_code=404, detail="Active category not found")
+            if payload.parent_id is not None:
+                descendant = conn.execute(
+                    "WITH RECURSIVE descendants(id, path) AS ("
+                    "SELECT id, ARRAY[id] FROM categories WHERE parent_id=%s "
+                    "UNION ALL "
+                    "SELECT c.id, d.path || c.id FROM categories c "
+                    "JOIN descendants d ON c.parent_id=d.id WHERE NOT c.id = ANY(d.path)"
+                    ") SELECT 1 FROM descendants WHERE id=%s LIMIT 1",
+                    (category_id, payload.parent_id),
+                ).fetchone()
+                if payload.parent_id == category_id or descendant is not None:
+                    raise HTTPException(status_code=422, detail="A category cannot be nested under itself or its descendant")
+            row = conn.execute(
+                "UPDATE categories SET parent_id=%s, name=%s, slug=%s, description=%s, updated_at=now() "
+                "WHERE id=%s AND is_active=TRUE "
+                "RETURNING id, parent_id, name, slug, description, is_active, created_at, updated_at",
+                (payload.parent_id, payload.name, payload.slug, payload.description, category_id),
+            ).fetchone()
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
 @router.get("/products")
 def list_products(
     request: Request,
@@ -270,7 +309,8 @@ def list_products(
     if category_id is not None:
         clauses.append("category_id = %s")
         params.append(category_id)
-    if getattr(request.state, "public_catalogue", False):
+    public_catalogue = getattr(request.state, "public_catalogue", False)
+    if public_catalogue:
         status = "active"
         clauses.append("is_website_available = TRUE")
     if status != "all":
@@ -278,12 +318,21 @@ def list_products(
         params.append(status)
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     params.extend([limit, offset])
+    stock_projection = (
+        "(SELECT SUM(ib.on_hand - ib.reserved) FROM inventory_balances ib "
+        "JOIN product_variants stock_variant ON stock_variant.id=ib.variant_id "
+        "JOIN stock_locations sl ON sl.id=ib.location_id "
+        "WHERE stock_variant.product_id=p.id AND stock_variant.is_active=TRUE AND sl.is_active=TRUE) AS available_stock"
+        if not public_catalogue else "NULL::numeric AS available_stock"
+    )
     with _connection() as conn:
         rows = conn.execute(
             "SELECT p.id, p.category_id, p.name, p.slug, p.description, p.brand, p.status, p.tax_code, p.tax_rate, p.is_pos_available, p.is_website_available, p.delivery_options, p.created_at, p.updated_at, "
             "(SELECT COUNT(*) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS variant_count, "
             "(SELECT MIN(v.selling_price) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS min_selling_price, "
-            "(SELECT MAX(v.selling_price) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS max_selling_price "
+            "(SELECT MAX(v.selling_price) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS max_selling_price, "
+            "(SELECT MIN(v.mrp) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS min_mrp, "
+            f"{stock_projection} "
             f"FROM products p {where} ORDER BY p.name LIMIT %s OFFSET %s", tuple(params)
         ).fetchall()
     return {"items": rows, "limit": limit, "offset": offset}
@@ -305,7 +354,7 @@ def create_product(payload: ProductCreate):
 
 
 class ProductUpdate(ProductCreate):
-    pass
+    status: str = Field(default="active", pattern=r"^(draft|active|archived)$")
 
 @router.put("/products/{product_id}")
 def update_product(product_id: int, payload: ProductUpdate):

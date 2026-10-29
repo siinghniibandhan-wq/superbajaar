@@ -19,6 +19,11 @@ def test_category_rejects_invalid_slug_before_database_access():
     assert response.status_code == 422
 
 
+def test_category_update_rejects_invalid_slug_before_database_access():
+    response = client.put("/api/catalogue/categories/1", json={"name": "Drinks", "slug": "Not A Valid Slug"})
+    assert response.status_code == 422
+
+
 def test_product_rejects_out_of_range_tax_rate():
     response = client.post("/api/catalogue/products", json={"name": "Juice", "slug": "juice", "tax_rate": 150})
     assert response.status_code == 422
@@ -83,6 +88,13 @@ def test_product_rejects_unsupported_status_before_database_access():
         "name": "Juice", "slug": "juice", "status": "published",
     })
     assert response.status_code == 422
+
+
+def test_archived_product_status_is_valid_for_product_updates():
+    from app.api.catalogue import ProductUpdate
+
+    payload = ProductUpdate(name="Juice", slug="juice", status="archived")
+    assert payload.status == "archived"
 
 
 def test_category_accepts_parent_id_for_subcategory():

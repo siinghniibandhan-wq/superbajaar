@@ -10,8 +10,14 @@ function combinations(items) {
   return items.reduce((acc, item) => acc.flatMap(prefix => item.values.map(value => [...prefix, [item.code, value]])), [[]]).map(entries => Object.fromEntries(entries));
 }
 
-export default function ProductCreateForm({ categories = [], product = null, onSaved }) {
-  const [form, setForm] = useState(product ? { ...EMPTY, ...product, category_id: product.category_id ? String(product.category_id) : "" } : EMPTY);
+export default function ProductCreateForm({ categories = [], product = null, onSaved, onBusyChange }) {
+  const [form, setForm] = useState(product ? {
+    ...EMPTY,
+    ...product,
+    selling_price: product.selling_price ?? product.min_selling_price ?? "",
+    mrp: product.mrp ?? product.min_mrp ?? "",
+    category_id: product.category_id ? String(product.category_id) : "",
+  } : EMPTY);
   const [definitions, setDefinitions] = useState([]);
   const [selected, setSelected] = useState({});
   const [newOptions, setNewOptions] = useState({});
@@ -65,6 +71,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
   async function submit(event) {
     event.preventDefault();
     setBusy(true); setError(""); setSuccess("");
+    onBusyChange?.(true);
     let savedProduct = null;
     try {
       if (!form.name.trim()) throw new Error("Product name is required.");
@@ -102,11 +109,27 @@ export default function ProductCreateForm({ categories = [], product = null, onS
       await onSaved?.(savedProduct);
     } catch (e) {
       setError((e.message || "Unable to save product.") + (savedProduct && !product?.id ? " The product record was created, but one or more variant operations may not have completed. Review its variants before retrying." : ""));
-    } finally { setBusy(false); }
+    } finally { setBusy(false); onBusyChange?.(false); }
   }
 
-  return <form className="sb-form" noValidate onSubmit={submit}>
-    <h2>{product ? "Edit product" : "Add product"}</h2>
+  const selectedCategory = categories.find(item => String(item.id) === String(form.category_id));
+  let selectedCategoryRoot = selectedCategory;
+  const seenCategoryIds = new Set();
+  while (selectedCategoryRoot?.parent_id && !seenCategoryIds.has(Number(selectedCategoryRoot.id))) {
+    seenCategoryIds.add(Number(selectedCategoryRoot.id));
+    selectedCategoryRoot = categories.find(item => Number(item.id) === Number(selectedCategoryRoot.parent_id));
+  }
+  const categoryDescendants = (parentCategoryId, depth = 1, ancestors = new Set()) => {
+    if (ancestors.has(Number(parentCategoryId))) return [];
+    const nextAncestors = new Set(ancestors).add(Number(parentCategoryId));
+    return categories.filter(item => Number(item.parent_id) === Number(parentCategoryId)).flatMap(item => [
+      { ...item, depth },
+      ...categoryDescendants(item.id, depth + 1, nextAncestors),
+    ]);
+  };
+  const subcategories = selectedCategoryRoot ? categoryDescendants(selectedCategoryRoot.id) : [];
+
+  return <form id="catalogue-product-form" className="sb-form sb-modal-form" noValidate onSubmit={submit}>
     {error && <p role="alert" className="sb-alert">{error}</p>}
     {success && <p role="status" className="sb-success">{success}</p>}
     <nav className="sb-catalogue-tabs" aria-label="Product form sections" role="tablist">
@@ -117,11 +140,12 @@ export default function ProductCreateForm({ categories = [], product = null, onS
         <label>Product name *<input required maxLength="240" value={form.name} onChange={e => { const name=e.target.value; setForm(old => ({...old,name,slug:slugify(name)})); }} /></label>
         <label>Slug (automatic)<input required pattern="[a-z0-9]+(-[a-z0-9]+)*" value={form.slug} readOnly aria-readonly="true" /></label>
         <label>Brand<input maxLength="160" value={form.brand || ""} onChange={e => change("brand", e.target.value)} /></label>
-        <label>Category<select value={(() => { const current = categories.find(item => String(item.id) === String(form.category_id)); return current?.parent_id ? String(current.parent_id) : (form.category_id || ""); })()} onChange={e => { const parent = e.target.value; change("category_id", parent); }}><option value="">No category</option>{categories.filter(item => !item.parent_id).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-        <label>Subcategory<select value={(() => { const current = categories.find(item => String(item.id) === String(form.category_id)); return current?.parent_id ? String(current.id) : ""; })()} disabled={!categories.some(item => String(item.id) === String(form.category_id) && !item.parent_id) && !categories.some(item => String(item.parent_id) === String(form.category_id))} onChange={e => change("category_id", e.target.value || (() => { const current = categories.find(item => String(item.id) === String(form.category_id)); return current?.parent_id ? String(current.parent_id) : form.category_id; })())}><option value="">None</option>{categories.filter(item => String(item.parent_id) === String((() => { const current = categories.find(category => String(category.id) === String(form.category_id)); return current?.parent_id ? current.parent_id : form.category_id; })())).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <label>Category<select value={selectedCategoryRoot ? String(selectedCategoryRoot.id) : ""} onChange={e => change("category_id", e.target.value)}><option value="">No category</option>{categories.filter(item => !item.parent_id).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <label>Subcategory<select value={selectedCategory?.parent_id ? String(selectedCategory.id) : ""} disabled={!subcategories.length} onChange={e => change("category_id", e.target.value || String(selectedCategoryRoot?.id || ""))}><option value="">None</option>{subcategories.map(item => <option key={item.id} value={item.id}>{"— ".repeat(item.depth - 1)}{item.name}</option>)}</select></label>
         <div className="sb-span-all"><h3>Price &amp; Tax</h3></div>
-        <label>Selling price (₹) *<input required type="number" min="0" step="0.01" value={form.selling_price} onChange={e => change("selling_price", e.target.value)} /></label>
-        <label>MRP (₹) *<input required type="number" min="0" step="0.01" value={form.mrp} onChange={e => change("mrp", e.target.value)} /></label>
+        <label>Selling price (₹) *<input required type="number" min="0" step="0.01" readOnly={Boolean(product?.id)} value={form.selling_price} onChange={e => change("selling_price", e.target.value)} /></label>
+        <label>MRP (₹) *<input required type="number" min="0" step="0.01" readOnly={Boolean(product?.id)} value={form.mrp} onChange={e => change("mrp", e.target.value)} /></label>
+        {product?.id && <p className="sb-muted sb-span-all">Showing the lowest current variant prices. Variant prices remain unchanged when saving product details.</p>}
         <label>Tax code<input maxLength="32" value={form.tax_code || ""} onChange={e => change("tax_code", e.target.value)} /></label>
         <label>Tax rate (%)<input type="number" min="0" max="100" step="0.01" value={form.tax_rate ?? ""} onChange={e => change("tax_rate", e.target.value)} /></label>
         <label className="sb-span-all">Product description<textarea rows="4" value={form.description || ""} onChange={e => change("description", e.target.value)} placeholder="Features, material, fit, usage and care instructions" /></label>
