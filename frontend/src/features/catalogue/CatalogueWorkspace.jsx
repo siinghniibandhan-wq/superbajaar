@@ -10,7 +10,8 @@ export default function CatalogueWorkspace({ onBack }) {
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
   const [showProductForm, setShowProductForm] = useState(false);
-  const [editingProduct, setEditingProduct] = useState(null);\n  const [selectedVariantProductId, setSelectedVariantProductId] = useState("");
+  const [editingProduct, setEditingProduct] = useState(null);
+  const [selectedVariantProductId, setSelectedVariantProductId] = useState("");
   const [showCategoryForm, setShowCategoryForm] = useState(false);
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
