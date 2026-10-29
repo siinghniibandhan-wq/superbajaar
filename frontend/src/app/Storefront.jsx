@@ -452,7 +452,7 @@ export default function Storefront() {
   }, [categories, variants, productById]);
   const newArrivals = useMemo(() => assignedSectionProducts("New Arrivals"), [assignedSectionProducts]);
   const bestSellers = useMemo(() => assignedSectionProducts("Best Sellers"), [assignedSectionProducts]);
-  const recentVariants = useMemo(() => recentlyViewed.map(item => variants.find(v => Number(v.id) === Number(item.variantId))).filter(Boolean).slice(0,8), [recentlyViewed, variants]);
+  const recentVariants = useMemo(() => recentlyViewed.map(item => variants.find(v => Number(v.id) === Number(item.variantId))).filter(Boolean).filter((variant, index, items) => items.findIndex(item => Number(item.product_id) === Number(variant.product_id)) === index).slice(0,8), [recentlyViewed, variants]);
   const categorySubcategories = useMemo(() => {
     const parent = displayCategories.find(c => String(c.name || "").trim().toLowerCase() === String(routeCategoryName).trim().toLowerCase());
     if (!parent) return [];
@@ -483,7 +483,7 @@ export default function Storefront() {
       const matchesSearch = !term || [v.product_name, p.name, v.sku, p.brand].some(value => String(value || "").toLowerCase().includes(term));
       return matchesSearch && (((compare > price) && price > 0) || discount > 0);
     });
-    return discounted.filter((v, i, all) => all.findIndex(x => Number(x.id) === Number(v.id)) === i).slice(0, 24);
+    return discounted.filter((variant, index, all) => all.findIndex(item => Number(item.product_id) === Number(variant.product_id)) === index).slice(0, 24);
   }, [variants, productById, search]);
   const total = cart.reduce((sum, line) => sum + Number(line.selling_price || 0) * line.quantity, 0);
   const addToCart = variant => {
