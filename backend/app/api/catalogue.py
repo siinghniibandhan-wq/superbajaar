@@ -559,6 +559,19 @@ def create_variant(product_id: int, payload: VariantCreate):
                 raise HTTPException(status_code=422, detail=f"Unknown or non-variant attributes: {', '.join(unknown)}")
             for code, value in payload.attributes.items():
                 _validate_attribute_value(conn, by_code[code], value)
+            duplicate = conn.execute(
+                "SELECT id FROM product_variants WHERE product_id=%s AND is_active=TRUE AND attributes=%s::jsonb LIMIT 1",
+                (product_id, __import__("json").dumps(payload.attributes)),
+            ).fetchone()
+            if duplicate is not None:
+                raise HTTPException(status_code=409, detail="This product already has an active variant with the selected attribute combination")
+            if not payload.attributes:
+                has_configured_variants = conn.execute(
+                    "SELECT 1 FROM product_variants WHERE product_id=%s AND is_active=TRUE AND attributes <> '{}'::jsonb LIMIT 1",
+                    (product_id,),
+                ).fetchone()
+                if has_configured_variants:
+                    raise HTTPException(status_code=409, detail="A product with selectable variants cannot have an additional empty default variant")
             empty_defaults = []
             if payload.attributes:
                 empty_defaults = conn.execute(
@@ -625,6 +638,19 @@ def update_variant(variant_id: int, payload: VariantUpdate):
                 raise HTTPException(status_code=422, detail=f"Unknown or non-variant attributes: {', '.join(unknown)}")
             for code, value in payload.attributes.items():
                 _validate_attribute_value(conn, by_code[code], value)
+            duplicate = conn.execute(
+                "SELECT id FROM product_variants WHERE product_id=%s AND id<>%s AND is_active=TRUE AND attributes=%s::jsonb LIMIT 1",
+                (current["product_id"], variant_id, __import__("json").dumps(payload.attributes)),
+            ).fetchone()
+            if duplicate is not None:
+                raise HTTPException(status_code=409, detail="This product already has an active variant with the selected attribute combination")
+            if not payload.attributes:
+                has_configured_variants = conn.execute(
+                    "SELECT 1 FROM product_variants WHERE product_id=%s AND id<>%s AND is_active=TRUE AND attributes <> '{}'::jsonb LIMIT 1",
+                    (current["product_id"], variant_id),
+                ).fetchone()
+                if has_configured_variants:
+                    raise HTTPException(status_code=409, detail="A product with selectable variants cannot have an additional empty default variant")
             row = conn.execute(
                 "UPDATE product_variants SET barcode=%s, attributes=%s::jsonb, selling_price=%s, mrp=%s, "
                 "cost_price=%s, updated_at=now() WHERE id=%s "
