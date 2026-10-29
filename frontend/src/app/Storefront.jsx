@@ -415,8 +415,9 @@ export default function Storefront() {
           || displayCategories.find(c => String(c.name || "").trim().toLowerCase() === String(routeCategoryName).trim().toLowerCase());
         const productCategoryName = product.category_name || product.category || categories.find(c => String(c.id) === String(product.category_id))?.name || "";
         const targetName = routeCategoryName || selected?.name || "";
-        const matches = (selected && String(product.category_id || "") === String(selected.id))
-          || (targetName && String(productCategoryName).trim().toLowerCase() === String(targetName).trim().toLowerCase());
+        const productCategoryIds = Array.isArray(product.category_ids) ? product.category_ids.map(String) : [String(product.category_id || "")];
+        const matches = (selected && (productCategoryIds.includes(String(selected.id)) || String(product.category_id || "") === String(selected.id)) )
+          || (targetName && (String(productCategoryName).trim().toLowerCase() === String(targetName).trim().toLowerCase() || productCategoryIds.some(id => String(categories.find(c => String(c.id) === id)?.name || "").trim().toLowerCase() === String(targetName).trim().toLowerCase())));
         if (!matches) return false;
       }
       return !term || [v.product_name, product.name, v.sku, product.brand].some(x => String(x || "").toLowerCase().includes(term));
