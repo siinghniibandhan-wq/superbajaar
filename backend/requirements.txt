@@ -5,3 +5,4 @@ pydantic-settings
 psycopg[binary]
 pytest
 httpx
+email-validator==2.2.0
