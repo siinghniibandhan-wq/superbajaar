@@ -652,10 +652,10 @@ def update_variant(variant_id: int, payload: VariantUpdate):
                 if has_configured_variants:
                     raise HTTPException(status_code=409, detail="A product with selectable variants cannot have an additional empty default variant")
             row = conn.execute(
-                "UPDATE product_variants SET barcode=%s, attributes=%s::jsonb, selling_price=%s, mrp=%s, "
+                "UPDATE product_variants SET sku=COALESCE(%s, sku), barcode=%s, attributes=%s::jsonb, selling_price=%s, mrp=%s, "
                 "cost_price=%s, updated_at=now() WHERE id=%s "
                 "RETURNING id, product_id, sku, barcode, attributes, selling_price, mrp, cost_price, is_active, updated_at",
-                (payload.barcode, __import__("json").dumps(payload.attributes), payload.selling_price,
+                (payload.sku, payload.barcode, __import__("json").dumps(payload.attributes), payload.selling_price,
                  payload.mrp, payload.cost_price, variant_id),
             ).fetchone()
         return row
