@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta, timezone
 import hashlib
 import ipaddress
+import logging
 import re
 import secrets
 import threading
@@ -22,6 +23,7 @@ RATE_LIMIT_WINDOW_SECONDS = 10 * 60
 _RATE_LIMIT_BUCKETS: dict[str, list[float]] = {}
 _RATE_LIMIT_LOCK = threading.Lock()
 _GENERIC_DUPLICATE_DETAIL = "Unable to create an account with these details."
+logger = logging.getLogger(__name__)
 
 
 def _client_ip(request: Request) -> str:
@@ -61,6 +63,7 @@ def _enforce_rate_limit(request: Request, action: str, identifiers: list[str]) -
             default=0,
         )
         if retry_after:
+            logger.warning("Customer auth rate limit exceeded: action=%s client_ip=%s", action, _client_ip(request))
             raise HTTPException(
                 status_code=429,
                 detail="Too many attempts. Please try again in a few minutes.",
