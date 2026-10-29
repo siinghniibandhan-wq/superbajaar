@@ -30,6 +30,7 @@ export async function apiRequest(path, options = {}) {
   const requestUrl = `${API_BASE_URL}${requestPath}`;
   const { skipAuth = false, ...fetchOptions } = options;
   const token = skipAuth ? "" : readStoredToken();
+  const isFormData = typeof FormData !== "undefined" && fetchOptions.body instanceof FormData;
   let response;
   try {
     response = await fetch(requestUrl, {
@@ -37,7 +38,7 @@ export async function apiRequest(path, options = {}) {
       headers: {
         // Avoid forcing JSON content type on GETs; it can trigger unnecessary
         // cross-origin preflight requests for public storefront catalogue reads.
-        ...(fetchOptions.body !== undefined ? { "Content-Type": "application/json" } : {}),
+        ...(fetchOptions.body !== undefined && !isFormData ? { "Content-Type": "application/json" } : {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(fetchOptions.headers || {}),
       },
