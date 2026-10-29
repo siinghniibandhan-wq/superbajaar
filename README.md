@@ -84,6 +84,25 @@ Route existence does not prove that a screen works end to end. For each workspac
 - Never run destructive reset, drop, or truncate operations against production.
 - Do not put database credentials or other secrets in source control.
 
+### Schema file inventory (observed on main)
+
+- `backend/schema/000_baseline_schema.sql` — baseline schema definition.
+- `backend/schema/009_loyalty_programme.sql` — loyalty programme schema changes.
+- `backend/schema/009_product_availability_delivery.sql` — product POS/website availability, delivery options and availability-rule table.
+- `backend/schema/010_customer_accounts_referrals.sql` — customer accounts/referrals changes.
+- `backend/schema/011_customer_phone_uniqueness.sql` — customer phone uniqueness change.
+
+**Important: two migration files currently use the `009` prefix.** Do not rename, delete, reorder, or edit either file as a quick fix. Before applying migrations in a live environment, inspect the schema runner's ordering and the production `schema_migrations` records to confirm both files are handled safely. Resolve migration numbering through a separately reviewed migration plan if required.
+
+### Data and table preservation — mandatory
+
+- Treat **every existing production table and all its data as protected**. The examples below are not an exhaustive table inventory.
+- Never drop, truncate, recreate, rename, or clear an existing table as part of feature work or a schema reset.
+- Core business tables that must be preserved include products, categories, product attributes, product variants, product images, customers, orders, payments, inventory/stock locations and balances, purchasing/suppliers, deliveries/shipments, users, user sessions, and loyalty data wherever those tables exist in the active schema.
+- The availability migration adds columns to `public.products` and creates `public.product_availability_rules`; it must not replace or recreate `products`.
+- Before any schema change, compare the migration against existing schema files and the actual database. Use additive, idempotent migrations where appropriate; take a verified backup and use the approved schema runner.
+- Do not assume this README is a live inventory of production tables. Confirm actual table names and migration history against the target database before making changes.
+
 ## Business modules to preserve
 
 Storefront, product catalogue, categories, attributes, variants, pricing/GST, customers, authentication/permissions, inventory/warehouses, purchasing/vendors, orders, payments/refunds, delivery, POS, accounting/tax, loyalty, HR/payroll, and reporting.
