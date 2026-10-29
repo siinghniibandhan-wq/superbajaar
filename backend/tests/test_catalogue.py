@@ -69,3 +69,24 @@ def test_variant_price_update_rejects_negative_cost_price():
         "selling_price": 50, "mrp": 50, "cost_price": -1,
     })
     assert response.status_code == 422
+
+
+def test_product_status_defaults_to_active():
+    from app.api.catalogue import ProductCreate
+
+    payload = ProductCreate(name="Juice", slug="juice")
+    assert payload.status == "active"
+
+
+def test_product_rejects_unsupported_status_before_database_access():
+    response = client.post("/api/catalogue/products", json={
+        "name": "Juice", "slug": "juice", "status": "published",
+    })
+    assert response.status_code == 422
+
+
+def test_category_accepts_parent_id_for_subcategory():
+    from app.api.catalogue import CategoryCreate
+
+    payload = CategoryCreate(name="Tea", slug="tea", parent_id=10)
+    assert payload.parent_id == 10
