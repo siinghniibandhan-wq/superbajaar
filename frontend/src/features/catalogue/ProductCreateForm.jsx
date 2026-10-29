@@ -101,7 +101,8 @@ export default function ProductCreateForm({ categories, onSaved, product = null 
     }
     if (variantCombinations.length > 500) { setTab("variants"); setError("This selection creates more than 500 variants. Reduce the selected values."); return; }
     setBusy(true);
-    let product = null;
+    const isEditing = Boolean(product?.id);
+    let savedProduct = null;
     try {
       const productPayload = {
         name: form.name.trim(), slug: form.slug || slugify(form.name), brand: form.brand || null,
@@ -109,8 +110,8 @@ export default function ProductCreateForm({ categories, onSaved, product = null 
         description: form.description || null, tax_code: form.tax_code || null,
         tax_rate: form.tax_rate === "" ? null : Number(form.tax_rate), status: form.status,
       };
-      product = await apiRequest(product?.id ? "/catalogue/products/" + product.id : "/catalogue/products", {
-        method: product?.id ? "PUT" : "POST",
+      savedProduct = await apiRequest(isEditing ? "/catalogue/products/" + product.id : "/catalogue/products", {
+        method: isEditing ? "PUT" : "POST",
         body: JSON.stringify(productPayload),
       });
       const baseAttributes = definitions.filter(def => !def.is_variant_attribute && (selected[def.code] || []).length);
@@ -121,20 +122,20 @@ export default function ProductCreateForm({ categories, onSaved, product = null 
           method: "PUT", body: JSON.stringify({ value }),
         });
       }
-      const existingResult = product?.id ? await apiRequest("/catalogue/products/" + product.id + "/variants") : { items: [] };
+      const existingResult = isEditing ? await apiRequest("/catalogue/products/" + savedProduct.id + "/variants") : { items: [] };
       const existingByCombination = new Map((existingResult.items || []).filter(item => item.is_active).map(item => [JSON.stringify(Object.fromEntries(Object.entries(item.attributes || {}).sort(([a],[b]) => a.localeCompare(b)))), item]));
       for (const attrs of variantCombinations) {
         const key = JSON.stringify(Object.fromEntries(Object.entries(attrs).sort(([a],[b]) => a.localeCompare(b))));
         if (existingByCombination.has(key)) continue;
-        await apiRequest("/catalogue/products/" + product.id + "/variants", {
+        await apiRequest("/catalogue/products/" + savedProduct.id + "/variants", {
           method: "POST",
           body: JSON.stringify({ attributes: attrs, selling_price: sellingPrice, mrp, cost_price: costPrice }),
         });
       }
       if (imageUrl.trim()) {
-        const currentImages = await apiRequest("/catalogue/products/" + product.id + "/images");
+        const currentImages = await apiRequest("/catalogue/products/" + savedProduct.id + "/images");
         if (!(currentImages.items || []).some(item => item.image_url === imageUrl.trim() && item.variant_id == null)) {
-          await apiRequest("/catalogue/products/" + product.id + "/images", {
+          await apiRequest("/catalogue/products/" + savedProduct.id + "/images", {
             method: "POST",
             body: JSON.stringify({ image_url: imageUrl.trim(), alt_text: imageAlt || null, variant_id: null, sort_order: 0 }),
           });
@@ -145,11 +146,11 @@ export default function ProductCreateForm({ categories, onSaved, product = null 
       if (!posEnabled || !websiteEnabled || !standardDelivery || expressDelivery) {
         notes.push("POS/Website and delivery selections are not persisted yet because the current Catalogue API has no corresponding settings endpoint");
       }
-      setNotice((product?.id ? "Product updated successfully" : "Product saved successfully") + (notes.length ? ". " + notes.join("; ") + "." : "."));
-      if (!product?.id) { setForm(emptyForm); setSelected({}); setImageUrl(""); setImageAlt(""); setTab("information"); }
-      await onSaved?.(product);
+      setNotice((isEditing ? "Product updated successfully" : "Product saved successfully") + (notes.length ? ". " + notes.join("; ") + "." : "."));
+      if (!isEditing) { setForm(emptyForm); setSelected({}); setImageUrl(""); setImageAlt(""); setTab("information"); }
+      await onSaved?.(savedProduct);
     } catch (e) {
-      setError((e.message || "Unable to save product.") + (product ? " The product record was created; review its variants/images before retrying to avoid duplicates." : ""));
+      setError((e.message || "Unable to save product.") + (savedProduct ? " The product record was saved; review its variants/images before retrying to avoid duplicates." : ""));
     } finally { setBusy(false); }
   }
 
