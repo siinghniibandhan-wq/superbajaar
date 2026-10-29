@@ -139,3 +139,21 @@ def test_product_configuration_defaults_channels_and_delivery():
     assert payload.website_enabled is True
     assert payload.standard_delivery_enabled is True
     assert payload.express_delivery_enabled is False
+
+
+def test_image_upload_rejects_unsupported_mime_type_before_database_access():
+    response = client.post(
+        "/api/catalogue/products/1/images/upload",
+        files={"file": ("notes.txt", b"not an image", "text/plain")},
+    )
+    assert response.status_code == 415
+    assert response.json()["detail"] == "Use a JPEG, PNG or WebP image."
+
+
+def test_image_upload_rejects_mime_signature_mismatch_before_database_access():
+    response = client.post(
+        "/api/catalogue/products/1/images/upload",
+        files={"file": ("fake.jpg", b"not a jpeg", "image/jpeg")},
+    )
+    assert response.status_code == 415
+    assert "contents do not match" in response.json()["detail"]
