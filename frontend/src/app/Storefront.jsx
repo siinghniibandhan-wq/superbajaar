@@ -476,7 +476,7 @@ export default function Storefront() {
     return categories.filter(c => [c.parent_id, c.parent_category_id, c.parentId].some(id => id != null && String(id) === String(parent.id)));
   }, [categories, displayCategories, routeCategoryName]);
   const subcategoryProductRows = useMemo(() => categorySubcategories.map(category => {
-    const items = variants.filter((variant, index, allVariants) => {
+    const items = variants.filter(variant => variant.is_active !== false).filter((variant, index, allVariants) => {
       const productId = Number(variant.product_id);
       if (allVariants.findIndex(item => Number(item.product_id) === productId) !== index) return false;
       const product = productById.get(productId);
