@@ -8,6 +8,12 @@ function skuToken(value, limit = 8) {
   return String(value || "").toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, limit).replace(/-$/g, "") || "GEN";
 }
 
+function attributeCode(value) {
+  let code = String(value || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  if (code && /^[0-9]/.test(code)) code = "attribute_" + code;
+  return code;
+}
+
 function categoryCode(name) {
   const slug = String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   const codes = { fashion: "FS", clothing: "FS", apparel: "FS", footwear: "FS", grocery: "GR", groceries: "GR", electronics: "EL", "personal-care": "PC", beauty: "PC", "pet-care": "PT", "fresh-products": "FR", fresh: "FR", "home-kitchen": "HK" };
@@ -90,8 +96,8 @@ export default function CatalogueVariantsPanel({ products, categories = [], mode
     <form className="sb-form sb-form-inner" onSubmit={createAttribute}>
       <h3>Create attribute definition</h3>
       <div className="sb-form-grid">
-        <label>Name<input required value={attribute.name} onChange={e=>setAttribute(v=>({...v,name:e.target.value}))}/></label>
-        <label>Code<input required pattern="[a-z][a-z0-9_]*" value={attribute.code} onChange={e=>setAttribute(v=>({...v,code:e.target.value}))}/></label>
+        <label>Name<input required value={attribute.name} onChange={e=>setAttribute(v=>({...v,name:e.target.value,code:attributeCode(e.target.value)}))}/></label>
+        <label>Code (automatic)<input required pattern="[a-z][a-z0-9_]*" value={attribute.code} readOnly aria-readonly="true"/><small className="sb-muted">Generated automatically from the attribute name.</small></label>
         <label>Type<select value={attribute.value_type} onChange={e=>setAttribute(v=>({...v,value_type:e.target.value,options:""}))}>{["text","number","boolean","date","select","multi_select","colour","size"].map(x=><option key={x}>{x}</option>)}</select></label>
         <label>Options (comma-separated)<input value={attribute.options} disabled={!["select","multi_select","colour","size"].includes(attribute.value_type)} placeholder="S, M, L" onChange={e=>setAttribute(v=>({...v,options:e.target.value}))}/></label>
       </div>
