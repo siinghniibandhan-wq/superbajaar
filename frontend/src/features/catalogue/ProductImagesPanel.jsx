@@ -31,6 +31,15 @@ export default function ProductImagesPanel({ products = [], initialProductId = "
       .catch(e => setError(e.message || "Unable to load product media."));
   }, [productId]);
 
+  async function setPrimary(image) {
+    setBusy(true); setError(""); setMessage("");
+    try {
+      await apiRequest("/catalogue/products/" + productId + "/images/" + image.id + "/primary", { method: "PUT" });
+      setMessage("Main cover image updated."); await loadImages(productId);
+    } catch (e) { setError(e.message || "Unable to update the main cover image."); }
+    finally { setBusy(false); }
+  }
+
   async function submit(event) {
     event.preventDefault(); setBusy(true); setError(""); setMessage("");
     try {
@@ -77,6 +86,6 @@ export default function ProductImagesPanel({ products = [], initialProductId = "
       </div>
       <button className="sb-primary" disabled={busy || !productId || (!imageFile && !imageUrl.trim())} type={embedded ? "button" : "submit"} onClick={embedded ? () => submit({ preventDefault: () => {} }) : undefined}>{busy ? "Saving…" : "Add image reference"}</button>
     </ImageForm>
-    {images.length ? <div className="sb-image-grid">{images.map(image=><article className="sb-image-item" key={image.id}><img src={image.image_url} alt={image.alt_text || ""} loading="lazy" onError={e=>{e.currentTarget.style.display="none";}}/><div><strong>{image.alt_text || "Product image"}{image.is_primary ? " · Main cover" : ""}</strong><small>{image.variant_id ? "Variant #" + image.variant_id : "Product-level"} · Order {image.sort_order}</small><a href={image.image_url} target="_blank" rel="noreferrer">Open image</a></div></article>)}</div> : <p className="sb-empty">No images saved for this product.</p>}
+    {images.length ? <div className="sb-image-grid">{images.map(image=><article className="sb-image-item" key={image.id}><img src={image.image_url} alt={image.alt_text || ""} loading="lazy" onError={e=>{e.currentTarget.style.display="none";}}/><div><strong>{image.alt_text || "Product image"}{image.is_primary ? " · Main cover" : ""}</strong><small>{image.variant_id ? "Variant #" + image.variant_id : "Product-level"} · Order {image.sort_order}</small><a href={image.image_url} target="_blank" rel="noreferrer">Open image</a>{!image.is_primary && <button type="button" className="sb-row-action" disabled={busy} onClick={() => setPrimary(image)}>Make cover</button>}</div></article>)}</div> : <p className="sb-empty">No images saved for this product.</p>}
   </section>;
 }
