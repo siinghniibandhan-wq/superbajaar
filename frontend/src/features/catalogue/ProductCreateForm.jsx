@@ -20,7 +20,7 @@ const slugify = value => value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").
 
 function combinations(definitions, selected) {
   const active = definitions.filter(def => def.is_variant_attribute && (selected[def.code] || []).length);
-  if (!active.length) return [];
+  if (!active.length) return [{}];
   return active.reduce((all, def) => {
     const values = selected[def.code] || [];
     return all.flatMap(item => values.map(value => ({ ...item, [def.code]: value })));
