@@ -1,9 +1,13 @@
 """PostgreSQL-backed catalogue, attribute and variant API foundation."""
 from typing import Any
+import os
 import re
+import uuid
+from pathlib import Path
 
 import psycopg
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.responses import FileResponse
 from psycopg.rows import dict_row
 from pydantic import BaseModel, Field, field_validator
 
@@ -604,6 +608,97 @@ def create_variant(product_id: int, payload: VariantCreate):
         raise
     except psycopg.Error as exc:
         raise _db_error(exc) from exc
+
+
+_IMAGE_CONTENT_TYPES = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+}
+_MAX_IMAGE_BYTES = 10 * 1024 * 1024
+
+
+def _catalogue_image_directory() -> Path:
+    return Path(os.getenv("CATALOGUE_IMAGE_DIR", "/var/lib/superbajaar/catalogue-images"))
+
+
+@router.post("/products/{product_id}/images/upload")
+async def upload_product_image(
+    product_id: int,
+    request: Request,
+    file: UploadFile = File(...),
+    variant_id: int | None = Form(default=None),
+    alt_text: str | None = Form(default=None),
+    sort_order: int = Form(default=0),
+):
+    content_type = (file.content_type or "").lower()
+    extension = _IMAGE_CONTENT_TYPES.get(content_type)
+    if extension is None:
+        raise HTTPException(status_code=415, detail="Use a JPEG, PNG or WebP image.")
+    if sort_order < 0 or sort_order > 10000:
+        raise HTTPException(status_code=422, detail="Sort order must be between 0 and 10000.")
+    data = await file.read(_MAX_IMAGE_BYTES + 1)
+    if not data:
+        raise HTTPException(status_code=422, detail="The selected image is empty.")
+    if len(data) > _MAX_IMAGE_BYTES:
+        raise HTTPException(status_code=413, detail="Image must be 10 MB or smaller.")
+    # Verify file signatures instead of trusting the browser-supplied MIME type.
+    signatures = {
+        "image/jpeg": data.startswith(b"\\xff\\xd8\\xff"),
+        "image/png": data.startswith(b"\\x89PNG\\r\\n\\x1a\\n"),
+        "image/webp": len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP",
+    }
+    if not signatures.get(content_type, False):
+        raise HTTPException(status_code=415, detail="The file contents do not match the selected image type.")
+    filename = f"{uuid.uuid4().hex}{extension}"
+    directory = _catalogue_image_directory()
+    destination = directory / filename
+    try:
+        with _connection() as conn:
+            if conn.execute("SELECT id FROM products WHERE id=%s", (product_id,)).fetchone() is None:
+                raise HTTPException(status_code=404, detail="Product not found")
+            if variant_id is not None and conn.execute(
+                "SELECT id FROM product_variants WHERE id=%s AND product_id=%s",
+                (variant_id, product_id),
+            ).fetchone() is None:
+                raise HTTPException(status_code=422, detail="The selected variant does not belong to this product.")
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(data)
+        except OSError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Image storage is unavailable. Configure CATALOGUE_IMAGE_DIR with a persistent writable directory.",
+            ) from exc
+        image_url = str(request.base_url).rstrip("/") + f"{settings.api_prefix}/catalogue/images/{filename}"
+        try:
+            with _connection() as conn:
+                row = conn.execute(
+                    "INSERT INTO product_images (product_id, variant_id, image_url, alt_text, sort_order) "
+                    "VALUES (%s,%s,%s,%s,%s) RETURNING id, product_id, variant_id, image_url, alt_text, sort_order, created_at",
+                    (product_id, variant_id, image_url, (alt_text or "").strip() or None, sort_order),
+                ).fetchone()
+        except Exception:
+            destination.unlink(missing_ok=True)
+            raise
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+    finally:
+        await file.close()
+
+
+@router.get("/images/{filename}")
+def serve_catalogue_image(filename: str):
+    if not re.fullmatch(r"[0-9a-f]{32}\\.(jpg|png|webp)", filename):
+        raise HTTPException(status_code=404, detail="Image not found")
+    path = _catalogue_image_directory() / filename
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Image not found")
+    media_type = {".jpg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}[path.suffix]
+    return FileResponse(path, media_type=media_type, headers={"X-Content-Type-Options": "nosniff"})
 
 
 @router.get("/products/{product_id}/images")
