@@ -57,7 +57,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
       if (!form.slug.trim()) throw new Error("Product slug could not be generated. Enter a valid product name.");
       const price = Number(form.selling_price);
       const mrp = Number(form.mrp);
-      if (!Number.isFinite(price) || !Number.isFinite(mrp) || form.selling_price === "" || form.mrp === "" || price < 0 || mrp < price) {
+      if (!product?.id && (!Number.isFinite(price) || !Number.isFinite(mrp) || form.selling_price === "" || form.mrp === "" || price < 0 || mrp < price)) {
         setActiveTab("general");
         throw new Error("Enter a valid selling price and an MRP equal to or higher than the selling price.");
       }
@@ -106,7 +106,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
         <label>Tax rate (%)<input type="number" min="0" max="100" step="0.01" value={form.tax_rate ?? ""} onChange={e => change("tax_rate", e.target.value)} /></label>
         <label className="sb-span-all">Product description<textarea rows="4" value={form.description || ""} onChange={e => change("description", e.target.value)} placeholder="Features, material, fit, usage and care instructions" /></label>
       </div>
-      <button type="button" className="sb-primary" onClick={() => { if (!form.name.trim() || !form.slug.trim() || form.selling_price === "" || form.mrp === "" || Number(form.selling_price) < 0 || Number(form.mrp) < Number(form.selling_price)) { setError("Complete product name, selling price and valid MRP before continuing."); return; } setError(""); setActiveTab("attributes"); }}>Continue to Attributes &amp; Variants</button>
+      <button type="button" className="sb-primary" onClick={() => { if (!form.name.trim() || !form.slug.trim() || (!product?.id && (form.selling_price === "" || form.mrp === "" || Number(form.selling_price) < 0 || Number(form.mrp) < Number(form.selling_price)))) { setError("Complete product name, selling price and valid MRP before continuing."); return; } setError(""); setActiveTab("attributes"); }}>Continue to Attributes &amp; Variants</button>
     </section>
     <section hidden={activeTab !== "attributes"} aria-label="Attributes and variants">
       {product?.id ? <p className="sb-muted">Existing variants are preserved while editing product information. Manage individual variants in the Variants section below the catalogue.</p> : <>
