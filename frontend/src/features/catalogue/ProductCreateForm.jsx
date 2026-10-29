@@ -38,7 +38,12 @@ export default function ProductCreateForm({ categories, onSaved, product = null 
   const [tab, setTab] = useState("information");
   const [settingsLoading, setSettingsLoading] = useState(false);
   useEffect(() => {
-    if (!product) { setForm(emptyForm); setSettingsLoading(false); return; }
+    if (!product) {
+      setForm(emptyForm); setSettingsLoading(false); setSelected({});
+      setPosEnabled(true); setWebsiteEnabled(true); setStandardDelivery(true); setExpressDelivery(false);
+      setRestrictionValues({ region: "", state: "", warehouse: "", pincode: "" });
+      return;
+    }
     setSettingsLoading(true);
     setForm({
       ...emptyForm, ...product,
@@ -169,10 +174,18 @@ export default function ProductCreateForm({ categories, onSaved, product = null 
         });
       }
       const existingResult = isEditing ? await apiRequest("/catalogue/products/" + savedProduct.id + "/variants") : { items: [] };
-      const existingByCombination = new Map((existingResult.items || []).filter(item => item.is_active).map(item => [JSON.stringify(Object.fromEntries(Object.entries(item.attributes || {}).sort(([a],[b]) => a.localeCompare(b)))), item]));
+      const activeExistingVariants = (existingResult.items || []).filter(item => item.is_active);
+      const combinationKey = attrs => JSON.stringify(Object.fromEntries(Object.entries(attrs || {}).sort(([a],[b]) => a.localeCompare(b))));
+      const existingByCombination = new Map(activeExistingVariants.map(item => [combinationKey(item.attributes), item]));
+      const desiredCombinationKeys = new Set(variantCombinations.map(combinationKey));
+      for (const existing of activeExistingVariants) {
+        if (!desiredCombinationKeys.has(combinationKey(existing.attributes))) {
+          await apiRequest("/catalogue/variants/" + existing.id + "/archive", { method: "POST" });
+        }
+      }
       let variantsCreated = 0;
       for (const attrs of variantCombinations) {
-        const key = JSON.stringify(Object.fromEntries(Object.entries(attrs).sort(([a],[b]) => a.localeCompare(b))));
+        const key = combinationKey(attrs);
         if (existingByCombination.has(key)) continue;
         await apiRequest("/catalogue/products/" + savedProduct.id + "/variants", {
           method: "POST",
