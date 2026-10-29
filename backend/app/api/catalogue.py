@@ -458,9 +458,6 @@ def create_variant(product_id: int, payload: VariantCreate):
             unknown = sorted(set(payload.attributes) - set(by_code))
             if unknown:
                 raise HTTPException(status_code=422, detail=f"Unknown or non-variant attributes: {', '.join(unknown)}")
-            for code, definition in by_code.items():
-                if definition["is_required"] and code not in payload.attributes:
-                    raise HTTPException(status_code=422, detail=f"Required variant attribute '{code}' is missing")
             for code, value in payload.attributes.items():
                 _validate_attribute_value(conn, by_code[code], value)
             sku = payload.sku.strip() if payload.sku else _generate_variant_sku(conn, product_id, payload.attributes)
@@ -549,9 +546,6 @@ def update_variant(variant_id: int, payload: VariantUpdate):
             unknown = sorted(set(payload.attributes) - set(by_code))
             if unknown:
                 raise HTTPException(status_code=422, detail=f"Unknown or non-variant attributes: {', '.join(unknown)}")
-            for code, definition in by_code.items():
-                if definition["is_required"] and code not in payload.attributes:
-                    raise HTTPException(status_code=422, detail=f"Required variant attribute '{code}' is missing")
             for code, value in payload.attributes.items():
                 _validate_attribute_value(conn, by_code[code], value)
             sku = payload.sku or _generate_variant_sku(conn, current["product_id"], payload.attributes)
