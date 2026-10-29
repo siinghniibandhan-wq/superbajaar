@@ -10,6 +10,7 @@ export default function CatalogueWorkspace({ onBack }) {
   const [products, setProducts] = useState([]);
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
+  const [parentId, setParentId] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -36,11 +37,12 @@ export default function CatalogueWorkspace({ onBack }) {
     try {
       await apiRequest("/catalogue/categories", {
         method: "POST",
-        body: JSON.stringify({ name, slug }),
+        body: JSON.stringify({ name, slug, parent_id: parentId ? Number(parentId) : null }),
       });
       setName("");
       setSlug("");
-      setMessage("Category created.");
+      setParentId("");
+      setMessage(parentId ? "Subcategory created." : "Category created.");
       await refresh();
     } catch (e) {
       setError(e.message || "Unable to create category");
@@ -60,12 +62,13 @@ export default function CatalogueWorkspace({ onBack }) {
       <div className="sb-form-grid">
         <label>Name<input required value={name} onChange={e => {setName(e.target.value); if (!slug) setSlug(e.target.value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""));}} /></label>
         <label>Slug<input required pattern="[a-z0-9]+(-[a-z0-9]+)*" value={slug} onChange={e => setSlug(e.target.value)} /></label>
+        <label className="sb-span-all">Parent category (optional)<select value={parentId} onChange={e => setParentId(e.target.value)}><option value="">None — create a main category</option>{categories.filter(item => !item.parent_id).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><small className="sb-muted">Choose a parent to create a subcategory.</small></label>
       </div>
       <button className="sb-primary" type="submit">Create category</button>
     </form>
     <div className="sb-data-card">
       <div className="sb-data-heading"><h2>Categories</h2><button type="button" onClick={refresh}>Refresh</button></div>
-      {categories.length ? <ul>{categories.map(item => <li key={item.id}>{item.name} <small>({item.slug})</small></li>)}</ul> : <p className="sb-empty">No categories loaded.</p>}
+      {categories.length ? <ul>{categories.filter(item => !item.parent_id).map(item => <li key={item.id}>{item.name} <small>({item.slug})</small>{categories.filter(child => Number(child.parent_id) === Number(item.id)).length > 0 && <ul>{categories.filter(child => Number(child.parent_id) === Number(item.id)).map(child => <li key={child.id}>{child.name} <small>({child.slug})</small></li>)}</ul>}</li>)}</ul> : <p className="sb-empty">No categories loaded.</p>}
     </div>
     <div className="sb-data-card">
       <CatalogueVariantsPanel products={products} />
