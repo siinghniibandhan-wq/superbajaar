@@ -93,9 +93,9 @@ export default function ProductCreateForm({ categories = [], product = null, onS
       if (!form.slug.trim()) throw new Error("Product slug could not be generated. Enter a valid product name.");
       const price = Number(form.selling_price);
       const mrp = Number(form.mrp);
-      if (!product?.id && (!Number.isFinite(price) || !Number.isFinite(mrp) || form.selling_price === "" || form.mrp === "" || price < 0 || mrp < price)) {
+      if ((!product?.id || chosenAttributes.length) && (!Number.isFinite(price) || !Number.isFinite(mrp) || form.selling_price === "" || form.mrp === "" || price < 0 || mrp < price)) {
         setActiveTab("general");
-        throw new Error("Enter a valid selling price and an MRP equal to or higher than the selling price.");
+        throw new Error("Enter a valid selling price and an MRP equal to or higher than the selling price before creating variants.");
       }
       const payload = { name: form.name.trim(), slug: form.slug, brand: form.brand || null, category_id: form.category_id ? Number(form.category_id) : null, description: form.description || null, tax_code: form.tax_code || null, tax_rate: form.tax_rate === "" ? null : Number(form.tax_rate), is_pos_available: Boolean(form.is_pos_available), is_website_available: Boolean(form.is_website_available), delivery_options: form.delivery_options?.length ? form.delivery_options : ["standard"], status: product?.status || "active" };
       savedProduct = await apiRequest(product?.id ? "/catalogue/products/" + product.id : "/catalogue/products", { method: product?.id ? "PUT" : "POST", body: JSON.stringify(payload) });
@@ -109,7 +109,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
       const existingResult = product?.id ? await apiRequest("/catalogue/products/" + savedProduct.id + "/variants") : { items: [] };
       const normalize = attrs => JSON.stringify(Object.fromEntries(Object.entries(attrs || {}).sort(([a], [b]) => a.localeCompare(b))));
       const existing = new Set((existingResult.items || []).filter(v => v.is_active).map(v => normalize(v.attributes)));
-      const missingCombinations = variantCombinations.filter(attrs => !existing.has(normalize(attrs)));
+      const missingCombinations = product?.id && !chosenAttributes.length ? [] : variantCombinations.filter(attrs => !existing.has(normalize(attrs)));
       for (const attrs of missingCombinations) {
         await apiRequest("/catalogue/products/" + savedProduct.id + "/variants", {
           method: "POST",
