@@ -76,6 +76,7 @@ export default function ProductCreateForm({ categories, onSaved, product = null 
     }).catch(e => setError(e.message || "Unable to load product settings.")).finally(() => setSettingsLoading(false));
   }, [product?.id]);
   const [definitions, setDefinitions] = useState([]);
+  const [taxRates, setTaxRates] = useState([]);
   const [selected, setSelected] = useState({});
   const [newOptions, setNewOptions] = useState({});
   const [imageUrl, setImageUrl] = useState("");
@@ -96,6 +97,11 @@ export default function ProductCreateForm({ categories, onSaved, product = null 
     setDefinitions(result.items || []);
   }
   useEffect(() => { loadDefinitions().catch(e => setError(e.message || "Unable to load attributes.")); }, []);
+  useEffect(() => {
+    apiRequest("/catalogue/tax-rates")
+      .then(result => setTaxRates(result.items || []))
+      .catch(e => setError(e.message || "Unable to load configured tax rates."));
+  }, []);
 
   function toggleValue(def, value) {
     setSelected(old => {
@@ -232,9 +238,9 @@ export default function ProductCreateForm({ categories, onSaved, product = null 
         <label>Selling price (₹) *<input required type="number" min="0" step="0.01" value={form.selling_price} onChange={e => change("selling_price", e.target.value)}/></label>
         <label>Cost price (₹)<input type="number" min="0" step="0.01" value={form.cost_price} onChange={e => change("cost_price", e.target.value)}/></label>
         <label>Tax code<input maxLength="32" value={form.tax_code} onChange={e => change("tax_code", e.target.value)}/></label>
-        <label>Tax rate (%)<input type="number" min="0" max="100" step="0.01" value={form.tax_rate} onChange={e => change("tax_rate", e.target.value)} placeholder="Enter configured rate"/></label>
+        <label>Tax rate (%)<select value={form.tax_rate} onChange={e => change("tax_rate", e.target.value)}><option value="">Choose tax rate</option>{form.tax_rate !== "" && !taxRates.some(rate => Number(rate.rate) === Number(form.tax_rate)) && <option value={form.tax_rate}>Existing custom rate · {form.tax_rate}%</option>}{taxRates.map(rate => <option key={rate.id} value={String(rate.rate)}>{rate.label} · {rate.rate}%</option>)}</select></label>
       </div>
-      <p className="sb-muted">The current backend exposes tax code and tax rate fields, but the repository has no tax-rate lookup endpoint. The rate remains manually entered until the existing Tax Module exposes one.</p>
+      <p className="sb-muted">{taxRates.length ? "Tax rates are loaded from the central tax-rate master." : "No configured tax rates were returned. Check the tax-rate master and database migration."}</p>
     </section>}
 
     {tab === "availability" && <section className="sb-wizard-panel"><h3>Availability</h3>
