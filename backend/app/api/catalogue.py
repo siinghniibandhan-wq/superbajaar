@@ -327,6 +327,61 @@ def archive_product(product_id: int):
             raise HTTPException(status_code=404, detail="Product not found or already archived")
     return row
 
+class AvailabilityRuleCreate(BaseModel):
+    channel: str = Field(pattern=r"^(pos|website)$")
+    region_code: str | None = Field(default=None, max_length=80)
+    pincode: str | None = Field(default=None, pattern=r"^[0-9]{6}$")
+    location_id: int | None = Field(default=None, gt=0)
+    is_allowed: bool = True
+
+    @field_validator("region_code")
+    @classmethod
+    def normalize_region(cls, value: str | None) -> str | None:
+        return value.strip() if value and value.strip() else None
+
+
+@router.get("/products/{product_id}/availability-rules")
+def list_product_availability_rules(product_id: int):
+    with _connection() as conn:
+        _require_product(conn, product_id)
+        rows = conn.execute(
+            "SELECT id, product_id, channel, region_code, pincode, location_id, is_allowed, created_at "
+            "FROM product_availability_rules WHERE product_id=%s ORDER BY channel, id",
+            (product_id,),
+        ).fetchall()
+    return {"items": rows}
+
+
+@router.put("/products/{product_id}/availability-rules")
+def replace_product_availability_rules(product_id: int, payload: list[AvailabilityRuleCreate]):
+    try:
+        with _connection() as conn:
+            _require_product(conn, product_id)
+            for rule in payload:
+                if not (rule.region_code or rule.pincode or rule.location_id):
+                    raise HTTPException(status_code=422, detail="Each availability rule needs a region, pincode or warehouse")
+                if rule.location_id is not None:
+                    location = conn.execute(
+                        "SELECT id FROM stock_locations WHERE id=%s AND is_active=TRUE",
+                        (rule.location_id,),
+                    ).fetchone()
+                    if location is None:
+                        raise HTTPException(status_code=422, detail="Selected warehouse/store location is not active")
+            conn.execute("DELETE FROM product_availability_rules WHERE product_id=%s", (product_id,))
+            rows = []
+            for rule in payload:
+                rows.append(conn.execute(
+                    "INSERT INTO product_availability_rules (product_id,channel,region_code,pincode,location_id,is_allowed) "
+                    "VALUES (%s,%s,%s,%s,%s,%s) RETURNING id,product_id,channel,region_code,pincode,location_id,is_allowed,created_at",
+                    (product_id,rule.channel,rule.region_code,rule.pincode,rule.location_id,rule.is_allowed),
+                ).fetchone())
+        return {"items": rows}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
 @router.get("/products/{product_id}/attributes")
 def list_product_attributes(product_id: int):
     with _connection() as conn:
