@@ -50,11 +50,28 @@ export default function ProductCreateForm({ categories, onSaved, product = null 
     setWebsiteEnabled(product.website_enabled !== false);
     setStandardDelivery(product.standard_delivery_enabled !== false);
     setExpressDelivery(product.express_delivery_enabled === true);
-    apiRequest("/catalogue/products/" + product.id + "/availability").then(result => {
+    Promise.all([
+      apiRequest("/catalogue/products/" + product.id + "/availability"),
+      apiRequest("/catalogue/products/" + product.id + "/attributes"),
+      apiRequest("/catalogue/products/" + product.id + "/variants"),
+    ]).then(([result, attrResult, variantResult]) => {
+      const selectedValues = {};
+      (attrResult.items || []).forEach(item => {
+        if (!item.is_variant_attribute && item.value !== undefined && item.value !== null) {
+          selectedValues[item.code] = Array.isArray(item.value) ? item.value : [item.value];
+        }
+      });
+      (variantResult.items || []).filter(item => item.is_active).forEach(item => {
+        Object.entries(item.attributes || {}).forEach(([code, value]) => {
+          const values = Array.isArray(value) ? value : [value];
+          selectedValues[code] = [...new Map([...(selectedValues[code] || []), ...values].map(v => [String(v), v])).values()];
+        });
+      });
+      setSelected(selectedValues);
       const grouped = { region: [], state: [], warehouse: [], pincode: [] };
       (result.restrictions || []).forEach(item => { if (grouped[item.type]) grouped[item.type].push(item.value); });
       setRestrictionValues(Object.fromEntries(Object.entries(grouped).map(([key, values]) => [key, values.join(", ")])));
-    }).catch(e => setError(e.message || "Unable to load product availability."));
+    }).catch(e => setError(e.message || "Unable to load product settings."));
   }, [product?.id]);
   const [definitions, setDefinitions] = useState([]);
   const [selected, setSelected] = useState({});
