@@ -272,6 +272,7 @@ def list_products(
         params.append(category_id)
     if getattr(request.state, "public_catalogue", False):
         status = "active"
+        clauses.append("is_website_available = TRUE")
     if status != "all":
         clauses.append("status = %s")
         params.append(status)
