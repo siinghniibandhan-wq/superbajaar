@@ -84,15 +84,19 @@ Route existence does not prove that a screen works end to end. For each workspac
 - Never run destructive reset, drop, or truncate operations against production.
 - Do not put database credentials or other secrets in source control.
 
-### Schema file inventory (observed on main)
+### Schema file inventory and protected files (observed on main)
 
-- `backend/schema/000_baseline_schema.sql` — baseline schema definition.
-- `backend/schema/009_loyalty_programme.sql` — loyalty programme schema changes.
+**Do not edit, delete, rename, replace, or regenerate these protected files:**
+
+- `backend/schema/000_baseline_schema.sql` — protected baseline schema; never modify or delete.
+- `backend/schema/009_loyalty_programme.sql` — protected applied migration; never modify or delete.
+
+Treat these as explicit handbook rules, not suggestions. Any future schema change must be added as a new migration file; do not amend an existing/applied migration. Check the full directory and migration history before selecting the next unused migration number. The current repository already contains `010_customer_accounts_referrals.sql` and `011_customer_phone_uniqueness.sql`; do not assume `010` is available.
 - `backend/schema/009_product_availability_delivery.sql` — product POS/website availability, delivery options and availability-rule table.
 - `backend/schema/010_customer_accounts_referrals.sql` — customer accounts/referrals changes.
 - `backend/schema/011_customer_phone_uniqueness.sql` — customer phone uniqueness change.
 
-**Important: two migration files currently use the `009` prefix.** Do not rename, delete, reorder, or edit either file as a quick fix. Before applying migrations in a live environment, inspect the schema runner's ordering and the production `schema_migrations` records to confirm both files are handled safely. Resolve migration numbering through a separately reviewed migration plan if required.
+**Important: two migration files currently use the `009` prefix:** `009_loyalty_programme.sql` (protected) and `009_product_availability_delivery.sql` (added by PR #138). Do not rename, delete, reorder, or edit either file as a quick fix. Before applying any migration in a live environment, inspect the schema runner's ordering and the production `schema_migrations` records to confirm both files are handled safely. Do not apply or reapply the product availability migration until its live application status and ordering are confirmed.
 
 ### Data and table preservation — mandatory
 
