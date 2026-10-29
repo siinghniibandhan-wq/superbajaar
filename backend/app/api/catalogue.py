@@ -350,7 +350,7 @@ def create_product(payload: ProductCreate):
                 "INSERT INTO products (category_id, name, slug, description, brand, tax_code, tax_rate, status, is_pos_available, is_website_available, delivery_options) "
                 "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
                 "RETURNING id, category_id, name, slug, description, brand, status, tax_code, tax_rate, is_pos_available, is_website_available, delivery_options, created_at, updated_at",
-                (next(iter(dict.fromkeys(payload.category_ids)), payload.category_id)[0] if False else (payload.category_ids[0] if payload.category_ids else payload.category_id), payload.name, payload.slug, payload.description, payload.brand, payload.tax_code, payload.tax_rate, payload.status, payload.is_pos_available, payload.is_website_available, payload.delivery_options),
+                (payload.category_ids[0] if payload.category_ids else payload.category_id, payload.name, payload.slug, payload.description, payload.brand, payload.tax_code, payload.tax_rate, payload.status, payload.is_pos_available, payload.is_website_available, payload.delivery_options),
             ).fetchone()
             category_ids = list(dict.fromkeys(payload.category_ids or ([payload.category_id] if payload.category_id else [])))
             for category_id in category_ids:
