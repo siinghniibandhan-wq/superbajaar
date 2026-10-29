@@ -251,6 +251,18 @@ def _validate_attribute_value(conn, attribute: dict[str, Any], value: Any) -> No
         raise HTTPException(status_code=422, detail=f"Invalid value for attribute '{attribute['name']}'")
 
 
+@router.get("/tax-rates")
+def list_tax_rates():
+    try:
+        with _connection() as conn:
+            rows = conn.execute(
+                "SELECT id, code, label, rate FROM tax_rates WHERE is_active=TRUE ORDER BY rate, label"
+            ).fetchall()
+        return {"items": rows}
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
 @router.get("/categories")
 def list_categories(request: Request, limit: int = Query(default=100, ge=1, le=500), offset: int = Query(default=0, ge=0)):
     with _connection() as conn:
