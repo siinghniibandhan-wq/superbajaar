@@ -88,7 +88,7 @@ export default function CatalogueWorkspace({ onBack }) {
     {activeTab === "catalogue" && <>
       <div className="sb-catalogue-toolbar">
         <div><h2>All products</h2><p className="sb-muted">Products loaded from the backend API.</p></div>
-        <button className="sb-primary" type="button" onClick={() => setShowProductForm(value => !value)}>{showProductForm ? "Cancel" : "+ Add product"}</button>
+        <button className="sb-primary" type="button" onClick={() => { if (editingProduct) setEditingProduct(null); else setShowProductForm(value => !value); }}>{editingProduct ? "Cancel edit" : showProductForm ? "Cancel" : "+ Add product"}</button>
       </div>
       {(showProductForm || editingProduct) && <ProductCreateForm product={editingProduct} categories={categories} onSaved={async () => { await refresh(); setShowProductForm(false); setEditingProduct(null); }} />}
       <div className="sb-strip-list" aria-label="Product list">
