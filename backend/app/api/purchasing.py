@@ -215,3 +215,33 @@ def receive_goods(purchase_id: int, payload: GoodsReceipt):
         raise
     except psycopg.Error as exc:
         raise _db_error(exc) from exc
+
+
+
+@router.post("/orders/{purchase_id}/cancel")
+def cancel_purchase_order(purchase_id: int):
+    """Cancel the unreceived remainder of an order; already received stock is not reversed."""
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                po = conn.execute(
+                    "SELECT id, status FROM purchase_orders WHERE id = %s FOR UPDATE",
+                    (purchase_id,),
+                ).fetchone()
+                if po is None:
+                    raise HTTPException(404, "Purchase order not found")
+                if po["status"] not in {"ordered", "partially_received"}:
+                    raise HTTPException(409, "Only ordered or partially received purchase orders can be cancelled")
+                row = conn.execute(
+                    "UPDATE purchase_orders SET status = 'cancelled', updated_at = now() "
+                    "WHERE id = %s RETURNING id, purchase_number, status, updated_at",
+                    (purchase_id,),
+                ).fetchone()
+        return {
+            **row,
+            "message": "Remaining quantities cancelled. Previously received inventory remains unchanged.",
+        }
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
