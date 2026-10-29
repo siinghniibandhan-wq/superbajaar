@@ -148,7 +148,7 @@ export default function CatalogueWorkspace({ onBack }) {
         <div className="sb-form-grid">
           <label>Name<input required maxLength="160" value={name} onChange={e => {setName(e.target.value); setSlug(e.target.value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""));}} /></label>
           <label>Slug (automatic)<input required pattern="[a-z0-9]+(-[a-z0-9]+)*" value={slug} readOnly aria-readonly="true" /><small className="sb-muted">Generated from the category name.</small></label>
-          <label className="sb-span-all">Parent category (optional)<select value={parentId} onChange={e => setParentId(e.target.value)}><option value="">None — create a main category</option>{parentCategories.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><small className="sb-muted">Choose a parent to create a subcategory.</small></label>
+          <label className="sb-span-all">Parent category (optional)<select value={parentId} onChange={e => setParentId(e.target.value)}><option value="">None — create a main category</option>{parentCategories.filter(item => Number(item.id) !== Number(editingCategory?.id)).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><small className="sb-muted">Choose a parent to create a subcategory.</small></label>
         </div>
         <div className="sb-category-form-actions"><button className="sb-primary" type="submit">{editingCategory ? "Save changes" : "Create category"}</button><button className="sb-secondary" type="button" onClick={resetCategoryForm}>Cancel</button></div>
       </form>}
