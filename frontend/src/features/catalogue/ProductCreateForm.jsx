@@ -40,6 +40,21 @@ export default function ProductCreateForm({ categories = [], product = null, onS
     apiRequest("/catalogue/stock-locations").then(result => setStockLocations(result.items || [])).catch(() => setStockLocations([]));
   }, []);
   useEffect(() => {
+    if (!product?.id || !definitions.length) return;
+    apiRequest("/catalogue/products/" + product.id + "/variants")
+      .then(result => {
+        const values = {};
+        for (const row of result.items || []) {
+          for (const [code, raw] of Object.entries(row.attributes || {})) {
+            const list = Array.isArray(raw) ? raw : [raw];
+            values[code] = [...new Set([...(values[code] || []), ...list])];
+          }
+        }
+        setSelected(old => ({ ...values, ...old }));
+      })
+      .catch(e => setError(e.message || "Unable to load existing product variants."));
+  }, [product?.id, definitions]);
+  useEffect(() => {
     if (!product?.id) return;
     apiRequest("/catalogue/products/" + product.id + "/availability-rules")
       .then(result => setAvailabilityRules(result.items || []))
@@ -78,34 +93,35 @@ export default function ProductCreateForm({ categories = [], product = null, onS
       if (!form.slug.trim()) throw new Error("Product slug could not be generated. Enter a valid product name.");
       const price = Number(form.selling_price);
       const mrp = Number(form.mrp);
-      if (!product?.id && (!Number.isFinite(price) || !Number.isFinite(mrp) || form.selling_price === "" || form.mrp === "" || price < 0 || mrp < price)) {
+      if ((!product?.id || chosenAttributes.length) && (!Number.isFinite(price) || !Number.isFinite(mrp) || form.selling_price === "" || form.mrp === "" || price < 0 || mrp < price)) {
         setActiveTab("general");
-        throw new Error("Enter a valid selling price and an MRP equal to or higher than the selling price.");
+        throw new Error("Enter a valid selling price and an MRP equal to or higher than the selling price before creating variants.");
       }
       const payload = { name: form.name.trim(), slug: form.slug, brand: form.brand || null, category_id: form.category_id ? Number(form.category_id) : null, description: form.description || null, tax_code: form.tax_code || null, tax_rate: form.tax_rate === "" ? null : Number(form.tax_rate), is_pos_available: Boolean(form.is_pos_available), is_website_available: Boolean(form.is_website_available), delivery_options: form.delivery_options?.length ? form.delivery_options : ["standard"], status: product?.status || "active" };
       savedProduct = await apiRequest(product?.id ? "/catalogue/products/" + product.id : "/catalogue/products", { method: product?.id ? "PUT" : "POST", body: JSON.stringify(payload) });
-      // Editing updates only the product record. It must not duplicate existing variants.
-      if (!product?.id) {
-        for (const def of chosenAttributes) {
-          const values = selected[def.code] || [];
-          if (OPTION_TYPES.includes(def.value_type)) {
-            const missing = values.filter(value => !(def.options || []).some(option => String(option) === String(value)));
-            if (missing.length) await apiRequest("/catalogue/attributes/" + def.id + "/options", { method: "PUT", body: JSON.stringify({ options: missing }) });
-          }
+      for (const def of chosenAttributes) {
+        const values = selected[def.code] || [];
+        if (OPTION_TYPES.includes(def.value_type)) {
+          const missing = values.filter(value => !(def.options || []).some(option => String(option) === String(value)));
+          if (missing.length) await apiRequest("/catalogue/attributes/" + def.id + "/options", { method: "PUT", body: JSON.stringify({ options: missing }) });
         }
-        for (const attrs of variantCombinations) {
-          await apiRequest("/catalogue/products/" + savedProduct.id + "/variants", {
-            method: "POST",
-            body: JSON.stringify({ attributes: attrs, selling_price: price, mrp, cost_price: null }),
-          });
-        }
+      }
+      const existingResult = product?.id ? await apiRequest("/catalogue/products/" + savedProduct.id + "/variants") : { items: [] };
+      const normalize = attrs => JSON.stringify(Object.fromEntries(Object.entries(attrs || {}).sort(([a], [b]) => a.localeCompare(b))));
+      const existing = new Set((existingResult.items || []).filter(v => v.is_active).map(v => normalize(v.attributes)));
+      const missingCombinations = product?.id && !chosenAttributes.length ? [] : variantCombinations.filter(attrs => !existing.has(normalize(attrs)));
+      for (const attrs of missingCombinations) {
+        await apiRequest("/catalogue/products/" + savedProduct.id + "/variants", {
+          method: "POST",
+          body: JSON.stringify({ attributes: attrs, selling_price: price, mrp, cost_price: null }),
+        });
       }
       if (product?.id) {
         await apiRequest("/catalogue/products/" + product.id + "/availability-rules", {
           method: "PUT", body: JSON.stringify(availabilityRules.map(rule => ({ channel: rule.channel, region_code: rule.region_code || null, pincode: rule.pincode || null, location_id: rule.location_id ? Number(rule.location_id) : null, is_allowed: rule.is_allowed !== false }))),
         });
       }
-      setSuccess(product?.id ? "Product details updated. Existing variants were preserved." : "Product saved with " + variantCombinations.length + " variant(s) and default prices.");
+      setSuccess(product?.id ? (missingCombinations.length ? "Product updated and " + missingCombinations.length + " new variant(s) added. Existing variants were preserved." : "Product details updated. Existing variants were preserved; no duplicate variants were created.") : "Product saved with " + variantCombinations.length + " variant(s) and default prices.");
       await onSaved?.(savedProduct);
     } catch (e) {
       setError((e.message || "Unable to save product.") + (savedProduct && !product?.id ? " The product record was created, but one or more variant operations may not have completed. Review its variants before retrying." : ""));
@@ -197,7 +213,8 @@ export default function ProductCreateForm({ categories = [], product = null, onS
       <div className="sb-product-actions"><button className="sb-primary" disabled={busy || !(form.delivery_options||[]).length} type="submit">{busy ? "Saving…" : product ? "Save product changes" : "Save product and variants"}</button><button className="sb-secondary" type="button" disabled={busy} onClick={() => setActiveTab("general")}>Back to Product Information</button></div>
     </section>
     <section hidden={activeTab !== "attributes"} aria-label="Attributes and variants">
-      {product?.id ? <p className="sb-muted">Existing variants are preserved while editing product information. Manage individual variants in the Variants section below the catalogue.</p> : <>
+      {product?.id && <p className="sb-muted">Existing variants are preserved. Select additional values below to add only missing combinations; existing variants will not be duplicated.</p>}
+      <>
         <p className="sb-muted">Choose values from the central Attributes module. Each unique combination creates a variant with the default prices above.</p>
         <section className="sb-product-attributes">
           <h3>Attributes and variants</h3>
@@ -210,7 +227,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
           {!definitions.length && <p className="sb-empty">Create an attribute in the Attributes tab first, or continue with a product that has no variants.</p>}
           <p className="sb-muted">This product will create {variantCombinations.length} variant(s).</p>
         </section>
-      </>}
+      </>
       <div className="sb-product-actions"><button className="sb-secondary" type="button" disabled={busy} onClick={() => setActiveTab("general")}>Back to Product Information</button><button className="sb-primary" type="button" disabled={busy} onClick={() => setActiveTab("availability")}>Next: Availability</button></div>
     </section>
   </form>;
