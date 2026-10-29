@@ -106,11 +106,11 @@ class AvailabilityRestriction(BaseModel):
 
     @field_validator("value")
     @classmethod
-    def restriction_value_not_blank(cls, value: str) -> str:
+    def restriction_value_not_blank(cls, value: str, info) -> str:
         value = value.strip()
         if not value:
             raise ValueError("Restriction value cannot be blank")
-        if not re.fullmatch(r"\d{6}", value) and value.isdigit() and len(value) != 6:
+        if info.data.get("type") == "pincode" and not re.fullmatch(r"\d{6}", value):
             raise ValueError("Pincode restrictions must contain exactly six digits")
         return value
 
