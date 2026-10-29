@@ -95,19 +95,12 @@ class AttributeValueCreate(BaseModel):
 
 
 class VariantCreate(BaseModel):
-    sku: str = Field(min_length=1, max_length=100)
+    sku: str | None = Field(default=None, max_length=100)
     barcode: str | None = Field(default=None, max_length=100)
     attributes: dict[str, Any] = Field(default_factory=dict)
     selling_price: float = Field(ge=0)
     mrp: float | None = Field(default=None, ge=0)
     cost_price: float | None = Field(default=None, ge=0)
-
-    @field_validator("sku")
-    @classmethod
-    def sku_not_blank(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("SKU cannot be blank")
-        return value.strip()
 
     @field_validator("sku")
     @classmethod
