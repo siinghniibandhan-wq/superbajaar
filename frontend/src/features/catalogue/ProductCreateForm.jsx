@@ -1,44 +1,116 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiRequest } from "../../services/api.js";
 
-export default function ProductCreateForm({ categories, onSaved }) {
-  const emptyForm = { name: "", slug: "", brand: "", category_id: "", description: "", tax_code: "", tax_rate: "" };
-  const [form, setForm] = useState(emptyForm);
+const EMPTY = { name: "", slug: "", brand: "", category_id: "", description: "", tax_code: "", tax_rate: "", selling_price: "", mrp: "" };
+const OPTION_TYPES = ["select", "multi_select", "colour", "size"];
+
+function combinations(items) {
+  return items.reduce((acc, item) => acc.flatMap(prefix => item.values.map(value => [...prefix, [item.code, value]])), [[]]).map(entries => Object.fromEntries(entries));
+}
+
+export default function ProductCreateForm({ categories = [], product = null, onSaved }) {
+  const [form, setForm] = useState(product ? { ...EMPTY, ...product, category_id: product.category_id ? String(product.category_id) : "" } : EMPTY);
+  const [definitions, setDefinitions] = useState([]);
+  const [selected, setSelected] = useState({});
+  const [newOptions, setNewOptions] = useState({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const change = (key, value) => setForm(old => ({ ...old, [key]: value }));
   const slugify = value => value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const change = (key, value) => setForm(old => ({ ...old, [key]: value }));
 
-  async function submit(status = "active") {
-    setBusy(true); setError(""); setSuccess("");
-    try {
-      await apiRequest("/catalogue/products", { method: "POST", body: JSON.stringify({
-        ...form,
-        status,
-        category_id: form.category_id ? Number(form.category_id) : null,
-        tax_rate: form.tax_rate === "" ? null : Number(form.tax_rate),
-      }) });
-      setSuccess(status === "draft" ? "Product saved as a draft." : "Product added and activated.");
-      setForm(emptyForm);
-      await onSaved?.();
-    } catch (e) { setError(e.message || "Unable to save product."); }
-    finally { setBusy(false); }
+  async function loadDefinitions() {
+    const result = await apiRequest("/catalogue/attributes");
+    setDefinitions(result.items || []);
+  }
+  useEffect(() => { loadDefinitions().catch(e => setError(e.message || "Unable to load attributes.")); }, []);
+
+  const chosenAttributes = useMemo(() => definitions.filter(def => def.is_variant_attribute && (selected[def.code] || []).length), [definitions, selected]);
+  const variantCombinations = useMemo(() => {
+    if (!chosenAttributes.length) return [{}];
+    return combinations(chosenAttributes.map(def => ({ code: def.code, values: def.value_type === "multi_select" ? [[...(selected[def.code] || [])]] : (selected[def.code] || []) })));
+  }, [chosenAttributes, selected]);
+
+  function toggleValue(def, value) {
+    setSelected(old => {
+      const values = old[def.code] || [];
+      return { ...old, [def.code]: values.includes(value) ? values.filter(item => item !== value) : [...values, value] };
+    });
   }
 
-  return <form className="sb-form" onSubmit={event => { event.preventDefault(); submit(event.nativeEvent.submitter?.value || "active"); }}>
-    <h2>Add product</h2>
+  async function addOption(def) {
+    const raw = (newOptions[def.code] || "").trim();
+    if (!raw) return;
+    const options = [...(def.options || []), raw];
+    await apiRequest("/catalogue/attributes/" + def.id + "/options", { method: "PUT", body: JSON.stringify({ options: [raw] }) });
+    await loadDefinitions();
+    setSelected(old => ({ ...old, [def.code]: [...(old[def.code] || []), raw] }));
+    setNewOptions(old => ({ ...old, [def.code]: "" }));
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    setBusy(true); setError(""); setSuccess("");
+    let createdProduct = null;
+    try {
+      const price = Number(form.selling_price);
+      const mrp = Number(form.mrp);
+      if (!Number.isFinite(price) || !Number.isFinite(mrp) || price < 0 || mrp < price) {
+        throw new Error("Enter a valid selling price and an MRP equal to or higher than the selling price.");
+      }
+      const payload = { ...form, category_id: form.category_id ? Number(form.category_id) : null, tax_rate: form.tax_rate === "" ? null : Number(form.tax_rate), selling_price: undefined, mrp: undefined };
+      delete payload.selling_price; delete payload.mrp;
+      createdProduct = await apiRequest(product?.id ? "/catalogue/products/" + product.id : "/catalogue/products", { method: product?.id ? "PUT" : "POST", body: JSON.stringify(payload) });
+      for (const def of chosenAttributes) {
+        const values = selected[def.code] || [];
+        if (!values.length) continue;
+        if (OPTION_TYPES.includes(def.value_type)) {
+          const missing = values.filter(value => !(def.options || []).some(option => String(option) === String(value)));
+          if (missing.length) await apiRequest("/catalogue/attributes/" + def.id + "/options", { method: "PUT", body: JSON.stringify({ options: missing }) });
+        }
+      }
+      for (const attrs of variantCombinations) {
+        await apiRequest("/catalogue/products/" + createdProduct.id + "/variants", {
+          method: "POST",
+          body: JSON.stringify({ attributes: attrs, selling_price: price, mrp, cost_price: null }),
+        });
+      }
+      setSuccess("Product saved with " + variantCombinations.length + " variant(s) and default prices.");
+      await onSaved?.(createdProduct);
+    } catch (e) {
+      setError((e.message || "Unable to save product.") + (createdProduct ? " The product record was created, but one or more follow-up operations may not have completed; review its variants before retrying." : ""));
+    } finally { setBusy(false); }
+  }
+
+  return <form className="sb-form" onSubmit={submit}>
+    <h2>{product ? "Edit product" : "Add product"}</h2>
     {error && <p role="alert" className="sb-alert">{error}</p>}
     {success && <p role="status" className="sb-success">{success}</p>}
     <div className="sb-form-grid">
-      <label>Product name<input required maxLength="240" value={form.name} onChange={e => {const name=e.target.value;setForm(old=>({...old,name,slug:slugify(name)}));}} /></label>
-      <label>Slug (automatic)<input required pattern="[a-z0-9]+(-[a-z0-9]+)*" value={form.slug} readOnly aria-readonly="true" /><small className="sb-muted">Generated from the product name.</small></label>
-      <label>Brand<input maxLength="160" value={form.brand} onChange={e=>change("brand",e.target.value)} /></label>
-      <label>Category<select value={form.category_id} onChange={e=>change("category_id",e.target.value)}><option value="">No category</option>{categories.map(c=><option key={c.id} value={c.id}>{c.parent_id ? "↳ " : ""}{c.name}</option>)}</select></label>
-      <label>Tax code<input maxLength="32" value={form.tax_code} onChange={e=>change("tax_code",e.target.value)} /></label>
-      <label>Tax rate (%)<input type="number" min="0" max="100" step="0.01" value={form.tax_rate} onChange={e=>change("tax_rate",e.target.value)} /></label>
-      <label className="sb-span-all">Description<input value={form.description} onChange={e=>change("description",e.target.value)} /></label>
+      <label>Product name *<input required maxLength="240" value={form.name} onChange={e => { const name=e.target.value; setForm(old => ({...old,name,slug:slugify(name)})); }} /></label>
+      <label>Slug (automatic)<input required pattern="[a-z0-9]+(-[a-z0-9]+)*" value={form.slug} readOnly aria-readonly="true" /></label>
+      <label>Brand<input maxLength="160" value={form.brand || ""} onChange={e => change("brand", e.target.value)} /></label>
+      <label>Category<select value={form.category_id} onChange={e => change("category_id", e.target.value)}><option value="">No category</option>{categories.map(c => <option key={c.id} value={c.id}>{c.parent_id ? "↳ " : ""}{c.name}</option>)}</select></label>
+      <label className="sb-span-all">Product description<textarea rows="4" value={form.description || ""} onChange={e => change("description", e.target.value)} placeholder="Features, material, fit, usage and care instructions" /></label>
     </div>
-    <div className="sb-product-actions"><button className="sb-primary" disabled={busy} type="submit" value="active">{busy ? "Adding…" : "Add product"}</button><button className="sb-secondary" disabled={busy} type="submit" value="draft">{busy ? "Saving…" : "Save as draft"}</button></div>
+    <section className="sb-product-attributes">
+      <h3>Attributes and variants</h3>
+      <p className="sb-muted">Choose values to create variant combinations. Attributes with no selected values are not used for this product.</p>
+      {definitions.map(def => <div className="sb-attribute-picker" key={def.id}>
+        <strong>{def.name}</strong><small className="sb-muted">{def.value_type}{def.is_variant_attribute ? " · Variant attribute" : ""}</small>
+        {OPTION_TYPES.includes(def.value_type) ? <div className="sb-option-chips">{(def.options || []).map(value => <label className="sb-option-chip" key={String(value)}><input type="checkbox" checked={(selected[def.code] || []).includes(value)} onChange={() => toggleValue(def, value)} />{String(value)}</label>)}</div> :
+          <input value={(selected[def.code] || [])[0] || ""} placeholder={"Enter " + def.name.toLowerCase()} onChange={e => setSelected(old => ({ ...old, [def.code]: e.target.value ? [e.target.value] : [] }))} />}
+        {OPTION_TYPES.includes(def.value_type) && <div className="sb-add-option"><input aria-label={"New " + def.name + " option"} value={newOptions[def.code] || ""} placeholder={"Add new " + def.name.toLowerCase() + " option"} onChange={e => setNewOptions(old => ({ ...old, [def.code]: e.target.value }))} /><button type="button" className="sb-secondary" disabled={busy || !(newOptions[def.code] || "").trim()} onClick={() => addOption(def).catch(e => setError(e.message || "Unable to add option."))}>Add value</button></div>}
+      </div>)}
+      {!definitions.length && <p className="sb-empty">Create an attribute in the Attributes tab first, or continue with a product that has no variants.</p>}
+      <p className="sb-muted">This product will create {variantCombinations.length} variant(s).</p>
+    </section>
+    <div className="sb-form-grid">
+      <label>Selling price (₹) *<input required type="number" min="0" step="0.01" value={form.selling_price} onChange={e => change("selling_price", e.target.value)} /></label>
+      <label>MRP (₹) *<input required type="number" min="0" step="0.01" value={form.mrp} onChange={e => change("mrp", e.target.value)} /></label>
+      <label>Tax code<input maxLength="32" value={form.tax_code || ""} onChange={e => change("tax_code", e.target.value)} /></label>
+      <label>Tax rate (%)<input type="number" min="0" max="100" step="0.01" value={form.tax_rate ?? ""} onChange={e => change("tax_rate", e.target.value)} /></label>
+    </div>
+    <div className="sb-product-actions"><button className="sb-primary" disabled={busy} type="submit">{busy ? "Saving product and variants…" : product ? "Save changes" : "Save product"}</button></div>
   </form>;
 }
