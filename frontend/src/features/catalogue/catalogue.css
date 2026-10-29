@@ -84,3 +84,12 @@
   .sb-modal-form .sb-form-grid{grid-template-columns:minmax(0,1fr)}
   .sb-category-nested{margin-left:12px}
 }
+
+
+/* Guided attribute assignment and variant review */
+.sb-variant-builder{border:1px solid #e8e0f1;border-radius:14px;background:#fff;margin-top:16px}
+.sb-variant-builder>p{margin:0 0 12px}
+.sb-variant-builder .sb-attribute-picker{padding:12px;border:1px solid #eee8f4;border-radius:10px;margin:8px 0}
+.sb-variant-review-row{display:grid;gap:12px;padding:14px;margin:10px 0;border:1px solid #e8e0f1;border-radius:12px;background:#fcfaff}
+.sb-variant-review-row>strong{color:#4e2783;font-size:13px;overflow-wrap:anywhere}
+.sb-variant-review-row .sb-form-grid{margin:0}
