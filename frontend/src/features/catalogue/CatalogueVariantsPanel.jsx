@@ -73,7 +73,7 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
 
   const selectableAttributes = definitions.filter(def => def.is_variant_attribute && OPTION_TYPES.includes(def.value_type) && (def.options || []).length);
   const chosenAttributes = selectableAttributes.filter(def => (selectedValues[def.code] || []).length);
-  const combinationPreview = makeCombinations(chosenAttributes.map(def => ({ code: def.code, values: selectedValues[def.code] || [] })));
+  const combinationPreview = makeCombinations(chosenAttributes.map(def => ({ code: def.code, values: def.value_type === "multi_select" ? [[...(selectedValues[def.code] || [])]] : (selectedValues[def.code] || []) })));
   function toggleAttributeValue(def, value) {
     setSelectedValues(old => { const current = old[def.code] || []; return { ...old, [def.code]: current.includes(value) ? current.filter(v => v !== value) : [...current, value] }; });
   }
