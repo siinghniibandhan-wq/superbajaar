@@ -5,3 +5,4 @@ pydantic-settings
 psycopg[binary]
 pytest
 httpx
+python-multipart
