@@ -112,13 +112,6 @@ export default function Storefront() {
   }, []);
 
   useEffect(() => {
-    if (!selectedProduct) return undefined;
-    const closeOnEscape = event => { if (event.key === "Escape") setSelectedProduct(null); };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [selectedProduct]);
-
-  useEffect(() => {
     const timer = window.setInterval(() => {
       if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
       document.querySelectorAll(".storefront-carousel-track").forEach(track => {
