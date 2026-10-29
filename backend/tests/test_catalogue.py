@@ -113,3 +113,29 @@ def test_category_sku_codes_match_superbajaar_categories():
     assert _category_sku_code("Fashion") == "FS"
     assert _category_sku_code("Grocery") == "GR"
     assert _category_sku_code("Personal Care") == "PC"
+
+
+def test_category_update_rejects_invalid_slug_before_database_access():
+    response = client.put("/api/catalogue/categories/1", json={"name": "Drinks", "slug": "Not A Valid Slug"})
+    assert response.status_code == 422
+
+
+def test_category_update_rejects_blank_name_before_database_access():
+    response = client.put("/api/catalogue/categories/1", json={"name": "   ", "slug": "drinks"})
+    assert response.status_code == 422
+
+
+def test_category_archive_requires_database_configuration(monkeypatch):
+    from app.api import catalogue
+
+    monkeypatch.setattr(catalogue.settings, "database_url", "")
+    response = client.post("/api/catalogue/categories/1/archive")
+    assert response.status_code == 503
+
+
+def test_category_delete_requires_database_configuration(monkeypatch):
+    from app.api import catalogue
+
+    monkeypatch.setattr(catalogue.settings, "database_url", "")
+    response = client.delete("/api/catalogue/categories/1")
+    assert response.status_code == 503
