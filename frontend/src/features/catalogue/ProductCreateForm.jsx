@@ -85,6 +85,7 @@ export default function ProductCreateForm({ categories, onSaved, product = null 
   const [selected, setSelected] = useState({});
   const [newOptions, setNewOptions] = useState({});
   const [imageUrl, setImageUrl] = useState("");
+  const [imageFile, setImageFile] = useState(null);
   const [imageAlt, setImageAlt] = useState("");
   const [posEnabled, setPosEnabled] = useState(true);
   const [websiteEnabled, setWebsiteEnabled] = useState(true);
@@ -193,7 +194,13 @@ export default function ProductCreateForm({ categories, onSaved, product = null 
         });
         variantsCreated += 1;
       }
-      if (imageUrl.trim()) {
+      if (imageFile) {
+        const formData = new FormData();
+        formData.append("file", imageFile);
+        if (imageAlt) formData.append("alt_text", imageAlt);
+        formData.append("sort_order", "0");
+        await apiRequest("/catalogue/products/" + savedProduct.id + "/images/upload", { method: "POST", body: formData });
+      } else if (imageUrl.trim()) {
         const currentImages = await apiRequest("/catalogue/products/" + savedProduct.id + "/images");
         if (!(currentImages.items || []).some(item => item.image_url === imageUrl.trim() && item.variant_id == null)) {
           await apiRequest("/catalogue/products/" + savedProduct.id + "/images", {
@@ -205,7 +212,7 @@ export default function ProductCreateForm({ categories, onSaved, product = null 
       const notes = [];
       if (variantsCreated) notes.push(variantsCreated + " new variant(s) created");
       setNotice((isEditing ? "Product updated successfully" : "Product saved successfully") + (notes.length ? ". " + notes.join("; ") + "." : "."));
-      if (!isEditing) { setForm(emptyForm); setSelected({}); setImageUrl(""); setImageAlt(""); setTab("information"); }
+      if (!isEditing) { setForm(emptyForm); setSelected({}); setImageUrl(""); setImageFile(null); setImageAlt(""); setTab("information"); }
       await onSaved?.(savedProduct);
     } catch (e) {
       setError((e.message || "Unable to save product.") + (savedProduct ? " The product record was saved; review its variants/images before retrying to avoid duplicates." : ""));
@@ -277,7 +284,7 @@ export default function ProductCreateForm({ categories, onSaved, product = null 
 
     {tab === "images" && <section className="sb-wizard-panel"><h3>Images</h3>
       <p className="sb-muted">The existing API stores image URLs and metadata; it does not currently provide file upload/storage.</p>
-      <div className="sb-form-grid"><label className="sb-span-all">Image URL<input type="url" maxLength="2048" value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://…"/></label><label className="sb-span-all">Alt text<input maxLength="300" value={imageAlt} onChange={e => setImageAlt(e.target.value)}/></label></div>
+      <div className="sb-form-grid"><label className="sb-span-all">Upload image<input type="file" accept="image/jpeg,image/png,image/webp" onChange={e=>{setImageFile(e.target.files?.[0] || null);if(e.target.files?.[0])setImageUrl("");}}/><small className="sb-muted">JPEG, PNG or WebP · maximum 10 MB</small></label><label className="sb-span-all">Or image URL<input type="url" maxLength="2048" value={imageUrl} onChange={e=>{setImageUrl(e.target.value);if(e.target.value)setImageFile(null);}} placeholder="https://…"/></label>{imageFile && <p className="sb-muted sb-span-all">Selected: {imageFile.name} ({Math.ceil(imageFile.size/1024)} KB)</p>}<label className="sb-span-all">Alt text<input maxLength="300" value={imageAlt} onChange={e => setImageAlt(e.target.value)}/></label></div>
     </section>}
 
     {tab === "details" && <section className="sb-wizard-panel"><h3>Details & Review</h3>
