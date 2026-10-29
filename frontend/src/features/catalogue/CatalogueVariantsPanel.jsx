@@ -27,9 +27,9 @@ function skuPreview(product, categories, attributes, version) {
   return ["SB", categoryCode(parentCategory?.name || category?.name), deptCode, skuToken(product.brand), skuToken(productCode, 6), String(product.id).padStart(5, "0"), ...values, "V" + String(version).padStart(2, "0")].join("-");
 }
 
-export default function CatalogueVariantsPanel({ products, categories = [], mode = "all" }) {
+export default function CatalogueVariantsPanel({ products, categories = [], mode = "all", initialProductId = "" }) {
   const [definitions, setDefinitions] = useState([]);
-  const [productId, setProductId] = useState("");
+  const [productId, setProductId] = useState(initialProductId);
   const [variants, setVariants] = useState([]);
   const [attribute, setAttribute] = useState(initialAttribute);
   const [variant, setVariant] = useState(initialVariant);
@@ -49,6 +49,7 @@ export default function CatalogueVariantsPanel({ products, categories = [], mode
     catch (e) { setError(e.message || "Unable to load variants."); }
   }
   useEffect(() => { loadDefinitions(); }, []);
+  useEffect(() => { if (initialProductId && String(initialProductId) !== String(productId)) setProductId(String(initialProductId)); }, [initialProductId]);
   useEffect(() => { loadVariants(productId); }, [productId]);
 
   async function createAttribute(event) {
