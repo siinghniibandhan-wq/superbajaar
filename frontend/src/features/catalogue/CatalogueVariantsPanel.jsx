@@ -4,6 +4,10 @@ import CatalogueModal from "./CatalogueModal.jsx";
 
 const initialAttribute = { name: "", code: "", value_type: "text", is_variant_attribute: true, is_required: true, options: "" };
 const initialVariant = { sku: "", barcode: "", attributes: "{}", selling_price: "", mrp: "", cost_price: "" };
+const OPTION_TYPES = ["select", "multi_select", "colour", "size"];
+function makeCombinations(items) {
+  return items.reduce((rows, item) => rows.flatMap(row => item.values.map(value => [...row, [item.code, value]])), [[]]).map(entries => Object.fromEntries(entries));
+}
 
 function skuToken(value, limit = 8) {
   return String(value || "").toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, limit).replace(/-$/g, "") || "GEN";
@@ -40,6 +44,11 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
   const [editingVariant, setEditingVariant] = useState(null);
   const [viewingVariant, setViewingVariant] = useState(null);
   const [showAttributeForm, setShowAttributeForm] = useState(false);
+  const [selectedValues, setSelectedValues] = useState({});
+  const [defaultPrice, setDefaultPrice] = useState("");
+  const [defaultMrp, setDefaultMrp] = useState("");
+  const [defaultCost, setDefaultCost] = useState("");
+  const [generatedRows, setGeneratedRows] = useState([]);
 
   function closeAttributeForm() {
     if (busy) return;
@@ -60,7 +69,34 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
   }
   useEffect(() => { loadDefinitions(); }, []);
   useEffect(() => { if (initialProductId && String(initialProductId) !== String(productId)) setProductId(String(initialProductId)); }, [initialProductId]);
-  useEffect(() => { loadVariants(productId); }, [productId]);
+  useEffect(() => { loadVariants(productId); setGeneratedRows([]); }, [productId]);
+
+  const selectableAttributes = definitions.filter(def => def.is_variant_attribute && OPTION_TYPES.includes(def.value_type) && (def.options || []).length);
+  const chosenAttributes = selectableAttributes.filter(def => (selectedValues[def.code] || []).length);
+  const combinationPreview = makeCombinations(chosenAttributes.map(def => ({ code: def.code, values: selectedValues[def.code] || [] })));
+  function toggleAttributeValue(def, value) {
+    setSelectedValues(old => { const current = old[def.code] || []; return { ...old, [def.code]: current.includes(value) ? current.filter(v => v !== value) : [...current, value] }; });
+  }
+  function prepareGeneratedRows() {
+    if (!productId) { setError("Choose a product first."); return; }
+    if (!chosenAttributes.length) { setError("Choose at least one attribute and value."); return; }
+    const existing = new Set(variants.filter(v => v.is_active).map(v => JSON.stringify(Object.fromEntries(Object.entries(v.attributes || {}).sort(([a],[b]) => a.localeCompare(b)))));
+    const fresh = combinationPreview.filter(attrs => !existing.has(JSON.stringify(Object.fromEntries(Object.entries(attrs).sort(([a],[b]) => a.localeCompare(b)))));
+    if (!fresh.length) { setError("Those attribute combinations already exist for this product."); return; }
+    setGeneratedRows(fresh.map(attributes => ({ attributes, selling_price: defaultPrice, mrp: defaultMrp, cost_price: defaultCost, barcode: "" })));
+    setError(""); setNotice(fresh.length + " variant combination(s) ready to review.");
+  }
+  async function saveGeneratedRows() {
+    setBusy(true); setError(""); setNotice("");
+    try {
+      for (const row of generatedRows) {
+        if (row.selling_price === "" || !Number.isFinite(Number(row.selling_price))) throw new Error("Enter a selling price for every variant.");
+        await apiRequest("/catalogue/products/" + productId + "/variants", { method: "POST", body: JSON.stringify({ attributes: row.attributes, barcode: row.barcode || null, selling_price: Number(row.selling_price), mrp: row.mrp === "" ? null : Number(row.mrp), cost_price: row.cost_price === "" ? null : Number(row.cost_price) }) });
+      }
+      setGeneratedRows([]); setNotice("Variants saved successfully."); await loadVariants(productId);
+    } catch (e) { setError((e.message || "Unable to save variants.") + " Check the variant list before retrying to avoid duplicates."); await loadVariants(productId); }
+    finally { setBusy(false); }
+  }
 
   async function createAttribute(event) {
     event.preventDefault(); setBusy(true); setError(""); setNotice("");
@@ -138,15 +174,44 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
     <div className="sb-form-grid">
       <label>Product for variants<select value={productId} onChange={e=>setProductId(e.target.value)}><option value="">Choose product</option>{products.map(p=><option key={p.id} value={p.id}>{p.name} · #{p.id}</option>)}</select></label>
     </div>
+    <section className="sb-form-inner sb-variant-builder" aria-label="Generate variants">
+      <h3>Assign attributes and generate variants</h3>
+      <p className="sb-muted">Choose a product above, then select the attribute values this product comes in. We will prepare one variant for each combination.</p>
+      {!productId && <p className="sb-empty">Choose a product above to assign its attributes.</p>}
+      {productId && !selectableAttributes.length && <p className="sb-empty">No option-based variant attributes yet. Add a Colour, Size or Select attribute above first.</p>}
+      {productId && selectableAttributes.map(def => <div className="sb-attribute-picker" key={def.id}>
+        <strong>{def.name}</strong><small className="sb-muted">{def.code} · select every value this product offers</small>
+        <div className="sb-option-chips">{(def.options || []).map(value => <label className="sb-option-chip" key={String(value)}><input type="checkbox" checked={(selectedValues[def.code] || []).includes(value)} onChange={() => toggleAttributeValue(def, value)} />{String(value)}</label>)}</div>
+      </div>)}
+      <div className="sb-form-grid">
+        <label>Default selling price (₹)<input type="number" min="0" step="0.01" value={defaultPrice} onChange={e=>setDefaultPrice(e.target.value)} placeholder="Can be edited per variant"/></label>
+        <label>Default MRP (₹)<input type="number" min="0" step="0.01" value={defaultMrp} onChange={e=>setDefaultMrp(e.target.value)} placeholder="Optional"/></label>
+        <label>Default cost price (₹)<input type="number" min="0" step="0.01" value={defaultCost} onChange={e=>setDefaultCost(e.target.value)} placeholder="Optional"/></label>
+      </div>
+      <div className="sb-product-actions"><button type="button" className="sb-primary" disabled={busy || !productId} onClick={prepareGeneratedRows}>Preview combinations</button></div>
+      {generatedRows.length > 0 && <>
+        <h3>Review variants ({generatedRows.length})</h3>
+        {generatedRows.map((row,index)=><div className="sb-variant-review-row" key={JSON.stringify(row.attributes)}>
+          <strong>{Object.entries(row.attributes).map(([code,value]) => definitions.find(d=>d.code===code)?.name + ": " + (Array.isArray(value)?value.join(", "):value)).join(" · ")}</strong>
+          <div className="sb-form-grid">
+            <label>Selling price (₹)<input required type="number" min="0" step="0.01" value={row.selling_price} onChange={e=>setGeneratedRows(old=>old.map((r,i)=>i===index?{...r,selling_price:e.target.value}:r))}/></label>
+            <label>MRP (₹)<input type="number" min="0" step="0.01" value={row.mrp} onChange={e=>setGeneratedRows(old=>old.map((r,i)=>i===index?{...r,mrp:e.target.value}:r))}/></label>
+            <label>Cost price (₹)<input type="number" min="0" step="0.01" value={row.cost_price} onChange={e=>setGeneratedRows(old=>old.map((r,i)=>i===index?{...r,cost_price:e.target.value}:r))}/></label>
+            <label>Barcode (optional)<input value={row.barcode} onChange={e=>setGeneratedRows(old=>old.map((r,i)=>i===index?{...r,barcode:e.target.value}:r))}/></label>
+          </div>
+        </div>)}
+        <div className="sb-product-actions"><button type="button" className="sb-primary" disabled={busy} onClick={saveGeneratedRows}>{busy ? "Saving…" : "Save all variants"}</button><button type="button" className="sb-secondary" disabled={busy} onClick={()=>setGeneratedRows([])}>Cancel preview</button></div>
+      </>}
+    </section>
     <form className="sb-form sb-form-inner" onSubmit={createVariant}>
-      <h3>{editingVariant ? "Edit SKU variant" : "Create SKU variant"}</h3>
+      <h3>{editingVariant ? "Edit SKU variant" : "Advanced: create one variant manually"}</h3>
       <div className="sb-form-grid">
         <label className="sb-span-all">SKU (automatic)<input readOnly aria-readonly="true" value={skuPreview(products.find(p => String(p.id) === String(productId)), categories, (() => { try { return JSON.parse(variant.attributes || "{}"); } catch { return {}; } })(), variants.length + 1)} /><small className="sb-muted">Generated from category, department, brand, product ID and variant attributes. The server checks uniqueness when saving.</small></label>
         <label>Barcode<input value={variant.barcode} onChange={e=>setVariant(v=>({...v,barcode:e.target.value}))}/></label>
         <label>Selling price (₹)<input required type="number" min="0" step="0.01" value={variant.selling_price} onChange={e=>setVariant(v=>({...v,selling_price:e.target.value}))}/></label>
         <label>MRP (₹)<input type="number" min="0" step="0.01" value={variant.mrp} onChange={e=>setVariant(v=>({...v,mrp:e.target.value}))}/></label>
         <label>Cost price (₹)<input type="number" min="0" step="0.01" value={variant.cost_price} onChange={e=>setVariant(v=>({...v,cost_price:e.target.value}))}/></label>
-        <label className="sb-span-all">Attribute values (JSON)<input value={variant.attributes} onChange={e=>setVariant(v=>({...v,attributes:e.target.value}))} placeholder='{"size":"M","colour":"Blue"}'/></label>
+        <label className="sb-span-all">Advanced attribute values (JSON)<input value={variant.attributes} onChange={e=>setVariant(v=>({...v,attributes:e.target.value}))} placeholder='{"size":"M","colour":"Blue"}'/></label>
       </div>
       <div className="sb-product-actions"><button className="sb-primary" disabled={busy || !productId} type="submit">{busy ? "Saving…" : editingVariant ? "Save variant changes" : "Save variant"}</button>{editingVariant && <button type="button" className="sb-secondary" disabled={busy} onClick={() => { setEditingVariant(null); setVariant(initialVariant); }}>Cancel edit</button>}</div>
     </form>
