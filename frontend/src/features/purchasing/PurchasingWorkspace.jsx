@@ -96,6 +96,16 @@ export default function PurchasingWorkspace({ onBack }) {
     finally { setSaving(false); }
   }
 
+  async function approveOrder() {
+    if (!detail) return;
+    setSaving(true); setError(""); setNotice("");
+    try {
+      const result = await apiRequest("/purchasing/orders/" + detail.id + "/approve", { method: "POST" });
+      setNotice(result.message || "Purchase order approved."); await load(); await openOrder(detail.id);
+    } catch (e) { setError(e.message || "Unable to approve purchase order."); }
+    finally { setSaving(false); }
+  }
+
   async function receiveGoods(e) {
     e.preventDefault(); if (!detail) return;
     const receiptLines = (detail.lines || []).filter(line => Number(receipts[line.line_id]) > 0).map(line => ({ line_id: line.line_id, quantity: Number(receipts[line.line_id]) }));
@@ -154,7 +164,7 @@ export default function PurchasingWorkspace({ onBack }) {
       <div className="sb-customer-toolbar"><label>Filter orders<select value={orderStatusFilter} onChange={e => setOrderStatusFilter(e.target.value)}><option value="all">All statuses</option><option value="ordered">Ordered</option><option value="partially_received">Partially received</option><option value="received">Received</option><option value="cancelled">Cancelled</option><option value="draft">Draft</option></select></label><span>{visibleOrders.length} shown of {orders.length}</span><button type="button" onClick={load} disabled={loading}>{loading ? "Loading…" : "Refresh orders"}</button></div>
       {loading ? <p className="sb-empty">Loading purchase orders…</p> : visibleOrders.length ? <div className="sb-customer-list">{visibleOrders.map(po => <article className={"sb-order-card " + (selected === po.id ? "is-selected" : "")} key={po.id}>
         <button type="button" className="sb-order-open" onClick={() => openOrder(po.id)}><span><strong>{po.purchase_number}</strong><small>{po.supplier_name} · {po.location_name}</small></span><span className="sb-order-total">{money(po.subtotal)}<small>{po.line_count} lines</small></span><span className={"sb-order-status status-" + po.status}>{label(po.status)}</span></button>
-        {selected === po.id && detail && <div className="sb-purchase-detail"><h3>{detail.purchase_number} · Goods receipt</h3><div className="sb-purchase-detail-lines">{detail.lines.map(line => <div className="sb-purchase-detail-line" key={line.line_id}><div><strong>{line.product_name}</strong><small>SKU {line.sku} · ordered {line.quantity_ordered} · received {line.quantity_received} · open {line.quantity_open}</small></div><label>Receive qty<input type="number" min="0" max={Number(line.quantity_open)} step="0.001" disabled={Number(line.quantity_open) <= 0 || detail.status === "cancelled" || detail.status === "received"} value={receipts[line.line_id] ?? ""} onChange={e => setReceipts(old => ({ ...old, [line.line_id]: e.target.value }))} /></label></div>)}</div>
+        {selected === po.id && detail && <div className="sb-purchase-detail"><h3>{detail.purchase_number} · {detail.status === "draft" ? "Approval required" : "Goods receipt"}</h3>{detail.status === "draft" && <div className="sb-purchase-approval"><p className="sb-muted">Draft orders cannot receive stock until approved.</p><button className="sb-primary" type="button" onClick={approveOrder} disabled={saving}>{saving ? "Saving…" : "Approve purchase order"}</button></div>}<div className="sb-purchase-detail-lines">{detail.lines.map(line => <div className="sb-purchase-detail-line" key={line.line_id}><div><strong>{line.product_name}</strong><small>SKU {line.sku} · ordered {line.quantity_ordered} · received {line.quantity_received} · open {line.quantity_open}</small></div><label>Receive qty<input type="number" min="0" max={Number(line.quantity_open)} step="0.001" disabled={Number(line.quantity_open) <= 0 || detail.status === "cancelled" || detail.status === "received"} value={receipts[line.line_id] ?? ""} onChange={e => setReceipts(old => ({ ...old, [line.line_id]: e.target.value }))} /></label></div>)}</div>
           {detail.status !== "received" && detail.status !== "cancelled" && <form onSubmit={receiveGoods}><button className="sb-primary" type="submit" disabled={saving}>{saving ? "Saving…" : "Record goods receipt"}</button></form>}
           {(detail.status === "ordered" || detail.status === "partially_received") && <button type="button" className="sb-remove-line" onClick={cancelOrder} disabled={saving}>{saving ? "Saving…" : "Cancel remaining quantities"}</button>}
           {detail.status === "cancelled" && <p className="sb-muted">Cancelled. Any goods received before cancellation remain in inventory.</p>}
