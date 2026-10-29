@@ -644,8 +644,8 @@ async def upload_product_image(
         raise HTTPException(status_code=413, detail="Image must be 10 MB or smaller.")
     # Verify file signatures instead of trusting the browser-supplied MIME type.
     signatures = {
-        "image/jpeg": data.startswith(b"\\xff\\xd8\\xff"),
-        "image/png": data.startswith(b"\\x89PNG\\r\\n\\x1a\\n"),
+        "image/jpeg": data.startswith(b"\xff\xd8\xff"),
+        "image/png": data.startswith(b"\x89PNG\r\n\x1a\n"),
         "image/webp": len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP",
     }
     if not signatures.get(content_type, False):
@@ -692,7 +692,7 @@ async def upload_product_image(
 
 @router.get("/images/{filename}")
 def serve_catalogue_image(filename: str):
-    if not re.fullmatch(r"[0-9a-f]{32}\\.(jpg|png|webp)", filename):
+    if not re.fullmatch(r"[0-9a-f]{32}\.(jpg|png|webp)", filename):
         raise HTTPException(status_code=404, detail="Image not found")
     path = _catalogue_image_directory() / filename
     if not path.is_file():
