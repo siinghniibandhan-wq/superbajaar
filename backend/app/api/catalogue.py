@@ -705,8 +705,8 @@ async def upload_product_image(
     if len(data) > 10 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Image files must be 10 MB or smaller")
     signatures = {
-        "image/jpeg": data.startswith(b"\\xff\\xd8\\xff"),
-        "image/png": data.startswith(b"\\x89PNG\\r\\n\\x1a\\n"),
+        "image/jpeg": data.startswith(b"\xff\\xd8\xff"),
+        "image/png": data.startswith(b"\x89PNG\r\n\\x1a\n"),
         "image/webp": len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP",
         "image/gif": data.startswith((b"GIF87a", b"GIF89a")),
     }
