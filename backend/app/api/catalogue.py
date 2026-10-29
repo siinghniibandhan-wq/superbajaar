@@ -619,7 +619,8 @@ _MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
 
 def _catalogue_image_directory() -> Path:
-    return Path(os.getenv("CATALOGUE_IMAGE_DIR", "/var/lib/superbajaar/catalogue-images"))
+    default_directory = Path(__file__).resolve().parents[2] / "uploads" / "catalogue"
+    return Path(os.getenv("CATALOGUE_IMAGE_DIR", str(default_directory)))
 
 
 @router.post("/products/{product_id}/images/upload")
