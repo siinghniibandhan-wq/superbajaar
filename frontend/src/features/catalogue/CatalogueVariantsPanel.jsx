@@ -80,8 +80,9 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
   function prepareGeneratedRows() {
     if (!productId) { setError("Choose a product first."); return; }
     if (!chosenAttributes.length) { setError("Choose at least one attribute and value."); return; }
-    const existing = new Set(variants.filter(v => v.is_active).map(v => JSON.stringify(Object.fromEntries(Object.entries(v.attributes || {}).sort(([a],[b]) => a.localeCompare(b)))));
-    const fresh = combinationPreview.filter(attrs => !existing.has(JSON.stringify(Object.fromEntries(Object.entries(attrs).sort(([a],[b]) => a.localeCompare(b)))));
+    const normalizeAttributes = attrs => JSON.stringify(Object.fromEntries(Object.entries(attrs || {}).sort(([a], [b]) => a.localeCompare(b))));
+    const existing = new Set(variants.filter(v => v.is_active).map(v => normalizeAttributes(v.attributes)));
+    const fresh = combinationPreview.filter(attrs => !existing.has(normalizeAttributes(attrs)));
     if (!fresh.length) { setError("Those attribute combinations already exist for this product."); return; }
     setGeneratedRows(fresh.map(attributes => ({ attributes, selling_price: defaultPrice, mrp: defaultMrp, cost_price: defaultCost, barcode: "" })));
     setError(""); setNotice(fresh.length + " variant combination(s) ready to review.");
