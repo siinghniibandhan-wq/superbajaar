@@ -533,26 +533,47 @@ def create_attribute(payload: AttributeCreate):
 
 
 class AttributeOptionsUpdate(BaseModel):
-    options: list[Any] = Field(max_length=200)
+    options: list[Any] = Field(min_length=1, max_length=200)
+
+
+def _merge_attribute_options(existing: list[Any], incoming: list[Any]) -> list[Any]:
+    """Append new shared options without duplicates or whitespace-only values."""
+    combined = list(existing or [])
+    seen = {str(item).strip().casefold() for item in combined}
+    for option in incoming:
+        if not isinstance(option, (str, int, float, bool)):
+            raise HTTPException(status_code=422, detail="Attribute options must be simple scalar values")
+        normalized = option.strip() if isinstance(option, str) else option
+        if isinstance(normalized, str) and not normalized:
+            continue
+        key = str(normalized).strip().casefold()
+        if key not in seen:
+            combined.append(normalized)
+            seen.add(key)
+    if not combined:
+        raise HTTPException(status_code=422, detail="At least one non-empty option is required")
+    return combined
+
 
 @router.put("/attributes/{attribute_id}/options")
 def update_attribute_options(attribute_id: int, payload: AttributeOptionsUpdate):
     try:
         with _connection() as conn:
-            row = conn.execute("SELECT id, name, value_type, options, is_active FROM product_attributes WHERE id=%s", (attribute_id,)).fetchone()
+            # Lock the shared definition so concurrent additions cannot overwrite each other.
+            row = conn.execute(
+                "SELECT id, name, value_type, options, is_active FROM product_attributes WHERE id=%s FOR UPDATE",
+                (attribute_id,),
+            ).fetchone()
             if row is None or not row["is_active"]:
                 raise HTTPException(status_code=404, detail="Active attribute not found")
             if row["value_type"] not in {"select", "multi_select", "colour", "size"}:
                 raise HTTPException(status_code=422, detail="This attribute type does not support options")
-            combined = list(row["options"] or [])
-            for option in payload.options:
-                if not isinstance(option, (str, int, float, bool)):
-                    raise HTTPException(status_code=422, detail="Attribute options must be simple scalar values")
-                if str(option).strip() and str(option) not in {str(item) for item in combined}:
-                    combined.append(option)
-            if not combined:
-                raise HTTPException(status_code=422, detail="At least one option is required")
-            updated = conn.execute("UPDATE product_attributes SET options=%s::jsonb WHERE id=%s RETURNING id,name,code,value_type,options,is_active", (__import__("json").dumps(combined), attribute_id)).fetchone()
+            combined = _merge_attribute_options(row["options"] or [], payload.options)
+            updated = conn.execute(
+                "UPDATE product_attributes SET options=%s::jsonb WHERE id=%s "
+                "RETURNING id,name,code,value_type,options,is_active",
+                (__import__("json").dumps(combined), attribute_id),
+            ).fetchone()
         return updated
     except HTTPException:
         raise
