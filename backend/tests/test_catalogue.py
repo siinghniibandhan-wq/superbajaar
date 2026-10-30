@@ -217,3 +217,46 @@ def test_required_variant_attributes_accept_complete_values():
         {"code": "size", "is_required": True},
     ]
     _validate_required_variant_attributes(definitions, {"colour": "Black", "size": "M"})
+
+
+
+def test_required_variant_attributes_reject_empty_values():
+    from fastapi import HTTPException
+    from app.api.catalogue import _validate_required_variant_attributes
+
+    definitions = [
+        {"code": "colour", "is_required": True},
+        {"code": "size", "is_required": True},
+    ]
+    for values in (
+        {"colour": "Black", "size": []},
+        {"colour": "Black", "size": ""},
+        {"colour": "Black", "size": "   "},
+    ):
+        try:
+            _validate_required_variant_attributes(definitions, values)
+            assert False, f"Expected empty required values to be rejected: {values}"
+        except HTTPException as exc:
+            assert exc.status_code == 422
+            assert "size" in exc.detail
+
+
+def test_required_product_attribute_rejects_empty_values():
+    from fastapi import HTTPException
+    from app.api.catalogue import _validate_required_product_attribute
+
+    attribute = {"name": "Material", "is_required": True, "is_variant_attribute": False}
+    for value in (None, "", "   ", []):
+        try:
+            _validate_required_product_attribute(attribute, value)
+            assert False, f"Expected empty required product value to be rejected: {value!r}"
+        except HTTPException as exc:
+            assert exc.status_code == 422
+            assert "Material" in exc.detail
+
+
+def test_optional_product_attribute_can_be_cleared():
+    from app.api.catalogue import _validate_required_product_attribute
+
+    attribute = {"name": "Care instructions", "is_required": False, "is_variant_attribute": False}
+    _validate_required_product_attribute(attribute, None)
