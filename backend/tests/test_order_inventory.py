@@ -179,3 +179,13 @@ def test_order_cancellation_remains_allowed_before_dispatch():
         def execute(self, sql, params=()):
             return Result(row={"started": False})
     assert ensure_order_can_be_cancelled(NotStartedConnection(), 101) is None
+
+
+def test_pos_reservation_reports_insufficient_stock_at_selected_location():
+    conn = FakeConnection(
+        locations=[{"id": 9}],
+        balances=[{"variant_id": 7, "on_hand": Decimal("1"), "reserved": Decimal("1")}],
+    )
+    with pytest.raises(ValueError, match="Insufficient stock at the selected"):
+        reserve_order_stock(conn, 102, None, [(7, 1)], location_id=9)
+    assert not any("UPDATE inventory_balances" in sql for sql, _ in conn.calls)
