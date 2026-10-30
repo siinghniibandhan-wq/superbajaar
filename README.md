@@ -13,6 +13,9 @@ Super Bajaar is a commerce storefront and ERP application. This file is the sing
 
 ## Project overview and current progress
 
+> **Progress reporting:** Use [docs/PROJECT_PROGRESS_STRUCTURE.md](docs/PROJECT_PROGRESS_STRUCTURE.md) as the mandatory work breakdown and status-report format. It separates Development (Coding and Bug/Error Fixing), Deployment, Audit, Quality Assurance and Documentation. Keep each status evidence-based and distinguish CI, deployment and post-deployment verification.
+
+
 ### At a glance
 
 | Layer | Current repository / deployment design |
