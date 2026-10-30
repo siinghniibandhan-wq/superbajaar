@@ -21,6 +21,7 @@ export default function CatalogueWorkspace({ onBack, currentUser }) {
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [parentId, setParentId] = useState("");
+  const [description, setDescription] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -45,6 +46,7 @@ export default function CatalogueWorkspace({ onBack, currentUser }) {
     setName(category?.name || "");
     setSlug(category?.slug || "");
     setParentId(category?.parent_id ? String(category.parent_id) : selectedParentId);
+    setDescription(category?.description || "");
     setShowCategoryForm(true);
     setError("");
     setMessage("");
@@ -58,6 +60,7 @@ export default function CatalogueWorkspace({ onBack, currentUser }) {
     setName("");
     setSlug("");
     setParentId("");
+    setDescription("");
   }
 
   async function saveCategory(event) {
@@ -69,11 +72,12 @@ export default function CatalogueWorkspace({ onBack, currentUser }) {
       const savedParentId = parentId;
       await apiRequest(editingCategory ? "/catalogue/categories/" + editingCategory.id : "/catalogue/categories", {
         method: editingCategory ? "PUT" : "POST",
-        body: JSON.stringify({ name, slug, parent_id: parentId ? Number(parentId) : null }),
+        body: JSON.stringify({ name, slug, description: description.trim() || null, parent_id: parentId ? Number(parentId) : null }),
       });
       setName("");
       setSlug("");
       setParentId("");
+      setDescription("");
       setShowCategoryForm(false);
       setEditingCategory(null);
       setMessage(editingCategory ? "Category updated." : savedParentId ? "Subcategory created." : "Category created.");
@@ -228,6 +232,7 @@ export default function CatalogueWorkspace({ onBack, currentUser }) {
           <div className="sb-form-grid">
             <label>Name<input required maxLength="160" value={name} onChange={e => {setName(e.target.value); setSlug(e.target.value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""));}} /></label>
             <label>Slug (automatic)<input required pattern="[a-z0-9]+(-[a-z0-9]+)*" value={slug} readOnly aria-readonly="true" /><small className="sb-muted">Generated from the category name.</small></label>
+            <label className="sb-span-all">Description (optional)<textarea rows="3" maxLength="2000" value={description} onChange={e => setDescription(e.target.value)} placeholder="Describe this category" /></label>
             <label className="sb-span-all">Parent category (optional)<select value={parentId} onChange={e => setParentId(e.target.value)}><option value="">None — create a main category</option>{categoryParents.map(item => <option key={item.id} value={item.id}>{categoryPathFor(item).join(" · ")}</option>)}</select><small className="sb-muted">Choose a parent to create a category at any depth.</small></label>
           </div>
           </form>
