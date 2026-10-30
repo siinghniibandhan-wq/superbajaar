@@ -3,20 +3,12 @@ name: Database files check
 # Blocks a pull request if any database file or the migration runner is broken.
 # Runs on throw-away Postgres 15 and 16 (production is on 15). Nothing here touches the real database.
 # Owner: turn on "Require status checks" for this job in GitHub branch protection for main.
+# These two matrix jobs are required by the main-branch ruleset.
+# Run on every PR so required checks are never silently skipped by path filters.
 on:
   pull_request:
     branches: [main]
-    paths:
-      - "backend/schema/**"
-      - "backend/app/api/**"
-      - "backend/tests/**"
-      - "backend/schema_required.txt"
-      - "backend/scripts/**"
-      - ".github/workflows/migration-check.yml"
-      - "README.md"
-      - "IMPORTANT_UPDATES.md"
-      - "AGENTS.md"
-      - "docs/DATABASE_CHANGE_RULES.md"
+  workflow_dispatch:
 
 jobs:
   database-files:
