@@ -152,6 +152,35 @@ def get_order(order_id: int):
 
 
 @router.post("", status_code=201)
+def _manual_order_fulfilment_location(conn, pin_code: str, lines: list[OrderLineCreate]):
+    """Find the PIN-serving location with the highest stock that can fulfil every line."""
+    variant_ids = [line.variant_id for line in lines]
+    quantities = {line.variant_id: line.quantity for line in lines}
+    rows = conn.execute(
+        """
+        SELECT sl.id, sl.name, SUM(ib.on_hand - ib.reserved) AS available_stock
+        FROM stock_locations sl
+        JOIN inventory_balances ib ON ib.location_id = sl.id
+        WHERE sl.is_active = TRUE AND sl.pin_code = %s
+          AND ib.variant_id = ANY(%s)
+        GROUP BY sl.id, sl.name
+        HAVING COUNT(DISTINCT ib.variant_id) = %s
+        ORDER BY available_stock DESC, sl.id
+        """,
+        (pin_code, variant_ids, len(variant_ids)),
+    ).fetchall()
+    for location in rows:
+        available = conn.execute(
+            "SELECT variant_id, on_hand - reserved AS available FROM inventory_balances "
+            "WHERE location_id = %s AND variant_id = ANY(%s)",
+            (location["id"], variant_ids),
+        ).fetchall()
+        by_variant = {row["variant_id"]: row["available"] for row in available}
+        if all(by_variant.get(variant_id, 0) >= quantity for variant_id, quantity in quantities.items()):
+            return location
+    return None
+
+
 def create_order(payload: OrderCreate, request: Request):
     if getattr(request.state, "customer_checkout", False):
         if payload.channel != "website":
@@ -162,6 +191,8 @@ def create_order(payload: OrderCreate, request: Request):
         raise HTTPException(status_code=403, detail="Customer sign-in is required to place a website order")
     if getattr(request.state, "role", None) == "staff" and payload.channel == "manual":
         raise HTTPException(status_code=403, detail="Staff cannot create manual orders")
+    if payload.channel == "manual" and not payload.delivery_pin:
+        raise HTTPException(status_code=422, detail="Enter the customer's delivery PIN before creating a manual order")
     try:
         with _connect() as conn:
             with conn.transaction():
@@ -188,6 +219,16 @@ def create_order(payload: OrderCreate, request: Request):
                         "INSERT INTO order_lines (order_id, variant_id, quantity, unit_price, line_total) VALUES (%s,%s,%s,%s,%s)",
                         (order["id"], line.variant_id, line.quantity, unit_price, unit_price * line.quantity),
                     )
+                fulfilment_location = None
+                if payload.channel == "manual":
+                    fulfilment_location = _manual_order_fulfilment_location(conn, payload.delivery_pin, payload.lines)
+                    if fulfilment_location is None:
+                        raise HTTPException(status_code=409, detail="No active location serving this PIN has enough available stock for every item. The order was not created.")
+        if fulfilment_location:
+            order["fulfilment_location"] = {
+                "id": fulfilment_location["id"],
+                "name": fulfilment_location["name"],
+            }
         return order
     except HTTPException:
         raise
