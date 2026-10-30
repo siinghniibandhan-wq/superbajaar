@@ -64,7 +64,7 @@ def reserve_order_stock(conn, order_id: int, delivery_pin: str | None, lines: li
             )
         return int(location["id"])
 
-    raise ValueError("No single active location serving this delivery PIN has sufficient stock for the complete order")
+    raise ValueError("Insufficient stock: no single active location serving this delivery PIN can fulfil the complete order")
 
 
 def _outstanding_order_reservations(conn, order_id: int):
