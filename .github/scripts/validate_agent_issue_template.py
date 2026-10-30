@@ -9,7 +9,9 @@ try:
 except ImportError as exc:
     raise SystemExit("PyYAML is required: python -m pip install PyYAML") from exc
 
-path = Path(".github/ISSUE_TEMPLATE/agent-work-task.yml")
+template_path = Path(".github/ISSUE_TEMPLATE/agent-work-task.yml")
+workflow_path = Path(".github/workflows/agent-task-governance.yml")
+path = template_path
 data = yaml.load(path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
 
 if not isinstance(data, dict):
@@ -60,3 +62,26 @@ if missing:
     raise SystemExit("Required fields missing from template: " + ", ".join(sorted(missing)))
 
 print(f"PASS: {path} parsed; {len(seen)} unique fields; all required fields present.")
+
+workflow = yaml.load(workflow_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+if not isinstance(workflow, dict):
+    raise SystemExit("Agent governance workflow must be a YAML mapping.")
+if workflow.get("name") != "Agent task governance":
+    raise SystemExit("Unexpected agent governance workflow name.")
+permissions = workflow.get("permissions", {})
+if permissions.get("contents") != "read" or permissions.get("issues") != "write":
+    raise SystemExit("Workflow permissions must remain contents: read and issues: write.")
+events = workflow.get("on", {})
+if not isinstance(events, dict) or "issues" not in events or "workflow_dispatch" not in events:
+    raise SystemExit("Workflow must be event-driven by issues and support manual validation.")
+issue_events = set(events["issues"].get("types", []))
+if not {"opened", "edited", "reopened", "labeled"} <= issue_events:
+    raise SystemExit("Workflow is missing required issue lifecycle events.")
+jobs = workflow.get("jobs", {})
+job = jobs.get("validate-agent-task", {})
+steps = job.get("steps", [])
+if not any(step.get("uses") == "actions/github-script@v7" for step in steps):
+    raise SystemExit("Workflow must use the reviewed GitHub Script step.")
+if not workflow.get("concurrency"):
+    raise SystemExit("Workflow must define a concurrency group.")
+print(f"PASS: {workflow_path} parsed; least-privilege permissions and required triggers verified.")
