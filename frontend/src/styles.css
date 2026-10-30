@@ -132,3 +132,9 @@
 .sb-notice{display:flex;flex-direction:column;gap:7px;padding:16px;margin:20px 0;border:1px solid #e9def6;border-radius:12px;background:#faf7ff;color:#5d4a70}
 .sb-notice strong{color:#4b2877}.sb-notice span{font-size:13px;line-height:1.55}
 @media(max-width:640px){.sb-report-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.sb-report-kpis strong{font-size:18px}.sb-data-heading{align-items:flex-start;gap:10px;flex-wrap:wrap}}
+
+/* Catalogue-only vertical spacing refinement; global header and sidebar stay untouched. */
+.sb-workspace.sb-catalogue-workspace{padding-top:8px}
+.sb-main-content .sb-workspace.sb-catalogue-workspace .sb-back{margin-top:0;margin-bottom:16px}
+.sb-catalogue-workspace>.sb-eyebrow{margin-top:0}
+.sb-catalogue-workspace>.sb-catalogue-tabs{margin-top:16px}
