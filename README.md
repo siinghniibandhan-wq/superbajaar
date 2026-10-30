@@ -115,6 +115,8 @@ AI contributor roles, file ownership, 2–3-file work batches and cross-agent ha
 
 Multi-agent architecture, shared task queue, parallel execution, dependencies, handoffs, security boundaries and staged provider integration: [AI Agent Orchestration Architecture](docs/AGENT_ORCHESTRATION_ARCHITECTURE.md).
 
+Verified provider access, integration status, first-pilot order and external-agent acceptance criteria: [AI Agent Integration Readiness Register](docs/AGENT_INTEGRATION_READINESS.md).
+
 Tool priorities, MUST KEEP primary tools, KEEP fallbacks, free-quota switching and mobile-first operating rules: [Free-First Tool Utilisation & Role Assignment Policy](docs/TOOL_UTILISATION_POLICY.md).
 
 ---
