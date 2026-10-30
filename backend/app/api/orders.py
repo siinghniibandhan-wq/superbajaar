@@ -157,6 +157,10 @@ def get_order(order_id: int):
 def create_order(payload: OrderCreate, request: Request):
     if payload.channel == "pos" and payload.location_id is None:
         raise HTTPException(status_code=422, detail="POS orders require the staff-selected stock location")
+    if payload.channel in {"website", "manual"} and not payload.delivery_pin:
+        raise HTTPException(status_code=422, detail="Website and manual orders require a verified six-digit delivery PIN before stock can be reserved")
+    if payload.channel in {"website", "manual"} and payload.location_id is not None:
+        raise HTTPException(status_code=422, detail="Website and manual orders must use the server-selected eligible stock location")
     if getattr(request.state, "customer_checkout", False):
         if payload.channel != "website":
             raise HTTPException(status_code=403, detail="Customer accounts can only create website orders")
