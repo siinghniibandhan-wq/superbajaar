@@ -100,6 +100,9 @@ NOT ACTIVE in the mobile-first phase: Cline, Aider, OpenCode and local terminal-
 | KEEP | MagicPath | Generate interface concepts and draft React UI ideas | Figma and Gemini for design/review |
 | KEEP | Penpot | Open-source design alternative | Figma when a required integration is unavailable |
 | KEEP | Lighthouse | Performance, accessibility and SEO audits through an existing browser/CI workflow | PageSpeed Insights or browser performance reports |
+| KEEP | Lovable (existing SuperBajaar Connect project) | Isolated UI concepts, design critique and read-only frontend compatibility audits only until repository binding and framework compatibility are verified | Figma/Gemini for design review; canonical implementation remains in the Superbajaar GitHub repository |
+
+Lovable is not a canonical code source until its exact repository/branch binding is verified. Do not use its separate project to edit or deploy the production application; see [Agent Integration Readiness](AGENT_INTEGRATION_READINESS.md).
 
 Storybook is not an active mobile-first requirement because authoring/running component environments depends on the development workflow. Use a deployed preview only when one already exists.
 
