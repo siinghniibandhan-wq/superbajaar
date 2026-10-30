@@ -165,8 +165,10 @@ export default function ProductCreateForm({ categories = [], product = null, onS
       }
       for (const def of definitions.filter(item => !item.is_variant_attribute)) {
         const values = selected[def.code] || [];
-        if (!values.length) continue;
-        const value = def.value_type === "multi_select" ? values : values[0];
+        if (!values.length && !product?.id) continue;
+        const value = values.length
+          ? (def.value_type === "multi_select" ? values : values[0])
+          : null;
         await apiRequest("/catalogue/products/" + savedProduct.id + "/attributes/" + def.id, {
           method: "PUT",
           body: JSON.stringify({ value }),
