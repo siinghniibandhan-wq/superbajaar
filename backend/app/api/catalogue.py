@@ -703,7 +703,9 @@ def update_attribute(attribute_id: int, payload: AttributeUpdate):
                     raise HTTPException(status_code=409, detail="Duplicate value: each value must be unique within this attribute.")
             if in_use and next_type != current["value_type"]:
                 raise HTTPException(status_code=409, detail="Attribute type cannot change while products or variants use this attribute")
-            removed = set(str(v).strip().casefold() for v in (current["options"] or [])) - set(normalized)
+            def option_identity(option):
+                return str(option.get("name", "") if isinstance(option, dict) else option).strip().casefold()
+            removed = {option_identity(v) for v in (current["options"] or [])} - {option_identity(v) for v in next_options}
             if in_use and removed:
                 raise HTTPException(status_code=409, detail="Existing shared values cannot be removed while products or variants use this attribute")
             if in_use and current["is_variant_attribute"] and not next_variant and has_variant_values:
