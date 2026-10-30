@@ -70,3 +70,12 @@ def test_order_history_rejects_non_integer_order_id():
 def test_order_history_rejects_invalid_limit():
     response = client.get("/api/orders/1/history?limit=0")
     assert response.status_code == 422
+
+
+def test_manual_order_requires_delivery_pin_before_database_access():
+    response = client.post("/api/orders", json={
+        "channel": "manual", "customer_name": "Walk-in customer",
+        "lines": [{"variant_id": 1, "quantity": 1}],
+    })
+    assert response.status_code == 422
+    assert "delivery PIN" in response.json()["detail"]
