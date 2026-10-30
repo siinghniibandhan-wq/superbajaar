@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiRequest } from "../../services/api.js";
 import ProductImagesPanel from "./ProductImagesPanel.jsx";
+import ColourOptionEditor from "./ColourOptionEditor.jsx";
+import { colourOptionLabel, normalizeColourOption } from "./colourOptions.js";
 import "./ProductCreateForm.css";
 
 const EMPTY = { name: "", slug: "", brand: "", category_id: "", category_ids: [], description: "", tax_code: "", tax_rate: "", selling_price: "", mrp: "", is_pos_available: true, is_website_available: true, delivery_options: ["standard"] };
@@ -81,15 +83,15 @@ export default function ProductCreateForm({ categories = [], product = null, onS
     });
   }
 
-  async function addOption(def) {
-    const raw = (newOptions[def.code] || "").trim();
+  async function addOption(def, colourOption = null) {
+    const raw = def.value_type === "colour" ? colourOption : (newOptions[def.code] || "").trim();
     if (!raw) return;
     const updated = await apiRequest("/catalogue/attributes/" + def.id + "/options", {
       method: "PUT",
       body: JSON.stringify({ options: [raw] }),
     });
     await loadDefinitions();
-    const savedValue = (updated.options || []).find(value => String(value).trim().toLowerCase() === raw.toLowerCase()) ?? raw;
+    const savedValue = def.value_type === "colour" ? colourOptionLabel(raw) : ((updated.options || []).find(value => String(value).trim().toLowerCase() === raw.toLowerCase()) ?? raw);
     setSelected(old => {
       const current = old[def.code] || [];
       return current.some(value => String(value).toLowerCase() === String(savedValue).toLowerCase())
@@ -243,9 +245,10 @@ export default function ProductCreateForm({ categories = [], product = null, onS
             <strong>{def.name}</strong><small className="sb-muted">{def.value_type}{def.is_variant_attribute ? " · Variant attribute" : ""}{def.is_required ? " · Required" : ""}</small>
             {def.value_type === "text" && !(def.options || []).length ?
               <input value={(selected[def.code] || [])[0] || ""} placeholder={"Enter " + def.name.toLowerCase()} onChange={e => setSelected(old => ({ ...old, [def.code]: e.target.value ? [e.target.value] : [] }))} /> :
-              OPTION_TYPES.includes(def.value_type) ? <div className="sb-option-chips">{(def.options || []).map(value => <label className="sb-option-chip" key={String(value)}><input type="checkbox" checked={(selected[def.code] || []).includes(value)} onChange={() => toggleValue(def, value)} />{String(value)}</label>)}</div> :
+              OPTION_TYPES.includes(def.value_type) ? <div className="sb-option-chips">{(def.options || []).map(value => { const optionValue = def.value_type === "colour" ? colourOptionLabel(value) : value; return <label className="sb-option-chip" key={String(optionValue)}>{def.value_type === "colour" && <i className="sb-colour-swatch" style={{backgroundColor:normalizeColourOption(value).hex || "#999"}} />}<input type="checkbox" checked={(selected[def.code] || []).includes(optionValue)} onChange={() => toggleValue(def, optionValue)} />{String(optionValue)}</label>; })}</div> :
               <input value={(selected[def.code] || [])[0] || ""} placeholder={"Enter " + def.name.toLowerCase()} onChange={e => setSelected(old => ({ ...old, [def.code]: e.target.value ? [e.target.value] : [] }))} />}
-            {OPTION_TYPES.includes(def.value_type) && <div className="sb-add-option"><input aria-label={"New " + def.name + " option"} value={newOptions[def.code] || ""} placeholder={"Add new " + def.name.toLowerCase() + " option"} onChange={e => setNewOptions(old => ({ ...old, [def.code]: e.target.value }))} /><button type="button" className="sb-secondary" disabled={busy || !(newOptions[def.code] || "").trim()} onClick={() => addOption(def).catch(e => setError(e.message || "Unable to add option."))}>Add value</button></div>}
+            {def.value_type === "colour" ? <ColourOptionEditor existingOptions={def.options || []} disabled={busy} compact onAdd={option => addOption(def, option)} /> :
+              OPTION_TYPES.includes(def.value_type) && <div className="sb-add-option"><input aria-label={"New " + def.name + " option"} value={newOptions[def.code] || ""} placeholder={"Add new " + def.name.toLowerCase() + " option"} onChange={e => setNewOptions(old => ({ ...old, [def.code]: e.target.value }))} /><button type="button" className="sb-secondary" disabled={busy || !(newOptions[def.code] || "").trim()} onClick={() => addOption(def).catch(e => setError(e.message || "Unable to add option."))}>Add value</button></div>}
           </div>)}
           {!definitions.length && <p className="sb-empty">Create an attribute in the Attributes tab first, or continue with a product that has no variants.</p>}
           <p className="sb-muted">This product will create {variantCombinations.length} variant(s). Prices below are stored on each variant, not on the reusable attribute definition.</p>
