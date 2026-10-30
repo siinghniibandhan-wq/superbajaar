@@ -607,11 +607,17 @@ def set_product_attribute_value(product_id: int, attribute_id: int, payload: Att
         with _connection() as conn:
             _require_product(conn, product_id)
             attribute = conn.execute(
-                "SELECT id, name, value_type, options, is_active FROM product_attributes WHERE id = %s",
+                "SELECT id, name, value_type, options, is_active, is_required FROM product_attributes WHERE id = %s",
                 (attribute_id,),
             ).fetchone()
             if attribute is None or not attribute["is_active"]:
                 raise HTTPException(status_code=404, detail="Active attribute not found")
+            if attribute["is_required"] and (
+                payload.value is None
+                or (isinstance(payload.value, str) and not payload.value.strip())
+                or (isinstance(payload.value, list) and not payload.value)
+            ):
+                raise HTTPException(status_code=422, detail=f"Required product attribute '{attribute['name']}' is missing")
             _validate_attribute_value(conn, attribute, payload.value)
             row = conn.execute(
                 "INSERT INTO product_attribute_values (product_id, attribute_id, value) VALUES (%s, %s, %s::jsonb) "
