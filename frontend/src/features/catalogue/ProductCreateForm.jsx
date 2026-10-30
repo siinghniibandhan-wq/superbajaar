@@ -5,7 +5,7 @@ import "./ProductCreateForm.css";
 
 const EMPTY = { name: "", slug: "", brand: "", category_id: "", category_ids: [], description: "", tax_code: "", tax_rate: "", selling_price: "", mrp: "", is_pos_available: true, is_website_available: true, delivery_options: ["standard"] };
 const OPTION_TYPES = ["select", "multi_select", "colour", "size"];
-function ProductImagesEmbedded({ product }) { return <ProductImagesPanel products={[product]} initialProductId={product.id} embedded />; }
+function ProductImagesEmbedded({ product }) { return <ProductImagesPanel products={[product]} initialProductId={effectiveProduct.id} embedded />; }
 
 function combinationKey(attributes) {
   return JSON.stringify(Object.fromEntries(Object.entries(attributes || {}).sort(([a], [b]) => a.localeCompare(b))));
@@ -24,6 +24,8 @@ export default function ProductCreateForm({ categories = [], product = null, onS
     category_id: product.category_id ? String(product.category_id) : "",
     category_ids: Array.isArray(product.category_ids) && product.category_ids.length ? product.category_ids.map(String) : (product.category_id ? [String(product.category_id)] : []),
   } : EMPTY);
+  const [createdProduct, setCreatedProduct] = useState(null);
+  const effectiveProduct = product || createdProduct;
   const [definitions, setDefinitions] = useState([]);
   const [selected, setSelected] = useState({});
   const [variantPricing, setVariantPricing] = useState({});
@@ -47,8 +49,8 @@ export default function ProductCreateForm({ categories = [], product = null, onS
     apiRequest("/catalogue/stock-locations").then(result => setStockLocations(result.items || [])).catch(() => setStockLocations([]));
   }, []);
   useEffect(() => {
-    if (!product?.id || !definitions.length) return;
-    apiRequest("/catalogue/products/" + product.id + "/variants")
+    if (!effectiveProduct?.id || !definitions.length) return;
+    apiRequest("/catalogue/products/" + effectiveProduct.id + "/variants")
       .then(result => {
         const values = {};
         for (const row of result.items || []) {
@@ -61,7 +63,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
         setSelected(old => ({ ...old, ...values }));
       })
       .catch(e => setError(e.message || "Unable to load existing product variants."));
-    apiRequest("/catalogue/products/" + product.id + "/attributes")
+    apiRequest("/catalogue/products/" + effectiveProduct.id + "/attributes")
       .then(result => {
         const values = {};
         for (const item of result.items || []) {
@@ -73,13 +75,13 @@ export default function ProductCreateForm({ categories = [], product = null, onS
         setSelected(old => ({ ...old, ...values }));
       })
       .catch(e => setError(e.message || "Unable to load saved product attributes."));
-  }, [product?.id, definitions]);
+  }, [effectiveProduct?.id, definitions]);
   useEffect(() => {
-    if (!product?.id) return;
-    apiRequest("/catalogue/products/" + product.id + "/availability-rules")
+    if (!effectiveProduct?.id) return;
+    apiRequest("/catalogue/products/" + effectiveProduct.id + "/availability-rules")
       .then(result => setAvailabilityRules(result.items || []))
       .catch(e => setError(e.message || "Unable to load availability restrictions."));
-  }, [product?.id]);
+  }, [effectiveProduct?.id]);
 
   const chosenAttributes = useMemo(() => definitions.filter(def => def.is_variant_attribute && (selected[def.code] || []).length), [definitions, selected]);
   const variantCombinations = useMemo(() => {
@@ -130,7 +132,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
       if (!form.slug.trim()) throw new Error("Product slug could not be generated. Enter a valid product name.");
       const price = Number(form.selling_price);
       const mrp = Number(form.mrp);
-      if ((!product?.id || chosenAttributes.length) && (!Number.isFinite(price) || !Number.isFinite(mrp) || form.selling_price === "" || form.mrp === "" || price < 0 || mrp < price)) {
+      if ((!effectiveProduct?.id || chosenAttributes.length) && (!Number.isFinite(price) || !Number.isFinite(mrp) || form.selling_price === "" || form.mrp === "" || price < 0 || mrp < price)) {
         setActiveTab("general");
         throw new Error("Enter a valid selling price and an MRP equal to or higher than the selling price before creating variants.");
       }
@@ -139,7 +141,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
         const variantPrice = row.selling_price === undefined || row.selling_price === "" ? price : Number(row.selling_price);
         const variantMrp = row.mrp === undefined || row.mrp === "" ? mrp : Number(row.mrp);
         const variantCost = row.cost_price === undefined || row.cost_price === "" ? null : Number(row.cost_price);
-        if ((!product?.id || chosenAttributes.length) && (!Number.isFinite(variantPrice) || !Number.isFinite(variantMrp) || variantPrice < 0 || variantMrp < variantPrice || (variantCost !== null && (!Number.isFinite(variantCost) || variantCost < 0)))) {
+        if ((!effectiveProduct?.id || chosenAttributes.length) && (!Number.isFinite(variantPrice) || !Number.isFinite(variantMrp) || variantPrice < 0 || variantMrp < variantPrice || (variantCost !== null && (!Number.isFinite(variantCost) || variantCost < 0)))) {
           setActiveTab("attributes");
           throw new Error("Check each variant's selling price, MRP and cost price. MRP must be at least the selling price.");
         }
@@ -154,8 +156,9 @@ export default function ProductCreateForm({ categories = [], product = null, onS
         setActiveTab("attributes");
         throw new Error("Enter a value for required attribute: " + missingRequiredAttribute.name + ".");
       }
-      const payload = { name: form.name.trim(), slug: form.slug, brand: form.brand || null, category_id: categoryIds[0] || null, category_ids: categoryIds, description: form.description || null, tax_code: form.tax_code || null, tax_rate: form.tax_rate === "" ? null : Number(form.tax_rate), is_pos_available: Boolean(form.is_pos_available), is_website_available: Boolean(form.is_website_available), delivery_options: form.delivery_options?.length ? form.delivery_options : ["standard"], status: product?.status || "active" };
-      savedProduct = await apiRequest(product?.id ? "/catalogue/products/" + product.id : "/catalogue/products", { method: product?.id ? "PUT" : "POST", body: JSON.stringify(payload) });
+      const payload = { name: form.name.trim(), slug: form.slug, brand: form.brand || null, category_id: categoryIds[0] || null, category_ids: categoryIds, description: form.description || null, tax_code: form.tax_code || null, tax_rate: form.tax_rate === "" ? null : Number(form.tax_rate), is_pos_available: Boolean(form.is_pos_available), is_website_available: Boolean(form.is_website_available), delivery_options: form.delivery_options?.length ? form.delivery_options : ["standard"], status: effectiveProduct?.status || "active" };
+      savedProduct = await apiRequest(effectiveProduct?.id ? "/catalogue/products/" + effectiveProduct.id : "/catalogue/products", { method: effectiveProduct?.id ? "PUT" : "POST", body: JSON.stringify(payload) });
+      if (!effectiveProduct?.id) setCreatedProduct(savedProduct);
       for (const def of chosenAttributes) {
         const values = selected[def.code] || [];
         if (OPTION_TYPES.includes(def.value_type)) {
@@ -165,7 +168,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
       }
       for (const def of definitions.filter(item => !item.is_variant_attribute)) {
         const values = selected[def.code] || [];
-        if (!values.length && !product?.id) continue;
+        if (!values.length && !effectiveProduct?.id) continue;
         const value = values.length
           ? (def.value_type === "multi_select" ? values : values[0])
           : null;
@@ -174,10 +177,10 @@ export default function ProductCreateForm({ categories = [], product = null, onS
           body: JSON.stringify({ value }),
         });
       }
-      const existingResult = product?.id ? await apiRequest("/catalogue/products/" + savedProduct.id + "/variants") : { items: [] };
+      const existingResult = effectiveProduct?.id ? await apiRequest("/catalogue/products/" + savedProduct.id + "/variants") : { items: [] };
       const normalize = attrs => JSON.stringify(Object.fromEntries(Object.entries(attrs || {}).sort(([a], [b]) => a.localeCompare(b))));
       const existing = new Set((existingResult.items || []).filter(v => v.is_active).map(v => normalize(v.attributes)));
-      const missingCombinations = product?.id && !chosenAttributes.length ? [] : variantCombinations.filter(attrs => !existing.has(normalize(attrs)));
+      const missingCombinations = effectiveProduct?.id && !chosenAttributes.length ? [] : variantCombinations.filter(attrs => !existing.has(normalize(attrs)));
       for (const attrs of missingCombinations) {
         const row = variantPricing[combinationKey(attrs)] || {};
         const variantPrice = row.selling_price === undefined || row.selling_price === "" ? price : Number(row.selling_price);
@@ -192,15 +195,15 @@ export default function ProductCreateForm({ categories = [], product = null, onS
           body: JSON.stringify({ attributes: attrs, selling_price: variantPrice, mrp: variantMrp, cost_price: variantCost }),
         });
       }
-      if (product?.id) {
-        await apiRequest("/catalogue/products/" + product.id + "/availability-rules", {
+      if (effectiveProduct?.id) {
+        await apiRequest("/catalogue/products/" + effectiveProduct.id + "/availability-rules", {
           method: "PUT", body: JSON.stringify(availabilityRules.map(rule => ({ channel: rule.channel, region_code: rule.region_code || null, pincode: rule.pincode || null, location_id: rule.location_id ? Number(rule.location_id) : null, is_allowed: rule.is_allowed !== false }))),
         });
       }
-      setSuccess(product?.id ? (missingCombinations.length ? "Product updated and " + missingCombinations.length + " new variant(s) added. Existing variants were preserved." : "Product details updated. Existing variants were preserved; no duplicate variants were created.") : "Product saved with " + variantCombinations.length + " variant(s) and default prices.");
+      setSuccess(effectiveProduct?.id ? (missingCombinations.length ? "Product updated and " + missingCombinations.length + " new variant(s) added. Existing variants were preserved." : "Product details updated. Existing variants were preserved; no duplicate variants were created.") : "Product saved with " + variantCombinations.length + " variant(s) and default prices.");
       await onSaved?.(savedProduct);
     } catch (e) {
-      setError((e.message || "Unable to save product.") + (savedProduct && !product?.id ? " The product record was created, but one or more variant operations may not have completed. Review its variants before retrying." : ""));
+      setError((e.message || "Unable to save product.") + (savedProduct && !effectiveProduct?.id ? " The product record was created, but one or more follow-up operations may not have completed. Retry this form to continue on the same product." : ""));
     } finally { setBusy(false); onBusyChange?.(false); }
   }
 
@@ -217,21 +220,21 @@ export default function ProductCreateForm({ categories = [], product = null, onS
         <label>Brand<input maxLength="160" value={form.brand || ""} onChange={e => change("brand", e.target.value)} /></label>
         <fieldset className="sb-span-all sb-category-multiselect"><legend>Categories * <small>Select every category where this product should appear.</small></legend><div className="sb-category-checkbox-grid">{categories.map(item => <label className="sb-check" key={item.id}><input type="checkbox" checked={(form.category_ids || []).includes(String(item.id))} onChange={e => { const id=String(item.id); const ids=form.category_ids || []; const next=e.target.checked ? [...new Set([...ids,id])] : ids.filter(value => value !== id); setForm(old => ({...old,category_ids:next,category_id:next[0] || ""})); }} />{item.parent_id ? "↳ " : ""}{item.name}</label>)}</div></fieldset>
         <div className="sb-span-all"><h3>Price &amp; Tax</h3></div>
-        <label>Selling price (₹) *<input required type="number" min="0" step="0.01" readOnly={Boolean(product?.id)} value={form.selling_price} onChange={e => change("selling_price", e.target.value)} /></label>
-        <label>MRP (₹) *<input required type="number" min="0" step="0.01" readOnly={Boolean(product?.id)} value={form.mrp} onChange={e => change("mrp", e.target.value)} /></label>
-        {product?.id && <p className="sb-muted sb-span-all">Showing the lowest current variant prices. Variant prices remain unchanged when saving product details.</p>}
+        <label>Selling price (₹) *<input required type="number" min="0" step="0.01" readOnly={Boolean(effectiveProduct?.id)} value={form.selling_price} onChange={e => change("selling_price", e.target.value)} /></label>
+        <label>MRP (₹) *<input required type="number" min="0" step="0.01" readOnly={Boolean(effectiveProduct?.id)} value={form.mrp} onChange={e => change("mrp", e.target.value)} /></label>
+        {effectiveProduct?.id && <p className="sb-muted sb-span-all">Showing the lowest current variant prices. Variant prices remain unchanged when saving product details.</p>}
         <label>Tax code<input maxLength="32" value={form.tax_code || ""} onChange={e => change("tax_code", e.target.value)} /></label>
         <label>Tax rate (%)<input type="number" min="0" max="100" step="0.01" value={form.tax_rate ?? ""} onChange={e => change("tax_rate", e.target.value)} /></label>
         <label className="sb-span-all">Product description<textarea rows="4" value={form.description || ""} onChange={e => change("description", e.target.value)} placeholder="Features, material, fit, usage and care instructions" /></label>
       </div>
-      <button type="button" className="sb-primary" onClick={() => { if (!form.name.trim() || !form.slug.trim() || (!product?.id && (form.selling_price === "" || form.mrp === "" || Number(form.selling_price) < 0 || Number(form.mrp) < Number(form.selling_price)))) { setError("Complete product name, selling price and valid MRP before continuing."); return; } setError(""); setActiveTab("attributes"); }}>Continue to Attributes &amp; Variants</button>
+      <button type="button" className="sb-primary" onClick={() => { if (!form.name.trim() || !form.slug.trim() || (!effectiveProduct?.id && (form.selling_price === "" || form.mrp === "" || Number(form.selling_price) < 0 || Number(form.mrp) < Number(form.selling_price)))) { setError("Complete product name, selling price and valid MRP before continuing."); return; } setError(""); setActiveTab("attributes"); }}>Continue to Attributes &amp; Variants</button>
     </section>
     <section hidden={activeTab !== "availability"} aria-label="Availability">
       <h3>Sales channels</h3>
       <label className="sb-check"><input type="checkbox" checked={Boolean(form.is_pos_available)} onChange={e=>change("is_pos_available",e.target.checked)}/> Available in POS</label>
       <label className="sb-check"><input type="checkbox" checked={Boolean(form.is_website_available)} onChange={e=>change("is_website_available",e.target.checked)}/> Available on Website</label>
       <h3>Region, pincode and warehouse restrictions</h3>
-      {product?.id ? <>
+      {effectiveProduct?.id ? <>
         <p className="sb-muted">Restrictions are saved for this product. Each rule can target POS or Website and must specify a region, six-digit pincode, or active stock location/warehouse ID.</p>
         <div className="sb-form-grid">
           <label>Channel<select value={ruleDraft.channel} onChange={e=>setRuleDraft(v=>({...v,channel:e.target.value}))}><option value="website">Website</option><option value="pos">POS</option></select></label>
@@ -253,7 +256,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
       <button type="button" className="sb-primary" onClick={()=>setActiveTab("images")}>Continue to Images</button>
     </section>
     <section hidden={activeTab !== "images"} aria-label="Product images">
-      {product?.id ? <ProductImagesEmbedded product={product} /> : <p className="sb-muted">Save the product and its variants first. Then reopen Edit Product to add product-level and variant-specific image references.</p>}
+      {effectiveProduct?.id ? <ProductImagesEmbedded product={effectiveProduct} /> : <p className="sb-muted">Save the product and its variants first. Then reopen Edit Product to add product-level and variant-specific image references.</p>}
       <button type="button" className="sb-primary" onClick={()=>setActiveTab("review")}>Continue to Review &amp; Save</button>
     </section>
     <section hidden={activeTab !== "review"} aria-label="Review and save">
@@ -266,12 +269,12 @@ export default function ProductCreateForm({ categories = [], product = null, onS
         <p><strong>POS:</strong> {form.is_pos_available ? "Available" : "Unavailable"}</p>
         <p><strong>Website:</strong> {form.is_website_available ? "Available" : "Unavailable"}</p>
         <p><strong>Delivery:</strong> {(form.delivery_options||[]).join(", ") || "Choose at least one option"}</p>
-        <p><strong>Variants to create:</strong> {product?.id ? "Existing variants preserved" : variantCombinations.length}</p>
+        <p><strong>Variants to create:</strong> {effectiveProduct?.id ? "Existing variants preserved" : variantCombinations.length}</p>
       </div>
-      <div className="sb-product-actions"><button className="sb-primary" disabled={busy || !(form.delivery_options||[]).length} type="submit">{busy ? "Saving…" : product ? "Save product changes" : "Save product and variants"}</button><button className="sb-secondary" type="button" disabled={busy} onClick={() => setActiveTab("general")}>Back to Product Information</button></div>
+      <div className="sb-product-actions"><button className="sb-primary" disabled={busy || !(form.delivery_options||[]).length} type="submit">{busy ? "Saving…" : effectiveProduct ? "Save product changes" : "Save product and variants"}</button><button className="sb-secondary" type="button" disabled={busy} onClick={() => setActiveTab("general")}>Back to Product Information</button></div>
     </section>
     <section hidden={activeTab !== "attributes"} aria-label="Attributes and variants">
-      {product?.id && <p className="sb-muted">Existing variants are preserved. Select additional values below to add only missing combinations; existing variants will not be duplicated.</p>}
+      {effectiveProduct?.id && <p className="sb-muted">Existing variants are preserved. Select additional values below to add only missing combinations; existing variants will not be duplicated.</p>}
       <>
         <p className="sb-muted">Choose reusable attribute values. Each generated variant gets its own selling price, MRP and cost; the product-level prices are defaults that prefill each row.</p>
         <section className="sb-product-attributes">
