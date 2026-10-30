@@ -2,7 +2,7 @@ name: Agent task governance
 
 on:
   issues:
-    types: [opened, edited, reopened, labeled]
+    types: [opened, edited, reopened]
   workflow_dispatch:
     inputs:
       issue_number:
@@ -16,7 +16,7 @@ permissions:
 
 concurrency:
   group: agent-task-${{ github.event.issue.number || inputs.issue_number || github.run_id }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   validate-agent-task:
@@ -54,17 +54,19 @@ jobs:
               { name: 'agent:review', color: 'FBCA04', description: 'Deliverable is awaiting independent review' },
               { name: 'agent:done', color: '5319E7', description: 'Acceptance criteria and required evidence are complete' }
             ];
+            const { data: repositoryLabels } = await github.rest.issues.listLabelsForRepo({
+              ...context.repo,
+              per_page: 100
+            });
+            const existingRepositoryLabels = new Set(repositoryLabels.map(label => label.name));
             for (const label of statusLabels) {
-              try {
-                await github.rest.issues.createLabel({
-                  ...context.repo,
-                  name: label.name,
-                  color: label.color,
-                  description: label.description
-                });
-              } catch (error) {
-                if (error.status !== 422) throw error;
-              }
+              if (existingRepositoryLabels.has(label.name)) continue;
+              await github.rest.issues.createLabel({
+                ...context.repo,
+                name: label.name,
+                color: label.color,
+                description: label.description
+              });
             }
 
             const requiredHeadings = [
