@@ -49,6 +49,7 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
   const [defaultMrp, setDefaultMrp] = useState("");
   const [defaultCost, setDefaultCost] = useState("");
   const [generatedRows, setGeneratedRows] = useState([]);
+  const [optionDrafts, setOptionDrafts] = useState({});
 
   function closeAttributeForm() {
     if (busy) return;
@@ -62,6 +63,26 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
     try { const result = await apiRequest("/catalogue/attributes"); setDefinitions(result.items || []); }
     catch (e) { setError(e.message || "Unable to load attributes."); }
   }
+  async function addAttributeOption(definition) {
+    const raw = String(optionDrafts[definition.id] || "").trim();
+    if (!raw) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const updated = await apiRequest("/catalogue/attributes/" + definition.id + "/options", {
+        method: "PUT",
+        body: JSON.stringify({ options: [raw] }),
+      });
+      setOptionDrafts(old => ({ ...old, [definition.id]: "" }));
+      await loadDefinitions();
+      const saved = (updated.options || []).find(value => String(value).trim().toLowerCase() === raw.toLowerCase()) || raw;
+      setNotice('"' + saved + '" added to ' + definition.name + '. It is now available wherever this attribute is used.');
+    } catch (e) {
+      setError(e.message || "Unable to add attribute value.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function loadVariants(id = productId) {
     if (!id) { setVariants([]); return; }
     try { const result = await apiRequest("/catalogue/products/" + id + "/variants"); setVariants(result.items || []); }
@@ -168,7 +189,21 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
     <div className="sb-strip-list" aria-label="Attribute definitions">
       {definitions.length ? definitions.map(definition => <article className="sb-strip-row" key={definition.id}>
         <div className="sb-strip-icon" aria-hidden="true">Aa</div>
-        <div className="sb-strip-main"><strong>{definition.name}</strong><small>{definition.code} · {definition.value_type}{definition.options?.length ? " · " + definition.options.join(", ") : ""}</small></div>
+        <div className="sb-strip-main">
+          <strong>{definition.name}</strong>
+          <small>{definition.code} · {definition.value_type}{definition.options?.length ? " · " + definition.options.join(", ") : ""}</small>
+          {OPTION_TYPES.includes(definition.value_type) && <div className="sb-add-option">
+            <input
+              aria-label={"New shared " + definition.name + " value"}
+              value={optionDrafts[definition.id] || ""}
+              placeholder={"Add a shared " + definition.name.toLowerCase() + " value"}
+              onChange={e => setOptionDrafts(old => ({ ...old, [definition.id]: e.target.value }))}
+            />
+            <button type="button" className="sb-secondary" disabled={busy || !(optionDrafts[definition.id] || "").trim()} onClick={() => addAttributeOption(definition)}>
+              Add value
+            </button>
+          </div>}
+        </div>
         <span className="sb-status-pill">{definition.is_required ? "Required" : "Optional"}</span>
         {definition.is_variant_attribute && <span className="sb-strip-meta">Variant</span>}
       </article>) : <p className="sb-empty">No attributes found. Select Add attribute to create one.</p>}
