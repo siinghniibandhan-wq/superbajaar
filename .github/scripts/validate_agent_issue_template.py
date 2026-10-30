@@ -75,7 +75,7 @@ events = workflow.get("on", {})
 if not isinstance(events, dict) or "issues" not in events or "workflow_dispatch" not in events:
     raise SystemExit("Workflow must be event-driven by issues and support manual validation.")
 issue_events = set(events["issues"].get("types", []))
-if not {"opened", "edited", "reopened", "labeled"} <= issue_events:
+if not {"opened", "edited", "reopened"} <= issue_events:
     raise SystemExit("Workflow is missing required issue lifecycle events.")
 jobs = workflow.get("jobs", {})
 job = jobs.get("validate-agent-task", {})
