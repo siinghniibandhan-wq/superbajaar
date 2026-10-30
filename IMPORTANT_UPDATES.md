@@ -1,5 +1,22 @@
 # Important project updates
 
+> [!IMPORTANT]
+> ## LATEST AUDIT STATUS — SCHEMA REVIEW
+> **Status:** IN PROGRESS — repository/schema review underway; production schema state NOT VERIFIED.
+>
+> **Latest critical finding:** Git files and CI cannot establish which migrations are applied in production. The live `sb_app` `schema_migrations` ledger, checksums, runner `--status`, and backup readiness have not been inspected in this review. Do not merge or deploy on the assumption that repository files are applied.
+>
+> **Repository review completed so far (2026-10-30):**
+> - Confirmed the schema directory contains the baseline plus the current `009`, `010`, `011`, `012`, and `013` migration files.
+> - The duplicated `009` and `012` prefixes are the exact four documented legacy files; the workflow explicitly protects these pairs. Do not rename, reorder, or reuse those prefixes.
+> - Confirmed every non-comment entry in `backend/schema_required.txt` maps to a file in `backend/schema/`. `011_customer_phone_uniqueness.sql` is intentionally omitted according to the file's own note because application validation handles duplicate mobile numbers.
+> - PR #158's order-reservation implementation uses existing baseline objects (`orders`, `order_lines`, `deliveries`, `inventory_balances`, `inventory_movements`, and `stock_locations`) plus `orders.customer_email` from the required loyalty migration. No new schema file is indicated by the reviewed code.
+> - Static review does not prove live compatibility or application status. The baseline's `CREATE TABLE IF NOT EXISTS` statements do not reconcile pre-existing tables with different definitions; it remains a one-time bootstrap, not a repair migration.
+>
+> **Next required checks:** Finish the migration-by-migration static review; then have the Database Owner run the read-only production checks in `docs/RELEASE_GATES.md` (database/version, full ledger and checksums, runner `--status` exit code, and backup storage). Record unavailable checks as NOT VERIFIED. No SQL, schema files, required-schema list, production database, merge, or deployment changed in this review.
+
+---
+
 This file is the concise, chronological change log for major Super Bajaar project updates. It complements `README.md`, which contains the detailed architecture, API contracts, workflows, setup and safety rules.
 
 ## How to maintain this log
