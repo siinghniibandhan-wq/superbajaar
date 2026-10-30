@@ -8,7 +8,7 @@ from psycopg.rows import dict_row
 from pydantic import BaseModel, Field, field_validator
 
 from app.core.config import settings
-from app.services.order_inventory import dispatch_order_stock, order_reservation_locations, reserve_order_stock
+from app.services.order_inventory import dispatch_order_stock, order_fulfilment_started, order_reservation_locations, reserve_order_stock
 
 router = APIRouter(prefix="/delivery", tags=["delivery"])
 DELIVERY_STATUSES = {"pending", "packed", "assigned", "dispatched", "in_transit", "delivered", "failed", "returned", "cancelled"}
@@ -46,11 +46,26 @@ class DeliveryCreate(BaseModel):
         return value.strip()
 
 
+class DeliveryDispatchLine(BaseModel):
+    variant_id: int = Field(gt=0)
+    quantity: int = Field(gt=0)
+
+
 class DeliveryStatusUpdate(BaseModel):
     status: str
+    dispatch_lines: list[DeliveryDispatchLine] | None = Field(default=None, max_length=100)
     tracking_reference: str | None = Field(default=None, max_length=200)
     assigned_to: str | None = Field(default=None, max_length=200)
     note: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("dispatch_lines")
+    @classmethod
+    def unique_dispatch_variants(cls, value):
+        if value is not None:
+            ids = [line.variant_id for line in value]
+            if len(ids) != len(set(ids)):
+                raise ValueError("Each variant can appear only once in a partial dispatch")
+        return value
 
     @field_validator("status")
     @classmethod
@@ -125,7 +140,7 @@ def create_shipment(payload: DeliveryCreate):
                     raise HTTPException(status_code=409, detail="Cannot create a shipment for a cancelled or delivered order")
                 if order["delivery_pin"] and order["delivery_pin"].strip() != payload.delivery_pin:
                     raise HTTPException(status_code=422, detail="Shipment delivery PIN must match the order delivery PIN")
-                existing = conn.execute("SELECT id FROM deliveries WHERE order_id=%s AND status NOT IN ('cancelled','returned','failed')", (payload.order_id,)).fetchone()
+                existing = conn.execute("SELECT id FROM deliveries WHERE order_id=%s AND status NOT IN ('cancelled','returned','failed','delivered')", (payload.order_id,)).fetchone()
                 if existing:
                     raise HTTPException(status_code=409, detail="An active shipment already exists for this order")
                 active_reserved_locations = order_reservation_locations(conn, payload.order_id)
@@ -138,6 +153,8 @@ def create_shipment(payload: DeliveryCreate):
                         raise HTTPException(status_code=409, detail="Shipment location must match the location holding this order's reservation")
                     shipment_location_id = reserved_location_id
                 else:
+                    if order_fulfilment_started(conn, payload.order_id):
+                        raise HTTPException(status_code=409, detail="This order has already been fully dispatched")
                     order_lines = conn.execute(
                         "SELECT variant_id, quantity FROM order_lines WHERE order_id=%s ORDER BY variant_id",
                         (payload.order_id,),
@@ -192,7 +209,8 @@ def update_shipment_status(shipment_id: int, payload: DeliveryStatusUpdate):
                         (shipment_id,),
                     ).fetchone()
                     try:
-                        dispatched_lines = dispatch_order_stock(conn, int(shipment_order["order_id"]))
+                        requested = ({line.variant_id: line.quantity for line in payload.dispatch_lines} if payload.dispatch_lines is not None else None)
+                        dispatched_lines = dispatch_order_stock(conn, int(shipment_order["order_id"]), requested)
                     except ValueError as exc:
                         raise HTTPException(status_code=409, detail=str(exc)) from exc
                     if dispatched_lines == 0:
