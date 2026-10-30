@@ -15,5 +15,5 @@ If yes, I read `docs/DATABASE_CHANGE_RULES.md` and:
 
 ## Owner-only release gates (complete before merge/deploy)
 - [ ] GitHub main-branch protection requires both PostgreSQL matrix checks and requires the branch to be up to date.
-- [ ] Production preflight in `docs/RELEASE_GATES.md` was reviewed; live ledger/checksum results are recorded below (no secrets).
+- [ ] Production preflight in `docs/DATABASE_CHANGE_RULES.md` was reviewed; live ledger/checksum results are recorded below (no secrets).
 - [ ] A verified production backup is available before applying database changes.
