@@ -97,6 +97,7 @@ See [Architecture and API contracts](docs/architecture.md) for detailed diagrams
 | **Swagger / OpenAPI** | Live API contract and interactive endpoint explorer | Inspect schemas, auth, parameters, responses and test requests | First stop for API/endpoint/request-response defects |
 | **ChatGPT** | Technical leadership and work coordination | Architecture reasoning, task planning, code review, debugging, documentation and evidence review | Plan and coordinate work; never treat an unexecuted suggestion as a test result |
 | **Claude** | Designated database/schema implementation reviewer and default SQL/runner author under current governance | Scoped SQL, migration runner and schema workflow work | Database-impacting changes, following `CLAUDE.md` and owner approval |
+| **GitHub Copilot** | Additional AI coding assistant | Code completion, explanations, bounded implementation, test suggestions and first-pass review where plan features permit | Feature branches only; follow `AGENTS.md` and [Copilot usage policy](docs/GITHUB_COPILOT.md); never bypass review, CI, schema governance or owner approval |
 | **AWS EC2** | Hosts backend runtime | Inspect services, process state, logs, networking, environment and host health | Only when evidence points to runtime, server or infrastructure |
 | **AWS Systems Manager Run Command** | Controlled remote EC2 command execution | Approved operational commands and read-only checks | When remote server inspection/action is necessary and authorized |
 | **AWS Amplify** | Frontend hosting and build/deployment | Build logs, hosting status, deployed frontend | Frontend build or hosting/deployment investigation |
@@ -109,6 +110,8 @@ See [Architecture and API contracts](docs/architecture.md) for detailed diagrams
 This is the documented core toolchain. A tool is not considered active merely because it was discussed or evaluated; integrations and deployment triggers must be confirmed in source/configuration before being added as active dependencies.
 
 Detailed usage, diagnostic order and decision matrix: [Development, GitHub and operations workflow](docs/DEVELOPMENT_WORKFLOW.md).
+
+AI contributor roles, file ownership, 2–3-file work batches and cross-agent handoffs: [AI Team Collaboration & Delivery Policy](docs/AI_TEAM_COLLABORATION.md).
 
 ---
 

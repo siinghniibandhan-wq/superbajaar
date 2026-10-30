@@ -1,3 +1,17 @@
+## 2026-10-31 — GitHub Copilot documentation and usage governance
+
+**Status:** Documentation and repository instructions prepared in PR #175; account subscription/feature assignment remains unverified.
+
+- Added `docs/GITHUB_COPILOT.md` with official plan pricing, Free completion limits, AI-credit model, billing controls, plan/feature caveats, team delegation guidance and production/database safeguards.
+- Added GitHub Copilot to the project tool register and development workflow as an additional coding assistant, not an autonomous owner or replacement for review/CI.
+- Added `.github/copilot-instructions.md` so Copilot is explicitly directed to shared repository governance, feature-branch-only work, protected schema controls, secret safety and owner-controlled merge/deployment.
+- GitHub's official documentation states Copilot Free includes 2,000 code completions per month and limited AI credits; the pages reviewed do not state a fixed numeric Free AI-credit allowance. Copilot Free does not include Copilot cloud agent access.
+- Paid individual published allowances documented as Pro 1,500, Pro+ 7,000 and Max 20,000 AI credits/month. Business and Enterprise allowances are documented separately.
+
+**Verification boundary:** Official GitHub plan and billing documentation reviewed on 31 October 2026. The user's actual assigned Copilot plan, remaining balance, enabled features and billing budget were not accessible and are explicitly not assumed. No application code, schema, production data, secrets, deployment or GitHub billing settings changed.
+
+---
+
 # Important project updates
 
 This file is the concise, chronological change log for major Super Bajaar project updates. It complements `README.md`, which contains the detailed architecture, API contracts, workflows, setup and safety rules.
