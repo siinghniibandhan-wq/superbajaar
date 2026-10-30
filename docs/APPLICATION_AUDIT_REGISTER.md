@@ -5,13 +5,13 @@
 >
 > **Overall: IN PROGRESS**
 >
-> **Latest update:** Catalog audit has started. The main product, category, attribute, variant and image UI/API paths have been traced at repository level.
+> **Latest update:** Initial Catalog UI/API trace is complete for core product, category, attribute, variant and image operations. Detailed edge-case and permission verification is still underway.
 >
-> **Latest confirmed finding:** Product-level attributes could be edited in the product form but were not loaded or saved, even though backend GET/PUT endpoints already existed. A schema-independent fix is prepared in draft PR #160; CI is pending.
+> **Latest confirmed finding:** Product-level attributes were displayed but not loaded/saved by the product form. Fixed in draft PR #160 using existing APIs and schema. GitHub Actions run 41019415203 passed both frontend builds and backend unit tests.
 >
 > **Catalog capability findings:** Product create/edit/archive/delete routes exist; category create/edit and nested category UI exist; attribute definitions can be created and option values appended; variants can be created/edited/archived; product images can be added by URL/upload and a primary image selected. Category deletion, attribute definition edit/deactivation, and image deletion/metadata editing were not found in the traced UI/API.
 >
-> **Critical open points:** Product save is split across multiple API requests and can leave a partially created product if a later variant/attribute step fails. Product-level attribute persistence fix is not yet verified. No full module audit has signed off yet.
+> **Critical open points:** Product creation still spans separate requests and can leave a partial product if a later operation fails. PR #160 has CI verification but is not merged/deployed and has no live runtime verification. No full module audit has signed off yet.
 >
 > **Current work:** PR #160 is draft and not merged/deployed. Inventory PRs #158/#159 remain draft and not merged/deployed.
 >
@@ -61,7 +61,8 @@
 | Inventory schema-gap discovery | <badge color="warning">PARTIAL</badge> | Initial batch/expiry, GRN, batch allocation and returns/quarantine requirements documented; these remain candidates pending full trace and owner review |
 | Inventory order reservation / fulfilment code | <badge color="warning">IMPLEMENTED — NOT INTEGRATED</badge> | PR #158 is draft; CI checks were reported green; not merged or deployed |
 | Delivery partial-dispatch UI | <badge color="warning">IMPLEMENTED — NOT INTEGRATED</badge> | PR #159 is draft; frontend builds were reported green; depends on PR #158; not merged or deployed |
-| Catalog audit | <badge color="secondary">NOT STARTED</badge> | Next module to trace in detail |
+| Catalog product-level attribute persistence | <badge color="warning">FIXED IN DRAFT PR</badge> | PR #160 uses existing GET/PUT endpoints; GitHub Actions run 41019415203 passed both frontend builds and backend unit tests; not merged/deployed or live-verified |
+| Catalog audit | <badge color="warning">PARTIAL</badge> | Core UI/API trace completed; edge cases, permissions, runtime and full end-to-end sign-off remain |
 | Purchasing audit | <badge color="secondary">NOT STARTED</badge> | Capability checklist exists; no full implementation trace yet |
 | Accounting audit | <badge color="secondary">NOT STARTED</badge> | Capability checklist exists; no full implementation trace yet |
 | Remaining module audits | <badge color="secondary">NOT STARTED</badge> | Capability checklists exist; implementation traces remain |
@@ -307,7 +308,7 @@ The function inventory describes intended/observed capability scope; it is not a
 | ID | Issue / affected path | Evidence | Planned fix | Verification | Status |
 |---|---|---|---|---|---|
 | CAT-NOSCHEMA-001 | Core Catalog UI/API trace | `CatalogueWorkspace.jsx`, `ProductCreateForm.jsx`, `CatalogueVariantsPanel.jsx`, `ProductImagesPanel.jsx`, `backend/app/api/catalogue.py` and `backend/tests/test_catalogue.py` inspected | Continue edge-case, role, validation and end-to-end audit | Remaining | In progress |
-| CAT-NOSCHEMA-002 | Product-level attribute values not loaded/saved by product form | Form only processed variant attributes; existing backend GET/PUT routes already support product-level values | Load saved product attribute values on edit; persist scalar/multi-select values using existing endpoint; apply matching controls and required validation | PR #160; CI pending | Implemented in draft PR; not verified |
+| CAT-NOSCHEMA-002 | Product-level attribute values not loaded/saved by product form | Form only processed variant attributes; existing backend GET/PUT routes already support product-level values | Load saved product attribute values on edit; persist scalar/multi-select values using existing endpoint; apply matching controls and required validation | PR #160; GitHub Actions run 41019415203 passed both frontend builds and backend unit tests | Fixed in draft PR; not merged/deployed |
 | CAT-NOSCHEMA-003 | Product create spans separate API requests for product, options, variants and later availability | `ProductCreateForm.jsx` sends sequential requests; catch block explicitly warns product may have been created while later operations failed | Design a safe transactional application-level save using existing schema, or make partial progress/retry state explicit; preserve existing records | Not started | Confirmed |
 | CAT-NOSCHEMA-004 | Attribute definitions cannot be edited/deactivated; option lists are append-only | Traced UI and backend routes expose create and append-options only | Determine required edit/deactivation semantics and protect options already used by variants/product values | Not started | Confirmed capability gap |
 | CAT-NOSCHEMA-005 | Product images cannot be deleted or metadata edited after creation | Traced image UI/API exposes list, add/upload and set-primary only | Define safe image removal/metadata-edit lifecycle; check storage object cleanup implications before implementation | Not started | Confirmed capability gap |
