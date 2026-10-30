@@ -85,11 +85,13 @@ def release_order_stock(conn, order_id: int):
     rows = _outstanding_order_reservations(conn, order_id)
     for row in rows:
         quantity = Decimal(str(row["outstanding"]))
-        conn.execute(
+        updated = conn.execute(
             "UPDATE inventory_balances SET reserved=reserved-%s, updated_at=now() "
-            "WHERE variant_id=%s AND location_id=%s AND reserved >= %s",
+            "WHERE variant_id=%s AND location_id=%s AND reserved >= %s RETURNING variant_id",
             (quantity, row["variant_id"], row["location_id"], quantity),
-        )
+        ).fetchone()
+        if updated is None:
+            raise ValueError("Reserved inventory changed before cancellation; reservation was not released")
         conn.execute(
             "INSERT INTO inventory_movements "
             "(variant_id, location_id, movement_type, quantity, reference_type, reference_id, note) "
