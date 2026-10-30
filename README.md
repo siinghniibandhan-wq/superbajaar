@@ -160,7 +160,7 @@ All paths below are prefixed with `/api` by `backend/app/main.py`. This list is 
 
 - Health: `GET /health`
 - Authentication: `POST /auth/login`, `GET /auth/me`, `POST /auth/logout`
-- Catalogue: `GET/POST /catalogue/categories`, `GET/POST /catalogue/products`, `DELETE /catalogue/products/{product_id}` (owner/admin only; mandatory reason recorded in `product_deletion_audit`; blocked when operational records reference the product), `GET /catalogue/attributes`, `POST /catalogue/attributes`, `GET /catalogue/products/{product_id}/attributes`, `PUT /catalogue/products/{product_id}/attributes/{attribute_id}`, `GET/POST /catalogue/products/{product_id}/variants`, `GET/POST /catalogue/products/{product_id}/images`, `GET /catalogue/variants`, `PUT /catalogue/variants/{variant_id}/price`
+- Catalogue: `GET/POST /catalogue/categories`, `GET/POST /catalogue/products`, `DELETE /catalogue/products/{product_id}` (owner/admin only; mandatory reason recorded in `product_deletion_audit`; blocked when operational records reference the product), `GET /catalogue/attributes`, `POST /catalogue/attributes`, `GET /catalogue/products/{product_id}/attributes`, `PUT/DELETE /catalogue/products/{product_id}/attributes/{attribute_id}`, `GET/POST /catalogue/products/{product_id}/variants`, `GET/POST /catalogue/products/{product_id}/images`, `GET /catalogue/variants`, `PUT /catalogue/variants/{variant_id}/price`
 - Inventory: `GET/POST /inventory/locations`, `GET /inventory/balances`, `GET /inventory/movements`, `POST /inventory/adjustments`
 - Orders: `GET/POST /orders`, `GET /orders/summary`, `GET /orders/{order_id}`, `PATCH /orders/{order_id}/status`
 - Payments: `GET/POST /payments`, `PATCH /payments/{payment_id}/status`
