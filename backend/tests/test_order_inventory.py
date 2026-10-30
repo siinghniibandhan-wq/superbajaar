@@ -42,9 +42,10 @@ class FakeConnection:
         return Result()
 
 
-def test_order_without_pin_keeps_legacy_no_reservation_behaviour():
+def test_order_without_pin_or_location_fails_closed_before_reservation():
     conn = FakeConnection()
-    assert reserve_order_stock(conn, 101, None, [(7, 2)]) is None
+    with pytest.raises(ValueError, match="verified delivery PIN or staff-selected stock location"):
+        reserve_order_stock(conn, 101, None, [(7, 2)])
     assert conn.calls == []
 
 
