@@ -160,3 +160,38 @@ A module is not considered functional merely because its page or route exists. V
 - Before changing an endpoint, check both its frontend caller and backend route, including request/response field names and authentication requirements.
 - Before changing schema, check existing schema files and production compatibility.
 - Report only checks actually run and distinguish local tests from live AWS verification.
+
+## Database safety and release process
+
+Super Bajaar uses a repository-based database migration runner, automated checks, and GitHub branch protection to reduce the risk of accidental schema changes and unverified releases.
+
+### What is in place
+
+- **Safe migration runner:** `backend/scripts/apply_schema.sh` supports dry-run and status modes, checks the migration ledger and file checksums, takes and validates a backup before applying changes, and runs each migration in its own transaction.
+- **Failure handling:** failed or changed migrations are reported and recorded. The runner uses exit codes to distinguish safe completion, non-required failures, missing required schema, backup failures, and setup/concurrency problems.
+- **Baseline protection:** an unrecorded `000_baseline_schema.sql` is refused when the database already contains user objects. The baseline is intended only for a genuinely empty-database bootstrap.
+- **Least-privilege database access:** the runner does not grant blanket permissions across all tables or sequences. A migration must declare only the specific permissions required for the objects it creates.
+- **Legacy migration filename protection:** automated validation preserves the four existing legacy files using the `009` and `012` prefixes and rejects additional reuse of those numbers.
+- **Automated PostgreSQL compatibility checks:** the GitHub Actions workflow `.github/workflows/migration-check.yml` tests the schema and migration runner on disposable PostgreSQL 15 and 16 databases. It applies the schema files twice and runs the runner test suite.
+- **Protected main branch:** the active GitHub ruleset `Protect main` requires pull requests, successful `database-files (15)` and `database-files (16)` checks, and an up-to-date branch. It also blocks force pushes and deletion of the default branch.
+
+### Required workflow for future changes
+
+1. Create a feature branch from the latest `main`; do not push directly to `main`.
+2. Read `docs/DATABASE_CHANGE_RULES.md` before any database, schema, migration, data, backup, or deployment work.
+3. Keep existing/applied schema files unchanged. Use the approved additive migration process for necessary schema changes, and update `backend/schema_required.txt` when application code requires a new schema file.
+4. Open a pull request with the project template. Review the complete diff and wait for required checks to pass.
+5. Keep the PR branch up to date with `main`. Merge only through the protected pull-request workflow.
+6. Before a production deployment or migration, complete the read-only checks in `docs/RELEASE_GATES.md`, inspect the live migration ledger/checksums, and confirm backup readiness. Production migration/deployment is a separate owner-approved action.
+
+### What these checks do not prove
+
+Successful CI checks prove the tested code and schema passed on disposable PostgreSQL 15 and 16 environments. They do **not** connect to or validate the production database, inspect its live migration ledger or data, create a production backup, prove every application workflow works, or authorize a production deployment. Those checks remain separate release responsibilities.
+
+### Detailed documentation
+
+- [Database change rules](docs/DATABASE_CHANGE_RULES.md)
+- [Database release gates and production preflight](docs/RELEASE_GATES.md)
+- [Pull request checklist](.github/pull_request_template.md)
+- [Migration check workflow](.github/workflows/migration-check.yml)
+- [AI coding-agent instructions](AGENTS.md) and [Claude instructions](CLAUDE.md)
