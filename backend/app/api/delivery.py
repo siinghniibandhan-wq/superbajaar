@@ -203,7 +203,11 @@ def update_shipment_status(shipment_id: int, payload: DeliveryStatusUpdate):
     try:
         with _connect() as conn:
             with conn.transaction():
-                current = conn.execute("SELECT status FROM deliveries WHERE id=%s FOR UPDATE", (shipment_id,)).fetchone()
+                current = conn.execute(
+                    "SELECT d.status, d.order_id FROM deliveries d JOIN orders o ON o.id=d.order_id "
+                    "WHERE d.id=%s FOR UPDATE OF d, o",
+                    (shipment_id,),
+                ).fetchone()
                 if current is None:
                     raise HTTPException(status_code=404, detail="Shipment not found")
                 old = current["status"]
@@ -214,16 +218,13 @@ def update_shipment_status(shipment_id: int, payload: DeliveryStatusUpdate):
                 if payload.dispatch_lines is not None and payload.status != "dispatched":
                     raise HTTPException(status_code=422, detail="Dispatch quantities can only be supplied when marking a shipment dispatched")
                 if payload.status == "dispatched":
-                    shipment_order = conn.execute(
-                        "SELECT order_id FROM deliveries WHERE id=%s",
-                        (shipment_id,),
-                    ).fetchone()
+                    order_id = int(current["order_id"])
                     try:
                         requested = ({line.variant_id: line.quantity for line in payload.dispatch_lines} if payload.dispatch_lines is not None else None)
-                        dispatched_lines = dispatch_order_stock(conn, int(shipment_order["order_id"]), requested)
+                        dispatched_lines = dispatch_order_stock(conn, order_id, requested)
                     except ValueError as exc:
                         raise HTTPException(status_code=409, detail=str(exc)) from exc
-                    if dispatched_lines == 0 and not order_fulfilment_started(conn, int(shipment_order["order_id"])):
+                    if dispatched_lines == 0 and not order_fulfilment_started(conn, order_id):
                         raise HTTPException(status_code=409, detail="No outstanding stock reservation exists for this order")
                 row = conn.execute(
                     "UPDATE deliveries SET status=%s, tracking_reference=COALESCE(%s,tracking_reference), assigned_to=COALESCE(%s,assigned_to), updated_at=now() "
