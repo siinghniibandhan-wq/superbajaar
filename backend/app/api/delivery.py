@@ -119,7 +119,15 @@ def list_shipments(
             rows = conn.execute(
                 "SELECT d.id, d.shipment_reference, d.order_id, o.order_number, d.delivery_pin, d.recipient_name, "
                 "d.recipient_phone, d.address, d.location_id, d.status, d.tracking_reference, d.assigned_to, "
-                "d.delivery_notes, d.created_at, d.updated_at FROM deliveries d JOIN orders o ON o.id=d.order_id" +
+                "d.delivery_notes, d.created_at, d.updated_at, "
+                "COALESCE((SELECT json_agg(json_build_object('variant_id', l.variant_id, 'sku', v.sku, "
+                "'product_name', p.name, 'ordered_quantity', l.quantity, 'remaining_quantity', "
+                "GREATEST(l.quantity - COALESCE((SELECT sum(m.quantity) FROM inventory_movements m "
+                "WHERE m.variant_id=l.variant_id AND m.reference_id=o.id::text "
+                "AND m.reference_type='order_fulfilment' AND m.movement_type='sale'),0),0)) ORDER BY l.id) "
+                "FROM order_lines l JOIN product_variants v ON v.id=l.variant_id "
+                "JOIN products p ON p.id=v.product_id WHERE l.order_id=o.id), '[]'::json) AS order_lines "
+                "FROM deliveries d JOIN orders o ON o.id=d.order_id" +
                 where + " ORDER BY d.created_at DESC LIMIT %s OFFSET %s", (*params, limit, offset)
             ).fetchall()
             total = conn.execute("SELECT count(*) AS total FROM deliveries d JOIN orders o ON o.id=d.order_id" + where, params).fetchone()["total"]
