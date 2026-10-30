@@ -15,14 +15,40 @@ Not sure if it applies? It applies.
 
 ## 2. Who does what (hard rule)
 
-| Work | Who |
+| Work | Owner |
 |---|---|
-| All SQL: schema files, migrations, indexes, constraints, backfills, DB permissions | **Claude by default**; another agent only with explicit owner approval for the specific change, recorded in the PR |
-| The migration runner, backup and drift-check scripts, `schema_required.txt`, the CI database check | **Claude by default**; another agent only with explicit owner approval for the specific change, recorded in the PR |
-| Application code (Python/FastAPI, frontend), rate limiting, validation, tests, UI | ChatGPT (or any developer), on a branch with a pull request |
-| Running anything on the server, merging pull requests, approving risky steps, relaying information | **Owner only** |
+| All SQL: schema files, migrations, indexes, constraints, backfills, DB permissions | **Database Owner** |
+| Migration runner, backup scripts, drift-check tooling, `schema_required.txt`, CI database check | **Database Owner** |
+| Database review and migration review | **Primary Reviewer (Claude when available), Secondary Reviewer (ChatGPT)** |
+| Application code (FastAPI, frontend, validation, tests, UI) | Any approved contributor |
+| Running production actions, merge approvals, deployment approvals | **Repository Owner** |
 
-If you are not Claude and you need a database change: do NOT write the SQL. Fill in the "Database Change Request" (section 9) and give it to the owner to pass to Claude. Writing SQL "just to help" is how this project broke before.
+The Database Owner retains final authority for all database decisions. Reviewers may recommend changes but may not bypass owner approval.
+
+### Database Governance Roles
+
+**Repository Owner**
+- Final authority for all repository decisions.
+- Final authority for all production database decisions.
+
+**Database Owner**
+- Owns schema design.
+- Owns migration numbering.
+- Owns migration review process.
+- Owns schema compatibility decisions.
+- Approves database changes before merge.
+
+**Primary Reviewer**
+- Claude (when available).
+- Reviews migration safety and compatibility.
+
+**Secondary Reviewer**
+- ChatGPT.
+- Reviews migration safety, compatibility and implementation impacts.
+
+Reviewers provide recommendations only. The Repository Owner and Database Owner remain responsible for final approval. In this repository's current governance model, the Repository Owner and Database Owner are the same person.
+
+If you are not the Database Owner and need a database change: do NOT write the SQL or modify protected database assets. Fill in the "Database Change Request" (section 9) and give it to the owner for approval and assignment. Writing unapproved SQL is how this project broke before.
 
 ## 3. Facts that must never be guessed
 
@@ -53,7 +79,7 @@ If you are not Claude and you need a database change: do NOT write the SQL. Fill
 
 Exit codes: `0` all good. `11` some file failed but every required file is applied (deploy may continue). `10` something failed and no required list exists (do not deploy). `20` a required file is missing (do not deploy; the old release stays live). `30` backup failed, nothing changed. `50` setup problem. `60` another run in progress.
 
-The deploy continues only on `0` or `11`. Never change this behaviour, the exit codes, the backup step or the checksum rule without Claude and the owner.
+The deploy continues only on `0` or `11`. Never change this behaviour, the exit codes, the backup step or the checksum rule without approval from the Database Owner and Repository Owner.
 
 ## 6. Rules for application code that touches the database
 
@@ -67,25 +93,25 @@ The deploy continues only on `0` or `11`. Never change this behaviour, the exit 
 1. Read this file and the README safety section.
 2. List `backend/schema/` and read the files that touch the same tables.
 3. Ask the owner for the live checks in section 8 if the task depends on live state.
-4. Write the Database Change Request (section 9) or, if you are Claude, the new schema file.
+4. Write the Database Change Request (section 9) or, if you are the Database Owner, prepare the proposed new schema file for review.
 5. Test twice on scratch Postgres 15 and 16. Open a pull request using the template. Never push to `main`.
 6. The owner merges. The deploy applies the file. The owner confirms with `--status`.
 
 ## 8. Live checks the owner can run (read-only)
 
 ```
-sudo -u postgres psql -c "\l"                                  # which database names exist
+sudo -u postgres psql -c "\\l"                                  # which database names exist
 sudo -u postgres psql sb_app -c "SELECT filename, applied_at FROM schema_migrations ORDER BY applied_at DESC LIMIT 15;"
-sudo -u postgres psql sb_app -c "\d customer_accounts"         # replace with the table in question
+sudo -u postgres psql sb_app -c "\\d customer_accounts"         # replace with the table in question
 bash backend/scripts/apply_schema.sh backend/schema --status   # state of every file
 tail -n 100 /home/ec2-user/deploy/schema.log
 ls -lh /home/ec2-user/schema-backups/ | tail
 ```
 Never paste passwords, keys or `.env` contents.
 
-If Claude needs anything else about how things were done before, it will ask the owner, who can ask ChatGPT and paste the answer. Guessing is not allowed.
+If the Primary Reviewer needs historical implementation context, it will ask the owner, who may ask another reviewer and relay the answer. Guessing is not allowed.
 
-## 9. Database Change Request (template for non-Claude agents)
+## 9. Database Change Request (template for contributors other than the Database Owner)
 
 ```
 DATABASE CHANGE REQUEST
