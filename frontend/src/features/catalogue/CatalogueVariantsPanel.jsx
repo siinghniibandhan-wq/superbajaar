@@ -97,7 +97,8 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
   }
 
   async function removeAttributeOption(definition, value) {
-    if (!window.confirm('Remove shared value "' + value + '" from ' + definition.name + '?')) return;
+    const displayValue = definition.value_type === "colour" ? colourOptionLabel(value) : String(value);
+    if (!window.confirm('Remove shared value "' + displayValue + '" from ' + definition.name + '?')) return;
     setBusy(true); setError(""); setNotice("");
     try {
       await apiRequest("/catalogue/attributes/" + definition.id + "/options", {
@@ -105,7 +106,7 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
         body: JSON.stringify({ value }),
       });
       await loadDefinitions();
-      setNotice('Shared value "' + value + '" removed.');
+      setNotice('Shared value "' + displayValue + '" removed.');
     } catch (e) { setError(e.message || "Unable to remove shared value."); }
     finally { setBusy(false); }
   }
