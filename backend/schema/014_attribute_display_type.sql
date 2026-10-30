@@ -16,3 +16,8 @@ BEGIN
     END IF;
 END
 $$;
+
+-- Give existing Colour attributes the matching storefront presentation by default.
+UPDATE public.product_attributes
+SET display_type = 'colour'
+WHERE value_type = 'colour' AND display_type = 'dropdown';
