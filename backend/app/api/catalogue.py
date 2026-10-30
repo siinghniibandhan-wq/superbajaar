@@ -1,5 +1,7 @@
 """PostgreSQL-backed catalogue, attribute and variant API foundation."""
 from typing import Any
+from datetime import date
+import math
 
 import psycopg
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
@@ -246,11 +248,23 @@ def _validate_attribute_value(conn, attribute: dict[str, Any], value: Any) -> No
     elif kind == "text":
         valid = isinstance(value, str)
     elif kind == "number":
-        valid = isinstance(value, (int, float)) and not isinstance(value, bool)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            try:
+                valid = math.isfinite(float(value))
+            except (OverflowError, ValueError):
+                valid = False
+        else:
+            valid = False
     elif kind == "boolean":
         valid = isinstance(value, bool)
     elif kind == "date":
-        valid = isinstance(value, str) and len(value) == 10 and value[4:5] == "-" and value[7:8] == "-"
+        if isinstance(value, str) and len(value) == 10:
+            try:
+                valid = date.fromisoformat(value).isoformat() == value
+            except ValueError:
+                valid = False
+        else:
+            valid = False
     if not valid:
         raise HTTPException(status_code=422, detail=f"Invalid value for attribute '{attribute['name']}'")
 
