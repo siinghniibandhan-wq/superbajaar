@@ -131,6 +131,27 @@ jobs:
               return;
             }
 
+            const reopenedCompletedTask =
+              context.eventName === 'issues' &&
+              context.payload.action === 'reopened' &&
+              currentStatus.includes('agent:done');
+            if (reopenedCompletedTask) {
+              for (const name of currentStatus) {
+                await github.rest.issues.removeLabel({
+                  ...context.repo,
+                  issue_number: issueNumber,
+                  name
+                });
+              }
+              await github.rest.issues.addLabels({
+                ...context.repo,
+                issue_number: issueNumber,
+                labels: ['agent:ready']
+              });
+              core.notice('Reopened completed task reset to READY for reassessment.');
+              return;
+            }
+
             if (currentStatus.length === 0 || currentStatus.includes('agent:blocked')) {
               for (const name of currentStatus) {
                 await github.rest.issues.removeLabel({
