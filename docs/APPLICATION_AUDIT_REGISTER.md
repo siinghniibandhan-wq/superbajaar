@@ -24,6 +24,209 @@
 
 ---
 
+
+# Functional capability inventory
+
+This is a separate deliverable from the defect/schema register. It answers: **What is each module supposed to let a user do?** For every capability, the audit will trace the visible screen/action, frontend handler, API/backend implementation, permissions, and persistence. A capability is not marked available merely because a menu item or button exists.
+
+Capability status:
+- **User-confirmed scope:** explicitly described by the Repository Owner.
+- **To verify in code:** expected capability area; inspect the actual UI and implementation before claiming it works.
+- **Missing / broken:** record the defect in the relevant schema-independent or schema-dependent issue table.
+- **Verified working:** only after the end-to-end path is checked.
+
+## Catalog — product and merchandising management
+
+**User-confirmed capabilities**
+| Capability group | Functions to inventory | Status |
+|---|---|---|
+| Product management | Create product; view/list/search products; open product details; edit product; delete/archive product | User-confirmed scope; verify exact actions and implementation |
+| Category management | Create category; view/list categories; edit category; delete/archive category | User-confirmed scope; verify exact actions and implementation |
+| Subcategory management | Create subcategory; view/list subcategories; edit subcategory; delete/archive subcategory; assign subcategory to parent category | User-confirmed scope; verify exact actions and implementation |
+| Attribute management | Manage product attributes; manage attribute values/options; edit and remove attributes/options; assign attributes to products/variants where supported | User-confirmed scope; exact sub-actions and product/variant linkage to verify |
+
+**Additional Catalog areas to inspect, not assumed to exist:** product images/media, SKU/barcode, product type/status, pricing and tax fields, variants, stock/availability display, delivery configuration, SEO/content details, bulk import/export, validation, duplicate handling, and category/attribute dependencies during product edits or deletion.
+
+**Catalog audit output required:** complete screen/action list; API route for each action; tables/columns used; role/permission checks; field validation; empty/error/loading states; tests; and a status for every capability (working, broken, missing, or blocked by schema).
+
+## Inventory — stock control and fulfilment
+
+| Capability group | Functions to inventory | Status |
+|---|---|---|
+| Stock overview | View stock by product/variant and location; inspect on-hand, reserved and available quantities; low-stock visibility | To verify in code |
+| Receipts | Receive purchased goods; record received quantities; link receipt to purchase order; inspect GRN/receipt history and discrepancies | Basic receive-goods path identified; full GRN workflow is a schema candidate |
+| Stock movements | View movement history; record supported adjustments, receipts, sales, returns and transfers | Existing movement ledger identified; verify each UI/API action |
+| Transfers | Create/validate stock transfer; dispatch from source; receive at destination; track in-transit quantities | To verify in code |
+| Stock counts | Start/record physical inventory count; compare counted vs system quantity; approve/apply adjustments | Existing count/adjustment APIs identified; verify UI and lifecycle |
+| Reservations | Reserve stock for an order; release on cancellation; inspect reserved quantity | Backend implementation proposed in PR #158; not merged/deployed |
+| Fulfilment | Select stock location by delivery PIN; prepare shipment; partial/full dispatch; prevent overselling and duplicate deduction | PRs #158/#159 prepared; not merged/deployed |
+| Returns and quality | Receive return; inspect; quarantine; restock or reject; record reason and disposition | Full workflow not yet implemented; schema candidate |
+| Replenishment | Identify low stock; suggest/create replenishment or purchase request; select preferred vendor | To verify in code |
+
+## Purchasing / Procurement
+
+Trace and inventory each stage separately:
+- Purchase request creation, line items, submission and approval/rejection.
+- Vendor selection and vendor quotation request/receipt/comparison.
+- Purchase order creation, editing, approval, sending and status tracking.
+- Vendor dispatch / advance shipping information and expected delivery.
+- Goods receipt / GRN, partial receipt, over/short/damaged quantity handling.
+- Quality inspection and acceptance/rejection.
+- Vendor invoice capture, matching against PO and receipt, bill creation.
+- Bill approval, payment scheduling/execution and payment status.
+- Vendor master, contacts, terms, pricing and purchase history.
+
+**Status:** capability checklist to verify against actual screens, APIs and schema. Do not assume every listed step currently exists.
+
+## Accounting
+
+Trace and inventory each stage separately:
+- Chart of accounts and account configuration.
+- Journal entries: create, edit where allowed, post, reverse and view.
+- General ledger and account balances.
+- Customer invoices, credit notes and receipts.
+- Vendor bills, debit notes and supplier payments.
+- Payment allocation, refunds and reconciliation.
+- Bank/cash accounts and bank reconciliation.
+- Tax/GST configuration, input/output tax, returns and reports.
+- Profit and loss, balance sheet, cash flow and trial balance.
+- Period controls, audit trail and export.
+
+**Status:** capability checklist to verify against actual screens, APIs and schema. Do not assume every listed step currently exists.
+
+## Sales / Orders / Checkout
+
+- Browse/search products and view product details.
+- Cart management and quantity changes.
+- Customer/contact and delivery address capture.
+- PIN-code/serviceability and fulfilment-location selection.
+- Pricing, discounts, coupons, shipping, tax and final total calculation.
+- Order placement and payment initiation.
+- Order listing, detail, status history, cancellation and refund handling.
+- Manual order creation by authorised staff, including PIN-code capture and location resolution.
+- Order-to-inventory reservation and fulfilment linkage.
+
+**Status:** capability checklist; manual order PIN/location flow and all checkout actions must be traced and verified.
+
+## Customers / CRM
+
+- Customer list, search, profile and contact details.
+- Create/update customer and address book.
+- Customer order, payment and return history.
+- Segmentation, notes, communication preferences and consent.
+- Support enquiries, follow-ups and customer activity.
+- Duplicate handling and privacy/role restrictions.
+
+**Status:** capability checklist to verify.
+
+## Payments / Gateway / Refunds
+
+- Payment initiation and provider order/session creation.
+- Success, pending, failed and cancelled payment states.
+- Signed webhook/callback verification and idempotent processing.
+- Order/payment reconciliation.
+- Refund initiation, status and audit trail.
+- Payment method/provider configuration and transaction reporting.
+
+**Status:** capability checklist to verify. Never infer a genuine provider failure from an unverified client status or callback.
+
+## Delivery / Logistics
+
+- Shipment creation and stock-location association.
+- Delivery assignment and tracking details.
+- Picking/packing and dispatch.
+- Partial dispatch and remaining quantity handling.
+- Shipment status updates and status history.
+- Delivery attempts, failure reasons, rescheduling and proof of delivery.
+- Returns/pickups and reverse logistics.
+
+**Status:** partial dispatch work is represented by PRs #158/#159; all other actions require code trace.
+
+## POS
+
+- POS session/register opening and closing.
+- Product lookup/barcode scanning.
+- Cart, quantity, discount and tax calculation.
+- Customer selection or walk-in sale.
+- Cash/card/UPI and split payment handling.
+- Receipt printing/reprint and refunds/returns.
+- Stock deduction and inventory movement linkage.
+- Cash reconciliation and shift reporting.
+
+**Status:** capability checklist to verify.
+
+## Loyalty
+
+- Programme and earning/redemption rule configuration.
+- Customer enrolment and membership status.
+- Points earn, redeem, expire and reverse.
+- Wallet/points balance and transaction history.
+- Rewards, tiers, coupons and campaign linkage.
+- Order cancellation/refund adjustment.
+
+**Status:** capability checklist to verify.
+
+## Website / Storefront
+
+- Homepage, navigation, category and product listing.
+- Product detail, variants and availability.
+- Search, filters and sorting.
+- Cart and checkout.
+- Customer account, login and order history.
+- Content/banner/page management.
+- SEO metadata and responsive presentation.
+- Store configuration and publish/preview workflow.
+
+**Status:** capability checklist to verify.
+
+## HR / Payroll
+
+- Employee records and organisation structure.
+- Roles, departments and employment status.
+- Attendance, shifts and leave.
+- Payroll components, salary processing and payslips.
+- Deductions, statutory calculations and payroll approvals.
+- Employee self-service and reports.
+
+**Status:** capability checklist to verify.
+
+## Reports / Dashboard / Settings / Administration
+
+- Dashboard KPIs and drill-down links.
+- Sales, inventory, purchasing, accounting and customer reports.
+- Date/location/status filters and export.
+- User, role and permission management.
+- Company, tax, currency, warehouse and operational settings.
+- Audit logs, integration settings and system health.
+
+**Status:** capability checklist to verify.
+
+## Imports / Exports / Bulk operations
+
+- Import products, categories, attributes and other supported master data.
+- Download templates and export records.
+- Validate file format, required fields, references and duplicates before writes.
+- Preview errors and provide row-level feedback.
+- Safe retry/idempotency and import history.
+- Permission checks and audit trail.
+
+**Status:** capability checklist to verify.
+
+## Required module sign-off format
+
+For each module, the completed audit must include:
+
+1. **Module purpose** — what business job it performs.
+2. **Feature/function list** — every visible user action, grouped by capability.
+3. **Implementation trace** — screen/component -> frontend service -> API route -> backend service -> existing tables/columns.
+4. **Access rules** — which roles can perform each action.
+5. **Current result** — working, partially working, broken, missing, or not verified.
+6. **Defects** — split into fix-without-schema and schema-required, with issue IDs in this register.
+7. **Test evidence** — exact automated/manual checks performed and results.
+8. **Dependencies** — linked modules and end-to-end workflows affected.
+
+The function inventory describes intended/observed capability scope; it is not a claim that every function is already implemented or working.
+
 # Module audit
 
 ## 1. Catalog
