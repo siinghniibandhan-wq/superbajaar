@@ -15,6 +15,22 @@ permissions:
   contents: read
 
 jobs:
+  agent-issue-template:
+    name: Validate AI agent issue template
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install YAML parser
+        run: python -m pip install --disable-pip-version-check PyYAML==6.0.2
+      - name: Validate issue form schema
+        run: python .github/scripts/validate_agent_issue_template.py
+
+
   backend-tests:
     name: Backend tests (Python 3.12)
     runs-on: ubuntu-24.04
