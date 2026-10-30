@@ -1,0 +1,121 @@
+name: Database files check
+
+# Blocks a pull request if any database file or the migration runner is broken.
+# Runs on throw-away Postgres 15 and 16 (production is on 15). Nothing here touches the real database.
+# Owner: turn on "Require status checks" for this job in GitHub branch protection for main.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "backend/schema/**"
+      - "backend/schema_required.txt"
+      - "backend/scripts/**"
+      - ".github/workflows/migration-check.yml"
+
+jobs:
+  database-files:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: ["15", "16"]
+    services:
+      postgres:
+        image: postgres:${{ matrix.pg }}
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: scratch
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: test
+      PGDATABASE: scratch
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Postgres 16 client tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-16
+
+      - name: File names and protected legacy pairs
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(backend/schema/*.sql)
+          ((${#files[@]} > 0)) || { echo "ERROR: no schema files found"; exit 1; }
+
+          # These four exact files are historical and must remain present. The two
+          # duplicated prefixes are grandfathered only for these exact pairs.
+          required_legacy=(
+            009_loyalty_programme.sql
+            009_product_availability_delivery.sql
+            012_product_category_assignments.sql
+            012_variant_image_primary.sql
+          )
+          for name in "${required_legacy[@]}"; do
+            [[ -f "backend/schema/$name" ]] || { echo "ERROR: protected legacy file is missing: $name"; exit 1; }
+          done
+
+          declare -A counts=()
+          for path in "${files[@]}"; do
+            name=${path##*/}
+            [[ "$name" =~ ^[0-9]{3}_[a-z0-9_]+\.sql$ ]] || { echo "ERROR: bad schema filename: $name"; exit 1; }
+            prefix=${name:0:3}
+            counts[$prefix]=$(( ${counts[$prefix]:-0} + 1 ))
+          done
+
+          for prefix in "${!counts[@]}"; do
+            count=${counts[$prefix]}
+            case "$prefix" in
+              009|012) [[ "$count" -eq 2 ]] || { echo "ERROR: $prefix must have exactly its two protected files; found $count"; exit 1; } ;;
+              *) [[ "$count" -eq 1 ]] || { echo "ERROR: number $prefix is used by $count files"; exit 1; } ;;
+            esac
+          done
+          echo "Schema filenames and both protected legacy pairs are valid."
+
+      - name: Confirm PostgreSQL server version
+        run: |
+          actual=$(psql -X -At -v ON_ERROR_STOP=1 -c "SHOW server_version_num")
+          case "${{ matrix.pg }}:$actual" in
+            15:15*|16:16*) echo "PostgreSQL server version confirmed: $actual" ;;
+            *) echo "ERROR: expected PostgreSQL ${{ matrix.pg }}, got server_version_num=$actual"; exit 1 ;;
+          esac
+
+      - name: Every schema file applies, in order (first run)
+        run: |
+          for f in $(ls backend/schema/*.sql | sort); do
+            echo "== applying $f"; psql -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+
+      - name: Every schema file applies again (must be safe to repeat)
+        run: |
+          for f in $(ls backend/schema/*.sql | sort); do
+            echo "== re-applying $f"; psql -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+
+      - name: Phone rule (same number in different formats must be blocked)
+        run: |
+          ins() { psql -v ON_ERROR_STOP=1 -q -c "INSERT INTO customer_accounts (email,full_name,phone,password_hash,referral_code) VALUES ('$1','N','$2','x','$3');"; }
+          ins a@test.com 9876543210 REFCODE1
+          for p in "+91 98765 43210" "098765 43210" "98765-43210"; do
+            if ins "x$RANDOM@test.com" "$p" "RC$RANDOM$RANDOM" 2>/dev/null; then echo "ERROR: duplicate '$p' was accepted"; exit 1; fi
+          done
+          ins c@test.com 9123456789 REFCODE9
+          echo "phone rule works"
+
+      - name: Required list only names real files
+        run: |
+          grep -vE '^\s*(#|$)' backend/schema_required.txt | while read -r f; do
+            [ -f "backend/schema/$f" ] || { echo "ERROR: schema_required.txt lists missing file $f"; exit 1; }
+          done
+
+      - name: Migration runner tests (backup, rollback, failures, alerts, exit codes)
+        env:
+          SB_PSQL: psql -h localhost -U postgres
+          SB_PGDUMP: pg_dump -h localhost -U postgres
+        run: bash backend/scripts/tests/test_apply_schema.sh backend/schema backend/schema_required.txt

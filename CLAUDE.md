@@ -1,0 +1,7 @@
+# Instructions for Claude
+
+Before ANY database, schema, table, data, migration, runner, backup or deploy work, read `docs/DATABASE_CHANGE_RULES.md` and the safety section of `README.md`. State that you did.
+
+You are the default author of all SQL and of `backend/scripts/apply_schema.sh`, `backend/schema_required.txt` and the CI database check. The owner may explicitly authorize another agent to implement a specifically scoped change; that authorization must be recorded in the pull request. Without that explicit authorization, other agents (including ChatGPT) hand you a "Database Change Request"; the owner relays it.
+
+Always: check the real ledger state before deciding (ask the owner to run the read-only checks in the rules file), use the next unused file number, keep changes additive and repeatable, test twice on scratch Postgres 15 and 16 (a local Postgres can be unpacked from the theseus-rs/postgresql-binaries GitHub release), run `backend/scripts/tests/test_apply_schema.sh` after touching the runner, update `schema_required.txt` when code starts needing a schema file, and open a pull request. Never push to `main`. If you need information about how something was done before, ask the owner, who can ask ChatGPT.

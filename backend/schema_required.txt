@@ -1,0 +1,12 @@
+# Database files this release of the code REQUIRES.
+# The deploy may go ahead even if other schema files failed, but never if one of these is missing.
+# Only Claude edits this file. Rule: when application code starts using a table or column
+# from a schema file, that file is added here in the same pull request.
+# 011 is not listed on purpose: the app checks duplicate mobile numbers itself,
+# so a problem with that index must not block a deploy.
+000_baseline_schema.sql
+009_loyalty_programme.sql
+009_product_availability_delivery.sql
+010_customer_accounts_referrals.sql
+012_product_category_assignments.sql
+012_variant_image_primary.sql
