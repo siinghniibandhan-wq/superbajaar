@@ -89,8 +89,8 @@ If the provider cannot satisfy API-based dispatch, it may still be used manually
 - GitHub issue #178: `[AGENT TASK] Pilot 1 — Lovable compatibility audit`; open; task body uses the `###` headings expected by the validator.
 - Existing Lovable project audit message remains RUNNING; no final audit report has been returned yet. No implementation prompts or writes were sent to that project.
 - Preliminary coordinator-side inspection of Lovable project ref `abcccc904fdf8962f363089e8d7d6e2c3a7e1a4f` confirms the TanStack Start template, a placeholder root page, a standalone server entry, and empty workspace connector/project-knowledge state. Full recommendation remains KEEP ISOLATED pending completion of the audit.
-- The latest local state-machine test script exercises complete -> READY, incomplete -> BLOCKED and reopened DONE -> READY. It uses a mocked GitHub issue/API surface; it does not call GitHub or dispatch an agent.
-- Latest PR workflow execution for head `cb319e3641f512276557e6ea877095e3bf9fddd0` was queued at last check. Do not mark the latest test run successful until GitHub reports the terminal conclusion.
+- The latest local state-machine test script exercises complete -> READY, incomplete -> BLOCKED and reopened DONE -> READY. It uses a mocked GitHub issue/API surface; it does not call GitHub or dispatch an agent. Local run output: all three cases PASS.
+- Latest PR head observed: `8d8c492a51337041806add511656d6099a83d6a5`; PR remains open, mergeable and unmerged. Hosted CI run jobs were still queued at last check. Do not mark the latest hosted checks successful until GitHub reports terminal conclusions.
 
 ## 8. Current blockers and next checkpoint
 
