@@ -127,11 +127,24 @@ def create_shipment(payload: DeliveryCreate):
                 existing = conn.execute("SELECT id FROM deliveries WHERE order_id=%s AND status NOT IN ('cancelled','returned','failed')", (payload.order_id,)).fetchone()
                 if existing:
                     raise HTTPException(status_code=409, detail="An active shipment already exists for this order")
+                reserved_locations = conn.execute(
+                    "SELECT DISTINCT location_id FROM inventory_movements "
+                    "WHERE reference_type='order_reservation' AND reference_id=%s ORDER BY location_id",
+                    (str(payload.order_id),),
+                ).fetchall()
+                shipment_location_id = payload.location_id
+                if reserved_locations:
+                    if len(reserved_locations) != 1:
+                        raise HTTPException(status_code=409, detail="Order stock is allocated across multiple locations; shipment location needs review")
+                    reserved_location_id = int(reserved_locations[0]["location_id"])
+                    if shipment_location_id is not None and shipment_location_id != reserved_location_id:
+                        raise HTTPException(status_code=409, detail="Shipment location must match the location holding this order's reservation")
+                    shipment_location_id = reserved_location_id
                 ref = "SBD-" + uuid.uuid4().hex[:10].upper()
                 row = conn.execute(
                     "INSERT INTO deliveries (shipment_reference, order_id, delivery_pin, recipient_name, recipient_phone, address, location_id, status, delivery_notes) "
                     "VALUES (%s,%s,%s,%s,%s,%s,%s,'pending',%s) RETURNING id, shipment_reference, order_id, delivery_pin, recipient_name, recipient_phone, address, location_id, status, delivery_notes, created_at, updated_at",
-                    (ref, payload.order_id, payload.delivery_pin, payload.recipient_name, payload.recipient_phone, payload.address, payload.location_id, payload.delivery_notes),
+                    (ref, payload.order_id, payload.delivery_pin, payload.recipient_name, payload.recipient_phone, payload.address, shipment_location_id, payload.delivery_notes),
                 ).fetchone()
         return row
     except HTTPException:
