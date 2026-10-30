@@ -1,15 +1,18 @@
--- Allow a product to appear in multiple storefront and catalogue categories.
--- Keep products.category_id as the legacy/default category for existing integrations.
-CREATE TABLE IF NOT EXISTS public.product_categories (
-  product_id BIGINT NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
-  category_id BIGINT NOT NULL REFERENCES public.categories(id) ON DELETE CASCADE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  PRIMARY KEY (product_id, category_id)
+-- Keep the multi-category API aligned with the existing 012 migration.
+-- 012_product_category_assignments.sql already owns this association table.
+-- This additive, idempotent guard does not create a parallel category table.
+CREATE TABLE IF NOT EXISTS public.product_category_assignments (
+    product_id bigint NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
+    category_id bigint NOT NULL REFERENCES public.categories(id) ON DELETE CASCADE,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (product_id, category_id)
 );
 
-CREATE INDEX IF NOT EXISTS product_categories_category_product_idx
-  ON public.product_categories (category_id, product_id);
+CREATE INDEX IF NOT EXISTS product_category_assignments_category_idx
+    ON public.product_category_assignments (category_id, product_id);
 
-INSERT INTO public.product_categories (product_id, category_id)
-SELECT id, category_id FROM public.products WHERE category_id IS NOT NULL
-ON CONFLICT DO NOTHING;
+INSERT INTO public.product_category_assignments (product_id, category_id)
+SELECT p.id, p.category_id
+FROM public.products p
+WHERE p.category_id IS NOT NULL
+ON CONFLICT (product_id, category_id) DO NOTHING;
