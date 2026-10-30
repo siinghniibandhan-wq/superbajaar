@@ -119,7 +119,7 @@ export default function ProductImagesPanel({ products = [], initialProductId = "
     return group.find(image => image.is_primary) || group[0] || null;
   }
 
-  const ImageForm = embedded ? "div" : "div";
+  const ImageForm = embedded ? "div" : "form";
   return <section className="sb-data-card sb-product-media-manager">
     <div className="sb-data-heading">
       <div>
@@ -158,7 +158,7 @@ export default function ProductImagesPanel({ products = [], initialProductId = "
                 <label>Alt text (optional)
                   <input maxLength="300" value={draft.altText || ""} onChange={e => updateDraft(gallery.key, { altText: e.target.value })} placeholder="Describe the image" />
                 </label>
-                <button className="sb-primary" type="submit" disabled={Boolean(busyKey) || (!draft.file && !String(draft.url || "").trim())}>{saving ? "Saving…" : draft.file ? "Upload & set as primary" : "Save URL as primary"}</button>
+                <button className="sb-primary" type={embedded ? "button" : "submit"} onClick={embedded ? event => saveImage(event, gallery) : undefined} disabled={Boolean(busyKey) || (!draft.file && !String(draft.url || "").trim())}>{saving ? "Saving…" : draft.file ? "Upload & set as primary" : "Save URL as primary"}</button>
               </ImageForm>
             </div>
             {groupImages.length > 1 && <div className="sb-media-existing-list"><small>Other saved images</small>{groupImages.filter(image => image.id !== current?.id).map(image => <div className="sb-media-existing-item" key={image.id}><img src={image.image_url} alt={image.alt_text || "Saved product image"} loading="lazy" /><span>{image.alt_text || "Image"}{image.is_primary ? " · Primary" : ""}</span>{!image.is_primary && <button type="button" className="sb-row-action" disabled={Boolean(busyKey)} onClick={() => setPrimary(image)}>Make primary</button>}</div>)}</div>}
