@@ -1,5 +1,23 @@
 # Application Audit Register
 
+> [!IMPORTANT]
+> **LATEST AUDIT STATUS — 30 October 2026**
+>
+> **Overall: IN PROGRESS**
+>
+> **Latest update:** The audit register now includes the module capability inventory, progress dashboard, and separate tracking for schema-independent fixes and schema-dependent requirements.
+>
+> **Latest finding:** Inventory/order fulfilment has had an initial code/schema investigation. Existing stock, movement, order, purchase and delivery structures were identified for reuse. Batch/expiry, full GRN, batch-level allocation and return/quarantine capabilities remain schema-gap candidates. These are not yet approved migrations.
+>
+> **Critical open point:** No business module has completed its full end-to-end audit yet. Catalog is next. Do not treat a drafted capability checklist or a draft PR as a verified, integrated feature.
+>
+> **Work in progress:** PR #158 (order stock reservation/fulfilment) and PR #159 (partial-dispatch UI) are draft and not merged/deployed. Their CI checks were reported green; production behaviour remains unverified.
+>
+> **Next action:** Audit Catalog function by function, tracing each action from UI through frontend/API/backend to existing schema. Fix schema-independent defects as they are confirmed, and log genuine schema requirements here.
+>
+> **Production safety:** No production schema changes, merge or deployment have been performed as part of this audit.
+
+
 **Purpose:** Track the full application audit before the consolidated repair/release phase. For every module, record (A) issues fixable with the current application/database contract and (B) requirements that genuinely need a database/schema change.
 
 **Operating rule:** Trace the existing UI -> frontend service/API -> backend route/service -> existing schema contract before proposing anything new. Reuse existing tables, columns, APIs and workflows where possible. Do not create duplicate structures.
