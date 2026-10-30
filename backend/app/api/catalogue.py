@@ -612,7 +612,7 @@ def _merge_attribute_options(existing: list[Any], incoming: list[Any], value_typ
             if key in names:
                 raise HTTPException(status_code=409, detail=f'"{name}" already exists in this attribute. Choose a different colour name.')
             if hex_value in hexes:
-                raise HTTPException(status_code=409, detail=f"This colour ({hex_value}) already exists in this attribute. Choose a different colour.')
+                raise HTTPException(status_code=409, detail=f"This colour ({hex_value}) already exists in this attribute. Choose a different colour.")
             names.add(key); hexes.add(hex_value); combined.append({"name": name, "hex": hex_value})
             continue
         if not isinstance(option, (str, int, float, bool)):
