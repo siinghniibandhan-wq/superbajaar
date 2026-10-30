@@ -1,5 +1,7 @@
 # GitHub Copilot — plans, limits and Super Bajaar usage policy
 
+> **Team policy:** See [AI Team Collaboration & Delivery Policy](AI_TEAM_COLLABORATION.md) for the shared role, batching, handoff and review model.
+>
 > **Research date:** 31 October 2026  
 > **Status:** Official public GitHub documentation reviewed. The Copilot subscription actually assigned to the Super Bajaar repository contributor has **not** been independently verified. Do not assume that repository integration means a paid plan or unlimited agent access.
 
