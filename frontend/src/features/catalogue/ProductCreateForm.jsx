@@ -84,9 +84,18 @@ export default function ProductCreateForm({ categories = [], product = null, onS
   async function addOption(def) {
     const raw = (newOptions[def.code] || "").trim();
     if (!raw) return;
-    await apiRequest("/catalogue/attributes/" + def.id + "/options", { method: "PUT", body: JSON.stringify({ options: [raw] }) });
+    const updated = await apiRequest("/catalogue/attributes/" + def.id + "/options", {
+      method: "PUT",
+      body: JSON.stringify({ options: [raw] }),
+    });
     await loadDefinitions();
-    setSelected(old => ({ ...old, [def.code]: [...(old[def.code] || []), raw] }));
+    const savedValue = (updated.options || []).find(value => String(value).trim().toLowerCase() === raw.toLowerCase()) ?? raw;
+    setSelected(old => {
+      const current = old[def.code] || [];
+      return current.some(value => String(value).toLowerCase() === String(savedValue).toLowerCase())
+        ? old
+        : { ...old, [def.code]: [...current, savedValue] };
+    });
     setNewOptions(old => ({ ...old, [def.code]: "" }));
   }
 
