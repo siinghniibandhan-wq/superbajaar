@@ -158,3 +158,34 @@ def test_product_delete_rejects_blank_or_short_reason():
             assert False, "Expected a validation error"
         except ValidationError:
             pass
+
+def test_shared_attribute_options_append_and_deduplicate_values():
+    from app.api.catalogue import _merge_attribute_options
+
+    assert _merge_attribute_options(
+        ["Red", "Yellow"],
+        [" Pink ", "red", "", "PINK", "Blue"],
+    ) == ["Red", "Yellow", "Pink", "Blue"]
+
+
+def test_shared_attribute_options_reject_non_scalar_values():
+    from fastapi import HTTPException
+    from app.api.catalogue import _merge_attribute_options
+
+    try:
+        _merge_attribute_options(["Red"], [{"name": "Pink"}])
+        assert False, "Expected invalid option to be rejected"
+    except HTTPException as exc:
+        assert exc.status_code == 422
+
+
+def test_shared_attribute_options_rejects_an_empty_initial_list():
+    from fastapi import HTTPException
+    from app.api.catalogue import _merge_attribute_options
+
+    try:
+        _merge_attribute_options([], [" ", ""])
+        assert False, "Expected an empty option list to be rejected"
+    except HTTPException as exc:
+        assert exc.status_code == 422
+
