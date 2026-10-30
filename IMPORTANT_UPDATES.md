@@ -159,6 +159,13 @@
 > - **MEDIUM — status exit code treats optional pending files as attention:** `--status` exits 10 if any file is pending/failed/changed, even when all required files are applied; apply mode can return 11 when only non-required files fail. The 011 phone index is intentionally optional, so the release-gate procedure should explicitly interpret required-vs-optional output rather than assume every non-zero status means a required schema dependency is missing. Current documentation errs on the safe side by instructing the owner to stop on non-zero.
 > - These findings are based on the protected runner's static control flow and documented exit-code policy. No runner command was executed against production and no runner file was edited.
 
+
+> **DDL inventory count — active `backend/schema/` only:**
+> - Static parser inventory across the eight active files: **40 table definitions**, **32 explicit index definitions**, **6 explicit sequence definitions**, and **3 `ALTER TABLE` statements**. The 40 tables include both current and legacy generations; they are not 40 active business entities.
+> - The three alterations are the loyalty migration's `orders.customer_email`, the product-availability migration's product channel/availability columns, and the primary-image migration's `product_images.is_primary`.
+> - The table inventory includes both current tables (e.g. `products`, `product_variants`, `orders`, `order_lines`, `app_users`, `customer_accounts`, `loyalty_*`) and historical/legacy tables (e.g. `products_legacy`, `orders_legacy`, `users`, `inventory`, `order_items`, `price_history`, `tickets`). Current API modules predominantly use the current-generation set; legacy tables remain in the baseline for compatibility/data preservation.
+> - Counts are static DDL-definition counts, not a query of the live PostgreSQL catalog and not proof that the same number of objects exists in production.
+
 > **Audit sequence agreed:** (1) finish the schema requirements/dependency audit, (2) audit all application modules and integrations against those requirements, (3) consolidate and prioritise findings in this register, and only then (4) prepare schema-change recommendations/change requests for Database Owner approval. No schema changes are being made at this stage.
 >
 > **Next required checks:** Complete table/column/constraint/index and application dependency mapping, then run the full application audit. After that, have the Database Owner run the read-only production checks in `docs/RELEASE_GATES.md` (database/version, full ledger and checksums, runner `--status` exit code, and backup storage). Record unavailable checks as NOT VERIFIED. No SQL, schema files, required-schema list, production database, merge, or deployment changed in this review.
