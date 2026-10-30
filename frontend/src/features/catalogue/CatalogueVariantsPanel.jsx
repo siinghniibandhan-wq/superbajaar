@@ -4,7 +4,7 @@ import CatalogueModal from "./CatalogueModal.jsx";
 
 const initialAttribute = { name: "", code: "", value_type: "text", display_type: "dropdown", is_variant_attribute: true, is_required: true, options: "" };
 const initialVariant = { sku: "", barcode: "", attributes: "{}", selling_price: "", mrp: "", cost_price: "" };
-const OPTION_TYPES = ["text", "colour", "image", "select", "multi_select", "size"];
+const OPTION_TYPES = ["text", "colour", "image"];
 function makeCombinations(items) {
   return items.reduce((rows, item) => rows.flatMap(row => item.values.map(value => [...row, [item.code, value]])), [[]]).map(entries => Object.fromEntries(entries));
 }
@@ -222,7 +222,7 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
           <label>Name<input required value={attribute.name} onChange={e=>setAttribute(v=>({...v,name:e.target.value,...(!editingAttributeId ? {code:e.target.value.toLowerCase().trim().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").replace(/^([0-9])/,"attr_$1") || "attribute"} : {})}))}/></label>
           <label>Code (immutable)<input required pattern="[a-z][a-z0-9_]*" value={attribute.code} readOnly aria-readonly="true"/><small className="sb-muted">The code is fixed to protect saved variant data.</small></label>
           <label>Attribute type<select value={attribute.value_type} onChange={e=>setAttribute(v=>({...v,value_type:e.target.value,display_type:e.target.value === "colour" ? "colour" : e.target.value === "image" ? "image" : "dropdown"}))}>{["text","colour","image"].map(x=><option key={x} value={x}>{x === "colour" ? "Colour" : x === "image" ? "Image" : "Text"}</option>)}</select></label>
-          <label>Display type<select value={attribute.display_type} onChange={e=>setAttribute(v=>({...v,display_type:e.target.value}))}>{["text","dropdown","button","colour","image"].map(x=><option key={x} value={x}>{x.charAt(0).toUpperCase()+x.slice(1)}</option>)}</select><small className="sb-muted">Controls how customers select or view this attribute on the storefront.</small></label>
+          <label>Display type<select value={attribute.display_type} onChange={e=>setAttribute(v=>({...v,display_type:e.target.value}))}>{(attribute.value_type === "text" ? ["text","dropdown","button"] : attribute.value_type === "colour" ? ["dropdown","button","colour"] : ["dropdown","image"]).map(x=><option key={x} value={x}>{x.charAt(0).toUpperCase()+x.slice(1)}</option>)}</select><small className="sb-muted">Controls how customers select or view this attribute on the storefront.</small></label>
           <label className="sb-form-grid-wide">Options / values (comma-separated)<input required={attribute.is_variant_attribute} value={attribute.options} placeholder={attribute.value_type === "colour" ? "Black, White, Blue" : attribute.value_type === "image" ? "Image URLs or value keys" : "S, M, L"} onChange={e=>setAttribute(v=>({...v,options:e.target.value}))}/></label>
         </div>
         <label className="sb-check"><input type="checkbox" checked={attribute.is_variant_attribute} onChange={e=>setAttribute(v=>({...v,is_variant_attribute:e.target.checked}))}/> Used to define variant combinations</label>
