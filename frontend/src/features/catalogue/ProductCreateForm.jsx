@@ -4,7 +4,7 @@ import ProductImagesPanel from "./ProductImagesPanel.jsx";
 import "./ProductCreateForm.css";
 
 const EMPTY = { name: "", slug: "", brand: "", category_id: "", category_ids: [], description: "", tax_code: "", tax_rate: "", selling_price: "", mrp: "", is_pos_available: true, is_website_available: true, delivery_options: ["standard"] };
-const OPTION_TYPES = ["select", "multi_select", "colour", "size"];
+const OPTION_TYPES = ["text", "select", "multi_select", "colour", "image", "size"];
 function ProductImagesEmbedded({ product }) { return <ProductImagesPanel products={[product]} initialProductId={product.id} embedded />; }
 
 function combinationKey(attributes) {
@@ -241,7 +241,9 @@ export default function ProductCreateForm({ categories = [], product = null, onS
           <h3>Attributes and variants</h3>
           {definitions.map(def => <div className="sb-attribute-picker" key={def.id}>
             <strong>{def.name}</strong><small className="sb-muted">{def.value_type}{def.is_variant_attribute ? " · Variant attribute" : ""}{def.is_required ? " · Required" : ""}</small>
-            {OPTION_TYPES.includes(def.value_type) ? <div className="sb-option-chips">{(def.options || []).map(value => <label className="sb-option-chip" key={String(value)}><input type="checkbox" checked={(selected[def.code] || []).includes(value)} onChange={() => toggleValue(def, value)} />{String(value)}</label>)}</div> :
+            {def.value_type === "text" && !(def.options || []).length ?
+              <input value={(selected[def.code] || [])[0] || ""} placeholder={"Enter " + def.name.toLowerCase()} onChange={e => setSelected(old => ({ ...old, [def.code]: e.target.value ? [e.target.value] : [] }))} /> :
+              OPTION_TYPES.includes(def.value_type) ? <div className="sb-option-chips">{(def.options || []).map(value => <label className="sb-option-chip" key={String(value)}><input type="checkbox" checked={(selected[def.code] || []).includes(value)} onChange={() => toggleValue(def, value)} />{String(value)}</label>)}</div> :
               <input value={(selected[def.code] || [])[0] || ""} placeholder={"Enter " + def.name.toLowerCase()} onChange={e => setSelected(old => ({ ...old, [def.code]: e.target.value ? [e.target.value] : [] }))} />}
             {OPTION_TYPES.includes(def.value_type) && <div className="sb-add-option"><input aria-label={"New " + def.name + " option"} value={newOptions[def.code] || ""} placeholder={"Add new " + def.name.toLowerCase() + " option"} onChange={e => setNewOptions(old => ({ ...old, [def.code]: e.target.value }))} /><button type="button" className="sb-secondary" disabled={busy || !(newOptions[def.code] || "").trim()} onClick={() => addOption(def).catch(e => setError(e.message || "Unable to add option."))}>Add value</button></div>}
           </div>)}
