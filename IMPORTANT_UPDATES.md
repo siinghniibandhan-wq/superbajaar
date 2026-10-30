@@ -207,6 +207,19 @@
 
 > - Both frontend package manifests expose build/dev/preview scripts only; no frontend unit, component, browser or end-to-end test command is configured. CI proves the two Vite bundles compile, not that the storefront/admin workflows behave correctly in a browser. Combined with backend tests that largely avoid real PostgreSQL transactions, this leaves a substantial UI→API→DB regression-coverage gap.
 
+
+> **Current/legacy table ownership map — all 40 active baseline/migration table definitions:**
+> - **Staff access:** `app_users`, `app_user_sessions`.
+> - **Catalogue:** `categories`, `products`, `product_attributes`, `product_attribute_values`, `product_variants`, `product_images`, `product_category_assignments`, `product_availability_rules`, `product_deletion_audit`.
+> - **Inventory:** `stock_locations`, `inventory_balances`, `inventory_movements`.
+> - **Commerce/fulfilment:** `orders`, `order_lines`, `order_status_history`, `payments`, `deliveries`, `delivery_status_history`.
+> - **Procurement:** `suppliers`, `purchase_orders`, `purchase_order_lines`.
+> - **CRM/support:** `customers`, `support_cases`, `partner_enquiries`.
+> - **Customer auth/referrals:** `customer_accounts`, `customer_sessions`, `customer_referrals`.
+> - **Loyalty:** `loyalty_rules`, `loyalty_accounts`, `loyalty_transactions`, `loyalty_redemption_allocations`.
+> - **Legacy generation retained in baseline:** `products_legacy`, `inventory`, `orders_legacy`, `users`, `order_items`, `price_history`, `tickets`. These are separate historical entities; current API routes reviewed here primarily query the current-generation tables.
+> - No canonical foreign-key link currently joins `customer_accounts` to CRM `customers` or `orders` to a customer ID; website orders retain customer email/contact fields. This matches the customer identity fragmentation finding above.
+
 > **Audit sequence agreed:** (1) finish the schema requirements/dependency audit, (2) audit all application modules and integrations against those requirements, (3) consolidate and prioritise findings in this register, and only then (4) prepare schema-change recommendations/change requests for Database Owner approval. No schema changes are being made at this stage.
 >
 > **Next required checks:** Complete table/column/constraint/index and application dependency mapping, then run the full application audit. After that, have the Database Owner run the read-only production checks in `docs/RELEASE_GATES.md` (database/version, full ledger and checksums, runner `--status` exit code, and backup storage). Record unavailable checks as NOT VERIFIED. No SQL, schema files, required-schema list, production database, merge, or deployment changed in this review.
