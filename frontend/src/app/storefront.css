@@ -1222,6 +1222,8 @@
 .storefront-product-page-details h1 { margin:0; color:var(--sb-purple-dark,#35116f); font-size:clamp(28px,4vw,42px); line-height:1.15; }
 .storefront-product-page-details .storefront-modal-brand,.storefront-product-page-details .storefront-modal-description,.storefront-product-page-details .storefront-modal-sku { margin:0; }
 .storefront-product-page-details .storefront-variant-select { display:grid; gap:8px; width:100%; max-width:520px; color:#51445f; font-size:14px; font-weight:700; }
+.storefront-product-page-quantity { display:grid; gap:8px; width:100%; max-width:180px; color:#51445f; font-size:14px; font-weight:700; }
+.storefront-product-page-quantity input { box-sizing:border-box; width:100%; min-height:46px; padding:11px 12px; border:1px solid #ded0ef; border-radius:12px; background:#fff; color:#30233f; font:inherit; }
 .storefront-product-page-details .storefront-variant-select select { box-sizing:border-box; width:100%; min-height:46px; padding:11px 12px; border:1px solid #ded0ef; border-radius:12px; background:#fff; color:#30233f; font:inherit; }
 .storefront-product-page-details .storefront-modal-price { margin:4px 0; }
 .storefront-product-page-details .storefront-modal-actions { width:100%; max-width:520px; }
