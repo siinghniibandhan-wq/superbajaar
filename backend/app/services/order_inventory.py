@@ -12,21 +12,28 @@ ORDER_FULFILMENT_REF = "order_fulfilment"
 
 
 def reserve_order_stock(conn, order_id: int, delivery_pin: str | None, lines: list[tuple[int, int]], location_id: int | None = None):
-    """Reserve every line at one active PIN-matched location, or reserve none.
+    """Reserve every line at one eligible location, or reserve none.
 
-    Orders without a delivery PIN retain the legacy no-reservation behaviour.
-    Existing balance rows are locked in a deterministic order to prevent
-    overselling under concurrent checkouts.
+    Website/manual orders with a delivery PIN select a matching location.
+    POS orders pass the staff-selected location; a PIN, when supplied, must
+    also match that location. Orders with neither PIN nor location retain the
+    legacy no-reservation behaviour.
     """
-    if not delivery_pin:
+    if not delivery_pin and location_id is None:
         return None
 
     variant_ids = [variant_id for variant_id, _ in lines]
     if location_id is not None:
-        locations = conn.execute(
-            "SELECT id FROM stock_locations WHERE id=%s AND is_active=TRUE AND pin_code=%s FOR UPDATE",
-            (location_id, delivery_pin),
-        ).fetchall()
+        if delivery_pin:
+            locations = conn.execute(
+                "SELECT id FROM stock_locations WHERE id=%s AND is_active=TRUE AND pin_code=%s FOR UPDATE",
+                (location_id, delivery_pin),
+            ).fetchall()
+        else:
+            locations = conn.execute(
+                "SELECT id FROM stock_locations WHERE id=%s AND is_active=TRUE FOR UPDATE",
+                (location_id,),
+            ).fetchall()
     else:
         locations = conn.execute(
             "SELECT id FROM stock_locations WHERE is_active=TRUE AND pin_code=%s ORDER BY id FOR UPDATE",
@@ -64,8 +71,9 @@ def reserve_order_stock(conn, order_id: int, delivery_pin: str | None, lines: li
             )
         return int(location["id"])
 
+    if location_id is not None:
+        raise ValueError("Selected stock location is inactive or does not serve the delivery PIN")
     raise ValueError("Insufficient stock: no single active location serving this delivery PIN can fulfil the complete order")
-
 
 def _outstanding_order_reservations(conn, order_id: int):
     rows = conn.execute(
@@ -160,6 +168,12 @@ def order_reservation_locations(conn, order_id: int):
 
 def order_has_reservation(conn, order_id: int) -> bool:
     return bool(_outstanding_order_reservations(conn, order_id))
+
+
+def ensure_order_can_be_cancelled(conn, order_id: int):
+    """Prevent cancellation after any quantity has physically been dispatched."""
+    if order_fulfilment_started(conn, order_id):
+        raise ValueError("Order cannot be cancelled after any quantity has been dispatched")
 
 
 def order_fulfilment_started(conn, order_id: int) -> bool:
