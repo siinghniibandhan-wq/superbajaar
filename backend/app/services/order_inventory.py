@@ -108,11 +108,27 @@ def release_order_stock(conn, order_id: int):
     return len(rows)
 
 
-def dispatch_order_stock(conn, order_id: int):
-    """Consume outstanding order reservations once, reducing on-hand and reserved."""
+def dispatch_order_stock(conn, order_id: int, requested_quantities: dict[int, int] | None = None):
+    """Consume all or selected outstanding quantities, supporting partial dispatch."""
     rows = _outstanding_order_reservations(conn, order_id)
+    available_by_variant = {}
     for row in rows:
-        quantity = Decimal(str(row["outstanding"]))
+        variant_id = int(row["variant_id"])
+        available_by_variant[variant_id] = available_by_variant.get(variant_id, Decimal("0")) + Decimal(str(row["outstanding"]))
+    if requested_quantities is not None:
+        if not requested_quantities or any(qty <= 0 for qty in requested_quantities.values()):
+            raise ValueError("Partial dispatch quantities must be positive")
+        for variant_id, quantity in requested_quantities.items():
+            if Decimal(str(quantity)) > available_by_variant.get(int(variant_id), Decimal("0")):
+                raise ValueError(f"Dispatch quantity exceeds the outstanding reservation for variant {variant_id}")
+    remaining_to_dispatch = {int(k): Decimal(str(v)) for k, v in requested_quantities.items()} if requested_quantities is not None else None
+    dispatched_rows = 0
+    for row in rows:
+        variant_id = int(row["variant_id"])
+        outstanding = Decimal(str(row["outstanding"]))
+        quantity = outstanding if remaining_to_dispatch is None else min(outstanding, remaining_to_dispatch.get(variant_id, Decimal("0")))
+        if quantity <= 0:
+            continue
         updated = conn.execute(
             "UPDATE inventory_balances SET on_hand=on_hand-%s, reserved=reserved-%s, updated_at=now() "
             "WHERE variant_id=%s AND location_id=%s AND on_hand >= %s AND reserved >= %s "
@@ -128,7 +144,12 @@ def dispatch_order_stock(conn, order_id: int):
             (row["variant_id"], row["location_id"], quantity, ORDER_FULFILMENT_REF,
              str(order_id), f"Order dispatch {order_id}"),
         )
-    return len(rows)
+        dispatched_rows += 1
+        if remaining_to_dispatch is not None:
+            remaining_to_dispatch[variant_id] -= quantity
+    if remaining_to_dispatch is not None and any(value > 0 for value in remaining_to_dispatch.values()):
+        raise ValueError("Not all requested dispatch quantities could be allocated")
+    return dispatched_rows
 
 
 def order_reservation_locations(conn, order_id: int):
