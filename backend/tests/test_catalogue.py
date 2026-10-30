@@ -198,3 +198,31 @@ def test_required_variant_attribute_rejects_blank_text_and_empty_multi_select():
             assert False, "Expected required attribute validation to fail"
         except HTTPException as exc:
             assert exc.status_code == 422
+
+
+def test_attribute_date_validation_rejects_impossible_dates():
+    from fastapi import HTTPException
+    from app.api.catalogue import _validate_attribute_value
+
+    attribute = {"name": "Manufacture date", "value_type": "date", "options": []}
+    _validate_attribute_value(None, attribute, "2026-10-30")
+    for value in ("2026-02-30", "2026-2-03", "not-a-date"):
+        try:
+            _validate_attribute_value(None, attribute, value)
+            assert False, f"Expected invalid date to be rejected: {value}"
+        except HTTPException as exc:
+            assert exc.status_code == 422
+
+
+def test_attribute_number_validation_rejects_non_finite_values():
+    from fastapi import HTTPException
+    from app.api.catalogue import _validate_attribute_value
+
+    attribute = {"name": "Weight", "value_type": "number", "options": []}
+    _validate_attribute_value(None, attribute, 1.25)
+    for value in (float("nan"), float("inf"), float("-inf"), True):
+        try:
+            _validate_attribute_value(None, attribute, value)
+            assert False, f"Expected invalid number to be rejected: {value}"
+        except HTTPException as exc:
+            assert exc.status_code == 422
