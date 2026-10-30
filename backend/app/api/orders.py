@@ -151,7 +151,6 @@ def get_order(order_id: int):
         raise _db_error(exc) from exc
 
 
-@router.post("", status_code=201)
 def _manual_order_fulfilment_location(conn, pin_code: str, lines: list[OrderLineCreate]):
     """Find the PIN-serving location with the highest stock that can fulfil every line."""
     variant_ids = [line.variant_id for line in lines]
@@ -181,6 +180,7 @@ def _manual_order_fulfilment_location(conn, pin_code: str, lines: list[OrderLine
     return None
 
 
+@router.post("", status_code=201)
 def create_order(payload: OrderCreate, request: Request):
     if getattr(request.state, "customer_checkout", False):
         if payload.channel != "website":
