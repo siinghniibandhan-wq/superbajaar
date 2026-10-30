@@ -53,6 +53,17 @@ This file is the concise, chronological change log for major Super Bajaar projec
 
 **Verification:** Backend tests and both frontend production builds are being run in GitHub Actions. No production database migration or deployment is included.
 
+## 2026-10-30 — Audited product deletion for owner/admin
+
+**Status:** Implemented on a feature branch; CI and review pending.
+
+- Added a Delete action for owner/admin catalogue users, with mandatory reason and confirmation.
+- Backend enforces the role and writes a durable audit record in the same transaction as deletion.
+- Products referenced by operational records are protected by database constraints; failed deletes roll back and direct users to Archive.
+- Added additive migration `013_product_deletion_audit.sql` and marked it release-required.
+
+**Verification:** Automated validation and CI pending. No production migration, database cleanup or deployment was performed.
+
 ## Ongoing documentation rule
 
 For every future major change:

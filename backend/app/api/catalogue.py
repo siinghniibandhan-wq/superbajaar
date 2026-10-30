@@ -26,6 +26,18 @@ class CategoryCreate(BaseModel):
         return value.strip()
 
 
+class ProductDeleteRequest(BaseModel):
+    reason: str = Field(min_length=10, max_length=1000)
+
+    @field_validator("reason")
+    @classmethod
+    def reason_not_blank(cls, value: str) -> str:
+        reason = value.strip()
+        if len(reason) < 10:
+            raise ValueError("Please provide a deletion reason of at least 10 characters")
+        return reason
+
+
 class ProductCreate(BaseModel):
     name: str = Field(min_length=1, max_length=240)
     slug: str = Field(min_length=1, max_length=260, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -389,6 +401,36 @@ def update_product(product_id: int, payload: ProductUpdate):
         raise
     except psycopg.Error as exc:
         raise _db_error(exc) from exc
+
+@router.delete("/products/{product_id}")
+def delete_product(product_id: int, payload: ProductDeleteRequest, request: Request):
+    """Permanently remove a product only for owner/admin, with a mandatory audit reason."""
+    role = getattr(request.state, "role", None)
+    if role not in {"owner", "admin"}:
+        raise HTTPException(status_code=403, detail="Only an owner or admin can delete products")
+    actor_id = getattr(request.state, "user_id", None)
+    actor_email = getattr(request.state, "user_email", None)
+    if actor_id is None or not actor_email:
+        raise HTTPException(status_code=401, detail="A verified staff session is required")
+    try:
+        with _connection() as conn:
+            product = conn.execute("SELECT id, name, slug FROM products WHERE id=%s FOR UPDATE", (product_id,)).fetchone()
+            if product is None:
+                raise HTTPException(status_code=404, detail="Product not found")
+            conn.execute(
+                "INSERT INTO product_deletion_audit (product_id, product_name, product_slug, reason, deleted_by_user_id, deleted_by_email, deleted_by_role) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                (product["id"], product["name"], product["slug"], payload.reason, actor_id, actor_email, role),
+            )
+            conn.execute("DELETE FROM products WHERE id=%s", (product_id,))
+        return {"deleted": True, "product_id": product_id, "product_name": product["name"]}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        if getattr(exc, "sqlstate", None) == "23503":
+            raise HTTPException(status_code=409, detail="This product is linked to operational records and cannot be deleted. Archive it instead.") from exc
+        raise _db_error(exc) from exc
+
 
 @router.post("/products/{product_id}/archive")
 def archive_product(product_id: int):

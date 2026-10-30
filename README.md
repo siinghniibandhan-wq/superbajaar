@@ -160,7 +160,7 @@ All paths below are prefixed with `/api` by `backend/app/main.py`. This list is 
 
 - Health: `GET /health`
 - Authentication: `POST /auth/login`, `GET /auth/me`, `POST /auth/logout`
-- Catalogue: `GET/POST /catalogue/categories`, `GET/POST /catalogue/products`, `GET /catalogue/attributes`, `POST /catalogue/attributes`, `GET /catalogue/products/{product_id}/attributes`, `PUT /catalogue/products/{product_id}/attributes/{attribute_id}`, `GET/POST /catalogue/products/{product_id}/variants`, `GET/POST /catalogue/products/{product_id}/images`, `GET /catalogue/variants`, `PUT /catalogue/variants/{variant_id}/price`
+- Catalogue: `GET/POST /catalogue/categories`, `GET/POST /catalogue/products`, `DELETE /catalogue/products/{product_id}` (owner/admin only; mandatory reason recorded in `product_deletion_audit`; blocked when operational records reference the product), `GET /catalogue/attributes`, `POST /catalogue/attributes`, `GET /catalogue/products/{product_id}/attributes`, `PUT /catalogue/products/{product_id}/attributes/{attribute_id}`, `GET/POST /catalogue/products/{product_id}/variants`, `GET/POST /catalogue/products/{product_id}/images`, `GET /catalogue/variants`, `PUT /catalogue/variants/{variant_id}/price`
 - Inventory: `GET/POST /inventory/locations`, `GET /inventory/balances`, `GET /inventory/movements`, `POST /inventory/adjustments`
 - Orders: `GET/POST /orders`, `GET /orders/summary`, `GET /orders/{order_id}`, `PATCH /orders/{order_id}/status`
 - Payments: `GET/POST /payments`, `PATCH /payments/{payment_id}/status`
@@ -170,6 +170,15 @@ All paths below are prefixed with `/api` by `backend/app/main.py`. This list is 
 
 Route existence does not prove that a screen works end to end. For each workspace, check the actual request payload, response fields, authentication and database schema. A missing operation must be implemented against the existing schema and tested; do not invent a second API or change ports to work around it.
 
+
+### Product deletion and catalogue testing
+
+- The Catalogue workspace shows **Delete** only to signed-in `owner` and `admin` users.
+- Every deletion requires a reason of at least 10 characters and a second confirmation.
+- The backend independently enforces the owner/admin role; hiding the button is not the security boundary.
+- A durable audit row records product ID/name/slug, reason, operator ID/email/role and timestamp.
+- Deletion and audit insertion run in one database transaction. If foreign-key references from orders, inventory or other operational records prevent deletion, the transaction rolls back and the API returns HTTP 409; use Archive instead.
+- This is intended for test-catalogue cleanup. It does not delete categories or other catalogue records.
 
 ## API operating guide — how the contract works
 
