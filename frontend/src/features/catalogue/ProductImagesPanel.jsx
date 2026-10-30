@@ -149,7 +149,7 @@ export default function ProductImagesPanel({ products = [], initialProductId = "
               </div>
               <ImageForm className="sb-media-upload-form" onSubmit={event => saveImage(event, gallery)}>
                 <label className="sb-media-file-label">Upload from device
-                  <input type="file" accept={ACCEPTED_IMAGE_TYPES} onChange={e => updateDraft(gallery.key, { file: e.target.files?.[0] || null, url: "" })} />
+                  <input key={gallery.key + "-" + (draft.file ? draft.file.name : "empty")} type="file" accept={ACCEPTED_IMAGE_TYPES} onChange={e => updateDraft(gallery.key, { file: e.target.files?.[0] || null, url: "" })} />
                 </label>
                 {draft.file && <small className="sb-media-file-name">{draft.file.name}</small>}
                 <label>Or use image URL
