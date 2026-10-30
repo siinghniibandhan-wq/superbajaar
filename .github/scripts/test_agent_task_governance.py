@@ -15,7 +15,11 @@ workflow = yaml.load(workflow_path.read_text(encoding="utf-8"), Loader=yaml.Base
 template = yaml.load(template_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
 
 steps = workflow["jobs"]["validate-agent-task"]["steps"]
-embedded_js = next(step["with"]["script"] for step in steps if step.get("uses") == "actions/github-script@v7")
+embedded_js = next(
+    step["with"]["script"]
+    for step in steps
+    if step.get("uses") == "actions/github-script@v7"
+)
 
 required_ids = {
     "task_type", "priority", "objective", "primary_agent", "fallback",
@@ -38,12 +42,15 @@ required_headings = [
 ]
 assert {field["attributes"]["label"] for field in fields} >= set(required_headings)
 
-valid_body = "\\n\\n".join(f"### {heading}\\n\\nvalue" for heading in required_headings)
-incomplete_body = valid_body.replace("### Objective and user impact\\n\\nvalue", "### Objective and user impact\\n\\n_No response_")
+valid_body = "\n\n".join(f"### {heading}\n\nvalue" for heading in required_headings)
+incomplete_body = valid_body.replace(
+    "### Objective and user impact\n\nvalue",
+    "### Objective and user impact\n\n_No response_",
+)
 
 harness = r"""
 const calls = [];
-const issue = { number: 42, title: '[AGENT TASK] CI simulation', body: __BODY__, labels: __LABELS__ };
+const issueRecord = { number: 42, title: '[AGENT TASK] CI simulation', body: __BODY__, labels: __LABELS__ };
 const context = {
   eventName: 'issues',
   payload: { action: __ACTION__, inputs: {} },
@@ -51,10 +58,17 @@ const context = {
   repo: { owner: 'example', repo: 'simulation' }
 };
 const github = { rest: { issues: {
-  get: async () => ({ data: issue }),
+  get: async () => ({ data: issueRecord }),
+  listLabelsForRepo: async () => ({ data: [] }),
   createLabel: async ({ name }) => calls.push(['createLabel', name]),
-  addLabels: async ({ labels }) => { calls.push(['addLabels', labels]); issue.labels.push(...labels.map(name => ({name}))); },
-  removeLabel: async ({ name }) => { calls.push(['removeLabel', name]); issue.labels = issue.labels.filter(label => label.name !== name); },
+  addLabels: async ({ labels }) => {
+    calls.push(['addLabels', labels]);
+    issueRecord.labels.push(...labels.map(name => ({ name })));
+  },
+  removeLabel: async ({ name }) => {
+    calls.push(['removeLabel', name]);
+    issueRecord.labels = issueRecord.labels.filter(label => label.name !== name);
+  },
   createComment: async ({ body }) => calls.push(['comment', body])
 }}};
 const core = {
@@ -64,10 +78,14 @@ const core = {
   notice: value => calls.push(['notice', value])
 };
 (async () => {
-  __SCRIPT__
-  process.stdout.write(JSON.stringify(calls));
+  try {
+    __SCRIPT__
+  } finally {
+    process.stdout.write(JSON.stringify(calls));
+  }
 })().catch(error => { console.error(error); process.exitCode = 1; });
 """
+
 
 def run_simulation(body: str, labels=None, action="opened"):
     source = harness.replace("__BODY__", json.dumps(body))
@@ -82,6 +100,7 @@ def run_simulation(body: str, labels=None, action="opened"):
         return json.loads(result.stdout)
     finally:
         path.unlink(missing_ok=True)
+
 
 ready = run_simulation(valid_body)
 assert ["addLabels", ["agent:ready"]] in ready, ready
