@@ -14,3 +14,7 @@ CREATE TABLE IF NOT EXISTS public.product_deletion_audit (
 
 CREATE INDEX IF NOT EXISTS product_deletion_audit_product_idx
     ON public.product_deletion_audit (product_id, deleted_at DESC);
+
+-- Grant only the access required by the application role; do not broaden existing grants.
+GRANT SELECT, INSERT ON public.product_deletion_audit TO superbajaar_user;
+GRANT USAGE, SELECT ON SEQUENCE public.product_deletion_audit_id_seq TO superbajaar_user;
