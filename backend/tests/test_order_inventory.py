@@ -4,6 +4,7 @@ import pytest
 
 from app.services.order_inventory import (
     dispatch_order_stock,
+    ensure_order_can_be_cancelled,
     release_order_stock,
     reserve_order_stock,
 )
@@ -144,3 +145,37 @@ def test_partial_dispatch_rejects_empty_quantity_map():
     with pytest.raises(ValueError, match="must be positive"):
         dispatch_order_stock(conn, 101, {})
     assert not any("UPDATE inventory_balances" in sql for sql, _ in conn.calls)
+
+
+
+def test_pos_reservation_uses_staff_selected_location_without_delivery_pin():
+    conn = FakeConnection(
+        locations=[{"id": 9}],
+        balances=[{"variant_id": 7, "on_hand": Decimal("4"), "reserved": Decimal("1")}],
+    )
+    location_id = reserve_order_stock(conn, 102, None, [(7, 2)], location_id=9)
+    assert location_id == 9
+    location_query = next(call for call in conn.calls if "FROM stock_locations" in call[0])
+    assert "id=%s AND is_active=TRUE" in location_query[0]
+    assert location_query[1] == (9,)
+
+
+def test_pos_reservation_rejects_inactive_or_unmatched_selected_location():
+    conn = FakeConnection(locations=[])
+    with pytest.raises(ValueError, match="Selected stock location"):
+        reserve_order_stock(conn, 102, None, [(7, 1)], location_id=9)
+
+
+def test_order_cancellation_is_blocked_after_any_dispatch():
+    class StartedConnection:
+        def execute(self, sql, params=()):
+            return Result(row={"started": True})
+    with pytest.raises(ValueError, match="cannot be cancelled"):
+        ensure_order_can_be_cancelled(StartedConnection(), 101)
+
+
+def test_order_cancellation_remains_allowed_before_dispatch():
+    class NotStartedConnection:
+        def execute(self, sql, params=()):
+            return Result(row={"started": False})
+    assert ensure_order_can_be_cancelled(NotStartedConnection(), 101) is None
