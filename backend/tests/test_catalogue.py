@@ -189,3 +189,44 @@ def test_shared_attribute_options_rejects_an_empty_initial_list():
     except HTTPException as exc:
         assert exc.status_code == 422
 
+
+
+def test_attribute_update_trims_name_and_accepts_metadata_fields():
+    from app.api.catalogue import AttributeUpdate
+
+    payload = AttributeUpdate(name="  Colour  ", is_required=False, is_variant_attribute=True)
+    assert payload.name == "Colour"
+    assert payload.is_required is False
+    assert payload.is_variant_attribute is True
+
+
+def test_attribute_update_rejects_blank_name():
+    from pydantic import ValidationError
+    from app.api.catalogue import AttributeUpdate
+
+    try:
+        AttributeUpdate(name="   ")
+        assert False, "Expected a validation error"
+    except ValidationError:
+        pass
+
+
+def test_attribute_update_rejects_unsupported_value_type():
+    from pydantic import ValidationError
+    from app.api.catalogue import AttributeUpdate
+
+    try:
+        AttributeUpdate(value_type="currency")
+        assert False, "Expected a validation error"
+    except ValidationError:
+        pass
+
+
+def test_attribute_update_route_rejects_invalid_payload_before_database_access():
+    response = client.put("/api/catalogue/attributes/1", json={"name": "   "})
+    assert response.status_code == 422
+
+
+def test_attribute_option_removal_requires_a_value():
+    response = client.request("DELETE", "/api/catalogue/attributes/1/options", json={})
+    assert response.status_code == 422

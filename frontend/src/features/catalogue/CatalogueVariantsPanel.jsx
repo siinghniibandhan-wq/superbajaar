@@ -44,6 +44,7 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
   const [editingVariant, setEditingVariant] = useState(null);
   const [viewingVariant, setViewingVariant] = useState(null);
   const [showAttributeForm, setShowAttributeForm] = useState(false);
+  const [editingAttributeId, setEditingAttributeId] = useState(null);
   const [selectedValues, setSelectedValues] = useState({});
   const [defaultPrice, setDefaultPrice] = useState("");
   const [defaultMrp, setDefaultMrp] = useState("");
@@ -55,6 +56,7 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
     if (busy) return;
     if (JSON.stringify(attribute) !== JSON.stringify(initialAttribute) && !window.confirm("Discard unsaved attribute changes?")) return;
     setAttribute(initialAttribute);
+    setEditingAttributeId(null);
     setError("");
     setShowAttributeForm(false);
   }
@@ -63,6 +65,45 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
     try { const result = await apiRequest("/catalogue/attributes"); setDefinitions(result.items || []); }
     catch (e) { setError(e.message || "Unable to load attributes."); }
   }
+  function beginEditAttribute(definition) {
+    setError(""); setNotice("");
+    setEditingAttributeId(definition.id);
+    setAttribute({
+      name: definition.name,
+      code: definition.code,
+      value_type: definition.value_type,
+      is_variant_attribute: definition.is_variant_attribute,
+      is_required: definition.is_required,
+      options: (definition.options || []).join(", "),
+    });
+    setShowAttributeForm(true);
+  }
+
+  async function archiveAttribute(definition) {
+    if (!window.confirm('Archive attribute "' + definition.name + '"? It will disappear from new product setup, but existing product and variant data will be retained.')) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      await apiRequest("/catalogue/attributes/" + definition.id, { method: "DELETE" });
+      await loadDefinitions();
+      setNotice('Attribute "' + definition.name + '" archived. Historical values were retained.');
+    } catch (e) { setError(e.message || "Unable to archive attribute."); }
+    finally { setBusy(false); }
+  }
+
+  async function removeAttributeOption(definition, value) {
+    if (!window.confirm('Remove shared value "' + value + '" from ' + definition.name + '?')) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      await apiRequest("/catalogue/attributes/" + definition.id + "/options", {
+        method: "DELETE",
+        body: JSON.stringify({ value }),
+      });
+      await loadDefinitions();
+      setNotice('Shared value "' + value + '" removed.');
+    } catch (e) { setError(e.message || "Unable to remove shared value."); }
+    finally { setBusy(false); }
+  }
+
   async function addAttributeOption(definition) {
     const raw = String(optionDrafts[definition.id] || "").trim();
     if (!raw) return;
@@ -129,8 +170,12 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
         throw new Error("Enter at least one option for this attribute type.");
       }
       const payload = { ...attribute, name: attribute.name.trim(), options };
-      await apiRequest("/catalogue/attributes", { method: "POST", body: JSON.stringify(payload) });
-      setAttribute(initialAttribute); setShowAttributeForm(false); setNotice("Attribute definition saved."); await loadDefinitions();
+      await apiRequest(editingAttributeId ? "/catalogue/attributes/" + editingAttributeId : "/catalogue/attributes", {
+        method: editingAttributeId ? "PUT" : "POST",
+        body: JSON.stringify(payload),
+      });
+      setAttribute(initialAttribute); setEditingAttributeId(null); setShowAttributeForm(false);
+      setNotice(editingAttributeId ? "Attribute definition updated." : "Attribute definition saved."); await loadDefinitions();
     } catch (e) { setError(e.message || "Unable to save attribute."); }
     finally { setBusy(false); }
   }
@@ -159,16 +204,16 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
   return <section className="sb-data-card">
     <div className="sb-data-heading">
       <h2>Attributes & variants</h2>
-      <button type="button" className="sb-primary" onClick={() => { setError(""); setShowAttributeForm(true); }}>+ Add attribute</button>
+      <button type="button" className="sb-primary" onClick={() => { setError(""); setEditingAttributeId(null); setAttribute(initialAttribute); setShowAttributeForm(true); }}>+ Add attribute</button>
     </div>
     {error && <p className="sb-alert" role="alert">{error}</p>}
     {notice && <p className="sb-success" role="status">{notice}</p>}
     <CatalogueModal
       open={showAttributeForm}
-      title="Create attribute definition"
+      title={editingAttributeId ? "Edit attribute definition" : "Create attribute definition"}
       onRequestClose={closeAttributeForm}
       footer={<>
-        <button type="submit" form="catalogue-attribute-form" className="sb-primary" disabled={busy}>{busy ? "Saving…" : "Save attribute"}</button>
+        <button type="submit" form="catalogue-attribute-form" className="sb-primary" disabled={busy}>{busy ? "Saving…" : editingAttributeId ? "Save changes" : "Save attribute"}</button>
         <button type="button" className="sb-secondary" disabled={busy} onClick={closeAttributeForm}>Cancel</button>
       </>}
     >
@@ -176,8 +221,8 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
         {error && <p className="sb-alert" role="alert">{error}</p>}
         <form id="catalogue-attribute-form" className="sb-form sb-modal-form" onSubmit={createAttribute}>
         <div className="sb-form-grid">
-          <label>Name<input required value={attribute.name} onChange={e=>setAttribute(v=>({...v,name:e.target.value,code:e.target.value.toLowerCase().trim().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").replace(/^([0-9])/,"attr_$1") || "attribute"}))}/></label>
-          <label>Code (automatic)<input required pattern="[a-z][a-z0-9_]*" value={attribute.code} readOnly aria-readonly="true"/><small className="sb-muted">Generated from the attribute name.</small></label>
+          <label>Name<input required value={attribute.name} onChange={e=>setAttribute(v=>({...v,name:e.target.value,...(!editingAttributeId ? {code:e.target.value.toLowerCase().trim().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").replace(/^([0-9])/,"attr_$1") || "attribute"} : {})}))}/></label>
+          <label>Code (immutable)<input required pattern="[a-z][a-z0-9_]*" value={attribute.code} readOnly aria-readonly="true"/><small className="sb-muted">The code is fixed to protect saved variant data.</small></label>
           <label>Type<select value={attribute.value_type} onChange={e=>setAttribute(v=>({...v,value_type:e.target.value,options:""}))}>{["text","number","boolean","date","select","multi_select","colour","size"].map(x=><option key={x}>{x}</option>)}</select></label>
           <label>Options (comma-separated)<input required={["select","multi_select","colour","size"].includes(attribute.value_type)} value={attribute.options} disabled={!["select","multi_select","colour","size"].includes(attribute.value_type)} placeholder="S, M, L" onChange={e=>setAttribute(v=>({...v,options:e.target.value}))}/></label>
         </div>
@@ -192,20 +237,30 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
         <div className="sb-strip-main">
           <strong>{definition.name}</strong>
           <small>{definition.code} · {definition.value_type}{definition.options?.length ? " · " + definition.options.join(", ") : ""}</small>
-          {OPTION_TYPES.includes(definition.value_type) && <div className="sb-add-option">
-            <input
-              aria-label={"New shared " + definition.name + " value"}
-              value={optionDrafts[definition.id] || ""}
-              placeholder={"Add a shared " + definition.name.toLowerCase() + " value"}
-              onChange={e => setOptionDrafts(old => ({ ...old, [definition.id]: e.target.value }))}
-            />
-            <button type="button" className="sb-secondary" disabled={busy || !(optionDrafts[definition.id] || "").trim()} onClick={() => addAttributeOption(definition)}>
-              Add value
-            </button>
-          </div>}
+          {OPTION_TYPES.includes(definition.value_type) && <>
+            <div className="sb-add-option">
+              <input
+                aria-label={"New shared " + definition.name + " value"}
+                value={optionDrafts[definition.id] || ""}
+                placeholder={"Add a shared " + definition.name.toLowerCase() + " value"}
+                onChange={e => setOptionDrafts(old => ({ ...old, [definition.id]: e.target.value }))}
+              />
+              <button type="button" className="sb-secondary" disabled={busy || !(optionDrafts[definition.id] || "").trim()} onClick={() => addAttributeOption(definition)}>
+                Add value
+              </button>
+            </div>
+            {!!definition.options?.length && <div className="sb-option-chips" aria-label={definition.name + " shared values"}>
+              {definition.options.map((value, index) => <span className="sb-option-chip" key={String(value) + index}>
+                {String(value)}
+                <button type="button" className="sb-row-action" disabled={busy} aria-label={"Remove " + value} onClick={() => removeAttributeOption(definition, value)}>×</button>
+              </span>)}
+            </div>}
+          </>}
         </div>
         <span className="sb-status-pill">{definition.is_required ? "Required" : "Optional"}</span>
         {definition.is_variant_attribute && <span className="sb-strip-meta">Variant</span>}
+        <button type="button" className="sb-row-action" disabled={busy} onClick={() => beginEditAttribute(definition)}>Edit</button>
+        <button type="button" className="sb-row-action" disabled={busy} onClick={() => archiveAttribute(definition)}>Archive</button>
       </article>) : <p className="sb-empty">No attributes found. Select Add attribute to create one.</p>}
     </div>
     <div className="sb-form-grid">

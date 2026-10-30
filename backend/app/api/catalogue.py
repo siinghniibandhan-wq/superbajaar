@@ -106,6 +106,25 @@ class AttributeCreate(BaseModel):
 
 
 
+class AttributeUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    value_type: str | None = Field(default=None, pattern=r"^(text|number|boolean|date|select|multi_select|colour|size)$")
+    is_variant_attribute: bool | None = None
+    is_required: bool | None = None
+    options: list[Any] | None = Field(default=None, max_length=200)
+
+    @field_validator("name")
+    @classmethod
+    def update_attribute_name_not_blank(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("Attribute name cannot be blank")
+        return value.strip() if value is not None else value
+
+
+class AttributeOptionRemove(BaseModel):
+    value: Any
+
+
 class ProductImageCreate(BaseModel):
     image_url: str = Field(min_length=8, max_length=2048)
     alt_text: str | None = Field(default=None, max_length=300)
@@ -580,6 +599,129 @@ def update_attribute_options(attribute_id: int, payload: AttributeOptionsUpdate)
     except psycopg.Error as exc:
         raise _db_error(exc) from exc
 
+@router.put("/attributes/{attribute_id}")
+def update_attribute(attribute_id: int, payload: AttributeUpdate):
+    changes = payload.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(status_code=422, detail="Provide at least one attribute field to update")
+    if any(value is None for value in changes.values()):
+        raise HTTPException(status_code=422, detail="Attribute fields cannot be null")
+    try:
+        with _connection() as conn:
+            current = conn.execute(
+                "SELECT id, name, code, value_type, is_variant_attribute, is_required, options, is_active "
+                "FROM product_attributes WHERE id=%s FOR UPDATE",
+                (attribute_id,),
+            ).fetchone()
+            if current is None or not current["is_active"]:
+                raise HTTPException(status_code=404, detail="Active attribute not found")
+            if "code" in changes:
+                raise HTTPException(status_code=422, detail="Attribute code is immutable because variants store it as a JSON key")
+            has_product_values = conn.execute(
+                "SELECT EXISTS(SELECT 1 FROM product_attribute_values WHERE attribute_id=%s) AS used",
+                (attribute_id,),
+            ).fetchone()["used"]
+            has_variant_values = conn.execute(
+                "SELECT EXISTS(SELECT 1 FROM product_variants WHERE attributes ? %s) AS used",
+                (current["code"],),
+            ).fetchone()["used"]
+            in_use = bool(has_product_values or has_variant_values)
+            next_type = changes.get("value_type", current["value_type"])
+            next_variant = changes.get("is_variant_attribute", current["is_variant_attribute"])
+            next_options = changes.get("options", current["options"] or [])
+            option_types = {"select", "multi_select", "colour", "size"}
+            if next_type in option_types and not next_options:
+                raise HTTPException(status_code=422, detail="This attribute type requires at least one option")
+            if next_type not in option_types:
+                if next_options:
+                    raise HTTPException(status_code=422, detail="Options are only supported for select, multi_select, colour and size attributes")
+                next_options = []
+            if any(not isinstance(option, (str, int, float, bool)) for option in next_options):
+                raise HTTPException(status_code=422, detail="Attribute options must be simple scalar values")
+            normalized = [str(option).strip().casefold() for option in next_options]
+            if any(not value for value in normalized) or len(set(normalized)) != len(normalized):
+                raise HTTPException(status_code=422, detail="Attribute options must be non-empty and unique ignoring case")
+            if in_use and next_type != current["value_type"]:
+                raise HTTPException(status_code=409, detail="Attribute type cannot change while products or variants use this attribute")
+            removed = set(str(v).strip().casefold() for v in (current["options"] or [])) - set(normalized)
+            if in_use and removed:
+                raise HTTPException(status_code=409, detail="Existing shared values cannot be removed while products or variants use this attribute")
+            if in_use and current["is_variant_attribute"] and not next_variant and has_variant_values:
+                raise HTTPException(status_code=409, detail="This attribute is used by existing variants and cannot be disabled as a variant attribute")
+            row = conn.execute(
+                "UPDATE product_attributes SET name=%s, value_type=%s, is_variant_attribute=%s, is_required=%s, options=%s::jsonb "
+                "WHERE id=%s RETURNING id, name, code, value_type, is_variant_attribute, is_required, options, is_active, created_at",
+                (
+                    changes.get("name", current["name"]),
+                    next_type,
+                    next_variant,
+                    changes.get("is_required", current["is_required"]),
+                    __import__("json").dumps(next_options),
+                    attribute_id,
+                ),
+            ).fetchone()
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.delete("/attributes/{attribute_id}")
+def archive_attribute(attribute_id: int):
+    """Soft-archive an attribute; historical product and variant values remain untouched."""
+    try:
+        with _connection() as conn:
+            row = conn.execute(
+                "UPDATE product_attributes SET is_active=FALSE WHERE id=%s AND is_active=TRUE "
+                "RETURNING id, name, code, is_active",
+                (attribute_id,),
+            ).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Active attribute not found or already archived")
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.delete("/attributes/{attribute_id}/options")
+def remove_attribute_option(attribute_id: int, payload: AttributeOptionRemove):
+    try:
+        with _connection() as conn:
+            row = conn.execute(
+                "SELECT id, name, code, value_type, options, is_active FROM product_attributes WHERE id=%s FOR UPDATE",
+                (attribute_id,),
+            ).fetchone()
+            if row is None or not row["is_active"]:
+                raise HTTPException(status_code=404, detail="Active attribute not found")
+            options = list(row["options"] or [])
+            index = next((i for i, option in enumerate(options) if type(option) is type(payload.value) and option == payload.value), None)
+            if index is None:
+                raise HTTPException(status_code=404, detail="Shared attribute value not found")
+            if len(options) == 1:
+                raise HTTPException(status_code=409, detail="An option-based attribute must retain at least one shared value")
+            used = conn.execute(
+                "SELECT EXISTS(SELECT 1 FROM product_attribute_values WHERE attribute_id=%s) "
+                "OR EXISTS(SELECT 1 FROM product_variants WHERE attributes ? %s) AS used",
+                (attribute_id, row["code"]),
+            ).fetchone()["used"]
+            if used:
+                raise HTTPException(status_code=409, detail="Shared values cannot be removed while products or variants use this attribute")
+            options.pop(index)
+            updated = conn.execute(
+                "UPDATE product_attributes SET options=%s::jsonb WHERE id=%s "
+                "RETURNING id, name, code, value_type, options, is_active",
+                (__import__("json").dumps(options), attribute_id),
+            ).fetchone()
+        return updated
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
 @router.get("/attributes")
 def list_attributes(limit: int = Query(default=100, ge=1, le=500), offset: int = Query(default=0, ge=0)):
     with _connection() as conn:
@@ -711,7 +853,7 @@ def update_variant(variant_id: int, payload: VariantUpdate):
                 raise HTTPException(status_code=404, detail="Active variant not found")
             definitions = conn.execute(
                 "SELECT code, name, value_type, options FROM product_attributes "
-                "WHERE is_active = TRUE AND is_variant_attribute = TRUE"
+                "WHERE is_variant_attribute = TRUE"
             ).fetchall()
             by_code = {row["code"]: row for row in definitions}
             unknown = sorted(set(payload.attributes) - set(by_code))
