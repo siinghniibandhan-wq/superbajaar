@@ -139,3 +139,22 @@ def test_category_sku_codes_match_superbajaar_categories():
     assert _category_sku_code("Fashion") == "FS"
     assert _category_sku_code("Grocery") == "GR"
     assert _category_sku_code("Personal Care") == "PC"
+
+
+def test_product_delete_reason_is_required_and_trimmed():
+    from app.api.catalogue import ProductDeleteRequest
+
+    payload = ProductDeleteRequest(reason="  Incorrect test product created during catalogue validation  ")
+    assert payload.reason == "Incorrect test product created during catalogue validation"
+
+
+def test_product_delete_rejects_blank_or_short_reason():
+    from pydantic import ValidationError
+    from app.api.catalogue import ProductDeleteRequest
+
+    for reason in ("", "   ", "wrong"):
+        try:
+            ProductDeleteRequest(reason=reason)
+            assert False, "Expected a validation error"
+        except ValidationError:
+            pass

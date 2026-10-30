@@ -123,7 +123,7 @@ async def require_active_session(request: Request) -> None:
     try:
         with psycopg.connect(settings.database_url, row_factory=dict_row, connect_timeout=3) as conn:
             row = conn.execute(
-                "SELECT u.id, u.role FROM app_users u JOIN app_user_sessions s ON s.user_id=u.id "
+                "SELECT u.id, u.email, u.role FROM app_users u JOIN app_user_sessions s ON s.user_id=u.id "
                 "WHERE u.id=%s AND s.token_id=%s AND u.is_active=TRUE AND s.revoked_at IS NULL AND s.expires_at>now()",
                 (claims.get("sub"), claims.get("jti")),
             ).fetchone()
@@ -137,5 +137,7 @@ async def require_active_session(request: Request) -> None:
 
     role = row["role"]
     request.state.role = role
+    request.state.user_id = row["id"]
+    request.state.user_email = row["email"]
     if request.method not in {"GET", "HEAD"} and not _role_can_write(role, path):
         raise HTTPException(status_code=403, detail="Your role does not have permission to change this resource")

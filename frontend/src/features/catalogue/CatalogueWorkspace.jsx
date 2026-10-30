@@ -6,7 +6,8 @@ import ProductImagesPanel from "./ProductImagesPanel.jsx";
 import CatalogueModal from "./CatalogueModal.jsx";
 import "./catalogue.css";
 
-export default function CatalogueWorkspace({ onBack }) {
+export default function CatalogueWorkspace({ onBack, currentUser }) {
+  const canDeleteProducts = ["owner", "admin"].includes(String(currentUser?.role || "").toLowerCase());
   const [activeTab, setActiveTab] = useState("catalogue");
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
@@ -96,6 +97,27 @@ export default function CatalogueWorkspace({ onBack }) {
     ? new Set([Number(editingCategory.id), ...descendantIds(editingCategory.id)])
     : new Set();
   const categoryParents = categories.filter(item => !excludedParentIds.has(Number(item.id)));
+  async function deleteProduct(item) {
+    const reason = window.prompt('Reason for deleting "' + item.name + '" (required, at least 10 characters):');
+    if (reason === null) return;
+    if (reason.trim().length < 10) {
+      setError("Deletion cancelled: enter a reason of at least 10 characters.");
+      return;
+    }
+    if (!window.confirm('Permanently delete product "' + item.name + '"? This cannot be undone.')) return;
+    setError(""); setMessage("");
+    try {
+      await apiRequest("/catalogue/products/" + item.id, {
+        method: "DELETE",
+        body: JSON.stringify({ reason: reason.trim() }),
+      });
+      setMessage("Product deleted. The deletion reason has been recorded.");
+      await refresh();
+    } catch (e) {
+      setError(e.message || "Unable to delete product");
+    }
+  }
+
   function closeProductForm() {
     if (productFormBusy) return;
     if (!window.confirm("Close this product form? Unsaved changes will be lost.")) return;
@@ -178,6 +200,7 @@ export default function CatalogueWorkspace({ onBack }) {
           <span className={"sb-status-pill sb-status-" + item.status}>{item.status}</span>
           <button type="button" className="sb-row-action sb-product-edit" onClick={() => { setEditingProduct(item); setShowProductForm(true); }}>Edit</button>
           {item.status !== "archived" && <button type="button" className="sb-row-action sb-product-archive" onClick={async () => { if (!window.confirm("Archive " + item.name + "?")) return; try { await apiRequest("/catalogue/products/" + item.id + "/archive", {method:"POST"}); await refresh(); } catch (e) { setError(e.message || "Unable to archive product"); } }}>Archive</button>}
+          {canDeleteProducts && <button type="button" className="sb-row-action sb-product-delete" onClick={() => deleteProduct(item)}>Delete</button>}
           <span className="sb-strip-meta sb-product-id">#{item.id}</span>
         </article>;
         }) : <p className="sb-empty">No products found. Select Add product to create your first product.</p>}

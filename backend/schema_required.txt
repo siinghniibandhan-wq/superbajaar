@@ -10,3 +10,4 @@
 010_customer_accounts_referrals.sql
 012_product_category_assignments.sql
 012_variant_image_primary.sql
+013_product_deletion_audit.sql

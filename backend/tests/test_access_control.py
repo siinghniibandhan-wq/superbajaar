@@ -30,3 +30,8 @@ def test_admin_and_owner_can_write_all_modules():
     for role in ("owner", "admin"):
         assert _role_can_write(role, "/api/catalogue/products")
         assert _role_can_write(role, "/api/auth/users")
+
+
+def test_product_deletion_is_not_allowed_for_manager_staff_or_viewer():
+    for role in ("manager", "staff", "viewer"):
+        assert not _role_can_write(role, "/api/catalogue/products/42")
