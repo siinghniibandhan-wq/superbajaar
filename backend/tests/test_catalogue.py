@@ -76,6 +76,20 @@ def test_variant_price_update_rejects_negative_cost_price():
     assert response.status_code == 422
 
 
+def test_product_accepts_multiple_category_ids():
+    from app.api.catalogue import ProductCreate
+
+    payload = ProductCreate(name="Juice", slug="juice", category_ids=[1, 2, 3])
+    assert payload.category_ids == [1, 2, 3]
+
+
+def test_product_rejects_nonpositive_category_ids_before_database_access():
+    response = client.post("/api/catalogue/products", json={
+        "name": "Juice", "slug": "juice", "category_ids": [0, 2],
+    })
+    assert response.status_code == 422
+
+
 def test_product_status_defaults_to_active():
     from app.api.catalogue import ProductCreate
 
