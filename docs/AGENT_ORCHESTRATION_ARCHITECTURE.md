@@ -263,7 +263,7 @@ Use GitHub Issues, comments, labels, branches and PRs. The coordinator assigns w
 
 ### Phase 1 — GitHub-native workflow automation
 Initial repository automation is staged in PR #177 (not active on main until the owner merges it):
-- `.github/workflows/agent-task-governance.yml` validates agent-task issue forms on open/edit/reopen/label events, creates five status labels, marks complete tasks READY and marks incomplete tasks BLOCKED.
+- `.github/workflows/agent-task-governance.yml` validates agent-task issue forms on open/edit/reopen events, creates five status labels, marks complete tasks READY and marks incomplete tasks BLOCKED.
 - `.github/scripts/validate_agent_issue_template.py` checks the issue-form YAML structure and required field IDs.
 - `.github/workflows/ci.yml` runs the issue-template validator on pull requests.
 - This workflow does **not** start or dispatch an external agent. IN PROGRESS, REVIEW and DONE remain explicit execution/review states, not automatic assumptions.
