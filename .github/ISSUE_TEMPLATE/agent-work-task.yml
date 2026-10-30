@@ -18,6 +18,7 @@ body:
         - Security review
         - Documentation
         - Independent code review
+        - UI / design audit
     validations:
       required: true
   - type: dropdown
