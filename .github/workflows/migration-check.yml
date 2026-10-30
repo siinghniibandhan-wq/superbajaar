@@ -8,6 +8,8 @@ on:
     branches: [main]
     paths:
       - "backend/schema/**"
+      - "backend/app/api/**"
+      - "backend/tests/**"
       - "backend/schema_required.txt"
       - "backend/scripts/**"
       - ".github/workflows/migration-check.yml"
