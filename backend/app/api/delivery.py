@@ -203,6 +203,8 @@ def update_shipment_status(shipment_id: int, payload: DeliveryStatusUpdate):
                     return {"id": shipment_id, "status": old}
                 if payload.status not in transitions[old]:
                     raise HTTPException(status_code=409, detail=f"Cannot change shipment status from {old} to {payload.status}")
+                if payload.dispatch_lines is not None and payload.status != "dispatched":
+                    raise HTTPException(status_code=422, detail="Dispatch quantities can only be supplied when marking a shipment dispatched")
                 if payload.status == "dispatched":
                     shipment_order = conn.execute(
                         "SELECT order_id FROM deliveries WHERE id=%s",
@@ -213,7 +215,7 @@ def update_shipment_status(shipment_id: int, payload: DeliveryStatusUpdate):
                         dispatched_lines = dispatch_order_stock(conn, int(shipment_order["order_id"]), requested)
                     except ValueError as exc:
                         raise HTTPException(status_code=409, detail=str(exc)) from exc
-                    if dispatched_lines == 0:
+                    if dispatched_lines == 0 and not order_fulfilment_started(conn, int(shipment_order["order_id"])):
                         raise HTTPException(status_code=409, detail="No outstanding stock reservation exists for this order")
                 row = conn.execute(
                     "UPDATE deliveries SET status=%s, tracking_reference=COALESCE(%s,tracking_reference), assigned_to=COALESCE(%s,assigned_to), updated_at=now() "
