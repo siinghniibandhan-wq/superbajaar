@@ -40,6 +40,9 @@ def reserve_order_stock(conn, order_id: int, delivery_pin: str | None, lines: li
             (delivery_pin,),
         ).fetchall()
 
+    if location_id is not None and not locations:
+        raise ValueError("Selected stock location is inactive or does not serve the delivery PIN")
+
     for location in locations:
         balances = conn.execute(
             "SELECT variant_id, on_hand, reserved FROM inventory_balances "
@@ -72,7 +75,7 @@ def reserve_order_stock(conn, order_id: int, delivery_pin: str | None, lines: li
         return int(location["id"])
 
     if location_id is not None:
-        raise ValueError("Selected stock location is inactive or does not serve the delivery PIN")
+        raise ValueError("Insufficient stock at the selected stock location to fulfil the complete order")
     raise ValueError("Insufficient stock: no single active location serving this delivery PIN can fulfil the complete order")
 
 def _outstanding_order_reservations(conn, order_id: int):
