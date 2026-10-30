@@ -31,7 +31,7 @@ jobs:
         with:
           script: |
             const issueNumber = context.eventName === 'workflow_dispatch'
-              ? Number(core.getInput('issue_number'))
+              ? Number(context.payload.inputs?.issue_number || '')
               : context.issue.number;
             if (!Number.isInteger(issueNumber) || issueNumber < 1) {
               core.setFailed('A valid issue_number is required for manual dispatch.');
@@ -95,7 +95,7 @@ jobs:
             }
             const missing = requiredHeadings.filter(name => {
               const value = sections.get(name);
-              return !value || value === '_No response_' || value === 'None';
+              return !value || value === '_No response_';
             });
 
             const existing = (issue.labels || []).map(label => typeof label === 'string' ? label : label.name);
