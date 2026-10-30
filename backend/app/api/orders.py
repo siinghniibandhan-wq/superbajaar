@@ -10,6 +10,7 @@ from psycopg.rows import dict_row
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.core.config import settings
+from app.services.order_inventory import dispatch_order_stock, ensure_order_can_be_cancelled, order_fulfilment_started, release_order_stock, reserve_order_stock
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 ORDER_STATUSES = {"draft", "placed", "confirmed", "processing", "ready_for_dispatch", "dispatched", "delivered", "cancelled"}
@@ -44,6 +45,7 @@ class OrderCreate(BaseModel):
     customer_phone: str | None = Field(default=None, max_length=20)
     customer_email: EmailStr | None = None
     delivery_pin: str | None = Field(default=None, pattern=r"^[0-9]{6}$")
+    location_id: int | None = Field(default=None, gt=0)
     notes: str | None = Field(default=None, max_length=2000)
     lines: list[OrderLineCreate] = Field(min_length=1, max_length=100)
 
@@ -153,6 +155,12 @@ def get_order(order_id: int):
 
 @router.post("", status_code=201)
 def create_order(payload: OrderCreate, request: Request):
+    if payload.channel == "pos" and payload.location_id is None:
+        raise HTTPException(status_code=422, detail="POS orders require the staff-selected stock location")
+    if payload.channel in {"website", "manual"} and not payload.delivery_pin:
+        raise HTTPException(status_code=422, detail="Website and manual orders require a verified six-digit delivery PIN before stock can be reserved")
+    if payload.channel in {"website", "manual"} and payload.location_id is not None:
+        raise HTTPException(status_code=422, detail="Website and manual orders must use the server-selected eligible stock location")
     if getattr(request.state, "customer_checkout", False):
         if payload.channel != "website":
             raise HTTPException(status_code=403, detail="Customer accounts can only create website orders")
@@ -188,7 +196,15 @@ def create_order(payload: OrderCreate, request: Request):
                         "INSERT INTO order_lines (order_id, variant_id, quantity, unit_price, line_total) VALUES (%s,%s,%s,%s,%s)",
                         (order["id"], line.variant_id, line.quantity, unit_price, unit_price * line.quantity),
                     )
-        return order
+                try:
+                    inventory_location_id = reserve_order_stock(
+                        conn, order["id"], payload.delivery_pin,
+                        [(line.variant_id, line.quantity) for line in payload.lines],
+                        location_id=payload.location_id,
+                    )
+                except ValueError as exc:
+                    raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {**order, "inventory_location_id": inventory_location_id, "stock_reserved": inventory_location_id is not None}
     except HTTPException:
         raise
     except psycopg.Error as exc:
@@ -218,6 +234,19 @@ def update_order_status(order_id: int, payload: OrderStatusUpdate):
                     return {"id": order_id, "status": old}
                 if payload.status not in allowed[old]:
                     raise HTTPException(status_code=409, detail=f"Cannot change order status from {old} to {payload.status}")
+                if payload.status == "cancelled":
+                    try:
+                        ensure_order_can_be_cancelled(conn, order_id)
+                        release_order_stock(conn, order_id)
+                    except ValueError as exc:
+                        raise HTTPException(status_code=409, detail=str(exc)) from exc
+                elif payload.status == "dispatched":
+                    try:
+                        dispatched_lines = dispatch_order_stock(conn, order_id)
+                        if dispatched_lines == 0 and not order_fulfilment_started(conn, order_id):
+                            raise ValueError("No outstanding stock reservation exists for this order")
+                    except ValueError as exc:
+                        raise HTTPException(status_code=409, detail=str(exc)) from exc
                 row = conn.execute(
                     "UPDATE orders SET status=%s, updated_at=now() WHERE id=%s RETURNING id, order_number, status, updated_at",
                     (payload.status, order_id),

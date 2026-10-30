@@ -458,7 +458,7 @@ flowchart TD
 **Current limitations — do not imply these are already solved**
 
 - Website checkout is documented for `channel=website`; the backend calculates prices from active variants.
-- Stock reservation/deduction at order placement is not implemented. An accepted order does not prove that inventory has been reserved.
+- Stock reservation/deduction is proposed in draft PR #158 and is not merged or production-active. That branch now fails closed when a website/manual order lacks a delivery PIN and rejects caller-selected locations for those channels; POS must provide a staff-selected stock location. Do not treat reservation as active until the PR blockers are resolved, PostgreSQL-backed transaction tests pass, and the owner approves merge/release.
 - Payment gateway confirmation and refunds are not integrated. New payment records remain pending; captured/refunded states must not be manually asserted.
 - Delivery updates depend on the available shipment/status operations; do not promise live carrier tracking unless an integration is implemented and verified.
 - API liveness does not guarantee database readiness or successful end-to-end checkout.

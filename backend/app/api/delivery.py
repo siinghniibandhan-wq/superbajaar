@@ -8,6 +8,7 @@ from psycopg.rows import dict_row
 from pydantic import BaseModel, Field, field_validator
 
 from app.core.config import settings
+from app.services.order_inventory import dispatch_order_stock, order_fulfilment_started, order_reservation_locations, reserve_order_stock
 
 router = APIRouter(prefix="/delivery", tags=["delivery"])
 DELIVERY_STATUSES = {"pending", "packed", "assigned", "dispatched", "in_transit", "delivered", "failed", "returned", "cancelled"}
@@ -45,11 +46,26 @@ class DeliveryCreate(BaseModel):
         return value.strip()
 
 
+class DeliveryDispatchLine(BaseModel):
+    variant_id: int = Field(gt=0)
+    quantity: int = Field(gt=0)
+
+
 class DeliveryStatusUpdate(BaseModel):
     status: str
+    dispatch_lines: list[DeliveryDispatchLine] | None = Field(default=None, max_length=100)
     tracking_reference: str | None = Field(default=None, max_length=200)
     assigned_to: str | None = Field(default=None, max_length=200)
     note: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("dispatch_lines")
+    @classmethod
+    def unique_dispatch_variants(cls, value):
+        if value is not None:
+            ids = [line.variant_id for line in value]
+            if len(ids) != len(set(ids)):
+                raise ValueError("Each variant can appear only once in a partial dispatch")
+        return value
 
     @field_validator("status")
     @classmethod
@@ -103,7 +119,15 @@ def list_shipments(
             rows = conn.execute(
                 "SELECT d.id, d.shipment_reference, d.order_id, o.order_number, d.delivery_pin, d.recipient_name, "
                 "d.recipient_phone, d.address, d.location_id, d.status, d.tracking_reference, d.assigned_to, "
-                "d.delivery_notes, d.created_at, d.updated_at FROM deliveries d JOIN orders o ON o.id=d.order_id" +
+                "d.delivery_notes, d.created_at, d.updated_at, "
+                "COALESCE((SELECT json_agg(json_build_object('variant_id', l.variant_id, 'sku', v.sku, "
+                "'product_name', p.name, 'ordered_quantity', l.quantity, 'remaining_quantity', "
+                "GREATEST(l.quantity - COALESCE((SELECT sum(m.quantity) FROM inventory_movements m "
+                "WHERE m.variant_id=l.variant_id AND m.reference_id=o.id::text "
+                "AND m.reference_type='order_fulfilment' AND m.movement_type='sale'),0),0)) ORDER BY l.id) "
+                "FROM order_lines l JOIN product_variants v ON v.id=l.variant_id "
+                "JOIN products p ON p.id=v.product_id WHERE l.order_id=o.id), '[]'::json) AS order_lines "
+                "FROM deliveries d JOIN orders o ON o.id=d.order_id" +
                 where + " ORDER BY d.created_at DESC LIMIT %s OFFSET %s", (*params, limit, offset)
             ).fetchall()
             total = conn.execute("SELECT count(*) AS total FROM deliveries d JOIN orders o ON o.id=d.order_id" + where, params).fetchone()["total"]
@@ -117,21 +141,49 @@ def create_shipment(payload: DeliveryCreate):
     try:
         with _connect() as conn:
             with conn.transaction():
-                order = conn.execute("SELECT id, status, delivery_pin FROM orders WHERE id=%s FOR SHARE", (payload.order_id,)).fetchone()
+                order = conn.execute("SELECT id, status, delivery_pin FROM orders WHERE id=%s FOR UPDATE", (payload.order_id,)).fetchone()
                 if order is None:
                     raise HTTPException(status_code=404, detail="Order not found")
                 if order["status"] in {"cancelled", "delivered"}:
                     raise HTTPException(status_code=409, detail="Cannot create a shipment for a cancelled or delivered order")
                 if order["delivery_pin"] and order["delivery_pin"].strip() != payload.delivery_pin:
                     raise HTTPException(status_code=422, detail="Shipment delivery PIN must match the order delivery PIN")
-                existing = conn.execute("SELECT id FROM deliveries WHERE order_id=%s AND status NOT IN ('cancelled','returned','failed')", (payload.order_id,)).fetchone()
+                existing = conn.execute("SELECT id FROM deliveries WHERE order_id=%s AND status NOT IN ('cancelled','returned','failed','delivered')", (payload.order_id,)).fetchone()
                 if existing:
                     raise HTTPException(status_code=409, detail="An active shipment already exists for this order")
+                active_reserved_locations = order_reservation_locations(conn, payload.order_id)
+                shipment_location_id = payload.location_id
+                if len(active_reserved_locations) > 1:
+                    raise HTTPException(status_code=409, detail="Order stock is allocated across multiple locations; shipment location needs review")
+                if active_reserved_locations:
+                    reserved_location_id = active_reserved_locations[0]
+                    if shipment_location_id is not None and shipment_location_id != reserved_location_id:
+                        raise HTTPException(status_code=409, detail="Shipment location must match the location holding this order's reservation")
+                    shipment_location_id = reserved_location_id
+                else:
+                    if order_fulfilment_started(conn, payload.order_id):
+                        raise HTTPException(status_code=409, detail="This order has already been fully dispatched")
+                    order_lines = conn.execute(
+                        "SELECT variant_id, quantity FROM order_lines WHERE order_id=%s ORDER BY variant_id",
+                        (payload.order_id,),
+                    ).fetchall()
+                    if not order_lines:
+                        raise HTTPException(status_code=409, detail="Order has no lines to fulfil")
+                    try:
+                        shipment_location_id = reserve_order_stock(
+                            conn, payload.order_id, payload.delivery_pin,
+                            [(int(line["variant_id"]), int(line["quantity"])) for line in order_lines],
+                            location_id=shipment_location_id,
+                        )
+                    except ValueError as exc:
+                        raise HTTPException(status_code=409, detail=str(exc)) from exc
+                if shipment_location_id is None:
+                    raise HTTPException(status_code=409, detail="A stock location must be selected before shipment creation")
                 ref = "SBD-" + uuid.uuid4().hex[:10].upper()
                 row = conn.execute(
                     "INSERT INTO deliveries (shipment_reference, order_id, delivery_pin, recipient_name, recipient_phone, address, location_id, status, delivery_notes) "
                     "VALUES (%s,%s,%s,%s,%s,%s,%s,'pending',%s) RETURNING id, shipment_reference, order_id, delivery_pin, recipient_name, recipient_phone, address, location_id, status, delivery_notes, created_at, updated_at",
-                    (ref, payload.order_id, payload.delivery_pin, payload.recipient_name, payload.recipient_phone, payload.address, payload.location_id, payload.delivery_notes),
+                    (ref, payload.order_id, payload.delivery_pin, payload.recipient_name, payload.recipient_phone, payload.address, shipment_location_id, payload.delivery_notes),
                 ).fetchone()
         return row
     except HTTPException:
@@ -151,7 +203,11 @@ def update_shipment_status(shipment_id: int, payload: DeliveryStatusUpdate):
     try:
         with _connect() as conn:
             with conn.transaction():
-                current = conn.execute("SELECT status FROM deliveries WHERE id=%s FOR UPDATE", (shipment_id,)).fetchone()
+                current = conn.execute(
+                    "SELECT d.status, d.order_id FROM deliveries d JOIN orders o ON o.id=d.order_id "
+                    "WHERE d.id=%s FOR UPDATE OF d, o",
+                    (shipment_id,),
+                ).fetchone()
                 if current is None:
                     raise HTTPException(status_code=404, detail="Shipment not found")
                 old = current["status"]
@@ -159,6 +215,17 @@ def update_shipment_status(shipment_id: int, payload: DeliveryStatusUpdate):
                     return {"id": shipment_id, "status": old}
                 if payload.status not in transitions[old]:
                     raise HTTPException(status_code=409, detail=f"Cannot change shipment status from {old} to {payload.status}")
+                if payload.dispatch_lines is not None and payload.status != "dispatched":
+                    raise HTTPException(status_code=422, detail="Dispatch quantities can only be supplied when marking a shipment dispatched")
+                if payload.status == "dispatched":
+                    order_id = int(current["order_id"])
+                    try:
+                        requested = ({line.variant_id: line.quantity for line in payload.dispatch_lines} if payload.dispatch_lines is not None else None)
+                        dispatched_lines = dispatch_order_stock(conn, order_id, requested)
+                    except ValueError as exc:
+                        raise HTTPException(status_code=409, detail=str(exc)) from exc
+                    if dispatched_lines == 0 and not order_fulfilment_started(conn, order_id):
+                        raise HTTPException(status_code=409, detail="No outstanding stock reservation exists for this order")
                 row = conn.execute(
                     "UPDATE deliveries SET status=%s, tracking_reference=COALESCE(%s,tracking_reference), assigned_to=COALESCE(%s,assigned_to), updated_at=now() "
                     "WHERE id=%s RETURNING id, shipment_reference, status, tracking_reference, assigned_to, updated_at",
