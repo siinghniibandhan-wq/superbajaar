@@ -180,7 +180,7 @@ export default function InventoryWorkspace({ onBack }) {
       {balances.length ? <div className="sb-table-wrap"><table><thead><tr><th>SKU</th><th>Location</th><th>On hand</th><th>Reserved</th><th>Available</th></tr></thead><tbody>{balances.map((b,i)=><tr key={b.variant_id+"-"+b.location_id+"-"+i}><td>{b.sku}</td><td>{b.location_name}</td><td>{b.on_hand}</td><td>{b.reserved}</td><td>{b.available}</td></tr>)}</tbody></table></div> : <p className="sb-empty">No stock balances found.</p>}
     </div>
     <div className="sb-data-card"><h2>Recent movements ({movements.length})</h2>
-      {movements.length ? <div className="sb-table-wrap"><table><thead><tr><th>Date</th><th>Variant ID</th><th>Location ID</th><th>Type</th><th>Quantity</th><th>Note</th></tr></thead><tbody>{movements.map(m=><tr key={m.id}><td>{new Date(m.created_at).toLocaleString()}</td><td>{m.variant_id}</td><td>{m.location_id}</td><td>{m.movement_type}</td><td>{m.quantity}</td><td>{m.note}</td></tr>)}</tbody></table></div> : <p className="sb-empty">No inventory movements found.</p>}
+      {movements.length ? <div className="sb-table-wrap"><table><thead><tr><th>Date</th><th>Variant ID</th><th>Location ID</th><th>Type</th><th>Direction / reference</th><th>Quantity</th><th>Note</th></tr></thead><tbody>{movements.map(m=><tr key={m.id}><td>{new Date(m.created_at).toLocaleString()}</td><td>{m.variant_id}</td><td>{m.location_id}</td><td>{m.movement_type}</td><td>{m.reference_type || "—"}</td><td>{m.quantity}</td><td>{m.note}</td></tr>)}</tbody></table></div> : <p className="sb-empty">No inventory movements found.</p>}
     </div>
   </section>;
 }
