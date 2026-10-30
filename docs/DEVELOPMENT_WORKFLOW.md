@@ -1,6 +1,6 @@
 # Development, GitHub and Operations Workflow
 
-> **Purpose:** One operational guide for choosing the right tool, diagnosing the right layer, managing pull requests and verifying releases. The README is the overview; this document is the detailed workflow. For MUST KEEP primary tools, KEEP fallbacks, free-quota switching and mobile-first access, follow [Tool Utilisation Policy](TOOL_UTILISATION_POLICY.md).
+> **Purpose:** One operational guide for choosing the right tool, diagnosing the right layer, managing pull requests and verifying releases. The README is the overview; this document is the detailed workflow. For MUST KEEP primary tools, KEEP fallbacks, free-quota switching and mobile-first access, follow [Tool Utilisation Policy](TOOL_UTILISATION_POLICY.md). For queue states, parallel dispatch, task contracts, agent adapters and staged automation, follow [AI Agent Orchestration Architecture](AGENT_ORCHESTRATION_ARCHITECTURE.md).
 
 ## 1. Tool register
 
@@ -102,7 +102,7 @@ A closed PR must have a short reason (superseded, duplicate, no longer required,
 
 Use [AI Team Collaboration & Delivery Policy](AI_TEAM_COLLABORATION.md) as the canonical source for contributor roles, file ownership, batch sizing, handoffs, review and stop conditions. Use [Tool Utilisation Policy](TOOL_UTILISATION_POLICY.md) for MUST KEEP primary tools, KEEP fallbacks, free-quota switching and mobile-first capability. The policy treats the owner as final decision-maker and ChatGPT as coordinator; Claude, Copilot, Perplexity and Gemini have distinct, bounded responsibilities. GitHub issues, branches, PRs and Actions are the shared project record; separate AI chat sessions do not communicate directly.
 
-Keep Claude and Copilot implementation batches to 2–3 related files where practical, assign non-overlapping file sets, and start the next batch only after the prior batch is reviewed. Use two focused work windows per day separated by roughly 3–4 hours when practical; this is a planning preference, not an automatic background schedule. Perplexity starts read-only until repository access is verified. Gemini reviews only the exact excerpts, diffs or screenshots supplied. Verify actual plan, permissions and repository coverage before relying on any agent feature.
+Keep each implementation assignment to 2–3 related files where practical and assign non-overlapping file sets. **Dependent** batches start only after prerequisite findings are reviewed; **independent** read-only audits, API reviews, test inventories, security checks and documentation reviews should proceed in parallel. The initial proposed ceiling is three concurrent agent executions, subject to owner review after the pilot. This is task-based event-driven work, not a promise of continuous background execution. Perplexity starts read-only until repository access is verified. Gemini reviews only the exact excerpts, diffs or screenshots supplied. Verify actual plan, permissions and repository coverage before relying on any agent feature.
 
 GitHub Copilot remains an additional coding assistant, not a replacement for the owner, technical lead, designated database author, CI or human review. Its actual plan and enabled capabilities must be checked in the account; repository integration alone does not prove paid access, cloud-agent eligibility or unlimited usage. See [GitHub Copilot plans, limits and repository policy](GITHUB_COPILOT.md). All contributors must follow `AGENTS.md`, work on feature branches, preserve protected files and provide exact test/CI evidence. No agent may merge, bypass branch protection, deploy, change production data/secrets/infrastructure, or take over protected SQL/migration authorship.
 
@@ -178,3 +178,32 @@ Do not change these targets as a workaround. Verify the real environment before 
 | Post-deploy verified | Health, logs and relevant end-to-end journeys passed |
 
 For schema releases, follow `docs/DATABASE_CHANGE_RULES.md`; the production preflight and live migration runner are owner-controlled. CI never substitutes for live ledger and backup checks.
+
+
+## 9. Orchestration operating procedure
+
+The canonical design is [AI Agent Orchestration Architecture](AGENT_ORCHESTRATION_ARCHITECTURE.md). Use it together with [AI Team Collaboration & Delivery Policy](AI_TEAM_COLLABORATION.md) and [Tool Utilisation Policy](TOOL_UTILISATION_POLICY.md).
+
+### Before dispatch
+1. Create one GitHub Issue for each independently verifiable work package using `.github/ISSUE_TEMPLATE/agent-work-task.yml`.
+2. Set priority, task type, accountable owner, primary agent, fallback, dependencies, base commit, allowed paths, protected paths and access mode.
+3. Confirm the assignee's actual repository access, plan entitlement, mobile capability and available quota.
+4. Keep the issue READY until an agent/provider has actually accepted or execution has demonstrably started.
+5. Dispatch independent READY tasks in parallel; do not dispatch work whose prerequisites are still unresolved.
+
+### While work is running
+- Keep other independent tasks moving; do not wait idle for an investigation or CI run.
+- Track provider task/run references, branches and commits in the issue.
+- If a task blocks, record the exact missing input and move to another safe READY task.
+- Never permit concurrent writers on the same file set.
+- Do not retry a write task until checking whether its previous execution is still active.
+
+### On completion
+- Require the standard handoff report and evidence.
+- Move the issue to IN REVIEW, inspect the diff/report and verify acceptance criteria.
+- Run required CI on the exact commit; route failures to the accountable author.
+- Mark DONE only when acceptance and applicable verification are satisfied.
+- Send dependent work to the next owner and refill the READY queue.
+
+### Automation boundary
+The initial mode is manual dispatch with GitHub as the shared control plane. Add GitHub-native validation/notifications only after a manual pilot. Add one external provider adapter at a time; no API key, paid usage, permission expansion, production access or autonomous merge/deployment is enabled by this documentation change.
