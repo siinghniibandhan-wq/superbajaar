@@ -8,7 +8,7 @@ Every task starts by reading:
 
 1. `README.md` — project overview, safety constraints, architecture summary and document index.
 2. `AGENTS.md` — these shared contributor rules.
-3. The task-specific canonical document in the matrix below.
+3. For GitHub Copilot tasks or when using Copilot in this repository, read `docs/GITHUB_COPILOT.md` and `.github/copilot-instructions.md`.\n4. The task-specific canonical document in the matrix below.
 
 | Work type | Mandatory detailed reading |
 |---|---|
@@ -32,7 +32,7 @@ If a required document cannot be read, stop and tell the owner. Do not guess its
 - AWS EC2 / Systems Manager Run Command are used when evidence indicates runtime, host, networking, environment or infrastructure issues.
 - AWS Amplify is used for frontend build/hosting/deployment investigation.
 - PostgreSQL production operations are owner-controlled.
-- ChatGPT coordinates architecture, analysis, planning, review and documentation. Claude is the designated default SQL/schema/runner author under `CLAUDE.md`; neither AI replaces owner approval.
+- ChatGPT coordinates architecture, analysis, planning, review and documentation. Claude is the designated default SQL/schema/runner author under `CLAUDE.md`. GitHub Copilot is an additional coding assistant governed by `docs/GITHUB_COPILOT.md` and `.github/copilot-instructions.md`. No AI replaces owner approval.
 
 Follow the diagnostic order and tool boundaries in `docs/DEVELOPMENT_WORKFLOW.md`. Do not jump to AWS for ordinary source or API contract defects without evidence.
 
