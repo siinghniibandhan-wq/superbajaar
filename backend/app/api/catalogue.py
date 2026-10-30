@@ -913,16 +913,40 @@ class VariantPriceUpdate(BaseModel):
 
 
 @router.get("/variants")
-def list_all_variants(limit: int = Query(default=200, ge=1, le=500), offset: int = Query(default=0, ge=0)):
+def list_all_variants(
+    request: Request,
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    channel: str = Query(default="all", pattern="^(all|pos|website)$"),
+):
+    """Return a safe website projection publicly and the full projection only to staff."""
+    public_catalogue = getattr(request.state, "public_catalogue", False)
+    clauses = ["v.is_active = TRUE", "p.status = 'active'"]
+    if public_catalogue:
+        # Public requests can never opt into the POS or staff catalogue.
+        clauses.append("p.is_website_available = TRUE")
+        projection = (
+            "v.id, v.product_id, p.name AS product_name, v.sku, v.attributes, "
+            "v.selling_price, v.mrp, v.is_active, "
+        )
+    else:
+        if channel == "pos":
+            clauses.append("p.is_pos_available = TRUE")
+        elif channel == "website":
+            clauses.append("p.is_website_available = TRUE")
+        projection = (
+            "v.id, v.product_id, p.name AS product_name, v.sku, v.barcode, v.attributes, "
+            "v.selling_price, v.mrp, v.cost_price, v.is_active, "
+        )
+    where = " AND ".join(clauses)
     try:
         with _connection() as conn:
             rows = conn.execute(
-                "SELECT v.id, v.product_id, p.name AS product_name, v.sku, v.barcode, v.attributes, "
-                "v.selling_price, v.mrp, v.cost_price, v.is_active, "
+                f"SELECT {projection}"
                 "(SELECT pi.image_url FROM product_images pi WHERE pi.product_id=p.id AND (pi.variant_id=v.id OR pi.variant_id IS NULL) "
                 "ORDER BY (pi.variant_id=v.id) DESC, pi.is_primary DESC, pi.sort_order, pi.id LIMIT 1) AS image_url "
                 "FROM product_variants v JOIN products p ON p.id = v.product_id "
-                "WHERE v.is_active = TRUE AND p.status = 'active' ORDER BY p.name, v.sku LIMIT %s OFFSET %s",
+                f"WHERE {where} ORDER BY p.name, v.sku LIMIT %s OFFSET %s",
                 (limit, offset),
             ).fetchall()
         return {"items": rows, "limit": limit, "offset": offset}

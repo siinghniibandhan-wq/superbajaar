@@ -73,7 +73,7 @@ async def require_active_session(request: Request) -> None:
     if not settings.database_url:
         return
 
-    if _is_public_catalogue_read(request.method, path, prefix):
+    if _is_public_catalogue_read(request.method, path, prefix) and not request.headers.get("authorization"):
         request.state.public_catalogue = True
         return
 

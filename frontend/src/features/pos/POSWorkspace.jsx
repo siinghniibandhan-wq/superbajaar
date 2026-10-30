@@ -20,7 +20,7 @@ export default function POSWorkspace({ onBack }) {
   async function load() {
     setLoading(true); setError("");
     try {
-      const result = await apiRequest("/catalogue/variants?limit=500");
+      const result = await apiRequest("/catalogue/variants?limit=500&channel=pos");
       setVariants(result.items || []);
     } catch (e) { setError(e.message || "Unable to load active catalogue variants."); }
     finally { setLoading(false); }
