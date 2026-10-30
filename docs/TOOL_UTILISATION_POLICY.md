@@ -68,6 +68,11 @@ ChatGPT coordinates work and maintains the operating record. It does not pretend
 | KEEP | Amazon Q Developer | AWS-specific investigation and cloud guidance through supported mobile/browser access | Gemini/ChatGPT for explanations; approved AWS console/SSM for verified operations |
 | KEEP | OpenHands | Open-source autonomous coding only if a supported hosted/mobile-accessible deployment already exists | Codex/Jules; do not create a new server or incur compute/model costs just to activate it |
 
+**Free-tier and dispatch notes (verified 31 October 2026):**
+- **Jules:** its official base plan lists 15 tasks per rolling 24 hours and 3 concurrent tasks. It integrates with GitHub, lets the user choose a repository and branch, presents a plan for approval before changes, and supports the `jules` issue label. This makes it the first free asynchronous coding-agent pilot when its GitHub App is connected to this repository. See [Jules getting started](https://jules.google/docs), [limits](https://jules.google/docs/usage-limits/) and [Jules GitHub issue workflow](https://jules.google/).
+- **GitHub Copilot:** Copilot Free is useful for in-editor assistance, but GitHub documents Copilot cloud agent as available on paid Copilot plans. Do not plan cloud-agent dispatch on a Free plan. See [Copilot cloud-agent eligibility](https://docs.github.com/en/copilot/how-tos/copilot-on-github/use-copilot-agents/overview).
+- The Jules REST API is alpha and requires an API key. Do not add an API key or external API automation for the first pilot; use the GitHub App and issue-label flow after owner approval.
+
 NOT ACTIVE in the mobile-first phase: Cline, Aider, OpenCode and local terminal-centric agent workflows whose useful operation depends on a desktop IDE/terminal. Reconsider when desktop development resumes.
 
 ### 4.3 Code quality, security and testing
