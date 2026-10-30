@@ -230,6 +230,7 @@ All paths below are under the `/api` prefix. This is a source inventory, not a p
 | Customer authentication | `POST /customer-auth/register`, `POST /customer-auth/login`, `GET /customer-auth/me`, `POST /customer-auth/logout`, `GET /customer-auth/referrals` |
 | Catalogue categories | `GET/POST /catalogue/categories`, `PUT /catalogue/categories/{category_id}` |
 | Catalogue products | `GET/POST /catalogue/products`, `PUT /catalogue/products/{product_id}`, `POST /catalogue/products/{product_id}/archive` |
+| Multi-category products | Product create/update accepts `category_ids`; product reads return assigned category IDs. `category_id` remains the legacy/default category. A product appears in each assigned category without duplicating the product record. |
 | Catalogue availability | `GET /catalogue/stock-locations`, `GET/PUT /catalogue/products/{product_id}/availability-rules` |
 | Attributes | `GET /catalogue/attributes`, `POST /catalogue/attributes`, `PUT /catalogue/attributes/{attribute_id}/options`, `GET /catalogue/products/{product_id}/attributes`, `PUT /catalogue/products/{product_id}/attributes/{attribute_id}` |
 | Variants and prices | `GET/POST /catalogue/products/{product_id}/variants`, `PUT /catalogue/variants/{variant_id}`, `POST /catalogue/variants/{variant_id}/archive`, `GET /catalogue/variants`, `PUT /catalogue/variants/{variant_id}/price` |
@@ -421,7 +422,7 @@ flowchart TB
 ```mermaid
 flowchart TD
     S["Open Super Bajaar storefront"] --> B["Browse categories / search products"]
-    B --> P["Open product and select variant"]
+    B --> P["Open product, select variant and quantity"]
     P --> W["Optional: wishlist / customer sign-in"]
     P --> C["Add item to cart"]
     W --> C
@@ -438,7 +439,7 @@ flowchart TD
 **Customer journey details**
 
 1. Customer opens the public storefront and loads active catalogue categories, products and variants.
-2. Customer browses/searches, opens a product, selects an available variant and adds it to the cart. Wishlist and recently viewed items are storefront conveniences.
+2. Customer browses/searches, opens a product, selects an available variant and quantity, then adds it to the cart. Wishlist and recently viewed items are storefront conveniences.
 3. Customer can sign in/register where the customer-account flow is available and provide delivery/contact details.
 4. Customer checks delivery serviceability using the PIN-code flow shown in the storefront.
 5. Website checkout submits an order request. The backend must validate the request and calculate authoritative prices from active variants; never trust browser-submitted totals.

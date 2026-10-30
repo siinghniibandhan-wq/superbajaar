@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiRequest } from "../../services/api.js";
 import ProductImagesPanel from "./ProductImagesPanel.jsx";
+import "./ProductCreateForm.css";
 
-const EMPTY = { name: "", slug: "", brand: "", category_id: "", description: "", tax_code: "", tax_rate: "", selling_price: "", mrp: "", is_pos_available: true, is_website_available: true, delivery_options: ["standard"] };
+const EMPTY = { name: "", slug: "", brand: "", category_id: "", category_ids: [], description: "", tax_code: "", tax_rate: "", selling_price: "", mrp: "", is_pos_available: true, is_website_available: true, delivery_options: ["standard"] };
 const OPTION_TYPES = ["select", "multi_select", "colour", "size"];
 function ProductImagesEmbedded({ product }) { return <ProductImagesPanel products={[product]} initialProductId={product.id} embedded />; }
 
@@ -21,6 +22,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
     selling_price: product.selling_price ?? product.min_selling_price ?? "",
     mrp: product.mrp ?? product.min_mrp ?? "",
     category_id: product.category_id ? String(product.category_id) : "",
+    category_ids: Array.isArray(product.category_ids) && product.category_ids.length ? product.category_ids.map(String) : (product.category_id ? [String(product.category_id)] : []),
   } : EMPTY);
   const [definitions, setDefinitions] = useState([]);
   const [selected, setSelected] = useState({});
@@ -112,7 +114,12 @@ export default function ProductCreateForm({ categories = [], product = null, onS
           throw new Error("Check each variant's selling price, MRP and cost price. MRP must be at least the selling price.");
         }
       }
-      const payload = { name: form.name.trim(), slug: form.slug, brand: form.brand || null, category_id: form.category_id ? Number(form.category_id) : null, description: form.description || null, tax_code: form.tax_code || null, tax_rate: form.tax_rate === "" ? null : Number(form.tax_rate), is_pos_available: Boolean(form.is_pos_available), is_website_available: Boolean(form.is_website_available), delivery_options: form.delivery_options?.length ? form.delivery_options : ["standard"], status: product?.status || "active" };
+      const categoryIds = [...new Set((form.category_ids || []).map(Number).filter(id => Number.isInteger(id) && id > 0))];
+      if (!categoryIds.length) {
+        setActiveTab("general");
+        throw new Error("Select at least one category for this product.");
+      }
+      const payload = { name: form.name.trim(), slug: form.slug, brand: form.brand || null, category_id: categoryIds[0] || null, category_ids: categoryIds, description: form.description || null, tax_code: form.tax_code || null, tax_rate: form.tax_rate === "" ? null : Number(form.tax_rate), is_pos_available: Boolean(form.is_pos_available), is_website_available: Boolean(form.is_website_available), delivery_options: form.delivery_options?.length ? form.delivery_options : ["standard"], status: product?.status || "active" };
       savedProduct = await apiRequest(product?.id ? "/catalogue/products/" + product.id : "/catalogue/products", { method: product?.id ? "PUT" : "POST", body: JSON.stringify(payload) });
       for (const def of chosenAttributes) {
         const values = selected[def.code] || [];
@@ -151,24 +158,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
     } finally { setBusy(false); onBusyChange?.(false); }
   }
 
-  const selectedCategory = categories.find(item => String(item.id) === String(form.category_id));
-  let selectedCategoryRoot = selectedCategory;
-  const seenCategoryIds = new Set();
-  while (selectedCategoryRoot?.parent_id && !seenCategoryIds.has(Number(selectedCategoryRoot.id))) {
-    seenCategoryIds.add(Number(selectedCategoryRoot.id));
-    selectedCategoryRoot = categories.find(item => Number(item.id) === Number(selectedCategoryRoot.parent_id));
-  }
-  const categoryDescendants = (parentCategoryId, depth = 1, ancestors = new Set()) => {
-    if (ancestors.has(Number(parentCategoryId))) return [];
-    const nextAncestors = new Set(ancestors).add(Number(parentCategoryId));
-    return categories.filter(item => Number(item.parent_id) === Number(parentCategoryId)).flatMap(item => [
-      { ...item, depth },
-      ...categoryDescendants(item.id, depth + 1, nextAncestors),
-    ]);
-  };
-  const subcategories = selectedCategoryRoot ? categoryDescendants(selectedCategoryRoot.id) : [];
-
-  return <form id="catalogue-product-form" className="sb-form sb-modal-form" noValidate onSubmit={submit}>
+    return <form id="catalogue-product-form" className="sb-form sb-modal-form" noValidate onSubmit={submit}>
     {error && <p role="alert" className="sb-alert">{error}</p>}
     {success && <p role="status" className="sb-success">{success}</p>}
     <nav className="sb-catalogue-tabs" aria-label="Product form sections" role="tablist">
@@ -179,8 +169,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
         <label>Product name *<input required maxLength="240" value={form.name} onChange={e => { const name=e.target.value; setForm(old => ({...old,name,slug:slugify(name)})); }} /></label>
         <label>Slug (automatic)<input required pattern="[a-z0-9]+(-[a-z0-9]+)*" value={form.slug} readOnly aria-readonly="true" /></label>
         <label>Brand<input maxLength="160" value={form.brand || ""} onChange={e => change("brand", e.target.value)} /></label>
-        <label>Category<select value={selectedCategoryRoot ? String(selectedCategoryRoot.id) : ""} onChange={e => change("category_id", e.target.value)}><option value="">No category</option>{categories.filter(item => !item.parent_id).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-        <label>Subcategory<select value={selectedCategory?.parent_id ? String(selectedCategory.id) : ""} disabled={!subcategories.length} onChange={e => change("category_id", e.target.value || String(selectedCategoryRoot?.id || ""))}><option value="">None</option>{subcategories.map(item => <option key={item.id} value={item.id}>{"— ".repeat(item.depth - 1)}{item.name}</option>)}</select></label>
+        <fieldset className="sb-span-all sb-category-multiselect"><legend>Categories * <small>Select every category where this product should appear.</small></legend><div className="sb-category-checkbox-grid">{categories.map(item => <label className="sb-check" key={item.id}><input type="checkbox" checked={(form.category_ids || []).includes(String(item.id))} onChange={e => { const id=String(item.id); const ids=form.category_ids || []; const next=e.target.checked ? [...new Set([...ids,id])] : ids.filter(value => value !== id); setForm(old => ({...old,category_ids:next,category_id:next[0] || ""})); }} />{item.parent_id ? "↳ " : ""}{item.name}</label>)}</div></fieldset>
         <div className="sb-span-all"><h3>Price &amp; Tax</h3></div>
         <label>Selling price (₹) *<input required type="number" min="0" step="0.01" readOnly={Boolean(product?.id)} value={form.selling_price} onChange={e => change("selling_price", e.target.value)} /></label>
         <label>MRP (₹) *<input required type="number" min="0" step="0.01" readOnly={Boolean(product?.id)} value={form.mrp} onChange={e => change("mrp", e.target.value)} /></label>
