@@ -73,6 +73,35 @@ def test_order_history_rejects_invalid_limit():
 
 
 
+def test_website_order_requires_delivery_pin_before_database_access():
+    response = client.post("/api/orders", json={
+        "channel": "website", "customer_name": "Website customer",
+        "customer_email": "customer@example.com",
+        "lines": [{"variant_id": 1, "quantity": 1}],
+    })
+    assert response.status_code == 422
+    assert "require a verified six-digit delivery PIN" in response.json()["detail"]
+
+
+def test_manual_order_requires_delivery_pin_before_database_access():
+    response = client.post("/api/orders", json={
+        "channel": "manual", "customer_name": "Manual customer",
+        "lines": [{"variant_id": 1, "quantity": 1}],
+    })
+    assert response.status_code == 422
+    assert "require a verified six-digit delivery PIN" in response.json()["detail"]
+
+
+def test_website_order_cannot_choose_its_own_stock_location():
+    response = client.post("/api/orders", json={
+        "channel": "website", "customer_name": "Website customer",
+        "customer_email": "customer@example.com", "delivery_pin": "560035",
+        "location_id": 9, "lines": [{"variant_id": 1, "quantity": 1}],
+    })
+    assert response.status_code == 422
+    assert "server-selected eligible stock location" in response.json()["detail"]
+
+
 def test_pos_order_requires_staff_selected_location_before_database_access():
     response = client.post("/api/orders", json={
         "channel": "pos", "customer_name": "Walk-in customer",
