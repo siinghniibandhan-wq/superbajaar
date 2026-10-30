@@ -235,7 +235,20 @@ def _generate_variant_sku(conn, product_id: int, attributes: dict[str, Any]) -> 
             return candidate
         version += 1
 
+def _validate_required_variant_attributes(definitions: list[dict[str, Any]], values: dict[str, Any]) -> None:
+    for attribute in definitions:
+        if not attribute.get("is_required"):
+            continue
+        value = values.get(attribute["code"])
+        missing = value is None or (isinstance(value, str) and not value.strip()) or (isinstance(value, list) and not value)
+        if missing:
+            raise HTTPException(status_code=422, detail=f"Required variant attribute '{attribute['name']}' is missing")
+
+
 def _validate_attribute_value(conn, attribute: dict[str, Any], value: Any) -> None:
+    from datetime import date
+    from math import isfinite
+
     kind = attribute["value_type"]
     options = attribute["options"] or []
     valid = True
@@ -246,11 +259,17 @@ def _validate_attribute_value(conn, attribute: dict[str, Any], value: Any) -> No
     elif kind == "text":
         valid = isinstance(value, str)
     elif kind == "number":
-        valid = isinstance(value, (int, float)) and not isinstance(value, bool)
+        valid = isinstance(value, (int, float)) and not isinstance(value, bool) and isfinite(value)
     elif kind == "boolean":
         valid = isinstance(value, bool)
     elif kind == "date":
-        valid = isinstance(value, str) and len(value) == 10 and value[4:5] == "-" and value[7:8] == "-"
+        if isinstance(value, str):
+            try:
+                valid = date.fromisoformat(value).isoformat() == value
+            except ValueError:
+                valid = False
+        else:
+            valid = False
     if not valid:
         raise HTTPException(status_code=422, detail=f"Invalid value for attribute '{attribute['name']}'")
 
@@ -569,17 +588,45 @@ def list_attributes(limit: int = Query(default=100, ge=1, le=500), offset: int =
     return {"items": rows, "limit": limit, "offset": offset}
 
 
+@router.delete("/products/{product_id}/attributes/{attribute_id}")
+def delete_product_attribute_value(product_id: int, attribute_id: int):
+    try:
+        with _connection() as conn:
+            _require_product(conn, product_id)
+            attribute = conn.execute(
+                "SELECT id FROM product_attributes WHERE id=%s AND is_active=TRUE",
+                (attribute_id,),
+            ).fetchone()
+            if attribute is None:
+                raise HTTPException(status_code=404, detail="Active attribute not found")
+            conn.execute(
+                "DELETE FROM product_attribute_values WHERE product_id=%s AND attribute_id=%s",
+                (product_id, attribute_id),
+            )
+        return {"deleted": True, "product_id": product_id, "attribute_id": attribute_id}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
 @router.put("/products/{product_id}/attributes/{attribute_id}")
 def set_product_attribute_value(product_id: int, attribute_id: int, payload: AttributeValueCreate):
     try:
         with _connection() as conn:
             _require_product(conn, product_id)
             attribute = conn.execute(
-                "SELECT id, name, value_type, options, is_active FROM product_attributes WHERE id = %s",
+                "SELECT id, name, value_type, options, is_active, is_required FROM product_attributes WHERE id = %s",
                 (attribute_id,),
             ).fetchone()
             if attribute is None or not attribute["is_active"]:
                 raise HTTPException(status_code=404, detail="Active attribute not found")
+            if attribute["is_required"] and (
+                payload.value is None
+                or (isinstance(payload.value, str) and not payload.value.strip())
+                or (isinstance(payload.value, list) and not payload.value)
+            ):
+                raise HTTPException(status_code=422, detail=f"Required product attribute '{attribute['name']}' is missing")
             _validate_attribute_value(conn, attribute, payload.value)
             row = conn.execute(
                 "INSERT INTO product_attribute_values (product_id, attribute_id, value) VALUES (%s, %s, %s::jsonb) "
@@ -617,6 +664,7 @@ def create_variant(product_id: int, payload: VariantCreate):
             unknown = sorted(set(payload.attributes) - set(by_code))
             if unknown:
                 raise HTTPException(status_code=422, detail=f"Unknown or non-variant attributes: {', '.join(unknown)}")
+            _validate_required_variant_attributes(attributes, payload.attributes)
             for code, value in payload.attributes.items():
                 _validate_attribute_value(conn, by_code[code], value)
             duplicate = conn.execute(
@@ -689,13 +737,14 @@ def update_variant(variant_id: int, payload: VariantUpdate):
             if current is None:
                 raise HTTPException(status_code=404, detail="Active variant not found")
             definitions = conn.execute(
-                "SELECT code, name, value_type, options FROM product_attributes "
+                "SELECT code, name, value_type, options, is_required FROM product_attributes "
                 "WHERE is_active = TRUE AND is_variant_attribute = TRUE"
             ).fetchall()
             by_code = {row["code"]: row for row in definitions}
             unknown = sorted(set(payload.attributes) - set(by_code))
             if unknown:
                 raise HTTPException(status_code=422, detail=f"Unknown or non-variant attributes: {', '.join(unknown)}")
+            _validate_required_variant_attributes(definitions, payload.attributes)
             for code, value in payload.attributes.items():
                 _validate_attribute_value(conn, by_code[code], value)
             duplicate = conn.execute(

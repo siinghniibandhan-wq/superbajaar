@@ -158,3 +158,71 @@ def test_product_delete_rejects_blank_or_short_reason():
             assert False, "Expected a validation error"
         except ValidationError:
             pass
+
+
+
+def test_required_variant_attribute_rejects_missing_value():
+    from fastapi import HTTPException
+    from app.api.catalogue import _validate_required_variant_attributes
+
+    definitions = [
+        {"code": "size", "name": "Size", "is_required": True},
+        {"code": "colour", "name": "Colour", "is_required": False},
+    ]
+    try:
+        _validate_required_variant_attributes(definitions, {"colour": "Blue"})
+        assert False, "Expected required attribute validation to fail"
+    except HTTPException as exc:
+        assert exc.status_code == 422
+        assert "Size" in exc.detail
+
+
+def test_required_variant_attribute_accepts_false_boolean():
+    from app.api.catalogue import _validate_required_variant_attributes
+
+    definitions = [{"code": "is_refillable", "name": "Refillable", "is_required": True}]
+    _validate_required_variant_attributes(definitions, {"is_refillable": False})
+
+
+def test_required_variant_attribute_rejects_blank_text_and_empty_multi_select():
+    from fastapi import HTTPException
+    from app.api.catalogue import _validate_required_variant_attributes
+
+    definitions = [
+        {"code": "material", "name": "Material", "is_required": True},
+        {"code": "features", "name": "Features", "is_required": True},
+    ]
+    for values in ({"material": "   ", "features": ["Eco"]}, {"material": "Cotton", "features": []}):
+        try:
+            _validate_required_variant_attributes(definitions, values)
+            assert False, "Expected required attribute validation to fail"
+        except HTTPException as exc:
+            assert exc.status_code == 422
+
+
+def test_attribute_date_validation_rejects_impossible_dates():
+    from fastapi import HTTPException
+    from app.api.catalogue import _validate_attribute_value
+
+    attribute = {"name": "Manufacture date", "value_type": "date", "options": []}
+    _validate_attribute_value(None, attribute, "2026-10-30")
+    for value in ("2026-02-30", "2026-2-03", "not-a-date"):
+        try:
+            _validate_attribute_value(None, attribute, value)
+            assert False, f"Expected invalid date to be rejected: {value}"
+        except HTTPException as exc:
+            assert exc.status_code == 422
+
+
+def test_attribute_number_validation_rejects_non_finite_values():
+    from fastapi import HTTPException
+    from app.api.catalogue import _validate_attribute_value
+
+    attribute = {"name": "Weight", "value_type": "number", "options": []}
+    _validate_attribute_value(None, attribute, 1.25)
+    for value in (float("nan"), float("inf"), float("-inf"), True):
+        try:
+            _validate_attribute_value(None, attribute, value)
+            assert False, f"Expected invalid number to be rejected: {value}"
+        except HTTPException as exc:
+            assert exc.status_code == 422
