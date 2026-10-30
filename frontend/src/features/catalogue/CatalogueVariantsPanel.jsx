@@ -249,7 +249,7 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
         <div className="sb-strip-icon" aria-hidden="true">Aa</div>
         <div className="sb-strip-main">
           <strong>{definition.name}</strong>
-          <small>{definition.code} · {definition.value_type} · Display: {definition.display_type || "dropdown"}{definition.options?.length ? " · " + definition.options.join(", ") : ""}</small>
+          <small>{definition.code} · {definition.value_type} · Display: {definition.display_type || "dropdown"}{definition.options?.length ? " · " + definition.options.map(value => definition.value_type === "colour" ? colourOptionLabel(value) : String(value)).join(", ") : ""}</small>
           {OPTION_TYPES.includes(definition.value_type) && <>
             {definition.value_type === "colour" ? <ColourOptionEditor existingOptions={definition.options || []} disabled={busy} compact onAdd={option => apiRequest("/catalogue/attributes/" + definition.id + "/options", { method: "PUT", body: JSON.stringify({ options: [option] }) }).then(async () => { await loadDefinitions(); setNotice('"' + option.name + '" added to ' + definition.name + '.'); })} /> : <div className="sb-add-option">
               <input aria-label={"New shared " + definition.name + " value"} value={optionDrafts[definition.id] || ""} placeholder={"Add a shared " + definition.name.toLowerCase() + " value"} onChange={e => setOptionDrafts(old => ({ ...old, [definition.id]: e.target.value }))} />
