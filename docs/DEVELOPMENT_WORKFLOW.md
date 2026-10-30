@@ -1,13 +1,13 @@
 # Development, GitHub and Operations Workflow
 
-> **Purpose:** One operational guide for choosing the right tool, diagnosing the right layer, managing pull requests and verifying releases. The README is the overview; this document is the detailed workflow.
+> **Purpose:** One operational guide for choosing the right tool, diagnosing the right layer, managing pull requests and verifying releases. The README is the overview; this document is the detailed workflow. For MUST KEEP primary tools, KEEP fallbacks, free-quota switching and mobile-first access, follow [Tool Utilisation Policy](TOOL_UTILISATION_POLICY.md).
 
 ## 1. Tool register
 
 | Tool / service | Primary responsibility | Use it for | Not a substitute for |
 |---|---|---|---|
 | GitHub | Source of truth | Branches, commits, PRs, reviews, Actions, repository history | Running or debugging the live application |
-| GitHub Codespaces | Primary development workspace | Read/edit source, reproduce bugs, run tests/builds, inspect dependencies and local logs | Production runtime verification |
+| GitHub Codespaces | Optional computer-based development workspace; not required in the current mobile-first phase | Read/edit source, reproduce bugs, run tests/builds, inspect dependencies and local logs when a computer workflow is available | Mobile-first task execution or production runtime verification |
 | Swagger / OpenAPI | API contract and interactive endpoint testing | Routes, schemas, auth, request/response, status codes and reproducible API tests | Frontend rendering or production infrastructure diagnosis |
 | ChatGPT | Technical lead and coordinator | Planning, architecture, analysis, review, documentation and evidence-based decisions | Executing a test unless a runner/tool actually ran it |
 | Claude | Designated database/SQL/runner author by current project policy | Scoped schema, migration runner and database review work | Owner approval or live production authorization |
@@ -29,13 +29,13 @@ Use the following order for normal development. Follow the evidence: skip direct
 
 | Problem | First tool | Inspect | Escalate to |
 |---|---|---|---|
-| Page, layout, React state, form or browser error | Codespaces + browser developer tools | Component, route, state, network request, console | Swagger if API contract is implicated |
-| API route missing / wrong payload / 401 / 403 / 404 / 422 | Swagger / OpenAPI | Route, schema, auth, headers, request, response and status | Codespaces to inspect implementation |
-| API 500 or timeout | Swagger first | Reproduce request, response body, request ID if available | Codespaces for traceback/code; AWS only if runtime evidence points there |
-| Database undefined table/column/constraint | Codespaces | SQL migration, query, model and required-schema manifest | Read-only DB inspection by authorized owner if environment state matters |
-| Migration test failure | GitHub Actions | Exact failing job/step and commit | Reproduce against disposable PostgreSQL 15/16 in Codespaces |
+| Page, layout, React state, form or browser error | Mobile browser + GitHub issue/PR evidence; assign a scoped Codex/Jules/Copilot task where code changes are needed | Reproduce the visible issue, capture route/steps/screenshots and inspect CI/browser evidence | Swagger if API contract is implicated; optional Codespaces when computer access resumes |
+| API route missing / wrong payload / 401 / 403 / 404 / 422 | Swagger / OpenAPI | Route, schema, auth, headers, request, response and status | Assign a scoped cloud coding-agent task through mobile-accessible workflow; optional Codespaces when available |
+| API 500 or timeout | Swagger first | Reproduce request, response body, request ID if available | GitHub Actions/log evidence and a scoped cloud coding-agent task; AWS only if runtime evidence points there |
+| Database undefined table/column/constraint | Swagger/API evidence and GitHub source/docs review; follow database-owner process | SQL migration, query, model and required-schema manifest | Claude as designated database author under CLAUDE.md; read-only DB inspection by authorized owner if environment state matters |
+| Migration test failure | GitHub Actions | Exact failing job/step and commit | Reproduce against disposable PostgreSQL 15/16 in an approved runner/workspace; Codespaces only when available |
 | Backend service down / process crash / port unreachable | AWS EC2 or SSM | systemd, Gunicorn, Nginx, logs, port 8001, host health | Infrastructure owner |
-| Frontend deployment/build issue | GitHub Actions then Amplify | Build command, artifact, environment configuration, deploy state | Frontend code in Codespaces |
+| Frontend deployment/build issue | GitHub Actions then Amplify | Build command, artifact, environment configuration, deploy state | Scoped cloud coding-agent task; Codespaces only when available |
 | Timer or scheduled synchronization issue | AWS EC2 / systemd | Timer status, last/next trigger, service result and journal | Operations owner |
 | Production ledger/checksum mismatch | Owner-only database preflight | Live ledger, file checksums, target DB and backup readiness | Database owner; stop release until reconciled |
 
@@ -100,24 +100,25 @@ A closed PR must have a short reason (superseded, duplicate, no longer required,
 
 ## 4. AI team collaboration and delegation
 
-Use [AI Team Collaboration & Delivery Policy](AI_TEAM_COLLABORATION.md) as the canonical source for contributor roles, file ownership, batch sizing, handoffs, review and stop conditions. The policy treats the owner as final decision-maker and ChatGPT as coordinator; Claude, Copilot, Perplexity and Gemini have distinct, bounded responsibilities. GitHub issues, branches, PRs and Actions are the shared project record; separate AI chat sessions do not communicate directly.
+Use [AI Team Collaboration & Delivery Policy](AI_TEAM_COLLABORATION.md) as the canonical source for contributor roles, file ownership, batch sizing, handoffs, review and stop conditions. Use [Tool Utilisation Policy](TOOL_UTILISATION_POLICY.md) for MUST KEEP primary tools, KEEP fallbacks, free-quota switching and mobile-first capability. The policy treats the owner as final decision-maker and ChatGPT as coordinator; Claude, Copilot, Perplexity and Gemini have distinct, bounded responsibilities. GitHub issues, branches, PRs and Actions are the shared project record; separate AI chat sessions do not communicate directly.
 
 Keep Claude and Copilot implementation batches to 2–3 related files where practical, assign non-overlapping file sets, and start the next batch only after the prior batch is reviewed. Use two focused work windows per day separated by roughly 3–4 hours when practical; this is a planning preference, not an automatic background schedule. Perplexity starts read-only until repository access is verified. Gemini reviews only the exact excerpts, diffs or screenshots supplied. Verify actual plan, permissions and repository coverage before relying on any agent feature.
 
 GitHub Copilot remains an additional coding assistant, not a replacement for the owner, technical lead, designated database author, CI or human review. Its actual plan and enabled capabilities must be checked in the account; repository integration alone does not prove paid access, cloud-agent eligibility or unlimited usage. See [GitHub Copilot plans, limits and repository policy](GITHUB_COPILOT.md). All contributors must follow `AGENTS.md`, work on feature branches, preserve protected files and provide exact test/CI evidence. No agent may merge, bypass branch protection, deploy, change production data/secrets/infrastructure, or take over protected SQL/migration authorship.
 
-## 5. Codespaces: primary use
+## 5. Mobile-first development and review
 
-Use Codespaces extensively as the primary place to:
+For the current phase, use mobile-accessible GitHub and approved cloud-agent workflows as the default operating path:
 
-- inspect the actual repository tree and current branch;
-- trace a UI action through API client, backend route, business logic and SQL;
-- edit source and documentation on a feature branch;
-- run backend tests, frontend lint/build and migration-runner tests;
-- reproduce errors against disposable/local services;
-- inspect diffs and prepare PR evidence.
+- inspect repository files, issues, branches, PRs, checks and commit history through GitHub;
+- assign scoped implementation tasks to Codex first, then Jules or Copilot when quota/capability requires a fallback;
+- use Claude for complex reasoning, designated database-author work under CLAUDE.md, and independent review;
+- use Gemini and Perplexity for bounded review and research, with access verified before relying on private repository coverage;
+- run backend tests, frontend builds and browser regression tests through existing GitHub Actions where configured;
+- use Swagger/OpenAPI and Hoppscotch for API inspection and testing;
+- review exact diffs, test results and CI evidence before owner approval.
 
-Before running commands, confirm repository, branch, working tree and commit. Never point a local test at production credentials or database. Keep secrets out of terminal output and screenshots.
+Codespaces remains an optional development workspace when computer access is available; it is not a prerequisite for the current mobile-first workflow. Never point a local test at production credentials or database. Keep secrets out of terminal output and screenshots.
 
 ## 6. Swagger / OpenAPI: primary use
 
