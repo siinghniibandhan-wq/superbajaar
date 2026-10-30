@@ -50,6 +50,11 @@
 > - Purchasing frontend mirrors the implemented supplier/PO/receipt API only. Delivery frontend consumes shipment/order/location APIs. Inventory frontend consumes balances, movements, adjustments, issues, counts and transfers. Full end-to-end cross-module verification remains pending.
 > - These observations come from source inspection only. No browser interaction, live API calls, test execution or deployment verification occurred in this review.
 
+
+> - Frontend Loyalty workspace is currently a customer/order-spend summary and explicitly says it does not issue or store points. The backend does contain loyalty rules/accounts/transactions/redemption-allocation tables and loyalty APIs; rule/account administration appears under Settings. This is a frontend capability/placement gap, not evidence that the loyalty schema is absent.
+> - Admin Settings exposes user management plus loyalty rule/account administration. HR also exposes staff user management, so there is overlap between Settings and HR that should be clarified in the module ownership audit; HR is not a payroll subsystem.
+> - The frontend POS currently does not create a delivery record as part of checkout. Delivery is a separate operational workspace. Stock reservation and location selection are pending in PR #158; delivery lifecycle UI changes are pending in dependent PR #159.
+
 > **Audit sequence agreed:** (1) finish the schema requirements/dependency audit, (2) audit all application modules and integrations against those requirements, (3) consolidate and prioritise findings in this register, and only then (4) prepare schema-change recommendations/change requests for Database Owner approval. No schema changes are being made at this stage.
 >
 > **Next required checks:** Complete table/column/constraint/index and application dependency mapping, then run the full application audit. After that, have the Database Owner run the read-only production checks in `docs/RELEASE_GATES.md` (database/version, full ledger and checksums, runner `--status` exit code, and backup storage). Record unavailable checks as NOT VERIFIED. No SQL, schema files, required-schema list, production database, merge, or deployment changed in this review.
