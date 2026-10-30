@@ -11,6 +11,8 @@ on:
       - "backend/schema_required.txt"
       - "backend/scripts/**"
       - ".github/workflows/migration-check.yml"
+      - "README.md"
+      - "IMPORTANT_UPDATES.md"
 
 jobs:
   database-files:
