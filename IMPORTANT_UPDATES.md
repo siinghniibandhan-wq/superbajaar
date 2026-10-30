@@ -28,7 +28,7 @@ This file is the concise, chronological change log for major Super Bajaar projec
 
 ## 2026-10-30 — README architecture, progress and API handbook
 
-**Status:** Documentation changes committed to the PR #151 feature branch; PR is open and not merged.
+**Status:** Merged to `main` in PR [#151](https://github.com/siinghniibandhan-wq/superbajaar/pull/151).
 
 - Added prominent GitHub Markdown caution, warning and important callouts for production safety, verification boundaries and documentation requirements.
 - Added a project overview and evidence-based progress table separating CI results from production verification.
@@ -41,6 +41,17 @@ This file is the concise, chronological change log for major Super Bajaar projec
 **Verification:** Source files and route declarations were reviewed to prepare the documentation. The README update itself is documentation-only; production behaviour is not certified by this entry.
 
 **References:** [PR #151](https://github.com/siinghniibandhan-wq/superbajaar/pull/151); latest README commit `178351f9ae1a697ba27a493cd608dd5af0c02c00` (branch `docs/readme-database-safety-20261030`).
+
+## 2026-10-30 — Multi-category catalogue and storefront product details
+
+**Status:** Implemented in PR #149; CI verification pending.
+
+- Product create/edit supports assigning one product to multiple categories while retaining the legacy primary category field.
+- Storefront category filters use assigned category IDs; product cards represent one parent product and product detail pages support variant selection and quantity before adding to basket.
+- POS catalogue cards hide SKU while operational product/variant details retain it; POS layout styling is responsive.
+- Reuses the existing `012_product_category_assignments.sql` schema; no duplicate migration was added.
+
+**Verification:** Backend tests and both frontend production builds are being run in GitHub Actions. No production database migration or deployment is included.
 
 ## Ongoing documentation rule
 
