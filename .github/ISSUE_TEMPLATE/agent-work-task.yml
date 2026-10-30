@@ -1,0 +1,145 @@
+name: AI agent work package
+description: Create a scoped, evidence-driven task for an AI agent or human contributor.
+title: "[AGENT TASK] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for one independently verifiable work package. Read docs/AGENT_ORCHESTRATION_ARCHITECTURE.md and docs/AI_TEAM_COLLABORATION.md first. Do not include secrets, customer data or production credentials.
+  - type: dropdown
+    id: task_type
+    attributes:
+      label: Task type
+      options:
+        - Research
+        - Read-only audit
+        - Implementation
+        - Testing / QA
+        - Security review
+        - Documentation
+        - Independent code review
+        - UI / design audit
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - Critical
+        - High
+        - Normal
+        - Low
+    validations:
+      required: true
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective and user impact
+      description: State the problem, desired outcome and why it matters.
+      placeholder: One clear objective; avoid broad instructions such as "fix everything".
+    validations:
+      required: true
+  - type: input
+    id: primary_agent
+    attributes:
+      label: Primary agent / accountable owner
+      placeholder: ChatGPT coordinator, Codex, Jules, Copilot, Claude, Gemini, Perplexity, or human
+    validations:
+      required: true
+  - type: input
+    id: fallback
+    attributes:
+      label: Approved fallback
+      placeholder: Name the approved fallback or write "None — owner decision required".
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Link prerequisite issues/PRs or write "None".
+    validations:
+      required: true
+  - type: input
+    id: base
+    attributes:
+      label: Repository, starting branch and base commit
+      placeholder: owner/repo · branch · full commit SHA
+    validations:
+      required: true
+  - type: textarea
+    id: allowed_paths
+    attributes:
+      label: Allowed paths / write scope
+      description: Exact files or directories the assignee may modify. For read-only tasks, write "Read-only — no files may be changed".
+    validations:
+      required: true
+  - type: textarea
+    id: protected_paths
+    attributes:
+      label: Protected paths / systems
+      description: List files, schema, production systems or data that must not be touched.
+      value: |
+        - main branch
+        - Existing/applied files under backend/schema/
+        - Production data, credentials, secrets and infrastructure
+        - Backend 127.0.0.1:8001, PostgreSQL 5432, database sb_app, API prefix /api
+    validations:
+      required: true
+  - type: dropdown
+    id: access_mode
+    attributes:
+      label: Access mode
+      options:
+        - Read-only
+        - Write-scoped
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Required inputs and evidence
+      description: Link relevant files, screenshots, CI runs, logs with secrets removed, or prior findings.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Use observable, checkable outcomes.
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Tests and verification required
+      description: Exact commands, workflows or manual checks expected. State if a check cannot run in the assigned environment.
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Expected deliverable and handoff
+      description: Findings, commit, PR, test evidence, report and next owner.
+    validations:
+      required: true
+  - type: input
+    id: reviewer
+    attributes:
+      label: Independent reviewer
+      placeholder: Name a reviewer or role; author cannot approve their own protected work.
+    validations:
+      required: true
+  - type: checkboxes
+    id: approvals
+    attributes:
+      label: Approval gates
+      options:
+        - label: This task may affect schema, production data, secrets, infrastructure, permissions, paid usage or deployment; explicit owner approval is required before that action.
+          required: false
+        - label: This task has no production, schema, data, secret, infrastructure, paid-usage or deployment impact.
+          required: false

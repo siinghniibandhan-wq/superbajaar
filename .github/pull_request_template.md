@@ -1,5 +1,16 @@
 ## Change summary
 
+## Agent task and handoff (when applicable)
+- GitHub issue:
+- Agent/provider and actual execution status:
+- Provider run/task ID (if available):
+- Starting branch / base commit:
+- Allowed paths:
+- Files changed:
+- Handoff report and next owner:
+- If no AI agent was used, state "Human-authored" or "Not applicable".
+
+
 ## Scope and acceptance criteria
 
 ## Documentation impact
