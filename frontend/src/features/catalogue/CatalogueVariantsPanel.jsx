@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { apiRequest } from "../../services/api.js";
 import CatalogueModal from "./CatalogueModal.jsx";
 
-const initialAttribute = { name: "", code: "", value_type: "text", is_variant_attribute: true, is_required: true, options: "" };
+const initialAttribute = { name: "", code: "", value_type: "text", display_type: "dropdown", is_variant_attribute: true, is_required: true, options: "" };
 const initialVariant = { sku: "", barcode: "", attributes: "{}", selling_price: "", mrp: "", cost_price: "" };
-const OPTION_TYPES = ["select", "multi_select", "colour", "size"];
+const OPTION_TYPES = ["text", "colour", "image", "select", "multi_select", "size"];
 function makeCombinations(items) {
   return items.reduce((rows, item) => rows.flatMap(row => item.values.map(value => [...row, [item.code, value]])), [[]]).map(entries => Object.fromEntries(entries));
 }
@@ -71,7 +71,8 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
     setAttribute({
       name: definition.name,
       code: definition.code,
-      value_type: definition.value_type,
+      value_type: ["text", "colour", "image"].includes(definition.value_type) ? definition.value_type : "text",
+      display_type: definition.display_type || (definition.value_type === "colour" ? "colour" : "dropdown"),
       is_variant_attribute: definition.is_variant_attribute,
       is_required: definition.is_required,
       options: (definition.options || []).join(", "),
@@ -164,11 +165,8 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
   async function createAttribute(event) {
     event.preventDefault(); setBusy(true); setError(""); setNotice("");
     try {
-      const optionTypes = ["select", "multi_select", "colour", "size"];
-      const options = optionTypes.includes(attribute.value_type) ? attribute.options.split(",").map(x => x.trim()).filter(Boolean) : [];
-      if (optionTypes.includes(attribute.value_type) && !options.length) {
-        throw new Error("Enter at least one option for this attribute type.");
-      }
+      const options = attribute.options.split(",").map(x => x.trim()).filter(Boolean);
+      if (attribute.is_variant_attribute && !options.length) throw new Error("Enter at least one value for a variant attribute.");
       const payload = { ...attribute, name: attribute.name.trim(), options };
       await apiRequest(editingAttributeId ? "/catalogue/attributes/" + editingAttributeId : "/catalogue/attributes", {
         method: editingAttributeId ? "PUT" : "POST",
@@ -223,8 +221,9 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
         <div className="sb-form-grid">
           <label>Name<input required value={attribute.name} onChange={e=>setAttribute(v=>({...v,name:e.target.value,...(!editingAttributeId ? {code:e.target.value.toLowerCase().trim().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").replace(/^([0-9])/,"attr_$1") || "attribute"} : {})}))}/></label>
           <label>Code (immutable)<input required pattern="[a-z][a-z0-9_]*" value={attribute.code} readOnly aria-readonly="true"/><small className="sb-muted">The code is fixed to protect saved variant data.</small></label>
-          <label>Type<select value={attribute.value_type} onChange={e=>setAttribute(v=>({...v,value_type:e.target.value,options:""}))}>{["text","number","boolean","date","select","multi_select","colour","size"].map(x=><option key={x}>{x}</option>)}</select></label>
-          <label>Options (comma-separated)<input required={["select","multi_select","colour","size"].includes(attribute.value_type)} value={attribute.options} disabled={!["select","multi_select","colour","size"].includes(attribute.value_type)} placeholder="S, M, L" onChange={e=>setAttribute(v=>({...v,options:e.target.value}))}/></label>
+          <label>Attribute type<select value={attribute.value_type} onChange={e=>setAttribute(v=>({...v,value_type:e.target.value,display_type:e.target.value === "colour" ? "colour" : e.target.value === "image" ? "image" : "dropdown"}))}>{["text","colour","image"].map(x=><option key={x} value={x}>{x === "colour" ? "Colour" : x === "image" ? "Image" : "Text"}</option>)}</select></label>
+          <label>Display type<select value={attribute.display_type} onChange={e=>setAttribute(v=>({...v,display_type:e.target.value}))}>{["text","dropdown","button","colour","image"].map(x=><option key={x} value={x}>{x.charAt(0).toUpperCase()+x.slice(1)}</option>)}</select><small className="sb-muted">Controls how customers select or view this attribute on the storefront.</small></label>
+          <label className="sb-form-grid-wide">Options / values (comma-separated)<input required={attribute.is_variant_attribute} value={attribute.options} placeholder={attribute.value_type === "colour" ? "Black, White, Blue" : attribute.value_type === "image" ? "Image URLs or value keys" : "S, M, L"} onChange={e=>setAttribute(v=>({...v,options:e.target.value}))}/></label>
         </div>
         <label className="sb-check"><input type="checkbox" checked={attribute.is_variant_attribute} onChange={e=>setAttribute(v=>({...v,is_variant_attribute:e.target.checked}))}/> Used to define variant combinations</label>
         <label className="sb-check"><input type="checkbox" checked={attribute.is_required} onChange={e=>setAttribute(v=>({...v,is_required:e.target.checked}))}/> Required attribute</label>
@@ -236,7 +235,7 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
         <div className="sb-strip-icon" aria-hidden="true">Aa</div>
         <div className="sb-strip-main">
           <strong>{definition.name}</strong>
-          <small>{definition.code} · {definition.value_type}{definition.options?.length ? " · " + definition.options.join(", ") : ""}</small>
+          <small>{definition.code} · {definition.value_type} · Display: {definition.display_type || "dropdown"}{definition.options?.length ? " · " + definition.options.join(", ") : ""}</small>
           {OPTION_TYPES.includes(definition.value_type) && <>
             <div className="sb-add-option">
               <input
