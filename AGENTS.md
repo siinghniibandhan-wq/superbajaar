@@ -11,7 +11,8 @@ Every task starts by reading:
 3. `docs/TOOL_UTILISATION_POLICY.md` — mandatory tool roles, MUST KEEP primary tools, KEEP fallbacks, free-quota switching, mobile-first limits and task handoffs.
 4. For GitHub Copilot tasks or when using Copilot in this repository, read `docs/GITHUB_COPILOT.md` and `.github/copilot-instructions.md`.
 5. For multi-AI delegation, role boundaries, task batches or cross-agent handoffs, read `docs/AI_TEAM_COLLABORATION.md`.
-6. The task-specific canonical document in the matrix below.
+6. For agent orchestration, queue state, parallel dispatch, dependencies, provider adapters or automation design, read `docs/AGENT_ORCHESTRATION_ARCHITECTURE.md`.
+7. The task-specific canonical document in the matrix below.
 
 | Work type | Mandatory detailed reading |
 |---|---|
@@ -24,6 +25,7 @@ Every task starts by reading:
 | AWS / deployment / hosting / runtime | `docs/DEVELOPMENT_WORKFLOW.md`; database rules if migration is involved |
 | Audit / progress report | `docs/PROJECT_PROGRESS_STRUCTURE.md` and relevant technical document |
 | Tool selection / free quota / AI delegation | `docs/TOOL_UTILISATION_POLICY.md`, `docs/AI_TEAM_COLLABORATION.md` |
+| Agent orchestration / task queue / parallel execution / automation | `docs/AGENT_ORCHESTRATION_ARCHITECTURE.md`, `docs/AI_TEAM_COLLABORATION.md`, `docs/DEVELOPMENT_WORKFLOW.md` |
 | Major project-wide change | `IMPORTANT_UPDATES.md` and relevant canonical document |
 
 If a required document cannot be read, stop and tell the owner. Do not guess its contents.
