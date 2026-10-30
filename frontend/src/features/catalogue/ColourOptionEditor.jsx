@@ -44,7 +44,7 @@ export default function ColourOptionEditor({ existingOptions = [], onAdd, disabl
       {renaming ? <input aria-label="Colour name" value={name} disabled={disabled} onChange={event => setName(event.target.value)} /> : <small>{name} · {hex}</small>}
       <div className="sb-colour-actions">
         {!renaming && <button type="button" className="sb-row-action" disabled={disabled} onClick={() => { setName(suggestedName); setRenaming(false); }}>Keep suggested name</button>}
-        <button type="button" className="sb-row-action" disabled={disabled} onClick={() => setRenaming(value => !value)}>{renaming ? "Use suggested name" : "Rename colour"}</button>
+        <button type="button" className="sb-row-action" disabled={disabled} onClick={() => { if (renaming) { setName(suggestedName); setRenaming(false); } else { setRenaming(true); } }}>{renaming ? "Use suggested name" : "Rename colour"}</button>
         <button type="button" className="sb-secondary" disabled={disabled || !name.trim()} onClick={add}>Add colour</button>
       </div>
     </div>
