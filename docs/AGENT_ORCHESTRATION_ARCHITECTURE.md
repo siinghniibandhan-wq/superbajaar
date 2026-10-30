@@ -353,6 +353,10 @@ Track:
 
 A task board is a view of GitHub data, not a separate source of truth.
 
+## 13.1 Provider readiness register
+
+Use [AI Agent Integration Readiness Register](AGENT_INTEGRATION_READINESS.md) as the live record of verified account access, provider capabilities, mobile operation, quota and pilot evidence. Do not infer integration from an installed app or a workspace/project description.
+
 ## 14. Rollout plan and exit criteria
 
 | Stage | Deliverable | Exit criteria | Agent integration? |
