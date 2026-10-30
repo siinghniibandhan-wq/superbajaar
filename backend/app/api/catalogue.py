@@ -729,6 +729,32 @@ def update_variant(variant_id: int, payload: VariantUpdate):
 def archive_variant(variant_id: int):
     try:
         with _connection() as conn:
+            current = conn.execute(
+                "SELECT id, product_id FROM product_variants WHERE id=%s AND is_active=TRUE FOR UPDATE",
+                (variant_id,),
+            ).fetchone()
+            if current is None:
+                raise HTTPException(status_code=404, detail="Active variant not found or already archived")
+            has_live_stock = conn.execute(
+                "SELECT 1 FROM inventory_balances WHERE variant_id=%s AND (on_hand > 0 OR reserved > 0) LIMIT 1",
+                (variant_id,),
+            ).fetchone()
+            if has_live_stock:
+                raise HTTPException(
+                    status_code=409,
+                    detail="This variant has on-hand or reserved stock. Transfer or fulfil its stock before archiving.",
+                )
+            has_open_purchase = conn.execute(
+                "SELECT 1 FROM purchase_order_lines pol JOIN purchase_orders po ON po.id=pol.purchase_order_id "
+                "WHERE pol.variant_id=%s AND pol.quantity_received < pol.quantity_ordered "
+                "AND po.status IN ('draft','ordered','partially_received') LIMIT 1",
+                (variant_id,),
+            ).fetchone()
+            if has_open_purchase:
+                raise HTTPException(
+                    status_code=409,
+                    detail="This variant is referenced by an open purchase order. Close or reassign the outstanding purchase quantity before archiving.",
+                )
             row = conn.execute(
                 "UPDATE product_variants SET is_active=FALSE, updated_at=now() "
                 "WHERE id=%s AND is_active=TRUE "
