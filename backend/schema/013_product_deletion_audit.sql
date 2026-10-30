@@ -17,11 +17,7 @@ CREATE INDEX IF NOT EXISTS product_deletion_audit_product_idx
 
 -- Grant only the access required by the application role when it exists.
 -- Disposable CI databases do not create the production application role.
-DO $
-BEGIN
-    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'superbajaar_user') THEN
-        EXECUTE 'GRANT SELECT, INSERT ON public.product_deletion_audit TO superbajaar_user';
-        EXECUTE 'GRANT USAGE, SELECT ON SEQUENCE public.product_deletion_audit_id_seq TO superbajaar_user';
-    END IF;
-END
-$;
+SELECT 'GRANT SELECT, INSERT ON public.product_deletion_audit TO superbajaar_user'
+WHERE EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'superbajaar_user') \gexec
+SELECT 'GRANT USAGE, SELECT ON SEQUENCE public.product_deletion_audit_id_seq TO superbajaar_user'
+WHERE EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'superbajaar_user') \gexec
