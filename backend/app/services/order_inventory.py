@@ -14,13 +14,13 @@ ORDER_FULFILMENT_REF = "order_fulfilment"
 def reserve_order_stock(conn, order_id: int, delivery_pin: str | None, lines: list[tuple[int, int]], location_id: int | None = None):
     """Reserve every line at one eligible location, or reserve none.
 
-    Website/manual orders with a delivery PIN select a matching location.
-    POS orders pass the staff-selected location; a PIN, when supplied, must
-    also match that location. Orders with neither PIN nor location retain the
-    legacy no-reservation behaviour.
+    Website/manual callers must supply a delivery PIN and let this helper
+    select an eligible location. POS callers pass the staff-selected location;
+    a PIN, when supplied, must also match that location. Missing both inputs
+    fails closed so a placed order can never silently bypass reservation.
     """
     if not delivery_pin and location_id is None:
-        return None
+        raise ValueError("A verified delivery PIN or staff-selected stock location is required before reserving order stock")
 
     variant_ids = [variant_id for variant_id, _ in lines]
     if location_id is not None:
