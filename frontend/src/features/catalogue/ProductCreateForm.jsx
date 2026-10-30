@@ -149,6 +149,11 @@ export default function ProductCreateForm({ categories = [], product = null, onS
         setActiveTab("general");
         throw new Error("Select at least one category for this product.");
       }
+      const missingRequiredAttribute = definitions.find(def => !def.is_variant_attribute && def.is_required && !(selected[def.code] || []).length);
+      if (missingRequiredAttribute) {
+        setActiveTab("attributes");
+        throw new Error("Enter a value for required attribute: " + missingRequiredAttribute.name + ".");
+      }
       const payload = { name: form.name.trim(), slug: form.slug, brand: form.brand || null, category_id: categoryIds[0] || null, category_ids: categoryIds, description: form.description || null, tax_code: form.tax_code || null, tax_rate: form.tax_rate === "" ? null : Number(form.tax_rate), is_pos_available: Boolean(form.is_pos_available), is_website_available: Boolean(form.is_website_available), delivery_options: form.delivery_options?.length ? form.delivery_options : ["standard"], status: product?.status || "active" };
       savedProduct = await apiRequest(product?.id ? "/catalogue/products/" + product.id : "/catalogue/products", { method: product?.id ? "PUT" : "POST", body: JSON.stringify(payload) });
       for (const def of chosenAttributes) {
@@ -160,10 +165,6 @@ export default function ProductCreateForm({ categories = [], product = null, onS
       }
       for (const def of definitions.filter(item => !item.is_variant_attribute)) {
         const values = selected[def.code] || [];
-        if (def.is_required && !values.length) {
-          setActiveTab("attributes");
-          throw new Error("Enter a value for required attribute: " + def.name + ".");
-        }
         if (!values.length) continue;
         const value = def.value_type === "multi_select" ? values : values[0];
         await apiRequest("/catalogue/products/" + savedProduct.id + "/attributes/" + def.id, {
