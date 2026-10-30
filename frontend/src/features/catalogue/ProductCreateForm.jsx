@@ -49,7 +49,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
     apiRequest("/catalogue/stock-locations").then(result => setStockLocations(result.items || [])).catch(() => setStockLocations([]));
   }, []);
   useEffect(() => {
-    if (!product?.id || !definitions.length) return;
+    if (!product?.id) return;
     apiRequest("/catalogue/products/" + product.id + "/attributes")
       .then(result => {
         const values = {};
@@ -60,9 +60,9 @@ export default function ProductCreateForm({ categories = [], product = null, onS
         setOriginalProductAttributeValues(values);
       })
       .catch(e => setError(e.message || "Unable to load existing product attribute values."));
-  }, [product?.id, definitions]);
+  }, [product?.id]);
   useEffect(() => {
-    if (!product?.id || !definitions.length) return;
+    if (!product?.id) return;
     apiRequest("/catalogue/products/" + product.id + "/variants")
       .then(result => {
         const values = {};
@@ -75,7 +75,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
         setSelected(old => ({ ...values, ...old }));
       })
       .catch(e => setError(e.message || "Unable to load existing product variants."));
-  }, [product?.id, definitions]);
+  }, [product?.id]);
   useEffect(() => {
     if (!product?.id) return;
     apiRequest("/catalogue/products/" + product.id + "/availability-rules")
@@ -281,11 +281,11 @@ export default function ProductCreateForm({ categories = [], product = null, onS
               <strong>{def.name}</strong><small className="sb-muted">{def.value_type}{def.is_variant_attribute ? " · Variant attribute" : " · Product attribute"}{def.is_required ? " · Required" : ""}</small>
               {def.is_variant_attribute ? (
                 OPTION_TYPES.includes(def.value_type) ? <div className="sb-option-chips">{(def.options || []).map(value => <label className="sb-option-chip" key={String(value)}><input type="checkbox" checked={(selected[def.code] || []).includes(value)} onChange={() => toggleValue(def, value)} />{String(value)}</label>)}</div> :
-                def.value_type === "boolean" ? <label className="sb-check"><input type="checkbox" checked={(selected[def.code] || [])[0] === true} onChange={e => setSelected(old => ({ ...old, [def.code]: [e.target.checked] }))} />Yes</label> :
+                def.value_type === "boolean" ? <select value={(selected[def.code] || [])[0] === true ? "true" : (selected[def.code] || [])[0] === false ? "false" : ""} onChange={e => setSelected(old => ({ ...old, [def.code]: e.target.value === "" ? [] : [e.target.value === "true"] }))}><option value="">Choose {def.name.toLowerCase()}</option><option value="true">Yes</option><option value="false">No</option></select> :
                 <input type={def.value_type === "number" ? "number" : def.value_type === "date" ? "date" : "text"} value={(selected[def.code] || [])[0] ?? ""} placeholder={"Enter " + def.name.toLowerCase()} onChange={e => setSelected(old => ({ ...old, [def.code]: e.target.value === "" ? [] : [def.value_type === "number" ? Number(e.target.value) : e.target.value] }))} />
               ) : (
-                def.value_type === "boolean" ? <label className="sb-check"><input type="checkbox" checked={current === true} onChange={e => setProductValue(e.target.checked)} />Yes</label> :
-                def.value_type === "select" || def.value_type === "colour" || def.value_type === "size" ? <select value={current ?? ""} onChange={e => setProductValue(e.target.value)}><option value="">Choose {def.name.toLowerCase()}</option>{(def.options || []).map(value => <option key={String(value)} value={value}>{String(value)}</option>)}</select> :
+                def.value_type === "boolean" ? <select value={current === true ? "true" : current === false ? "false" : ""} onChange={e => setProductValue(e.target.value === "" ? undefined : e.target.value === "true")}><option value="">Choose {def.name.toLowerCase()}</option><option value="true">Yes</option><option value="false">No</option></select> :
+                def.value_type === "select" || def.value_type === "colour" || def.value_type === "size" ? <select value={current == null ? "" : String(current)} onChange={e => setProductValue((def.options || []).find(option => String(option) === e.target.value) ?? "")}><option value="">Choose {def.name.toLowerCase()}</option>{(def.options || []).map(value => <option key={String(value)} value={String(value)}>{String(value)}</option>)}</select> :
                 def.value_type === "multi_select" ? <div className="sb-option-chips">{(def.options || []).map(value => <label className="sb-option-chip" key={String(value)}><input type="checkbox" checked={(current || []).includes(value)} onChange={e => setProductValue(e.target.checked ? [...(current || []), value] : (current || []).filter(item => item !== value))} />{String(value)}</label>)}</div> :
                 <input type={def.value_type === "number" ? "number" : def.value_type === "date" ? "date" : "text"} value={current ?? ""} placeholder={"Enter " + def.name.toLowerCase()} onChange={e => setProductValue(e.target.value === "" ? "" : def.value_type === "number" ? Number(e.target.value) : e.target.value)} />
               )}
