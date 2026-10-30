@@ -91,6 +91,19 @@ class AttributeCreate(BaseModel):
             raise ValueError("Attribute name cannot be blank")
         return value.strip()
 
+    @field_validator("display_type")
+    @classmethod
+    def display_type_matches_attribute_type(cls, value: str, info):
+        attribute_type = info.data.get("value_type")
+        allowed = {
+            "text": {"text", "dropdown", "button"},
+            "colour": {"dropdown", "button", "colour"},
+            "image": {"dropdown", "image"},
+        }
+        if attribute_type in allowed and value not in allowed[attribute_type]:
+            raise ValueError("Display type is not compatible with the selected attribute type")
+        return value
+
     @field_validator("options")
     @classmethod
     def options_for_select_types(cls, value: list[Any], info):
