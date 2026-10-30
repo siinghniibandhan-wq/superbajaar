@@ -100,9 +100,9 @@ The deploy continues only on `0` or `11`. Never change this behaviour, the exit 
 ## 8. Live checks the owner can run (read-only)
 
 ```
-sudo -u postgres psql -c "\\l"                                  # which database names exist
+sudo -u postgres psql -c "\l"                                  # which database names exist
 sudo -u postgres psql sb_app -c "SELECT filename, applied_at FROM schema_migrations ORDER BY applied_at DESC LIMIT 15;"
-sudo -u postgres psql sb_app -c "\\d customer_accounts"         # replace with the table in question
+sudo -u postgres psql sb_app -c "\d customer_accounts"         # replace with the table in question
 bash backend/scripts/apply_schema.sh backend/schema --status   # state of every file
 tail -n 100 /home/ec2-user/deploy/schema.log
 ls -lh /home/ec2-user/schema-backups/ | tail
