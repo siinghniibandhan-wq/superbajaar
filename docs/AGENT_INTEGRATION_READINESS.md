@@ -15,8 +15,9 @@ Track which AI agents can actually participate in the Superbajaar delivery workf
 |---|---|---|
 | GitHub repository | Connected to the current ChatGPT GitHub integration with admin-level repository permissions | Repository metadata for `siinghniibandhan-wq/superbajaar` returned admin/maintain/push permissions |
 | Orchestration PR | PR #177 is open, mergeable and not merged | Feature branch `docs/tool-utilisation-policy-2026-10`; owner review/merge required |
-| GitHub CI | Current PR head passed backend tests, both frontend builds and issue-form validation | Run 41119502009 |
-| PostgreSQL migration CI | PostgreSQL 15 and 16 schema-file checks passed against disposable CI databases | Run 41119502344; no production DB was touched |
+| Manual pilot tracking | Issue #178 tracks the existing Lovable read-only compatibility audit | Existing Lovable task is already running; issue records its message ID and read-only scope |
+| GitHub CI | Latest verified PR head passed backend tests, both frontend builds and issue-form/governance workflow validation | Run 41120122844 |
+| PostgreSQL migration CI | PostgreSQL 15 and 16 schema-file checks passed against disposable CI databases | Run 41120122917; no production DB was touched |
 | Task-governance workflow | Present on PR branch; not active on default branch until owner merges | `.github/workflows/agent-task-governance.yml` |
 | Issue form | Present on PR branch; not active on default branch until owner merges | `.github/ISSUE_TEMPLATE/agent-work-task.yml` |
 
