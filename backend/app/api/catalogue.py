@@ -246,6 +246,9 @@ def _validate_required_variant_attributes(definitions: list[dict[str, Any]], val
 
 
 def _validate_attribute_value(conn, attribute: dict[str, Any], value: Any) -> None:
+    from datetime import date
+    from math import isfinite
+
     kind = attribute["value_type"]
     options = attribute["options"] or []
     valid = True
@@ -256,11 +259,17 @@ def _validate_attribute_value(conn, attribute: dict[str, Any], value: Any) -> No
     elif kind == "text":
         valid = isinstance(value, str)
     elif kind == "number":
-        valid = isinstance(value, (int, float)) and not isinstance(value, bool)
+        valid = isinstance(value, (int, float)) and not isinstance(value, bool) and isfinite(value)
     elif kind == "boolean":
         valid = isinstance(value, bool)
     elif kind == "date":
-        valid = isinstance(value, str) and len(value) == 10 and value[4:5] == "-" and value[7:8] == "-"
+        if isinstance(value, str):
+            try:
+                valid = date.fromisoformat(value).isoformat() == value
+            except ValueError:
+                valid = False
+        else:
+            valid = False
     if not valid:
         raise HTTPException(status_code=422, detail=f"Invalid value for attribute '{attribute['name']}'")
 
