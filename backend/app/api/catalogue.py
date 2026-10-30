@@ -604,6 +604,8 @@ def update_attribute(attribute_id: int, payload: AttributeUpdate):
     changes = payload.model_dump(exclude_unset=True)
     if not changes:
         raise HTTPException(status_code=422, detail="Provide at least one attribute field to update")
+    if any(value is None for value in changes.values()):
+        raise HTTPException(status_code=422, detail="Attribute fields cannot be null")
     try:
         with _connection() as conn:
             current = conn.execute(
@@ -641,11 +643,9 @@ def update_attribute(attribute_id: int, payload: AttributeUpdate):
                 raise HTTPException(status_code=422, detail="Attribute options must be non-empty and unique ignoring case")
             if in_use and next_type != current["value_type"]:
                 raise HTTPException(status_code=409, detail="Attribute type cannot change while products or variants use this attribute")
-            if in_use and current["value_type"] in option_types and set(normalized) - set(str(v).strip().casefold() for v in (current["options"] or [])):
-                # Adding options is safe; removing or rewriting existing values is not.
-                removed = set(str(v).strip().casefold() for v in (current["options"] or [])) - set(normalized)
-                if removed:
-                    raise HTTPException(status_code=409, detail="Existing shared values cannot be removed while products or variants use this attribute")
+            removed = set(str(v).strip().casefold() for v in (current["options"] or [])) - set(normalized)
+            if in_use and removed:
+                raise HTTPException(status_code=409, detail="Existing shared values cannot be removed while products or variants use this attribute")
             if in_use and current["is_variant_attribute"] and not next_variant and has_variant_values:
                 raise HTTPException(status_code=409, detail="This attribute is used by existing variants and cannot be disabled as a variant attribute")
             row = conn.execute(
