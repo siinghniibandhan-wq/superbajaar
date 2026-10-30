@@ -160,3 +160,13 @@ def order_reservation_locations(conn, order_id: int):
 
 def order_has_reservation(conn, order_id: int) -> bool:
     return bool(_outstanding_order_reservations(conn, order_id))
+
+
+def order_fulfilment_started(conn, order_id: int) -> bool:
+    """Whether any quantity has already been consumed for this order."""
+    row = conn.execute(
+        "SELECT EXISTS (SELECT 1 FROM inventory_movements "
+        "WHERE movement_type='sale' AND reference_type=%s AND reference_id=%s) AS started",
+        (ORDER_FULFILMENT_REF, str(order_id)),
+    ).fetchone()
+    return bool(row["started"])
