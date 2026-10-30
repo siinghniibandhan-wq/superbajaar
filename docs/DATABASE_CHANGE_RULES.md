@@ -131,3 +131,81 @@ Before merge, the owner must enable GitHub main-branch protection requiring both
 ## 11. Definition of done
 
 A database change is done only when: the schema file passed twice on scratch Postgres 15 and 16, the CI check is green, the owner merged it, the runner log shows it applied, `--status` shows it as APPLIED, and the feature works on the live site. Anything else is "not done".
+
+
+---
+
+## 12. Database design principles
+
+These principles complement the operational rules above and define the intended quality of database changes.
+
+- Do not perform destructive schema resets during application startup.
+- Do not use `DROP DATABASE`, `DROP SCHEMA`, `DROP TABLE` or `TRUNCATE` as part of routine deployment.
+- Schema evolution must use a versioned migration with a clear forward path and documented backup/recovery approach.
+- Seed data must be idempotent and must never contain real customer, payment or credential data.
+- Store monetary amounts using fixed-precision decimals or integer minor units; use explicit currency and tax treatment, and preserve audit timestamps.
+- Orders, payment attempts, refunds, stock movements and accounting journals need stable identifiers and idempotency protections.
+- Use environment configuration for database connections. Never print credentials in logs.
+- Local and test databases must be explicitly configured and must never silently fall back to production.
+- This handbook describes rules; it does not itself inspect, connect to, migrate, clear or modify any database.
+
+## 13. GitHub merge protection and production release preflight
+
+This section combines the database release gates with the migration rules above. It does not authorize automatic production deployment.
+
+### A. GitHub merge protection (owner action)
+
+1. Open **Settings → Rules → Rulesets** (or **Settings → Branches → Branch protection rules**, depending on repository configuration).
+2. Create or edit the rule targeting `main`.
+3. Require a pull request before merging.
+4. Require both PostgreSQL matrix checks produced by the `Database files check` workflow: `database-files (15)` and `database-files (16)`. If GitHub displays different exact labels, select the two jobs corresponding to PostgreSQL 15 and 16.
+5. Require branches to be up to date before merging.
+6. Save and verify the rule is active for `main`.
+
+Both matrix checks are required because migrations must pass on both supported PostgreSQL versions. Branch freshness ensures PRs are tested against the latest `main`. Only repository rules enforce these requirements; documentation cannot enable them.
+
+### B. Production preflight (owner-only, read-only)
+
+Run these checks on the production server from the intended release checkout. Do not paste passwords, connection strings, `.env` contents or secret values into a PR or chat. Do not run a migration during preflight.
+
+Confirm the checkout and runtime targets:
+
+```bash
+pwd
+git status --short
+git branch --show-current
+git rev-parse HEAD
+
+sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d sb_app -Atc \
+  "SELECT current_database(), current_setting('server_version'), current_setting('port');"
+```
+
+Expected database: `sb_app`; expected PostgreSQL major version: 15; backend port: `8001`; PostgreSQL port: `5432`. If any target differs, stop and investigate.
+
+Check the live migration ledger and runner status:
+
+```bash
+sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d sb_app -c \
+  "SELECT filename, sha256, applied_at FROM schema_migrations ORDER BY applied_at;"
+bash backend/scripts/apply_schema.sh backend/schema --status
+echo "runner_status_exit=$?"
+```
+
+The status command is read-only. A non-zero result, changed checksum, pending required file, missing ledger or unexpected ledger shape means **stop**. Compare every applied file with its live ledger checksum and investigate ledger entries whose files are absent from the checkout. Never bypass a baseline guard by inserting a ledger row manually.
+
+Confirm backup storage:
+
+```bash
+ls -ld /home/ec2-user/schema-backups
+ls -lh /home/ec2-user/schema-backups/ | tail -n 10
+```
+
+Before an actual migration, the runner must create and validate a fresh custom-format backup itself. If backup creation or `pg_restore --list` validation fails, it must stop before applying schema files. An old backup is not a substitute for a fresh pre-change backup.
+
+Record only non-secret facts in the PR: production database name, PostgreSQL major version, current commit, runner status and exit code, whether required files/checksums match, and whether backup storage is available. Mark any incomplete check **NOT VERIFIED** and stop.
+
+### C. What CI does and does not prove
+
+CI runs the schema set twice on disposable PostgreSQL 15 and 16 services and runs migration-runner tests against throw-away databases. Tests include refusal to apply an unrecorded baseline over a populated database and least-privilege permission handling. CI also checks protected legacy filenames and migration-number collisions.
+
+CI does **not** connect to production, inspect the live migration ledger, validate production data, create a production backup or enable GitHub branch protection. Those remain explicit owner responsibilities.
