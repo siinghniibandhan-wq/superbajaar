@@ -158,3 +158,72 @@ def test_product_delete_rejects_blank_or_short_reason():
             assert False, "Expected a validation error"
         except ValidationError:
             pass
+
+
+def test_public_variant_projection_excludes_internal_cost_and_barcode(monkeypatch):
+    from starlette.requests import Request
+    from app.api import catalogue
+
+    captured = {}
+
+    class Cursor:
+        def fetchall(self):
+            return []
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params):
+            captured["query"] = query
+            captured["params"] = params
+            return Cursor()
+
+    monkeypatch.setattr(catalogue, "_connection", lambda: Connection())
+    request = Request({"type": "http", "method": "GET", "path": "/api/catalogue/variants", "headers": []})
+    request.state.public_catalogue = True
+
+    catalogue.list_all_variants(request, limit=200, offset=0, channel="pos")
+
+    query = captured["query"].lower()
+    assert "cost_price" not in query
+    assert "barcode" not in query
+    assert "p.is_website_available = true" in query
+    assert "p.is_pos_available = true" not in query
+
+
+def test_staff_pos_variant_projection_keeps_internal_fields_and_filters_pos_availability(monkeypatch):
+    from starlette.requests import Request
+    from app.api import catalogue
+
+    captured = {}
+
+    class Cursor:
+        def fetchall(self):
+            return []
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params):
+            captured["query"] = query
+            captured["params"] = params
+            return Cursor()
+
+    monkeypatch.setattr(catalogue, "_connection", lambda: Connection())
+    request = Request({"type": "http", "method": "GET", "path": "/api/catalogue/variants", "headers": []})
+
+    catalogue.list_all_variants(request, limit=200, offset=0, channel="pos")
+
+    query = captured["query"].lower()
+    assert "v.cost_price" in query
+    assert "v.barcode" in query
+    assert "p.is_pos_available = true" in query
+    assert "p.is_website_available = true" not in query
