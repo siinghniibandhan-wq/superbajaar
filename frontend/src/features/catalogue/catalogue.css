@@ -106,3 +106,32 @@
 .sb-colour-editor.is-compact{padding:9px}
 .sb-colour-editor.is-compact .sb-colour-name-area{min-width:150px}
 .sb-option-chip .sb-colour-swatch{width:15px;height:15px;flex-basis:15px}
+
+/* Product and per-variant image management */
+.sb-product-media-manager{display:grid;gap:14px}
+.sb-media-gallery-list{display:grid;gap:14px}
+.sb-media-gallery-card{min-width:0;padding:14px;border:1px solid #e8e0f1;border-radius:14px;background:#fff}
+.sb-media-gallery-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+.sb-media-gallery-heading>div{display:grid;gap:4px;min-width:0}
+.sb-media-gallery-heading strong{color:#38245b;font-size:13px;overflow-wrap:anywhere;text-transform:capitalize}
+.sb-media-gallery-heading small,.sb-media-current>small{color:#81758f;font-size:11px;overflow-wrap:anywhere}
+.sb-media-primary-pill{flex:0 0 auto;padding:4px 9px;border-radius:999px;background:#eee7fb;color:#5527a0;font-size:10px;font-weight:800}
+.sb-media-gallery-body{display:grid;grid-template-columns:minmax(130px,190px) minmax(0,1fr);gap:16px;align-items:start}
+.sb-media-current{display:grid;gap:7px;min-width:0}
+.sb-media-current>img,.sb-media-placeholder{width:100%;aspect-ratio:1/1;object-fit:contain;border:1px solid #eee8f4;border-radius:12px;background:#faf8fc}
+.sb-media-placeholder{display:grid;place-content:center;justify-items:center;gap:5px;color:#9a8da8}
+.sb-media-placeholder span{font-size:28px;line-height:1}
+.sb-media-placeholder small{font-size:11px}
+.sb-media-upload-form{display:grid;gap:10px;min-width:0}
+.sb-media-upload-form label{display:grid;gap:5px;color:#514563;font-size:12px;font-weight:700}
+.sb-media-upload-form input{box-sizing:border-box;width:100%;min-width:0;max-width:100%;padding:9px;border:1px solid #e5dcec;border-radius:9px;background:#fff;color:#382f43;font:inherit;font-weight:500}
+.sb-media-upload-form input[type=file]{font-size:11px}
+.sb-media-file-name{color:#6d5787;font-size:11px;overflow-wrap:anywhere}
+.sb-media-upload-form .sb-primary{justify-self:start}
+.sb-media-existing-list{display:grid;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid #f0eaf5}
+.sb-media-existing-list>small{color:#827890;font-size:11px;font-weight:700}
+.sb-media-existing-item{display:flex;align-items:center;gap:9px;min-width:0}
+.sb-media-existing-item img{width:42px;height:42px;flex:0 0 42px;object-fit:cover;border:1px solid #eee8f4;border-radius:8px}
+.sb-media-existing-item span{flex:1;min-width:0;color:#61566d;font-size:11px;overflow-wrap:anywhere}
+.sb-media-existing-item button{flex:0 0 auto}
+@media(max-width:560px){.sb-media-gallery-body{grid-template-columns:minmax(0,1fr)}.sb-media-current{grid-template-columns:100px minmax(0,1fr);align-items:center}.sb-media-current>img,.sb-media-placeholder{width:100px}.sb-media-gallery-card{padding:11px}}
