@@ -39,6 +39,17 @@
 > - Customer and staff authentication use separate current-generation tables and session tables. The code and baseline/migration objects align statically; the stale 006/007 migration comments are documentation drift noted above.
 > - These are preliminary findings from a partial backend review. Frontend-to-API mapping, role/permission coverage, all remaining backend modules, tests, and pending PR branches still need review. No test suite or production endpoint was executed in this static audit.
 
+
+> **Frontend/module audit — initial scope confirmation (IN PROGRESS):**
+> - The admin router exposes 15 workspaces: Dashboard, Catalogue, Pricing, Orders, Payments, Inventory, Purchasing, Delivery, POS, Customers/CRM, Loyalty, Accounting/Tax, HR/Payroll, Reports and Settings. The module launcher and router distinguish these entry points, but a workspace being visible does not mean its full business workflow is implemented.
+> - Accounting currently reads orders, payment records and catalogue tax-rate fields. Its own screen says it does not post journals, calculate GST liability, reconcile bank statements or file returns. It is an operational summary, not an accounting ledger/tax engine.
+> - HR currently reads and updates staff application accounts/roles through `/auth/users`. Its own screen says employee records, attendance, salary structures, payslips and payroll are not enabled.
+> - Pricing currently edits variant selling price, MRP and cost price. Promotion rules are explicitly not enabled.
+> - Reports and Dashboard are snapshots assembled from a small set of existing APIs, not a separate reporting/analytics model. Dashboard/Reports cap requests at 500 records and should not be treated as complete all-time reporting without pagination/aggregation.
+> - POS currently creates an order and then a pending payment record as two separate API operations. The UI explicitly warns that it did not charge a gateway or confirm cash. If the second call fails, the order remains created and the UI asks the operator not to retry blindly. Pending PR #158 adds a stock-location/reservation workflow; it is not part of main until merged.
+> - Purchasing frontend mirrors the implemented supplier/PO/receipt API only. Delivery frontend consumes shipment/order/location APIs. Inventory frontend consumes balances, movements, adjustments, issues, counts and transfers. Full end-to-end cross-module verification remains pending.
+> - These observations come from source inspection only. No browser interaction, live API calls, test execution or deployment verification occurred in this review.
+
 > **Audit sequence agreed:** (1) finish the schema requirements/dependency audit, (2) audit all application modules and integrations against those requirements, (3) consolidate and prioritise findings in this register, and only then (4) prepare schema-change recommendations/change requests for Database Owner approval. No schema changes are being made at this stage.
 >
 > **Next required checks:** Complete table/column/constraint/index and application dependency mapping, then run the full application audit. After that, have the Database Owner run the read-only production checks in `docs/RELEASE_GATES.md` (database/version, full ledger and checksums, runner `--status` exit code, and backup storage). Record unavailable checks as NOT VERIFIED. No SQL, schema files, required-schema list, production database, merge, or deployment changed in this review.
