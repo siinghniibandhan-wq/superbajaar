@@ -188,6 +188,48 @@ Every completion report must state:
 
 No contributor may report a check as passed unless it actually ran. A suggestion, generated test, screenshot or code review is not proof of a passing test.
 
+### 6.1 Continuous work and parallel execution (no idle-by-default rule)
+
+The coordinator must keep the project moving while an agent, tool, CI run or external service is processing a task. Waiting for one result is not a reason for the rest of the team to sit idle.
+
+**Operating rules**
+
+1. Maintain a prioritised work queue with these states: READY, IN PROGRESS, BLOCKED, IN REVIEW and DONE. Every active item has an owner, objective, expected output and next handoff.
+2. Break large work into small, independently verifiable work packages. Identify dependencies before assigning them.
+3. Start all genuinely independent READY work in parallel, subject to tool availability, quota, access permissions and a sensible limit on concurrent work.
+4. While one agent investigates or implements, assign other agents work that does not depend on its unfinished result. Examples include a separate module audit, API-contract review, test inventory, security review, documentation audit, UI review or verification of an unrelated completed change.
+5. Do not assign speculative implementation that depends on facts still being investigated. Such work remains BLOCKED until the required evidence is recorded.
+6. Avoid overlapping write scopes. Each coding task must have a defined branch and allowed file/path scope. Two agents must not edit the same file or shared migration sequence concurrently unless the coordinator has explicitly divided and coordinated the change.
+7. Prefer parallel read-only audits, research and test design when write conflicts are possible. Consolidate their findings into one evidence-based implementation brief.
+8. When a task becomes BLOCKED, record the exact blocker, what is needed to unblock it, who can provide it and the next review point. Immediately move to another READY task.
+9. When a result arrives, the coordinator reviews it, updates the queue and assigns the next dependent task promptly. Do not leave completed work waiting without a reviewer or next owner.
+10. Keep CI, builds and long-running checks asynchronous where possible. While they run, continue with independent documentation, test review, risk analysis or other module work; do not claim results until the run finishes.
+11. The coordinator continuously checks for available independent work and reprioritises around critical-path dependencies. Priority order is: production/security/data risks; blockers on the critical path; high-impact user-facing defects; remaining module work; cleanup and documentation.
+12. Parallelism is not a target by itself. If no safe independent task is READY, explain the dependency and wait for the specific required input rather than inventing work.
+
+**Example: investigation running in parallel**
+
+| Workstream | Owner/tool role | Can proceed while the investigation runs? | Output |
+|---|---|---|---|
+| Root-cause investigation | Primary coding/review agent | Yes — this is the lead task | Evidence, affected paths and root cause |
+| API contract audit | API specialist | Yes, if it can inspect independently | Endpoint/schema discrepancies |
+| Test inventory | QA/Playwright or CI owner | Yes | Existing coverage and missing test cases |
+| Security review | Security reviewer | Yes, read-only and scoped | Risks and recommended controls |
+| Documentation/acceptance review | Coordinator or documentation agent | Yes | Updated acceptance criteria and handoff brief |
+| Fix dependent on confirmed root cause | Assigned implementation agent | No, until evidence is available | Scoped fix on its own branch |
+| Regression verification | QA/CI owner | After a candidate change exists | Actual test/build results |
+
+**Daily execution loop**
+
+- Plan: rank work, split it into independent packages and identify dependencies.
+- Dispatch: assign available agents and tools with explicit scopes and acceptance criteria.
+- Execute: keep independent work moving while long-running tasks are underway.
+- Integrate: collect findings in GitHub, reconcile contradictions and unblock dependent work.
+- Verify: run the relevant tests and checks; record exact evidence.
+- Handoff: send completed work to the next owner and immediately refill the READY queue.
+
+The coordinator must never imply that an agent is working in the background unless a task was actually assigned through a supported tool or workflow. If no asynchronous agent execution is available, the coordinator should continue with other work it can genuinely perform and clearly state what remains dependent on an external agent or user action.
+
 ## 7. Project safeguards
 
 All tools and agents must follow AGENTS.md, docs/DEVELOPMENT_WORKFLOW.md, docs/AI_TEAM_COLLABORATION.md, docs/DATABASE_CHANGE_RULES.md and CLAUDE.md where applicable.
