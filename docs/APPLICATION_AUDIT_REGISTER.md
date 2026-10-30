@@ -25,6 +25,32 @@
 ---
 
 
+
+# Audit progress dashboard
+
+**Last updated:** 30 October 2026  
+**Overall audit:** IN PROGRESS — no business module has a full end-to-end audit sign-off yet.
+
+| Work item | Status | What is actually complete / remaining |
+|---|---|---|
+| Audit register created in GitHub | <badge>DONE</badge> | Central tracking document committed on this branch |
+| Functional capability inventory structure | <badge>DONE</badge> | Capability checklists drafted for all listed modules; implementation verification is still pending |
+| Audit classification method | <badge>DONE</badge> | Separate tracking for fixes possible without schema and requirements needing schema |
+| Existing-schema-first rule | <badge>DONE</badge> | Reuse existing structures; trace UI -> API -> backend -> schema before proposing additions |
+| Inventory initial code/schema reconnaissance | <badge color="warning">PARTIAL</badge> | Existing tables and basic receive/count/adjustment paths identified; full screen-by-screen and live-schema verification remain |
+| Inventory schema-gap discovery | <badge color="warning">PARTIAL</badge> | Initial batch/expiry, GRN, batch allocation and returns/quarantine requirements documented; these remain candidates pending full trace and owner review |
+| Inventory order reservation / fulfilment code | <badge color="warning">IMPLEMENTED — NOT INTEGRATED</badge> | PR #158 is draft; CI checks were reported green; not merged or deployed |
+| Delivery partial-dispatch UI | <badge color="warning">IMPLEMENTED — NOT INTEGRATED</badge> | PR #159 is draft; frontend builds were reported green; depends on PR #158; not merged or deployed |
+| Catalog audit | <badge color="secondary">NOT STARTED</badge> | Next module to trace in detail |
+| Purchasing audit | <badge color="secondary">NOT STARTED</badge> | Capability checklist exists; no full implementation trace yet |
+| Accounting audit | <badge color="secondary">NOT STARTED</badge> | Capability checklist exists; no full implementation trace yet |
+| Remaining module audits | <badge color="secondary">NOT STARTED</badge> | Capability checklists exist; implementation traces remain |
+| Consolidated migration plan | <badge color="secondary">PENDING</badge> | Prepare only after module audits, deduplication and Database Owner review |
+| Production schema changes / deployment | <badge color="secondary">NOT STARTED</badge> | No production DB changes, merges or deployments performed by this audit |
+
+**Status discipline:** DONE means the specific documentation or task is complete. IMPLEMENTED — NOT INTEGRATED means code is in a draft PR but not merged/deployed. PARTIAL means only the stated discovery has been completed. NOT STARTED / PENDING must not be presented as completed work.
+
+
 # Functional capability inventory
 
 This is a separate deliverable from the defect/schema register. It answers: **What is each module supposed to let a user do?** For every capability, the audit will trace the visible screen/action, frontend handler, API/backend implementation, permissions, and persistence. A capability is not marked available merely because a menu item or button exists.
@@ -231,7 +257,7 @@ The function inventory describes intended/observed capability scope; it is not a
 
 ## 1. Catalog
 
-**Status:** Not yet audited in this register. This is the first module to trace.
+**Audit status:** NOT STARTED. Capability scope is documented below; no Catalog function has yet been verified end-to-end. This is the first module to trace.
 
 ### Schema-independent fixes
 | ID | Issue / affected path | Evidence | Planned fix | Verification | Status |
@@ -245,7 +271,7 @@ The function inventory describes intended/observed capability scope; it is not a
 
 ## 2. Inventory and order fulfilment
 
-**Status:** Initial code/schema investigation recorded; full screen-by-screen audit remains open.
+**Audit status:** PARTIAL — initial code/schema reconnaissance completed; full screen-by-screen function audit and live-schema verification remain open.
 
 ### Existing structures to reuse
 - `stock_locations` (warehouse/store/dark_store, PIN and active state)
@@ -280,7 +306,7 @@ These are repository findings, not confirmation of the live production schema. V
 
 ## 3. Purchasing / Procurement
 
-**Status:** Not yet audited. Trace request -> approval -> vendor quotation -> PO -> dispatch -> GRN -> quality check -> vendor invoice/bill -> approval -> payment.
+**Audit status:** NOT STARTED. Capability checklist drafted; request -> approval -> quotation -> PO -> dispatch -> GRN -> quality -> invoice/bill -> approval -> payment flow still needs tracing.
 
 ### Schema-independent fixes
 | ID | Issue / affected path | Evidence | Planned fix | Verification | Status |
@@ -294,7 +320,7 @@ These are repository findings, not confirmation of the live production schema. V
 
 ## 4. Accounting
 
-**Status:** Not yet audited. Trace accounts, journals, ledger, invoices, bills, payments, tax/GST and reconciliation screens and their links to Purchasing, Orders and Payments.
+**Audit status:** NOT STARTED. Capability checklist drafted; accounts, journals, ledger, invoices, bills, payments, tax/GST and reconciliation flows still need tracing.
 
 ### Schema-independent fixes
 | ID | Issue / affected path | Evidence | Planned fix | Verification | Status |
