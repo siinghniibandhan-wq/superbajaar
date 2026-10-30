@@ -52,3 +52,32 @@ def test_delivery_history_rejects_non_integer_shipment_id():
 def test_delivery_history_rejects_invalid_limit():
     response = client.get("/api/delivery/shipments/1/history?limit=0")
     assert response.status_code == 422
+
+ 
+
+def test_location_ranking_prefers_highest_available_stock():
+    from app.api.delivery import _rank_locations_by_available_stock
+
+    locations = [
+        {"id": 7, "available_stock": 12},
+        {"id": 3, "available_stock": 28},
+        {"id": 5, "available_stock": 28},
+    ]
+
+    ranked = _rank_locations_by_available_stock(locations)
+
+    assert [location["id"] for location in ranked] == [3, 5, 7]
+
+
+def test_location_ranking_does_not_mutate_database_rows():
+    from app.api.delivery import _rank_locations_by_available_stock
+
+    locations = [
+        {"id": 2, "available_stock": 4},
+        {"id": 1, "available_stock": 9},
+    ]
+
+    ranked = _rank_locations_by_available_stock(locations)
+
+    assert ranked[0]["id"] == 1
+    assert [location["id"] for location in locations] == [2, 1]
