@@ -70,3 +70,21 @@ def test_order_history_rejects_non_integer_order_id():
 def test_order_history_rejects_invalid_limit():
     response = client.get("/api/orders/1/history?limit=0")
     assert response.status_code == 422
+
+
+
+def test_pos_order_requires_staff_selected_location_before_database_access():
+    response = client.post("/api/orders", json={
+        "channel": "pos", "customer_name": "Walk-in customer",
+        "lines": [{"variant_id": 1, "quantity": 1}],
+    })
+    assert response.status_code == 422
+    assert "staff-selected stock location" in response.json()["detail"]
+
+
+def test_pos_order_rejects_invalid_location_id_before_database_access():
+    response = client.post("/api/orders", json={
+        "channel": "pos", "customer_name": "Walk-in customer", "location_id": 0,
+        "lines": [{"variant_id": 1, "quantity": 1}],
+    })
+    assert response.status_code == 422
