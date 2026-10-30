@@ -2,6 +2,8 @@
 
 > **Purpose:** A shared operating agreement for the human owner and the AI tools assisting this repository. GitHub issues, branches, commits, pull requests and Actions are the durable project record. Separate AI chat sessions do not share memory or communicate directly; the owner or coordinator carries handoffs through these shared artifacts.
 
+> **Orchestration architecture:** For queue states, task packets, dependency graphs, dispatch rules, parallel execution, provider adapters and rollout stages, follow [AI Agent Orchestration Architecture](AGENT_ORCHESTRATION_ARCHITECTURE.md).
+
 ## 1. Principles
 
 1. **One team, distinct strengths.** Contributors are collaborators, not a command hierarchy. Every reviewer may challenge an assumption with evidence; disagreement is resolved through the owner, documented decisions and reproducible tests.
@@ -29,7 +31,7 @@
 
 - Use two focused work windows per day when practical, separated by approximately 3–4 hours. This is a planning preference, not an automatic schedule or promise of background execution.
 - Each Claude/Copilot implementation batch should normally touch no more than 2–3 related files. If the task genuinely needs more, split it into reviewable batches or explain why the scope cannot be split.
-- Batch 2 starts only after Batch 1 has been reviewed, its handoff is complete and no unresolved conflict remains.
+- A dependent batch starts only after its prerequisites have been reviewed and accepted. Independent work packages may run in parallel when dependencies are clear and file/write scopes do not overlap.
 - Assign one implementation owner per file set. A second AI may review the resulting diff read-only; it must not independently edit the same files.
 - Perplexity starts with read-only discovery/audit. Gemini receives selected excerpts/diffs/screenshots for independent challenge.
 - Keep tasks independent where possible. If one task depends on another, record the dependency and wait for its accepted output.
@@ -109,3 +111,20 @@ Pause and ask the owner when instructions conflict, a task exceeds its file allo
 - **ChatGPT:** create the issue/task brief, coordinate ownership, compare findings, inspect integration evidence and prepare the final review for the owner.
 
 **Maintenance:** Review this policy when contributor roles, actual account capabilities, repository access or project governance changes. Keep account entitlements explicitly marked verified or unverified.
+
+
+## 10. Continuous execution and parallel work
+
+The team follows the task lifecycle and dispatch contract in [AI Agent Orchestration Architecture](AGENT_ORCHESTRATION_ARCHITECTURE.md). GitHub Issues are the pilot task queue; every work package has one accountable owner, explicit dependencies, an allowed-path list, acceptance criteria and a next handoff.
+
+- Do not leave the rest of the team idle while one agent investigates, implements or waits for CI. Dispatch other READY work that is genuinely independent.
+- Parallelise read-only audits, API contract review, test inventory, security review and documentation review where their scopes do not conflict.
+- Do not start dependent implementation from unverified assumptions. Record dependencies and start it when the required evidence is accepted.
+- Limit concurrent agent executions to the initial architecture proposal of three until the owner reviews pilot evidence and approves a change.
+- One writer per file set. Different agents use separate branches; no shared-branch concurrent writes.
+- When a task blocks, record the exact blocker and immediately select another safe READY task.
+- Mark IN PROGRESS only after execution is actually accepted/started. An assignment alone is not proof of background work.
+- Use the repository issue form at `.github/ISSUE_TEMPLATE/agent-work-task.yml` for scoped work packages.
+- The coordinator must not claim asynchronous execution, agent acceptance, test results or provider access unless confirmed by the relevant tool or workflow.
+
+The first rollout is manual dispatch and GitHub-based handoffs. GitHub Actions validation comes next; external agent adapters are integrated one at a time only after provider capability, mobile operation, quota, permissions and failure handling are verified.
