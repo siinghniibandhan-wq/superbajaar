@@ -51,7 +51,7 @@ Super Bajaar is a commerce storefront and ERP platform. This README is the **fro
 | Database | PostgreSQL, database `sb_app`, port `5432` |
 | Public API prefix | `/api` |
 | Source control / CI | GitHub repository and GitHub Actions |
-| Primary development environment | GitHub Codespaces |
+| Mobile-first development workflow | GitHub + Codex/Jules/Copilot cloud-agent workflows; Codespaces optional when computer access is available |
 | API contract and interactive checks | FastAPI Swagger / OpenAPI |
 | Schema change mechanism | Versioned SQL + `apply_schema.sh` + `schema_required.txt` + migration ledger |
 | Backend operations | Existing systemd service/timer and approved AWS operations |
@@ -93,7 +93,7 @@ See [Architecture and API contracts](docs/architecture.md) for detailed diagrams
 | Tool / service | Why it exists | Primary use | Use it when |
 |---|---|---|---|
 | **GitHub** | Source of truth and controlled collaboration | Repository, branches, commits, PRs, reviews, Actions | Every code/document change and release review |
-| **GitHub Codespaces** | Reproducible development workspace | Inspect/edit code, run backend tests, frontend builds, linters and local diagnostics | Default place to investigate and implement code changes |
+| **GitHub Codespaces** | Optional computer-based development workspace | Inspect/edit code, run backend tests, frontend builds, linters and local diagnostics when available | Not required for the current mobile-first workflow |
 | **Swagger / OpenAPI** | Live API contract and interactive endpoint explorer | Inspect schemas, auth, parameters, responses and test requests | First stop for API/endpoint/request-response defects |
 | **ChatGPT** | Technical leadership and work coordination | Architecture reasoning, task planning, code review, debugging, documentation and evidence review | Plan and coordinate work; never treat an unexecuted suggestion as a test result |
 | **Claude** | Designated database/schema implementation reviewer and default SQL/runner author under current governance | Scoped SQL, migration runner and schema workflow work | Database-impacting changes, following `CLAUDE.md` and owner approval |
@@ -112,6 +112,8 @@ This is the documented core toolchain. A tool is not considered active merely be
 Detailed usage, diagnostic order and decision matrix: [Development, GitHub and operations workflow](docs/DEVELOPMENT_WORKFLOW.md).
 
 AI contributor roles, file ownership, 2–3-file work batches and cross-agent handoffs: [AI Team Collaboration & Delivery Policy](docs/AI_TEAM_COLLABORATION.md).
+
+Tool priorities, MUST KEEP primary tools, KEEP fallbacks, free-quota switching and mobile-first operating rules: [Free-First Tool Utilisation & Role Assignment Policy](docs/TOOL_UTILISATION_POLICY.md).
 
 ---
 
