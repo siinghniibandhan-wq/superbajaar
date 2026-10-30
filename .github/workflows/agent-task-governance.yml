@@ -54,12 +54,15 @@ jobs:
               { name: 'agent:review', color: 'FBCA04', description: 'Deliverable is awaiting independent review' },
               { name: 'agent:done', color: '5319E7', description: 'Acceptance criteria and required evidence are complete' }
             ];
+            const providerLabels = [
+              { name: 'jules', color: '6F42C1', description: 'Dispatch to Google Jules only after its GitHub App is connected and repository access is verified' }
+            ];
             const { data: repositoryLabels } = await github.rest.issues.listLabelsForRepo({
               ...context.repo,
               per_page: 100
             });
             const existingRepositoryLabels = new Set(repositoryLabels.map(label => label.name));
-            for (const label of statusLabels) {
+            for (const label of [...statusLabels, ...providerLabels]) {
               if (existingRepositoryLabels.has(label.name)) continue;
               try {
                 await github.rest.issues.createLabel({
