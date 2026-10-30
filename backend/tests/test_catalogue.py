@@ -34,11 +34,27 @@ def test_blank_category_name_rejected_before_database_access():
     assert response.status_code == 422
 
 
-def test_attribute_requires_options_for_select():
-    response = client.post("/api/catalogue/attributes", json={
-        "name": "Size", "code": "size", "value_type": "size", "is_variant_attribute": True,
-    })
+def test_attribute_rejects_legacy_number_type():
+    response = client.post("/api/catalogue/attributes", json={"name": "Weight", "code": "weight", "value_type": "number"})
     assert response.status_code == 422
+
+
+def test_attribute_accepts_three_value_types_and_display_type():
+    from app.api.catalogue import AttributeCreate
+    for value_type in ("text", "colour", "image"):
+        payload = AttributeCreate(name="Example", code="example", value_type=value_type, display_type="button", options=["one"] if value_type in {"colour", "image"} else [])
+        assert payload.value_type == value_type
+        assert payload.display_type == "button"
+
+
+def test_attribute_rejects_invalid_display_type():
+    from pydantic import ValidationError
+    from app.api.catalogue import AttributeCreate
+    try:
+        AttributeCreate(name="Size", code="size", value_type="text", display_type="radio")
+        assert False, "Expected a validation error"
+    except ValidationError:
+        pass
 
 
 def test_variant_requires_nonnegative_price_and_valid_mrp():
