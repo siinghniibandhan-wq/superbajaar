@@ -195,3 +195,203 @@ Successful CI checks prove the tested code and schema passed on disposable Postg
 - [Pull request checklist](.github/pull_request_template.md)
 - [Migration check workflow](.github/workflows/migration-check.yml)
 - [AI coding-agent instructions](AGENTS.md) and [Claude instructions](CLAUDE.md)
+
+
+## System architecture and end-to-end workflows
+
+This section describes the architecture visible in the repository and the intended business journeys. A diagram is a guide to the flow; it does not certify that every screen, API operation, integration, or production deployment is complete.
+
+### 1. Application and infrastructure architecture
+
+```mermaid
+flowchart TB
+    subgraph Client["Customer and team devices"]
+        C["Customer browser / mobile browser"]
+        A["Admin and employee browser"]
+    end
+
+    subgraph Frontend["Frontend — AWS Amplify"]
+        SF["React + Vite storefront"]
+        AC["React admin console / workspaces"]
+        API["Shared API client<br/>frontend/src/services/api.js"]
+    end
+
+    subgraph Backend["Backend — AWS EC2"]
+        N["HTTPS / Nginx reverse proxy"]
+        G["Gunicorn process"]
+        F["FastAPI application<br/>backend/app/main.py"]
+        M["CORS + active-session authentication"]
+        R["API routers<br/>catalogue · inventory · orders · payments<br/>delivery · customers · purchasing · loyalty · auth"]
+    end
+
+    subgraph Data["Persistent data"]
+        PG[("PostgreSQL<br/>sb_app · port 5432")]
+        LEDGER["schema_migrations ledger"]
+    end
+
+    C --> SF
+    A --> AC
+    SF --> API
+    AC --> API
+    API -->|"HTTPS /api/*"| N
+    N -->|"127.0.0.1:8001"| G
+    G --> F
+    F --> M
+    M --> R
+    R --> PG
+    PG --- LEDGER
+```
+
+**Request path**
+
+1. The browser loads the React application from AWS Amplify.
+2. Storefront or admin components call the shared API client in `frontend/src/services/api.js`.
+3. The API client builds the configured backend URL, adds the `/api` prefix and attaches the relevant bearer token when available.
+4. HTTPS traffic reaches the existing Nginx reverse proxy on the EC2 host.
+5. Nginx forwards backend traffic to the existing Gunicorn/FastAPI service on `127.0.0.1:8001`.
+6. FastAPI applies middleware, active-session checks and route-level validation/permissions.
+7. The route performs the business operation and reads/writes PostgreSQL on port `5432`.
+8. FastAPI returns a response; the frontend renders the result or an error.
+
+**Important boundaries**
+
+- AWS Amplify serves the frontend; it is not the authoritative business-logic or database layer.
+- FastAPI is the single authoritative API/backend.
+- PostgreSQL is the persistent source of truth. Browser storage may hold temporary UI state such as a cart or token; it is not authoritative for prices, tax, stock, permissions or order totals.
+- The existing systemd service/timer and deployment synchronisation are operational/deployment mechanisms, not part of each customer's HTTP request path.
+- Keep the existing AWS, Nginx, Gunicorn, port and database arrangement unchanged unless an approved and verified change requires otherwise.
+
+### 2. Customer workflow — website storefront
+
+```mermaid
+flowchart TD
+    S["Open Super Bajaar storefront"] --> B["Browse categories / search products"]
+    B --> P["Open product and select variant"]
+    P --> W["Optional: wishlist / customer sign-in"]
+    P --> C["Add item to cart"]
+    W --> C
+    C --> PIN["Enter or confirm delivery PIN"]
+    PIN --> CHECK["Proceed to website checkout"]
+    CHECK --> SERVER["Backend validates request and calculates price from active variant"]
+    SERVER --> ORDER["Create website order"]
+    ORDER --> STATUS["Order appears in operational order workflow"]
+    STATUS --> PAY["Payment record / payment status workflow"]
+    PAY --> DELIVERY["Shipment and delivery status workflow"]
+    DELIVERY --> END["Customer checks order / delivery updates"]
+```
+
+**Customer journey details**
+
+1. Customer opens the public storefront and loads active catalogue categories, products and variants.
+2. Customer browses/searches, opens a product, selects an available variant and adds it to the cart. Wishlist and recently viewed items are storefront conveniences.
+3. Customer can sign in/register where the customer-account flow is available and provide delivery/contact details.
+4. Customer checks delivery serviceability using the PIN-code flow shown in the storefront.
+5. Website checkout submits an order request. The backend must validate the request and calculate authoritative prices from active variants; never trust browser-submitted totals.
+6. The order is created with the website channel and enters the operational order process.
+7. Payment and delivery records/statuses are handled through their respective workflows.
+
+**Current limitations — do not imply these are already solved**
+
+- Website checkout is documented for `channel=website`; the backend calculates prices from active variants.
+- Stock reservation/deduction at order placement is not implemented. An accepted order does not prove that inventory has been reserved.
+- Payment gateway confirmation and refunds are not integrated. New payment records remain pending; captured/refunded states must not be manually asserted.
+- Delivery updates depend on the available shipment/status operations; do not promise live carrier tracking unless an integration is implemented and verified.
+- API liveness does not guarantee database readiness or successful end-to-end checkout.
+
+### 3. Admin workflow — owner and administrator
+
+```mermaid
+flowchart TD
+    LOGIN["Admin opens /admin"] --> AUTH["Sign in"]
+    AUTH --> ROLE{"Role is owner or admin?"}
+    ROLE -->|No| DENY["Admin Console access denied by current frontend gate"]
+    ROLE -->|Yes| DASH["Dashboard / module launcher"]
+    DASH --> CAT["Catalogue: categories, products, attributes, variants, images"]
+    DASH --> PRICE["Pricing and promotions workspace"]
+    DASH --> BUY["Purchasing: suppliers, purchase orders, receive goods"]
+    DASH --> INV["Inventory: locations, balances, movements, adjustments"]
+    DASH --> ORD["Orders: review, process, update status"]
+    DASH --> PAY["Payments: review records and permitted status operations"]
+    DASH --> DEL["Delivery: shipments and status updates"]
+    DASH --> CUST["Customers, support cases and loyalty"]
+    DASH --> OTHER["POS, accounting, HR, reports and settings"]
+    CAT --> DB[("FastAPI APIs + PostgreSQL")]
+    PRICE --> DB
+    BUY --> DB
+    INV --> DB
+    ORD --> DB
+    PAY --> DB
+    DEL --> DB
+    CUST --> DB
+    OTHER --> DB
+```
+
+**Admin operating sequence**
+
+1. Owner/admin signs in and passes the current frontend role gate.
+2. Dashboard provides entry points to separate business workspaces.
+3. Admin maintains catalogue data: categories, products, attributes, variants and product images.
+4. Admin configures pricing/promotions where the relevant functionality is implemented.
+5. Purchasing users maintain suppliers and purchase orders, then record receipt through the available receiving operation.
+6. Inventory users review locations, balances and movements; adjustments must follow the permission and audit rules.
+7. Order operators review orders and use allowed status transitions.
+8. Payment and delivery operators manage the records and status operations actually supported by the APIs.
+9. Customer/support and loyalty work is handled in their respective modules.
+10. Reports, accounting, POS, HR/payroll and settings are separate workspaces; a visible workspace is not proof that its complete business process is implemented.
+
+**Admin safety rules**
+
+- Use the relevant workspace and API; do not bypass backend permissions by relying on frontend visibility.
+- Backend-calculated values and database records are authoritative.
+- Financial/payment status, stock adjustments, user roles and destructive data operations require the appropriate permission and audit trail.
+- Do not treat a purchase order as received stock until a valid receiving/GRN operation has completed.
+
+### 4. Employee workflow — manager, staff and viewer
+
+The API role policy is documented in `docs/api-contracts.md`. Employee permissions are role-limited; an employee must not receive owner/admin access merely to complete routine work.
+
+```mermaid
+flowchart TD
+    E["Employee signs in"] --> R{"Assigned role"}
+    R --> M["Manager"]
+    R --> S["Staff"]
+    R --> V["Viewer"]
+    M --> MT["Operational work within manager permissions"]
+    S --> ST["Limited order, delivery and support-case tasks"]
+    V --> VT["Read-only access"]
+    MT --> API["FastAPI validates active session and permission"]
+    ST --> API
+    VT --> API
+    API --> DB[("PostgreSQL")]
+    API --> RESULT["Return permitted result or reject operation"]
+```
+
+**Role boundaries**
+
+| Role | Intended workflow / access |
+|---|---|
+| Owner / Admin | Full administration. Only owners may grant owner/admin roles, as defined by the API role policy. |
+| Manager | Operational writes in inventory, orders, payments, delivery, customers and purchasing. No user administration or catalogue/settings writes. |
+| Staff | Limited order, delivery and support-case operations. Cannot change prices, make inventory adjustments, alter payment states or administer users. |
+| Viewer | Read-only access to permitted information. |
+
+**Important current UI limitation:** `frontend/src/app/router.jsx` currently allows entry to the Admin Console only for `owner` and `admin`. The API role policy describes manager, staff and viewer permissions, but the current frontend does not yet provide those roles the same Admin Console entry. Do not assume the employee workspace experience is complete until role-specific UI navigation and end-to-end permissions are implemented and tested.
+
+### 5. Business workflow boundaries and implementation status
+
+The repository contains separate workspaces for Commerce, Operations and other business functions. Their presence in the navigation is not proof that all steps in a full ERP lifecycle are implemented.
+
+| Business area | Current documented/API-backed scope | Do not assume |
+|---|---|---|
+| Catalogue | Categories, products, attributes, variants and images routes | Every catalogue UI action is complete without end-to-end verification |
+| Inventory | Locations, balances, movements and adjustments | Automatic reservation/deduction during checkout |
+| Purchasing | Suppliers, purchase orders and receiving operation | A complete RFQ → quotation comparison → approval → PO → GRN → vendor bill → payment chain |
+| Orders | Create/list/read/summary and status update routes | Every fulfilment automation or stock allocation exists |
+| Payments | Payment records and status operation | Live gateway capture, settlement or refund integration |
+| Delivery | Shipment records and status updates | Carrier integration or live tracking |
+| Customers/support | Customer records and support-case operations | Every CRM automation |
+| Loyalty | Loyalty routes and storefront integration points | All reward accounting/redemption scenarios without tests |
+| POS, accounting, HR/payroll, reports, settings | Separate frontend workspaces are present | Complete operational APIs and end-to-end workflows unless verified |
+
+When a workflow is implemented or materially changed, update this table and the relevant diagram in the same pull request. Mark a feature complete only after checking the UI → API → backend permission/business rule → PostgreSQL → response path.
+
