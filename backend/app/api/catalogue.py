@@ -345,6 +345,52 @@ def update_category(category_id: int, payload: CategoryUpdate):
         raise _db_error(exc) from exc
 
 
+@router.post("/categories/{category_id}/archive")
+def archive_category(category_id: int):
+    """Archive an unused leaf category without changing product/category assignments."""
+    try:
+        with _connection() as conn:
+            current = conn.execute(
+                "SELECT id FROM categories WHERE id=%s AND is_active=TRUE FOR UPDATE",
+                (category_id,),
+            ).fetchone()
+            if current is None:
+                raise HTTPException(status_code=404, detail="Active category not found")
+            has_active_children = conn.execute(
+                "SELECT id FROM categories WHERE parent_id=%s AND is_active=TRUE LIMIT 1",
+                (category_id,),
+            ).fetchone()
+            if has_active_children:
+                raise HTTPException(
+                    status_code=409,
+                    detail="This category has active subcategories. Archive or reassign them first.",
+                )
+            has_products = conn.execute(
+                "SELECT 1 FROM products p WHERE p.category_id=%s "
+                "OR EXISTS (SELECT 1 FROM product_category_assignments pc "
+                "WHERE pc.product_id=p.id AND pc.category_id=%s) LIMIT 1",
+                (category_id, category_id),
+            ).fetchone()
+            if has_products:
+                raise HTTPException(
+                    status_code=409,
+                    detail="This category is assigned to products. Reassign those products before archiving.",
+                )
+            row = conn.execute(
+                "UPDATE categories SET is_active=FALSE, updated_at=now() "
+                "WHERE id=%s AND is_active=TRUE "
+                "RETURNING id, parent_id, name, slug, is_active, updated_at",
+                (category_id,),
+            ).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Active category not found")
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
 @router.get("/products")
 def list_products(
     request: Request,
