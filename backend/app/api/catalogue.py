@@ -110,10 +110,26 @@ class AttributeCreate(BaseModel):
         value_type = info.data.get("value_type")
         if value_type in {"colour", "image"} and not value:
             raise ValueError("Colour and image attributes require at least one value")
-        if any(not isinstance(option, (str, int, float, bool)) for option in value):
-            raise ValueError("Attribute options must be simple scalar values")
-        if len({str(option) for option in value}) != len(value):
-            raise ValueError("Attribute options must be unique")
+        normalized_names = []
+        normalized_hexes = []
+        for option in value:
+            if value_type == "colour" and isinstance(option, dict):
+                name = str(option.get("name", "")).strip()
+                hex_value = str(option.get("hex", "")).strip().upper()
+                if not name or not __import__("re").fullmatch(r"#[0-9A-F]{6}", hex_value):
+                    raise ValueError("Colour options require a name and a valid HEX code")
+                normalized_names.append(name.casefold())
+                normalized_hexes.append(hex_value)
+            elif isinstance(option, (str, int, float, bool)):
+                normalized_names.append(str(option).strip().casefold())
+                normalized_hexes.append(None)
+            else:
+                raise ValueError("Only Colour options may contain name and HEX details")
+        if any(not item for item in normalized_names) or len(set(normalized_names)) != len(normalized_names):
+            raise ValueError("Attribute values must be unique within this attribute")
+        hexes = [item for item in normalized_hexes if item]
+        if len(set(hexes)) != len(hexes):
+            raise ValueError("This colour HEX already exists in this attribute")
         return value
 
 
@@ -271,11 +287,16 @@ def _validate_attribute_value(conn, attribute: dict[str, Any], value: Any) -> No
     kind = attribute["value_type"]
     options = attribute["options"] or []
     valid = True
-    if kind in {"select", "colour", "size"}:
+    if kind == "colour":
+        valid = isinstance(value, str) and any(
+            (str(option.get("name", "")).strip() if isinstance(option, dict) else str(option).strip()) == value
+            for option in options
+        )
+    elif kind in {"select", "size"}:
         valid = value in options
     elif kind == "multi_select":
         valid = isinstance(value, list) and all(item in options for item in value) and len(value) == len(set(map(str, value)))
-    elif kind in {"colour", "image"}:
+    elif kind == "image":
         valid = isinstance(value, str) and value in options
     elif kind == "text":
         valid = isinstance(value, str)
@@ -570,20 +591,39 @@ class AttributeOptionsUpdate(BaseModel):
     options: list[Any] = Field(min_length=1, max_length=200)
 
 
-def _merge_attribute_options(existing: list[Any], incoming: list[Any]) -> list[Any]:
-    """Append new shared options without duplicates or whitespace-only values."""
+def _merge_attribute_options(existing: list[Any], incoming: list[Any], value_type: str = "text") -> list[Any]:
+    """Append options, rejecting duplicates within this attribute with an actionable message."""
     combined = list(existing or [])
-    seen = {str(item).strip().casefold() for item in combined}
+    names = set()
+    hexes = set()
+    for item in combined:
+        if value_type == "colour" and isinstance(item, dict):
+            names.add(str(item.get("name", "")).strip().casefold())
+            hexes.add(str(item.get("hex", "")).strip().upper())
+        else:
+            names.add(str(item).strip().casefold())
     for option in incoming:
+        if value_type == "colour" and isinstance(option, dict):
+            name = str(option.get("name", "")).strip()
+            hex_value = str(option.get("hex", "")).strip().upper()
+            if not name or not __import__("re").fullmatch(r"#[0-9A-F]{6}", hex_value):
+                raise HTTPException(status_code=422, detail="Colour options require a name and a valid HEX code")
+            key = name.casefold()
+            if key in names:
+                raise HTTPException(status_code=409, detail=f'"{name}" already exists in this attribute. Choose a different colour name.')
+            if hex_value in hexes:
+                raise HTTPException(status_code=409, detail=f"This colour ({hex_value}) already exists in this attribute. Choose a different colour.")
+            names.add(key); hexes.add(hex_value); combined.append({"name": name, "hex": hex_value})
+            continue
         if not isinstance(option, (str, int, float, bool)):
-            raise HTTPException(status_code=422, detail="Attribute options must be simple scalar values")
+            raise HTTPException(status_code=422, detail="Only Colour options may contain name and HEX details")
         normalized = option.strip() if isinstance(option, str) else option
         if isinstance(normalized, str) and not normalized:
             continue
         key = str(normalized).strip().casefold()
-        if key not in seen:
-            combined.append(normalized)
-            seen.add(key)
+        if key in names:
+            raise HTTPException(status_code=409, detail=f'"{normalized}" already exists in this attribute. Choose a different value.')
+        names.add(key); combined.append(normalized)
     if not combined:
         raise HTTPException(status_code=422, detail="At least one non-empty option is required")
     return combined
@@ -602,7 +642,7 @@ def update_attribute_options(attribute_id: int, payload: AttributeOptionsUpdate)
                 raise HTTPException(status_code=404, detail="Active attribute not found")
             if row["value_type"] not in {"text", "colour", "image", "select", "multi_select", "size"}:
                 raise HTTPException(status_code=422, detail="This attribute type does not support options")
-            combined = _merge_attribute_options(row["options"] or [], payload.options)
+            combined = _merge_attribute_options(row["options"] or [], payload.options, row["value_type"])
             updated = conn.execute(
                 "UPDATE product_attributes SET options=%s::jsonb WHERE id=%s "
                 "RETURNING id,name,code,value_type,options,is_active",
@@ -651,14 +691,21 @@ def update_attribute(attribute_id: int, payload: AttributeUpdate):
                 raise HTTPException(status_code=422, detail="Colour display type requires Colour attribute type")
             if next_display_type == "image" and next_type != "image":
                 raise HTTPException(status_code=422, detail="Image display type requires Image attribute type")
-            if any(not isinstance(option, (str, int, float, bool)) for option in next_options):
-                raise HTTPException(status_code=422, detail="Attribute options must be simple scalar values")
-            normalized = [str(option).strip().casefold() for option in next_options]
-            if any(not value for value in normalized) or len(set(normalized)) != len(normalized):
-                raise HTTPException(status_code=422, detail="Attribute options must be non-empty and unique ignoring case")
+            if next_type == "colour":
+                checked = _merge_attribute_options([], next_options, "colour")
+                if len(checked) != len(next_options):
+                    raise HTTPException(status_code=422, detail="Colour options must be non-empty")
+            else:
+                if any(not isinstance(option, (str, int, float, bool)) for option in next_options):
+                    raise HTTPException(status_code=422, detail="Attribute options must be simple scalar values")
+                normalized = [str(option).strip().casefold() for option in next_options]
+                if any(not value for value in normalized) or len(set(normalized)) != len(normalized):
+                    raise HTTPException(status_code=409, detail="Duplicate value: each value must be unique within this attribute.")
             if in_use and next_type != current["value_type"]:
                 raise HTTPException(status_code=409, detail="Attribute type cannot change while products or variants use this attribute")
-            removed = set(str(v).strip().casefold() for v in (current["options"] or [])) - set(normalized)
+            def option_identity(option):
+                return str(option.get("name", "") if isinstance(option, dict) else option).strip().casefold()
+            removed = {option_identity(v) for v in (current["options"] or [])} - {option_identity(v) for v in next_options}
             if in_use and removed:
                 raise HTTPException(status_code=409, detail="Existing shared values cannot be removed while products or variants use this attribute")
             if in_use and current["is_variant_attribute"] and not next_variant and has_variant_values:
@@ -713,7 +760,11 @@ def remove_attribute_option(attribute_id: int, payload: AttributeOptionRemove):
             if row is None or not row["is_active"]:
                 raise HTTPException(status_code=404, detail="Active attribute not found")
             options = list(row["options"] or [])
-            index = next((i for i, option in enumerate(options) if type(option) is type(payload.value) and option == payload.value), None)
+            index = next((i for i, option in enumerate(options) if option == payload.value or (
+                isinstance(option, dict) and isinstance(payload.value, dict)
+                and str(option.get("name", "")).casefold() == str(payload.value.get("name", "")).casefold()
+                and str(option.get("hex", "")).upper() == str(payload.value.get("hex", "")).upper()
+            )), None)
             if index is None:
                 raise HTTPException(status_code=404, detail="Shared attribute value not found")
             if len(options) == 1:

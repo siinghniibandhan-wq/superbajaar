@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { apiRequest } from "../../services/api.js";
 import CatalogueModal from "./CatalogueModal.jsx";
+import ColourOptionEditor from "./ColourOptionEditor.jsx";
+import { colourOptionLabel, normalizeColourOption } from "./colourOptions.js";
 
 const initialAttribute = { name: "", code: "", value_type: "text", display_type: "dropdown", is_variant_attribute: true, is_required: true, options: "" };
 const initialVariant = { sku: "", barcode: "", attributes: "{}", selling_price: "", mrp: "", cost_price: "" };
@@ -51,11 +53,13 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
   const [defaultCost, setDefaultCost] = useState("");
   const [generatedRows, setGeneratedRows] = useState([]);
   const [optionDrafts, setOptionDrafts] = useState({});
+  const [colourOptions, setColourOptions] = useState([]);
 
   function closeAttributeForm() {
     if (busy) return;
     if (JSON.stringify(attribute) !== JSON.stringify(initialAttribute) && !window.confirm("Discard unsaved attribute changes?")) return;
     setAttribute(initialAttribute);
+    setColourOptions([]);
     setEditingAttributeId(null);
     setError("");
     setShowAttributeForm(false);
@@ -75,8 +79,9 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
       display_type: definition.display_type || (definition.value_type === "colour" ? "colour" : "dropdown"),
       is_variant_attribute: definition.is_variant_attribute,
       is_required: definition.is_required,
-      options: (definition.options || []).join(", "),
+      options: definition.value_type === "colour" ? "" : (definition.options || []).map(value => String(value)).join(", "),
     });
+    setColourOptions(definition.value_type === "colour" ? (definition.options || []) : []);
     setShowAttributeForm(true);
   }
 
@@ -92,7 +97,8 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
   }
 
   async function removeAttributeOption(definition, value) {
-    if (!window.confirm('Remove shared value "' + value + '" from ' + definition.name + '?')) return;
+    const displayValue = definition.value_type === "colour" ? colourOptionLabel(value) : String(value);
+    if (!window.confirm('Remove shared value "' + displayValue + '" from ' + definition.name + '?')) return;
     setBusy(true); setError(""); setNotice("");
     try {
       await apiRequest("/catalogue/attributes/" + definition.id + "/options", {
@@ -100,7 +106,7 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
         body: JSON.stringify({ value }),
       });
       await loadDefinitions();
-      setNotice('Shared value "' + value + '" removed.');
+      setNotice('Shared value "' + displayValue + '" removed.');
     } catch (e) { setError(e.message || "Unable to remove shared value."); }
     finally { setBusy(false); }
   }
@@ -165,14 +171,14 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
   async function createAttribute(event) {
     event.preventDefault(); setBusy(true); setError(""); setNotice("");
     try {
-      const options = attribute.options.split(",").map(x => x.trim()).filter(Boolean);
+      const options = attribute.value_type === "colour" ? colourOptions : attribute.options.split(",").map(x => x.trim()).filter(Boolean);
       if (attribute.is_variant_attribute && !options.length) throw new Error("Enter at least one value for a variant attribute.");
       const payload = { ...attribute, name: attribute.name.trim(), options };
       await apiRequest(editingAttributeId ? "/catalogue/attributes/" + editingAttributeId : "/catalogue/attributes", {
         method: editingAttributeId ? "PUT" : "POST",
         body: JSON.stringify(payload),
       });
-      setAttribute(initialAttribute); setEditingAttributeId(null); setShowAttributeForm(false);
+      setAttribute(initialAttribute); setColourOptions([]); setEditingAttributeId(null); setShowAttributeForm(false);
       setNotice(editingAttributeId ? "Attribute definition updated." : "Attribute definition saved."); await loadDefinitions();
     } catch (e) { setError(e.message || "Unable to save attribute."); }
     finally { setBusy(false); }
@@ -223,7 +229,16 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
           <label>Code (immutable)<input required pattern="[a-z][a-z0-9_]*" value={attribute.code} readOnly aria-readonly="true"/><small className="sb-muted">The code is fixed to protect saved variant data.</small></label>
           <label>Attribute type<select value={attribute.value_type} onChange={e=>setAttribute(v=>({...v,value_type:e.target.value,display_type:e.target.value === "colour" ? "colour" : e.target.value === "image" ? "image" : "dropdown"}))}>{["text","colour","image"].map(x=><option key={x} value={x}>{x === "colour" ? "Colour" : x === "image" ? "Image" : "Text"}</option>)}</select></label>
           <label>Display type<select value={attribute.display_type} onChange={e=>setAttribute(v=>({...v,display_type:e.target.value}))}>{(attribute.value_type === "text" ? ["text","dropdown","button"] : attribute.value_type === "colour" ? ["dropdown","button","colour"] : ["dropdown","image"]).map(x=><option key={x} value={x}>{x.charAt(0).toUpperCase()+x.slice(1)}</option>)}</select><small className="sb-muted">Controls how customers select or view this attribute on the storefront.</small></label>
-          <label className="sb-form-grid-wide">Options / values (comma-separated)<input required={attribute.is_variant_attribute} value={attribute.options} placeholder={attribute.value_type === "colour" ? "Black, White, Blue" : attribute.value_type === "image" ? "Image URLs or value keys" : "S, M, L"} onChange={e=>setAttribute(v=>({...v,options:e.target.value}))}/></label>
+          {attribute.value_type === "colour" ? <div className="sb-form-grid-wide">
+            <strong>Colour values</strong>
+            <ColourOptionEditor existingOptions={colourOptions} disabled={busy} onAdd={async option => {
+              setColourOptions(old => [...old, option]);
+            }} />
+            {!!colourOptions.length && <div className="sb-option-chips">{colourOptions.map((value,index) => {
+              const colour = normalizeColourOption(value);
+              return <span className="sb-option-chip" key={colour.name + index}><i className="sb-colour-swatch" style={{backgroundColor:colour.hex || "#999"}} />{colour.name} {colour.hex}<button type="button" className="sb-row-action" disabled={busy} onClick={()=>setColourOptions(old=>old.filter((_,i)=>i!==index))}>×</button></span>;
+            })}</div>}
+          </div> : <label className="sb-form-grid-wide">Options / values (comma-separated)<input required={attribute.is_variant_attribute} value={attribute.options} placeholder={attribute.value_type === "image" ? "Image URLs or value keys" : "S, M, L"} onChange={e=>setAttribute(v=>({...v,options:e.target.value}))}/></label>}
         </div>
         <label className="sb-check"><input type="checkbox" checked={attribute.is_variant_attribute} onChange={e=>setAttribute(v=>({...v,is_variant_attribute:e.target.checked}))}/> Used to define variant combinations</label>
         <label className="sb-check"><input type="checkbox" checked={attribute.is_required} onChange={e=>setAttribute(v=>({...v,is_required:e.target.checked}))}/> Required attribute</label>
@@ -235,23 +250,17 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
         <div className="sb-strip-icon" aria-hidden="true">Aa</div>
         <div className="sb-strip-main">
           <strong>{definition.name}</strong>
-          <small>{definition.code} · {definition.value_type} · Display: {definition.display_type || "dropdown"}{definition.options?.length ? " · " + definition.options.join(", ") : ""}</small>
+          <small>{definition.code} · {definition.value_type} · Display: {definition.display_type || "dropdown"}{definition.options?.length ? " · " + definition.options.map(value => definition.value_type === "colour" ? colourOptionLabel(value) : String(value)).join(", ") : ""}</small>
           {OPTION_TYPES.includes(definition.value_type) && <>
-            <div className="sb-add-option">
-              <input
-                aria-label={"New shared " + definition.name + " value"}
-                value={optionDrafts[definition.id] || ""}
-                placeholder={"Add a shared " + definition.name.toLowerCase() + " value"}
-                onChange={e => setOptionDrafts(old => ({ ...old, [definition.id]: e.target.value }))}
-              />
-              <button type="button" className="sb-secondary" disabled={busy || !(optionDrafts[definition.id] || "").trim()} onClick={() => addAttributeOption(definition)}>
-                Add value
-              </button>
-            </div>
+            {definition.value_type === "colour" ? <ColourOptionEditor existingOptions={definition.options || []} disabled={busy} compact onAdd={option => apiRequest("/catalogue/attributes/" + definition.id + "/options", { method: "PUT", body: JSON.stringify({ options: [option] }) }).then(async () => { await loadDefinitions(); setNotice('"' + option.name + '" added to ' + definition.name + '.'); })} /> : <div className="sb-add-option">
+              <input aria-label={"New shared " + definition.name + " value"} value={optionDrafts[definition.id] || ""} placeholder={"Add a shared " + definition.name.toLowerCase() + " value"} onChange={e => setOptionDrafts(old => ({ ...old, [definition.id]: e.target.value }))} />
+              <button type="button" className="sb-secondary" disabled={busy || !(optionDrafts[definition.id] || "").trim()} onClick={() => addAttributeOption(definition)}>Add value</button>
+            </div>}
             {!!definition.options?.length && <div className="sb-option-chips" aria-label={definition.name + " shared values"}>
               {definition.options.map((value, index) => <span className="sb-option-chip" key={String(value) + index}>
-                {String(value)}
-                <button type="button" className="sb-row-action" disabled={busy} aria-label={"Remove " + value} onClick={() => removeAttributeOption(definition, value)}>×</button>
+                {definition.value_type === "colour" && <i className="sb-colour-swatch" style={{backgroundColor:normalizeColourOption(value).hex || "#999"}} />}
+                {definition.value_type === "colour" ? colourOptionLabel(value) + (normalizeColourOption(value).hex ? " · " + normalizeColourOption(value).hex : "") : String(value)}
+                <button type="button" className="sb-row-action" disabled={busy} aria-label={"Remove " + colourOptionLabel(value)} onClick={() => removeAttributeOption(definition, value)}>×</button>
               </span>)}
             </div>}
           </>}
@@ -272,7 +281,7 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
       {productId && !selectableAttributes.length && <p className="sb-empty">No option-based variant attributes yet. Add a Colour, Size or Select attribute above first.</p>}
       {productId && selectableAttributes.map(def => <div className="sb-attribute-picker" key={def.id}>
         <strong>{def.name}</strong><small className="sb-muted">{def.code} · select every value this product offers</small>
-        <div className="sb-option-chips">{(def.options || []).map(value => <label className="sb-option-chip" key={String(value)}><input type="checkbox" checked={(selectedValues[def.code] || []).includes(value)} onChange={() => toggleAttributeValue(def, value)} />{String(value)}</label>)}</div>
+        <div className="sb-option-chips">{(def.options || []).map(value => { const optionValue = def.value_type === "colour" ? colourOptionLabel(value) : value; return <label className="sb-option-chip" key={String(optionValue)}>{def.value_type === "colour" && <i className="sb-colour-swatch" style={{backgroundColor:normalizeColourOption(value).hex || "#999"}} />}<input type="checkbox" checked={(selectedValues[def.code] || []).includes(optionValue)} onChange={() => toggleAttributeValue(def, optionValue)} />{String(optionValue)}</label>; })}</div>
       </div>)}
       <div className="sb-form-grid">
         <label>Default selling price (₹)<input type="number" min="0" step="0.01" value={defaultPrice} onChange={e=>setDefaultPrice(e.target.value)} placeholder="Can be edited per variant"/></label>
