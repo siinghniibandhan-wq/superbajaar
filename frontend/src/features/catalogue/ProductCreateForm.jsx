@@ -52,14 +52,27 @@ export default function ProductCreateForm({ categories = [], product = null, onS
       .then(result => {
         const values = {};
         for (const row of result.items || []) {
+          if (row.is_active === false) continue;
           for (const [code, raw] of Object.entries(row.attributes || {})) {
             const list = Array.isArray(raw) ? raw : [raw];
             values[code] = [...new Set([...(values[code] || []), ...list])];
           }
         }
-        setSelected(old => ({ ...values, ...old }));
+        setSelected(old => ({ ...old, ...values }));
       })
       .catch(e => setError(e.message || "Unable to load existing product variants."));
+    apiRequest("/catalogue/products/" + product.id + "/attributes")
+      .then(result => {
+        const values = {};
+        for (const item of result.items || []) {
+          if (item.value === null || item.value === undefined) continue;
+          values[item.code] = item.value_type === "multi_select"
+            ? (Array.isArray(item.value) ? item.value : [item.value])
+            : [item.value];
+        }
+        setSelected(old => ({ ...old, ...values }));
+      })
+      .catch(e => setError(e.message || "Unable to load saved product attributes."));
   }, [product?.id, definitions]);
   useEffect(() => {
     if (!product?.id) return;
@@ -77,8 +90,25 @@ export default function ProductCreateForm({ categories = [], product = null, onS
   function toggleValue(def, value) {
     setSelected(old => {
       const values = old[def.code] || [];
+      if (!def.is_variant_attribute && def.value_type !== "multi_select") {
+        return { ...old, [def.code]: values[0] === value ? [] : [value] };
+      }
       return { ...old, [def.code]: values.includes(value) ? values.filter(item => item !== value) : [...values, value] };
     });
+  }
+
+  function attributeInputValue(def) {
+    const value = (selected[def.code] || [])[0];
+    if (value === true) return "true";
+    if (value === false) return "false";
+    return value ?? "";
+  }
+
+  function updateScalarAttribute(def, raw) {
+    let value = raw;
+    if (def.value_type === "number" && raw !== "") value = Number(raw);
+    if (def.value_type === "boolean") value = raw === "true";
+    setSelected(old => ({ ...old, [def.code]: raw === "" ? [] : [value] }));
   }
 
   async function addOption(def) {
@@ -127,6 +157,19 @@ export default function ProductCreateForm({ categories = [], product = null, onS
           const missing = values.filter(value => !(def.options || []).some(option => String(option) === String(value)));
           if (missing.length) await apiRequest("/catalogue/attributes/" + def.id + "/options", { method: "PUT", body: JSON.stringify({ options: missing }) });
         }
+      }
+      for (const def of definitions.filter(item => !item.is_variant_attribute)) {
+        const values = selected[def.code] || [];
+        if (def.is_required && !values.length) {
+          setActiveTab("attributes");
+          throw new Error("Enter a value for required attribute: " + def.name + ".");
+        }
+        if (!values.length) continue;
+        const value = def.value_type === "multi_select" ? values : values[0];
+        await apiRequest("/catalogue/products/" + savedProduct.id + "/attributes/" + def.id, {
+          method: "PUT",
+          body: JSON.stringify({ value }),
+        });
       }
       const existingResult = product?.id ? await apiRequest("/catalogue/products/" + savedProduct.id + "/variants") : { items: [] };
       const normalize = attrs => JSON.stringify(Object.fromEntries(Object.entries(attrs || {}).sort(([a], [b]) => a.localeCompare(b))));
@@ -232,8 +275,12 @@ export default function ProductCreateForm({ categories = [], product = null, onS
           <h3>Attributes and variants</h3>
           {definitions.map(def => <div className="sb-attribute-picker" key={def.id}>
             <strong>{def.name}</strong><small className="sb-muted">{def.value_type}{def.is_variant_attribute ? " · Variant attribute" : ""}{def.is_required ? " · Required" : ""}</small>
-            {OPTION_TYPES.includes(def.value_type) ? <div className="sb-option-chips">{(def.options || []).map(value => <label className="sb-option-chip" key={String(value)}><input type="checkbox" checked={(selected[def.code] || []).includes(value)} onChange={() => toggleValue(def, value)} />{String(value)}</label>)}</div> :
-              <input value={(selected[def.code] || [])[0] || ""} placeholder={"Enter " + def.name.toLowerCase()} onChange={e => setSelected(old => ({ ...old, [def.code]: e.target.value ? [e.target.value] : [] }))} />}
+            {OPTION_TYPES.includes(def.value_type) ? <div className="sb-option-chips">{(def.options || []).map(value => {
+              const singleProductValue = !def.is_variant_attribute && def.value_type !== "multi_select";
+              return <label className="sb-option-chip" key={String(value)}><input type={singleProductValue ? "radio" : "checkbox"} name={singleProductValue ? "product-attribute-" + def.code : undefined} checked={(selected[def.code] || []).includes(value)} onChange={() => toggleValue(def, value)} />{String(value)}</label>;
+            })}</div> :
+              def.value_type === "boolean" ? <select value={attributeInputValue(def)} onChange={e => updateScalarAttribute(def, e.target.value)}><option value="">Choose</option><option value="true">Yes</option><option value="false">No</option></select> :
+              <input type={def.value_type === "number" ? "number" : def.value_type === "date" ? "date" : "text"} value={attributeInputValue(def)} placeholder={"Enter " + def.name.toLowerCase()} onChange={e => updateScalarAttribute(def, e.target.value)} />}
             {OPTION_TYPES.includes(def.value_type) && <div className="sb-add-option"><input aria-label={"New " + def.name + " option"} value={newOptions[def.code] || ""} placeholder={"Add new " + def.name.toLowerCase() + " option"} onChange={e => setNewOptions(old => ({ ...old, [def.code]: e.target.value }))} /><button type="button" className="sb-secondary" disabled={busy || !(newOptions[def.code] || "").trim()} onClick={() => addOption(def).catch(e => setError(e.message || "Unable to add option."))}>Add value</button></div>}
           </div>)}
           {!definitions.length && <p className="sb-empty">Create an attribute in the Attributes tab first, or continue with a product that has no variants.</p>}
