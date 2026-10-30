@@ -15,7 +15,7 @@ Track which AI agents can actually participate in the Superbajaar delivery workf
 |---|---|---|
 | GitHub repository | Connected to the current ChatGPT GitHub integration with admin-level repository permissions | Repository metadata for `siinghniibandhan-wq/superbajaar` returned admin/maintain/push permissions |
 | Orchestration PR | PR #177 is open, mergeable and not merged | Feature branch `docs/tool-utilisation-policy-2026-10`; owner review/merge required |
-| Manual pilot tracking | Issue #178 tracks the existing Lovable read-only compatibility audit | Existing Lovable task is already running; issue records its message ID and read-only scope |
+| Manual pilot tracking | Issue #178 tracks the existing Lovable read-only compatibility audit; issue #179 prepares the first Jules test-only pilot | Lovable audit is running; Jules task is READY TO CONNECT but must not be dispatched until the GitHub App is installed and repository access is verified |
 | GitHub CI | Latest verified PR head passed backend tests, both frontend builds and issue-form/governance workflow validation | Run 41120122844 |
 | PostgreSQL migration CI | PostgreSQL 15 and 16 schema-file checks passed against disposable CI databases | Run 41120122917; no production DB was touched |
 | Task-governance workflow | Present on PR branch; not active on default branch until owner merges | `.github/workflows/agent-task-governance.yml` |
@@ -48,7 +48,7 @@ Statuses mean:
 ## 4. Integration order
 
 1. **Merge and activate the GitHub foundation:** owner reviews/merges PR #177. Then create a test agent issue and verify that the issue workflow creates status labels, sets READY for a complete issue, and sets BLOCKED for an incomplete issue.
-2. **Complete the manual pilot:** use one issue with independent read-only work packages. Test the task packet, handoff report, dependency recording and one-writer-per-file rule. Do not require code changes in the first pilot.
+2. **Complete the manual pilot:** issue #178 tracks the running Lovable read-only compatibility audit. After PR #177 is merged, validate its status labels and handoff. Issue #179 is the first Jules test-only pilot; dispatch only after the owner connects the Jules GitHub App to this repository.
 3. **Accept or isolate Lovable:** review the running compatibility audit. If it cannot prove a safe canonical source workflow, retain it only for design concepts and screenshots; do not use it to edit or deploy the production application.
 4. **Select the first coding agent:** Codex remains the policy primary when its account entitlement and mobile/cloud execution are verified. For the first free asynchronous GitHub pilot, Jules is the preferred candidate because its official free plan supports 15 tasks per rolling 24 hours and three concurrent tasks, matching the initial concurrency ceiling. The user must connect the Jules GitHub App and select only this repository. Copilot cloud agent is not a free-tier fallback; GitHub documents it as a paid Copilot feature.
 5. **Run one bounded coding pilot:** one issue, one owner, one feature branch, explicit file allowlist, no schema or production impact, independent review, CI and owner merge.
