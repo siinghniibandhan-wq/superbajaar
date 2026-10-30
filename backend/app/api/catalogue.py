@@ -1,5 +1,7 @@
 """PostgreSQL-backed catalogue, attribute and variant API foundation."""
 from typing import Any
+from datetime import date
+import math
 
 import psycopg
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
@@ -235,6 +237,37 @@ def _generate_variant_sku(conn, product_id: int, attributes: dict[str, Any]) -> 
             return candidate
         version += 1
 
+def _has_attribute_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, list):
+        return len(value) > 0
+    return True
+
+
+def _validate_required_product_attribute(attribute: dict[str, Any], value: Any) -> None:
+    if attribute["is_required"] and not attribute["is_variant_attribute"] and not _has_attribute_value(value):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Required product attribute '{attribute['name']}' cannot be empty",
+        )
+
+
+def _validate_required_variant_attributes(definitions: list[dict[str, Any]], values: dict[str, Any]) -> None:
+    missing = sorted(
+        definition["code"]
+        for definition in definitions
+        if definition["is_required"] and not _has_attribute_value(values.get(definition["code"]))
+    )
+    if missing:
+        raise HTTPException(
+            status_code=422,
+            detail="Required variant attributes are missing or empty: " + ", ".join(missing),
+        )
+
+
 def _validate_attribute_value(conn, attribute: dict[str, Any], value: Any) -> None:
     kind = attribute["value_type"]
     options = attribute["options"] or []
@@ -246,11 +279,23 @@ def _validate_attribute_value(conn, attribute: dict[str, Any], value: Any) -> No
     elif kind == "text":
         valid = isinstance(value, str)
     elif kind == "number":
-        valid = isinstance(value, (int, float)) and not isinstance(value, bool)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            try:
+                valid = math.isfinite(float(value))
+            except (OverflowError, ValueError):
+                valid = False
+        else:
+            valid = False
     elif kind == "boolean":
         valid = isinstance(value, bool)
     elif kind == "date":
-        valid = isinstance(value, str) and len(value) == 10 and value[4:5] == "-" and value[7:8] == "-"
+        if isinstance(value, str) and len(value) == 10:
+            try:
+                valid = date.fromisoformat(value).isoformat() == value
+            except ValueError:
+                valid = False
+        else:
+            valid = False
     if not valid:
         raise HTTPException(status_code=422, detail=f"Invalid value for attribute '{attribute['name']}'")
 
@@ -311,6 +356,52 @@ def update_category(category_id: int, payload: CategoryUpdate):
                 "RETURNING id, parent_id, name, slug, description, is_active, created_at, updated_at",
                 (payload.parent_id, payload.name, payload.slug, payload.description, category_id),
             ).fetchone()
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.post("/categories/{category_id}/archive")
+def archive_category(category_id: int):
+    """Archive an unused leaf category without changing product/category assignments."""
+    try:
+        with _connection() as conn:
+            current = conn.execute(
+                "SELECT id FROM categories WHERE id=%s AND is_active=TRUE FOR UPDATE",
+                (category_id,),
+            ).fetchone()
+            if current is None:
+                raise HTTPException(status_code=404, detail="Active category not found")
+            has_active_children = conn.execute(
+                "SELECT id FROM categories WHERE parent_id=%s AND is_active=TRUE LIMIT 1",
+                (category_id,),
+            ).fetchone()
+            if has_active_children:
+                raise HTTPException(
+                    status_code=409,
+                    detail="This category has active subcategories. Archive or reassign them first.",
+                )
+            has_products = conn.execute(
+                "SELECT 1 FROM products p WHERE p.category_id=%s "
+                "OR EXISTS (SELECT 1 FROM product_category_assignments pc "
+                "WHERE pc.product_id=p.id AND pc.category_id=%s) LIMIT 1",
+                (category_id, category_id),
+            ).fetchone()
+            if has_products:
+                raise HTTPException(
+                    status_code=409,
+                    detail="This category is assigned to products. Reassign those products before archiving.",
+                )
+            row = conn.execute(
+                "UPDATE categories SET is_active=FALSE, updated_at=now() "
+                "WHERE id=%s AND is_active=TRUE "
+                "RETURNING id, parent_id, name, slug, is_active, updated_at",
+                (category_id,),
+            ).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Active category not found")
         return row
     except HTTPException:
         raise
@@ -539,7 +630,7 @@ class AttributeOptionsUpdate(BaseModel):
 def update_attribute_options(attribute_id: int, payload: AttributeOptionsUpdate):
     try:
         with _connection() as conn:
-            row = conn.execute("SELECT id, name, value_type, options, is_active FROM product_attributes WHERE id=%s", (attribute_id,)).fetchone()
+            row = conn.execute("SELECT id, name, value_type, options, is_active FROM product_attributes WHERE id=%s FOR UPDATE", (attribute_id,)).fetchone()
             if row is None or not row["is_active"]:
                 raise HTTPException(status_code=404, detail="Active attribute not found")
             if row["value_type"] not in {"select", "multi_select", "colour", "size"}:
@@ -575,11 +666,18 @@ def set_product_attribute_value(product_id: int, attribute_id: int, payload: Att
         with _connection() as conn:
             _require_product(conn, product_id)
             attribute = conn.execute(
-                "SELECT id, name, value_type, options, is_active FROM product_attributes WHERE id = %s",
+                "SELECT id, name, value_type, options, is_active, is_required, is_variant_attribute FROM product_attributes WHERE id = %s",
                 (attribute_id,),
             ).fetchone()
             if attribute is None or not attribute["is_active"]:
                 raise HTTPException(status_code=404, detail="Active attribute not found")
+            _validate_required_product_attribute(attribute, payload.value)
+            if payload.value is None:
+                conn.execute(
+                    "DELETE FROM product_attribute_values WHERE product_id=%s AND attribute_id=%s",
+                    (product_id, attribute_id),
+                )
+                return {"deleted": True, "product_id": product_id, "attribute_id": attribute_id}
             _validate_attribute_value(conn, attribute, payload.value)
             row = conn.execute(
                 "INSERT INTO product_attribute_values (product_id, attribute_id, value) VALUES (%s, %s, %s::jsonb) "
@@ -617,6 +715,7 @@ def create_variant(product_id: int, payload: VariantCreate):
             unknown = sorted(set(payload.attributes) - set(by_code))
             if unknown:
                 raise HTTPException(status_code=422, detail=f"Unknown or non-variant attributes: {', '.join(unknown)}")
+            _validate_required_variant_attributes(attributes, payload.attributes)
             for code, value in payload.attributes.items():
                 _validate_attribute_value(conn, by_code[code], value)
             duplicate = conn.execute(
@@ -689,13 +788,14 @@ def update_variant(variant_id: int, payload: VariantUpdate):
             if current is None:
                 raise HTTPException(status_code=404, detail="Active variant not found")
             definitions = conn.execute(
-                "SELECT code, name, value_type, options FROM product_attributes "
+                "SELECT code, name, value_type, options, is_required FROM product_attributes "
                 "WHERE is_active = TRUE AND is_variant_attribute = TRUE"
             ).fetchall()
             by_code = {row["code"]: row for row in definitions}
             unknown = sorted(set(payload.attributes) - set(by_code))
             if unknown:
                 raise HTTPException(status_code=422, detail=f"Unknown or non-variant attributes: {', '.join(unknown)}")
+            _validate_required_variant_attributes(definitions, payload.attributes)
             for code, value in payload.attributes.items():
                 _validate_attribute_value(conn, by_code[code], value)
             duplicate = conn.execute(
@@ -729,6 +829,32 @@ def update_variant(variant_id: int, payload: VariantUpdate):
 def archive_variant(variant_id: int):
     try:
         with _connection() as conn:
+            current = conn.execute(
+                "SELECT id, product_id FROM product_variants WHERE id=%s AND is_active=TRUE FOR UPDATE",
+                (variant_id,),
+            ).fetchone()
+            if current is None:
+                raise HTTPException(status_code=404, detail="Active variant not found or already archived")
+            has_live_stock = conn.execute(
+                "SELECT 1 FROM inventory_balances WHERE variant_id=%s AND (on_hand > 0 OR reserved > 0) LIMIT 1",
+                (variant_id,),
+            ).fetchone()
+            if has_live_stock:
+                raise HTTPException(
+                    status_code=409,
+                    detail="This variant has on-hand or reserved stock. Transfer or fulfil its stock before archiving.",
+                )
+            has_open_purchase = conn.execute(
+                "SELECT 1 FROM purchase_order_lines pol JOIN purchase_orders po ON po.id=pol.purchase_order_id "
+                "WHERE pol.variant_id=%s AND pol.quantity_received < pol.quantity_ordered "
+                "AND po.status IN ('draft','ordered','partially_received') LIMIT 1",
+                (variant_id,),
+            ).fetchone()
+            if has_open_purchase:
+                raise HTTPException(
+                    status_code=409,
+                    detail="This variant is referenced by an open purchase order. Close or reassign the outstanding purchase quantity before archiving.",
+                )
             row = conn.execute(
                 "UPDATE product_variants SET is_active=FALSE, updated_at=now() "
                 "WHERE id=%s AND is_active=TRUE "

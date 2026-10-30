@@ -158,3 +158,105 @@ def test_product_delete_rejects_blank_or_short_reason():
             assert False, "Expected a validation error"
         except ValidationError:
             pass
+
+
+def test_catalogue_date_attribute_rejects_impossible_calendar_dates():
+    from fastapi import HTTPException
+    from app.api.catalogue import _validate_attribute_value
+
+    attribute = {"name": "Expiry date", "value_type": "date", "options": []}
+    for value in ("2026-99-99", "2026-02-30", "2026/10/30"):
+        try:
+            _validate_attribute_value(None, attribute, value)
+            assert False, f"Expected invalid date to be rejected: {value}"
+        except HTTPException as exc:
+            assert exc.status_code == 422
+
+
+def test_catalogue_date_attribute_accepts_valid_iso_date():
+    from app.api.catalogue import _validate_attribute_value
+
+    _validate_attribute_value(None, {"name": "Launch date", "value_type": "date", "options": []}, "2026-10-30")
+
+
+def test_catalogue_number_attribute_rejects_non_finite_values():
+    from fastapi import HTTPException
+    from app.api.catalogue import _validate_attribute_value
+
+    attribute = {"name": "Weight", "value_type": "number", "options": []}
+    for value in (float("nan"), float("inf"), float("-inf")):
+        try:
+            _validate_attribute_value(None, attribute, value)
+            assert False, f"Expected non-finite number to be rejected: {value}"
+        except HTTPException as exc:
+            assert exc.status_code == 422
+
+
+def test_required_variant_attributes_are_enforced():
+    from fastapi import HTTPException
+    from app.api.catalogue import _validate_required_variant_attributes
+
+    definitions = [
+        {"code": "colour", "is_required": True},
+        {"code": "size", "is_required": True},
+        {"code": "material", "is_required": False},
+    ]
+    try:
+        _validate_required_variant_attributes(definitions, {"colour": "Black"})
+        assert False, "Expected missing required size to be rejected"
+    except HTTPException as exc:
+        assert exc.status_code == 422
+        assert "size" in exc.detail
+
+
+def test_required_variant_attributes_accept_complete_values():
+    from app.api.catalogue import _validate_required_variant_attributes
+
+    definitions = [
+        {"code": "colour", "is_required": True},
+        {"code": "size", "is_required": True},
+    ]
+    _validate_required_variant_attributes(definitions, {"colour": "Black", "size": "M"})
+
+
+
+def test_required_variant_attributes_reject_empty_values():
+    from fastapi import HTTPException
+    from app.api.catalogue import _validate_required_variant_attributes
+
+    definitions = [
+        {"code": "colour", "is_required": True},
+        {"code": "size", "is_required": True},
+    ]
+    for values in (
+        {"colour": "Black", "size": []},
+        {"colour": "Black", "size": ""},
+        {"colour": "Black", "size": "   "},
+    ):
+        try:
+            _validate_required_variant_attributes(definitions, values)
+            assert False, f"Expected empty required values to be rejected: {values}"
+        except HTTPException as exc:
+            assert exc.status_code == 422
+            assert "size" in exc.detail
+
+
+def test_required_product_attribute_rejects_empty_values():
+    from fastapi import HTTPException
+    from app.api.catalogue import _validate_required_product_attribute
+
+    attribute = {"name": "Material", "is_required": True, "is_variant_attribute": False}
+    for value in (None, "", "   ", []):
+        try:
+            _validate_required_product_attribute(attribute, value)
+            assert False, f"Expected empty required product value to be rejected: {value!r}"
+        except HTTPException as exc:
+            assert exc.status_code == 422
+            assert "Material" in exc.detail
+
+
+def test_optional_product_attribute_can_be_cleared():
+    from app.api.catalogue import _validate_required_product_attribute
+
+    attribute = {"name": "Care instructions", "is_required": False, "is_variant_attribute": False}
+    _validate_required_product_attribute(attribute, None)
