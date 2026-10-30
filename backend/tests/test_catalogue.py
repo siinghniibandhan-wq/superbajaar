@@ -158,3 +158,35 @@ def test_product_delete_rejects_blank_or_short_reason():
             assert False, "Expected a validation error"
         except ValidationError:
             pass
+
+
+def test_catalogue_date_attribute_rejects_impossible_calendar_dates():
+    from fastapi import HTTPException
+    from app.api.catalogue import _validate_attribute_value
+
+    attribute = {"name": "Expiry date", "value_type": "date", "options": []}
+    for value in ("2026-99-99", "2026-02-30", "2026/10/30"):
+        try:
+            _validate_attribute_value(None, attribute, value)
+            assert False, f"Expected invalid date to be rejected: {value}"
+        except HTTPException as exc:
+            assert exc.status_code == 422
+
+
+def test_catalogue_date_attribute_accepts_valid_iso_date():
+    from app.api.catalogue import _validate_attribute_value
+
+    _validate_attribute_value(None, {"name": "Launch date", "value_type": "date", "options": []}, "2026-10-30")
+
+
+def test_catalogue_number_attribute_rejects_non_finite_values():
+    from fastapi import HTTPException
+    from app.api.catalogue import _validate_attribute_value
+
+    attribute = {"name": "Weight", "value_type": "number", "options": []}
+    for value in (float("nan"), float("inf"), float("-inf")):
+        try:
+            _validate_attribute_value(None, attribute, value)
+            assert False, f"Expected non-finite number to be rejected: {value}"
+        except HTTPException as exc:
+            assert exc.status_code == 422
