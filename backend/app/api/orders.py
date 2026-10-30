@@ -227,7 +227,10 @@ def update_order_status(order_id: int, payload: OrderStatusUpdate):
                 if payload.status not in allowed[old]:
                     raise HTTPException(status_code=409, detail=f"Cannot change order status from {old} to {payload.status}")
                 if payload.status == "cancelled":
-                    release_order_stock(conn, order_id)
+                    try:
+                        release_order_stock(conn, order_id)
+                    except ValueError as exc:
+                        raise HTTPException(status_code=409, detail=str(exc)) from exc
                 elif payload.status == "dispatched":
                     try:
                         dispatch_order_stock(conn, order_id)
