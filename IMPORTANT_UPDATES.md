@@ -55,6 +55,13 @@
 > - Admin Settings exposes user management plus loyalty rule/account administration. HR also exposes staff user management, so there is overlap between Settings and HR that should be clarified in the module ownership audit; HR is not a payroll subsystem.
 > - The frontend POS currently does not create a delivery record as part of checkout. Delivery is a separate operational workspace. Stock reservation and location selection are pending in PR #158; delivery lifecycle UI changes are pending in dependent PR #159.
 
+
+> **Pending pull-request verification refresh (2026-10-30):**
+> - PR #158 head `98f9e43b3c9cf70904dd8bb41ab1676038f47919`: GitHub Actions `Super Bajaar CI` and `Database files check` both completed successfully. PR remains open/draft/unmerged. No production DB or deployment verification.
+> - PR #159 head `03b293fb701d31efdc32adb687b92707c42d2d6b`: `Super Bajaar CI` completed successfully. PR remains open/draft/unmerged and depends on #158.
+> - PR #160 head `fc86d91ae54aac44438ed316b8190ac76a234652`: `Super Bajaar CI` and `Database files check` both completed successfully. PR remains open/draft/unmerged. Category changes remain outside the audit scope unless specifically authorised.
+> - CI success is limited to the tested commits and disposable CI environments; it does not establish production migration status or live runtime correctness.
+
 > **Audit sequence agreed:** (1) finish the schema requirements/dependency audit, (2) audit all application modules and integrations against those requirements, (3) consolidate and prioritise findings in this register, and only then (4) prepare schema-change recommendations/change requests for Database Owner approval. No schema changes are being made at this stage.
 >
 > **Next required checks:** Complete table/column/constraint/index and application dependency mapping, then run the full application audit. After that, have the Database Owner run the read-only production checks in `docs/RELEASE_GATES.md` (database/version, full ledger and checksums, runner `--status` exit code, and backup storage). Record unavailable checks as NOT VERIFIED. No SQL, schema files, required-schema list, production database, merge, or deployment changed in this review.
