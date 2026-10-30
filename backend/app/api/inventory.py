@@ -73,6 +73,11 @@ def _connect():
         raise HTTPException(status_code=503, detail="Inventory database is unavailable") from exc
 
 
+def _physical_count_reference_type(variance: Decimal) -> str:
+    """Preserve the direction of a count variance without changing the ledger schema."""
+    return "physical_count_in" if variance > 0 else "physical_count_out"
+
+
 def _db_error(exc: psycopg.Error) -> HTTPException:
     code = getattr(exc, "sqlstate", None)
     if code == "23503":
@@ -356,9 +361,9 @@ def record_physical_count(payload: StockCount) -> dict[str, Any]:
                 movement = conn.execute(
                     "INSERT INTO inventory_movements "
                     "(variant_id, location_id, movement_type, quantity, reference_type, note) "
-                    "VALUES (%s, %s, 'adjustment', %s, 'physical_count', %s) "
+                    "VALUES (%s, %s, 'adjustment', %s, %s, %s) "
                     "RETURNING id, variant_id, location_id, movement_type, quantity, reference_type, note, created_at",
-                    (payload.variant_id, payload.location_id, abs(variance), payload.note.strip()),
+                    (payload.variant_id, payload.location_id, abs(variance), _physical_count_reference_type(variance), payload.note.strip()),
                 ).fetchone()
         return {
             "status": "counted",
