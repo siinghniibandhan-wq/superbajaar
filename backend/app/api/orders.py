@@ -189,8 +189,7 @@ def create_order(payload: OrderCreate, request: Request):
             raise HTTPException(status_code=403, detail="Order email must match the signed-in customer account")
     elif getattr(request.state, "role", None) == "customer":
         raise HTTPException(status_code=403, detail="Customer sign-in is required to place a website order")
-    if getattr(request.state, "role", None) == "staff" and payload.channel == "manual":
-        raise HTTPException(status_code=403, detail="Staff cannot create manual orders")
+    # Authenticated staff may create manual orders from the admin workspace.
     if payload.channel == "manual" and not payload.delivery_pin:
         raise HTTPException(status_code=422, detail="Enter the customer's delivery PIN before creating a manual order")
     try:
