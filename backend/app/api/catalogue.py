@@ -235,6 +235,16 @@ def _generate_variant_sku(conn, product_id: int, attributes: dict[str, Any]) -> 
             return candidate
         version += 1
 
+def _validate_required_variant_attributes(definitions: list[dict[str, Any]], values: dict[str, Any]) -> None:
+    for attribute in definitions:
+        if not attribute.get("is_required"):
+            continue
+        value = values.get(attribute["code"])
+        missing = value is None or (isinstance(value, str) and not value.strip()) or (isinstance(value, list) and not value)
+        if missing:
+            raise HTTPException(status_code=422, detail=f"Required variant attribute '{attribute['name']}' is missing")
+
+
 def _validate_attribute_value(conn, attribute: dict[str, Any], value: Any) -> None:
     kind = attribute["value_type"]
     options = attribute["options"] or []
@@ -569,6 +579,28 @@ def list_attributes(limit: int = Query(default=100, ge=1, le=500), offset: int =
     return {"items": rows, "limit": limit, "offset": offset}
 
 
+@router.delete("/products/{product_id}/attributes/{attribute_id}")
+def delete_product_attribute_value(product_id: int, attribute_id: int):
+    try:
+        with _connection() as conn:
+            _require_product(conn, product_id)
+            attribute = conn.execute(
+                "SELECT id FROM product_attributes WHERE id=%s AND is_active=TRUE",
+                (attribute_id,),
+            ).fetchone()
+            if attribute is None:
+                raise HTTPException(status_code=404, detail="Active attribute not found")
+            conn.execute(
+                "DELETE FROM product_attribute_values WHERE product_id=%s AND attribute_id=%s",
+                (product_id, attribute_id),
+            )
+        return {"deleted": True, "product_id": product_id, "attribute_id": attribute_id}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
 @router.put("/products/{product_id}/attributes/{attribute_id}")
 def set_product_attribute_value(product_id: int, attribute_id: int, payload: AttributeValueCreate):
     try:
@@ -617,6 +649,7 @@ def create_variant(product_id: int, payload: VariantCreate):
             unknown = sorted(set(payload.attributes) - set(by_code))
             if unknown:
                 raise HTTPException(status_code=422, detail=f"Unknown or non-variant attributes: {', '.join(unknown)}")
+            _validate_required_variant_attributes(attributes, payload.attributes)
             for code, value in payload.attributes.items():
                 _validate_attribute_value(conn, by_code[code], value)
             duplicate = conn.execute(
@@ -689,13 +722,14 @@ def update_variant(variant_id: int, payload: VariantUpdate):
             if current is None:
                 raise HTTPException(status_code=404, detail="Active variant not found")
             definitions = conn.execute(
-                "SELECT code, name, value_type, options FROM product_attributes "
+                "SELECT code, name, value_type, options, is_required FROM product_attributes "
                 "WHERE is_active = TRUE AND is_variant_attribute = TRUE"
             ).fetchall()
             by_code = {row["code"]: row for row in definitions}
             unknown = sorted(set(payload.attributes) - set(by_code))
             if unknown:
                 raise HTTPException(status_code=422, detail=f"Unknown or non-variant attributes: {', '.join(unknown)}")
+            _validate_required_variant_attributes(definitions, payload.attributes)
             for code, value in payload.attributes.items():
                 _validate_attribute_value(conn, by_code[code], value)
             duplicate = conn.execute(
