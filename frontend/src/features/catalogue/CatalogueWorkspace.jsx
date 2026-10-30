@@ -147,7 +147,7 @@ export default function CatalogueWorkspace({ onBack, currentUser }) {
     {childrenOf(item.id).map(child => <div className="sb-category-nested" key={child.id}>{renderCategory(child, depth + 1)}</div>)}
   </div>;
 
-  return <section className="sb-workspace">
+  return <section className="sb-workspace sb-catalogue-workspace">
     <button className="sb-back" onClick={onBack} type="button">← All workspaces</button>
     <p className="sb-eyebrow">CATALOGUE MANAGEMENT</p>
     <h1>Catalogue</h1>
