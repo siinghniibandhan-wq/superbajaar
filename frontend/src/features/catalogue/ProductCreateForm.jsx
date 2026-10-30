@@ -135,7 +135,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
       for (const def of chosenAttributes) {
         const values = selected[def.code] || [];
         if (OPTION_TYPES.includes(def.value_type)) {
-          const missing = values.filter(value => !(def.options || []).some(option => String(option) === String(value)));
+          const missing = values.filter(value => !(def.options || []).some(option => String(def.value_type === "colour" ? colourOptionLabel(option) : option) === String(value)));
           if (missing.length) await apiRequest("/catalogue/attributes/" + def.id + "/options", { method: "PUT", body: JSON.stringify({ options: missing }) });
         }
       }
