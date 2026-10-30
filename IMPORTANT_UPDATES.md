@@ -224,6 +224,13 @@
 > **CI merge-protection coverage — owner configuration check:**
 > - `ci.yml` runs backend unit tests plus both root/frontend Vite builds on pull requests to `main`. However, `docs/RELEASE_GATES.md` instructs the owner to require only the PostgreSQL 15/16 `Database files check` matrix statuses; it does not explicitly require the `Super Bajaar CI` status in branch protection. If followed literally, database checks may be enforced while backend tests/frontend builds remain advisory. Verify actual GitHub ruleset status-check selection and include the CI job if it is not already required. Repository settings were not queried or changed.
 
+
+> **Verified GitHub main-branch ruleset (read-only repository settings inspection):**
+> - Active ruleset: `Protect main` (ID `26175679`), targeting the default branch. It blocks branch deletion and non-fast-forward updates and requires pull requests.
+> - Required status checks are only `database-files (15)` and `database-files (16)`. The `Super Bajaar CI` status (backend tests + both frontend builds) is **not required** by this ruleset. Therefore a PR can satisfy the enforced checks while its application CI fails or is pending. This is a confirmed merge-protection gap, not just a documentation omission.
+> - Required approving review count is **0**; code-owner review and last-push approval are not required. This does not prevent the owner from reviewing manually, but GitHub does not enforce an approval before merge.
+> - This was a read-only GET of repository ruleset metadata. No branch-protection/ruleset settings were changed.
+
 > **Audit sequence agreed:** (1) finish the schema requirements/dependency audit, (2) audit all application modules and integrations against those requirements, (3) consolidate and prioritise findings in this register, and only then (4) prepare schema-change recommendations/change requests for Database Owner approval. No schema changes are being made at this stage.
 >
 > **Next required checks:** Complete table/column/constraint/index and application dependency mapping, then run the full application audit. After that, have the Database Owner run the read-only production checks in `docs/RELEASE_GATES.md` (database/version, full ledger and checksums, runner `--status` exit code, and backup storage). Record unavailable checks as NOT VERIFIED. No SQL, schema files, required-schema list, production database, merge, or deployment changed in this review.
