@@ -5,6 +5,7 @@
 - Product Create/Edit now loads and saves ordinary product-level attribute values through the existing catalogue attribute API, including clearing a previously saved optional value.
 - Attribute inputs use type-appropriate controls for text, number, boolean, date, select, multi-select, colour and size values.
 - Required attributes are checked before the product form saves; the backend also rejects variant create/update requests that omit required variant attributes.
+- Backend attribute validation rejects impossible calendar dates and non-finite numeric values.
 - Added a product-attribute value delete endpoint; no schema or migration files were changed.
 
 **Verification:** Pending GitHub Actions frontend builds, backend tests and PostgreSQL 15/16 safety checks. No production database operation or deployment was performed.
