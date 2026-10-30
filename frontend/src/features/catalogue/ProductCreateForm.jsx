@@ -26,6 +26,8 @@ export default function ProductCreateForm({ categories = [], product = null, onS
   } : EMPTY);
   const [definitions, setDefinitions] = useState([]);
   const [selected, setSelected] = useState({});
+  const [productAttributeValues, setProductAttributeValues] = useState({});
+  const [originalProductAttributeValues, setOriginalProductAttributeValues] = useState({});
   const [variantPricing, setVariantPricing] = useState({});
   const [newOptions, setNewOptions] = useState({});
   const [activeTab, setActiveTab] = useState("general");
@@ -46,6 +48,19 @@ export default function ProductCreateForm({ categories = [], product = null, onS
   useEffect(() => {
     apiRequest("/catalogue/stock-locations").then(result => setStockLocations(result.items || [])).catch(() => setStockLocations([]));
   }, []);
+  useEffect(() => {
+    if (!product?.id || !definitions.length) return;
+    apiRequest("/catalogue/products/" + product.id + "/attributes")
+      .then(result => {
+        const values = {};
+        for (const item of result.items || []) {
+          if (!item.is_variant_attribute && item.value !== null && item.value !== undefined) values[item.id] = item.value;
+        }
+        setProductAttributeValues(values);
+        setOriginalProductAttributeValues(values);
+      })
+      .catch(e => setError(e.message || "Unable to load existing product attribute values."));
+  }, [product?.id, definitions]);
   useEffect(() => {
     if (!product?.id || !definitions.length) return;
     apiRequest("/catalogue/products/" + product.id + "/variants")
@@ -86,7 +101,13 @@ export default function ProductCreateForm({ categories = [], product = null, onS
     if (!raw) return;
     await apiRequest("/catalogue/attributes/" + def.id + "/options", { method: "PUT", body: JSON.stringify({ options: [raw] }) });
     await loadDefinitions();
-    setSelected(old => ({ ...old, [def.code]: [...(old[def.code] || []), raw] }));
+    if (def.is_variant_attribute) {
+      setSelected(old => ({ ...old, [def.code]: [...(old[def.code] || []), raw] }));
+    } else if (def.value_type === "multi_select") {
+      setProductAttributeValues(old => ({ ...old, [def.id]: [...(old[def.id] || []), raw] }));
+    } else {
+      setProductAttributeValues(old => ({ ...old, [def.id]: raw }));
+    }
     setNewOptions(old => ({ ...old, [def.code]: "" }));
   }
 
@@ -98,6 +119,14 @@ export default function ProductCreateForm({ categories = [], product = null, onS
     try {
       if (!form.name.trim()) throw new Error("Product name is required.");
       if (!form.slug.trim()) throw new Error("Product slug could not be generated. Enter a valid product name.");
+      const isEmptyAttributeValue = value => value === null || value === undefined || (typeof value === "string" && !value.trim()) || (Array.isArray(value) && value.length === 0);
+      for (const def of definitions.filter(item => item.is_required)) {
+        const value = def.is_variant_attribute ? selected[def.code] : productAttributeValues[def.id];
+        if (isEmptyAttributeValue(value)) {
+          setActiveTab("attributes");
+          throw new Error("Required attribute '" + def.name + "' is missing.");
+        }
+      }
       const price = Number(form.selling_price);
       const mrp = Number(form.mrp);
       if ((!product?.id || chosenAttributes.length) && (!Number.isFinite(price) || !Number.isFinite(mrp) || form.selling_price === "" || form.mrp === "" || price < 0 || mrp < price)) {
@@ -121,6 +150,21 @@ export default function ProductCreateForm({ categories = [], product = null, onS
       }
       const payload = { name: form.name.trim(), slug: form.slug, brand: form.brand || null, category_id: categoryIds[0] || null, category_ids: categoryIds, description: form.description || null, tax_code: form.tax_code || null, tax_rate: form.tax_rate === "" ? null : Number(form.tax_rate), is_pos_available: Boolean(form.is_pos_available), is_website_available: Boolean(form.is_website_available), delivery_options: form.delivery_options?.length ? form.delivery_options : ["standard"], status: product?.status || "active" };
       savedProduct = await apiRequest(product?.id ? "/catalogue/products/" + product.id : "/catalogue/products", { method: product?.id ? "PUT" : "POST", body: JSON.stringify(payload) });
+      for (const def of definitions.filter(item => !item.is_variant_attribute)) {
+        const value = productAttributeValues[def.id];
+        const previous = originalProductAttributeValues[def.id];
+        if (isEmptyAttributeValue(value)) {
+          if (previous !== undefined) {
+            await apiRequest("/catalogue/products/" + savedProduct.id + "/attributes/" + def.id, { method: "DELETE" });
+          }
+          continue;
+        }
+        const normalizedValue = def.value_type === "number" ? Number(value) : value;
+        await apiRequest("/catalogue/products/" + savedProduct.id + "/attributes/" + def.id, {
+          method: "PUT",
+          body: JSON.stringify({ value: normalizedValue }),
+        });
+      }
       for (const def of chosenAttributes) {
         const values = selected[def.code] || [];
         if (OPTION_TYPES.includes(def.value_type)) {
@@ -230,12 +274,24 @@ export default function ProductCreateForm({ categories = [], product = null, onS
         <p className="sb-muted">Choose reusable attribute values. Each generated variant gets its own selling price, MRP and cost; the product-level prices are defaults that prefill each row.</p>
         <section className="sb-product-attributes">
           <h3>Attributes and variants</h3>
-          {definitions.map(def => <div className="sb-attribute-picker" key={def.id}>
-            <strong>{def.name}</strong><small className="sb-muted">{def.value_type}{def.is_variant_attribute ? " · Variant attribute" : ""}{def.is_required ? " · Required" : ""}</small>
-            {OPTION_TYPES.includes(def.value_type) ? <div className="sb-option-chips">{(def.options || []).map(value => <label className="sb-option-chip" key={String(value)}><input type="checkbox" checked={(selected[def.code] || []).includes(value)} onChange={() => toggleValue(def, value)} />{String(value)}</label>)}</div> :
-              <input value={(selected[def.code] || [])[0] || ""} placeholder={"Enter " + def.name.toLowerCase()} onChange={e => setSelected(old => ({ ...old, [def.code]: e.target.value ? [e.target.value] : [] }))} />}
-            {OPTION_TYPES.includes(def.value_type) && <div className="sb-add-option"><input aria-label={"New " + def.name + " option"} value={newOptions[def.code] || ""} placeholder={"Add new " + def.name.toLowerCase() + " option"} onChange={e => setNewOptions(old => ({ ...old, [def.code]: e.target.value }))} /><button type="button" className="sb-secondary" disabled={busy || !(newOptions[def.code] || "").trim()} onClick={() => addOption(def).catch(e => setError(e.message || "Unable to add option."))}>Add value</button></div>}
-          </div>)}
+          {definitions.map(def => {
+            const current = productAttributeValues[def.id];
+            const setProductValue = value => setProductAttributeValues(old => ({ ...old, [def.id]: value }));
+            return <div className="sb-attribute-picker" key={def.id}>
+              <strong>{def.name}</strong><small className="sb-muted">{def.value_type}{def.is_variant_attribute ? " · Variant attribute" : " · Product attribute"}{def.is_required ? " · Required" : ""}</small>
+              {def.is_variant_attribute ? (
+                OPTION_TYPES.includes(def.value_type) ? <div className="sb-option-chips">{(def.options || []).map(value => <label className="sb-option-chip" key={String(value)}><input type="checkbox" checked={(selected[def.code] || []).includes(value)} onChange={() => toggleValue(def, value)} />{String(value)}</label>)}</div> :
+                def.value_type === "boolean" ? <label className="sb-check"><input type="checkbox" checked={(selected[def.code] || [])[0] === true} onChange={e => setSelected(old => ({ ...old, [def.code]: [e.target.checked] }))} />Yes</label> :
+                <input type={def.value_type === "number" ? "number" : def.value_type === "date" ? "date" : "text"} value={(selected[def.code] || [])[0] ?? ""} placeholder={"Enter " + def.name.toLowerCase()} onChange={e => setSelected(old => ({ ...old, [def.code]: e.target.value === "" ? [] : [def.value_type === "number" ? Number(e.target.value) : e.target.value] }))} />
+              ) : (
+                def.value_type === "boolean" ? <label className="sb-check"><input type="checkbox" checked={current === true} onChange={e => setProductValue(e.target.checked)} />Yes</label> :
+                def.value_type === "select" || def.value_type === "colour" || def.value_type === "size" ? <select value={current ?? ""} onChange={e => setProductValue(e.target.value)}><option value="">Choose {def.name.toLowerCase()}</option>{(def.options || []).map(value => <option key={String(value)} value={value}>{String(value)}</option>)}</select> :
+                def.value_type === "multi_select" ? <div className="sb-option-chips">{(def.options || []).map(value => <label className="sb-option-chip" key={String(value)}><input type="checkbox" checked={(current || []).includes(value)} onChange={e => setProductValue(e.target.checked ? [...(current || []), value] : (current || []).filter(item => item !== value))} />{String(value)}</label>)}</div> :
+                <input type={def.value_type === "number" ? "number" : def.value_type === "date" ? "date" : "text"} value={current ?? ""} placeholder={"Enter " + def.name.toLowerCase()} onChange={e => setProductValue(e.target.value === "" ? "" : def.value_type === "number" ? Number(e.target.value) : e.target.value)} />
+              )}
+              {OPTION_TYPES.includes(def.value_type) && <div className="sb-add-option"><input aria-label={"New " + def.name + " option"} value={newOptions[def.code] || ""} placeholder={"Add new " + def.name.toLowerCase() + " option"} onChange={e => setNewOptions(old => ({ ...old, [def.code]: e.target.value }))} /><button type="button" className="sb-secondary" disabled={busy || !(newOptions[def.code] || "").trim()} onClick={() => addOption(def).catch(e => setError(e.message || "Unable to add option."))}>Add value</button></div>}
+            </div>;
+          })}
           {!definitions.length && <p className="sb-empty">Create an attribute in the Attributes tab first, or continue with a product that has no variants.</p>}
           <p className="sb-muted">This product will create {variantCombinations.length} variant(s). Prices below are stored on each variant, not on the reusable attribute definition.</p>
           <div className="sb-variant-pricing-list" aria-label="Variant-specific pricing">
