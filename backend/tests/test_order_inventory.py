@@ -1,0 +1,108 @@
+from decimal import Decimal
+
+import pytest
+
+from app.services.order_inventory import (
+    dispatch_order_stock,
+    release_order_stock,
+    reserve_order_stock,
+)
+
+
+class Result:
+    def __init__(self, rows=None, row=None):
+        self.rows = rows or []
+        self.row = row
+
+    def fetchall(self):
+        return self.rows
+
+    def fetchone(self):
+        return self.row
+
+
+class FakeConnection:
+    def __init__(self, locations=None, balances=None, outstanding=None):
+        self.locations = locations or []
+        self.balances = balances or []
+        self.outstanding = outstanding or []
+        self.calls = []
+
+    def execute(self, sql, params=()):
+        self.calls.append((sql, params))
+        if "FROM stock_locations" in sql:
+            return Result(rows=self.locations)
+        if "FROM inventory_balances" in sql and "SELECT variant_id" in sql:
+            return Result(rows=self.balances)
+        if "FROM inventory_movements" in sql and "GROUP BY variant_id" in sql:
+            return Result(rows=self.outstanding)
+        if "UPDATE inventory_balances" in sql:
+            return Result(row={"variant_id": params[2] if len(params) > 2 else 1})
+        return Result()
+
+
+def test_order_without_pin_keeps_legacy_no_reservation_behaviour():
+    conn = FakeConnection()
+    assert reserve_order_stock(conn, 101, None, [(7, 2)]) is None
+    assert conn.calls == []
+
+
+def test_reservation_uses_one_pin_location_and_records_each_line():
+    conn = FakeConnection(
+        locations=[{"id": 4}],
+        balances=[
+            {"variant_id": 7, "on_hand": Decimal("5"), "reserved": Decimal("1")},
+            {"variant_id": 8, "on_hand": Decimal("3"), "reserved": Decimal("0")},
+        ],
+    )
+    location_id = reserve_order_stock(conn, 101, "560035", [(7, 2), (8, 3)])
+    assert location_id == 4
+    updates = [call for call in conn.calls if "UPDATE inventory_balances" in call[0]]
+    movements = [call for call in conn.calls if "INSERT INTO inventory_movements" in call[0]]
+    assert len(updates) == 2
+    assert len(movements) == 2
+    assert all(params[4] == "101" for _, params in movements)
+
+
+def test_reservation_fails_without_mutating_stock_when_pin_location_is_insufficient():
+    conn = FakeConnection(
+        locations=[{"id": 4}],
+        balances=[{"variant_id": 7, "on_hand": Decimal("2"), "reserved": Decimal("1")}],
+    )
+    with pytest.raises(ValueError, match="Insufficient stock"):
+        reserve_order_stock(conn, 101, "560035", [(7, 2)])
+    assert not any("UPDATE inventory_balances" in sql for sql, _ in conn.calls)
+    assert not any("INSERT INTO inventory_movements" in sql for sql, _ in conn.calls)
+
+
+def test_release_and_dispatch_are_noops_when_no_reservation_is_outstanding():
+    conn = FakeConnection(outstanding=[])
+    assert release_order_stock(conn, 101) == 0
+    assert dispatch_order_stock(conn, 101) == 0
+    assert not any("UPDATE inventory_balances" in sql for sql, _ in conn.calls)
+
+
+def test_dispatch_consumes_only_outstanding_reserved_quantity():
+    conn = FakeConnection(outstanding=[{
+        "variant_id": 7,
+        "location_id": 4,
+        "outstanding": Decimal("2"),
+    }])
+    assert dispatch_order_stock(conn, 101) == 1
+    update = next(call for call in conn.calls if "UPDATE inventory_balances" in call[0])
+    assert "on_hand=on_hand-%s, reserved=reserved-%s" in update[0]
+    movement = next(call for call in conn.calls if "INSERT INTO inventory_movements" in call[0])
+    assert "'sale'" in movement[0]
+    assert movement[1][4] == "101"
+
+
+def test_release_records_a_release_movement_for_outstanding_quantity():
+    conn = FakeConnection(outstanding=[{
+        "variant_id": 7,
+        "location_id": 4,
+        "outstanding": Decimal("2"),
+    }])
+    assert release_order_stock(conn, 101) == 1
+    movement = next(call for call in conn.calls if "INSERT INTO inventory_movements" in call[0])
+    assert "'release'" in movement[0]
+    assert movement[1][4] == "101"
