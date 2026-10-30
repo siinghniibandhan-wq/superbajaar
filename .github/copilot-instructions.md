@@ -4,15 +4,16 @@ Read and follow these files before making repository changes:
 
 1. `README.md`
 2. `AGENTS.md`
-3. `docs/GITHUB_COPILOT.md`
-4. The task-specific canonical document identified by `AGENTS.md`.
+3. `docs/AI_TEAM_COLLABORATION.md` — role boundaries, task batching, file ownership and handoff requirements
+4. `docs/GITHUB_COPILOT.md`
+5. The task-specific canonical document identified by `AGENTS.md`.
 
 ## Working rules
 
 - Treat GitHub Copilot as an assistant. Do not assume authority to merge, deploy, change repository rules or make production changes.
 - Start from the latest `main` and work only on a focused feature branch. Never push directly to `main`.
 - Inspect existing implementation and tests before editing. Preserve unrelated working code and established architecture.
-- Keep changes scoped. Do not invent APIs, schema fields, environment variables, integrations or test results.
+- Keep changes scoped. Default to 2–3 related files per batch where practical; do not edit files assigned to another contributor. Do not invent APIs, schema fields, environment variables, integrations or test results.
 - Add or update tests for changed behaviour where the existing test framework supports them. Run relevant checks and report exact commands/results.
 - Update canonical documentation in the same PR. Include purpose, scope, acceptance criteria, test evidence and schema/deployment impact in the PR description.
 - Review the complete diff for regressions, security, accessibility, responsive behaviour and maintainability before requesting review.
@@ -44,4 +45,4 @@ For every task, report:
 - CI run and commit SHA when available;
 - open risks, limitations and whether deployment is still pending.
 
-If instructions conflict, a task requires protected database/production actions, or required context is missing, stop and ask the repository owner rather than guessing.
+If instructions conflict, a task exceeds its file allowlist, a task requires protected database/production actions, or required context is missing, stop and ask the repository owner rather than guessing. Use the standard handoff format in `docs/AI_TEAM_COLLABORATION.md`.
