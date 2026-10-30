@@ -113,6 +113,8 @@ Detailed usage, diagnostic order and decision matrix: [Development, GitHub and o
 
 AI contributor roles, file ownership, 2–3-file work batches and cross-agent handoffs: [AI Team Collaboration & Delivery Policy](docs/AI_TEAM_COLLABORATION.md).
 
+Multi-agent architecture, shared task queue, parallel execution, dependencies, handoffs, security boundaries and staged provider integration: [AI Agent Orchestration Architecture](docs/AGENT_ORCHESTRATION_ARCHITECTURE.md).
+
 Tool priorities, MUST KEEP primary tools, KEEP fallbacks, free-quota switching and mobile-first operating rules: [Free-First Tool Utilisation & Role Assignment Policy](docs/TOOL_UTILISATION_POLICY.md).
 
 ---
