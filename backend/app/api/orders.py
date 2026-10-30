@@ -10,7 +10,7 @@ from psycopg.rows import dict_row
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.core.config import settings
-from app.services.order_inventory import dispatch_order_stock, release_order_stock, reserve_order_stock
+from app.services.order_inventory import dispatch_order_stock, order_fulfilment_started, release_order_stock, reserve_order_stock
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 ORDER_STATUSES = {"draft", "placed", "confirmed", "processing", "ready_for_dispatch", "dispatched", "delivered", "cancelled"}
@@ -233,7 +233,9 @@ def update_order_status(order_id: int, payload: OrderStatusUpdate):
                         raise HTTPException(status_code=409, detail=str(exc)) from exc
                 elif payload.status == "dispatched":
                     try:
-                        dispatch_order_stock(conn, order_id)
+                        dispatched_lines = dispatch_order_stock(conn, order_id)
+                        if dispatched_lines == 0 and not order_fulfilment_started(conn, order_id):
+                            raise ValueError("No outstanding stock reservation exists for this order")
                     except ValueError as exc:
                         raise HTTPException(status_code=409, detail=str(exc)) from exc
                 row = conn.execute(
