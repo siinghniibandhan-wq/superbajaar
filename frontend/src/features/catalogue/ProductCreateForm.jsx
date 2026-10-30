@@ -5,7 +5,7 @@ import "./ProductCreateForm.css";
 
 const EMPTY = { name: "", slug: "", brand: "", category_id: "", category_ids: [], description: "", tax_code: "", tax_rate: "", selling_price: "", mrp: "", is_pos_available: true, is_website_available: true, delivery_options: ["standard"] };
 const OPTION_TYPES = ["select", "multi_select", "colour", "size"];
-function ProductImagesEmbedded({ product }) { return <ProductImagesPanel products={[product]} initialProductId={effectiveProduct.id} embedded />; }
+function ProductImagesEmbedded({ product }) { return <ProductImagesPanel products={[product]} initialProductId={product.id} embedded />; }
 
 function combinationKey(attributes) {
   return JSON.stringify(Object.fromEntries(Object.entries(attributes || {}).sort(([a], [b]) => a.localeCompare(b))));
