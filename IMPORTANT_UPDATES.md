@@ -147,6 +147,12 @@
 > - **MEDIUM — loyalty customer lookup endpoint remains public:** `GET /api/loyalty/customer/account` is exempted from global authentication and reveals account/card/transaction details after matching an order reference and email. The storefront currently uses the signed-in `/loyalty/customer/me` endpoint instead. Review whether the older order-reference lookup should remain enabled, and add throttling/monitoring if retained.
 > - No dedicated loyalty API regression test file was found on main. CI passing backend tests does not establish FIFO redemption, expiry, idempotency, or referral award behaviour against PostgreSQL.
 
+
+> **Inventory replenishment and supplier workflow check:**
+> - The Inventory workspace's replenishment watchlist is informational only: it lists balances at or below five available units and tells the operator to raise a PO in Purchasing. It does not create or prefill a purchase order from the watchlist.
+> - The reviewed baseline/API/UI have supplier records and PO supplier selection, but no preferred-supplier mapping per product/variant was found. Supplier choice is manual at PO creation.
+> - These are feature-scope gaps relative to an automated low-stock → preferred-vendor replenishment workflow. They do not imply the current stock or PO tables are missing; record as application requirements for later prioritisation, not an immediate schema change.
+
 > **Audit sequence agreed:** (1) finish the schema requirements/dependency audit, (2) audit all application modules and integrations against those requirements, (3) consolidate and prioritise findings in this register, and only then (4) prepare schema-change recommendations/change requests for Database Owner approval. No schema changes are being made at this stage.
 >
 > **Next required checks:** Complete table/column/constraint/index and application dependency mapping, then run the full application audit. After that, have the Database Owner run the read-only production checks in `docs/RELEASE_GATES.md` (database/version, full ledger and checksums, runner `--status` exit code, and backup storage). Record unavailable checks as NOT VERIFIED. No SQL, schema files, required-schema list, production database, merge, or deployment changed in this review.
