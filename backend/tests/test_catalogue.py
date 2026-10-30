@@ -158,3 +158,43 @@ def test_product_delete_rejects_blank_or_short_reason():
             assert False, "Expected a validation error"
         except ValidationError:
             pass
+
+
+
+def test_required_variant_attribute_rejects_missing_value():
+    from fastapi import HTTPException
+    from app.api.catalogue import _validate_required_variant_attributes
+
+    definitions = [
+        {"code": "size", "name": "Size", "is_required": True},
+        {"code": "colour", "name": "Colour", "is_required": False},
+    ]
+    try:
+        _validate_required_variant_attributes(definitions, {"colour": "Blue"})
+        assert False, "Expected required attribute validation to fail"
+    except HTTPException as exc:
+        assert exc.status_code == 422
+        assert "Size" in exc.detail
+
+
+def test_required_variant_attribute_accepts_false_boolean():
+    from app.api.catalogue import _validate_required_variant_attributes
+
+    definitions = [{"code": "is_refillable", "name": "Refillable", "is_required": True}]
+    _validate_required_variant_attributes(definitions, {"is_refillable": False})
+
+
+def test_required_variant_attribute_rejects_blank_text_and_empty_multi_select():
+    from fastapi import HTTPException
+    from app.api.catalogue import _validate_required_variant_attributes
+
+    definitions = [
+        {"code": "material", "name": "Material", "is_required": True},
+        {"code": "features", "name": "Features", "is_required": True},
+    ]
+    for values in ({"material": "   ", "features": ["Eco"]}, {"material": "Cotton", "features": []}):
+        try:
+            _validate_required_variant_attributes(definitions, values)
+            assert False, "Expected required attribute validation to fail"
+        except HTTPException as exc:
+            assert exc.status_code == 422
