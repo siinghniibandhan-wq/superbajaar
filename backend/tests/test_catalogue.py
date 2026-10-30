@@ -323,3 +323,32 @@ def test_colour_attribute_rejects_duplicate_hex_values():
         assert False, "Expected duplicate HEX to be rejected"
     except ValidationError:
         pass
+
+def test_text_attribute_values_are_unique_case_insensitively_within_attribute():
+    from pydantic import ValidationError
+    from app.api.catalogue import AttributeCreate
+
+    try:
+        AttributeCreate(
+            name="Any Name",
+            code="any_name",
+            value_type="text",
+            options=["Blue", "blue"],
+        )
+        assert False, "Expected duplicate value to be rejected"
+    except ValidationError:
+        pass
+
+
+def test_same_colour_is_allowed_when_each_attribute_has_its_own_option_list():
+    from app.api.catalogue import AttributeCreate
+
+    first = AttributeCreate(
+        name="Any First Name", code="first_name", value_type="colour",
+        display_type="colour", options=[{"name": "Blue", "hex": "#0000FF"}],
+    )
+    second = AttributeCreate(
+        name="Any Other Name", code="other_name", value_type="colour",
+        display_type="colour", options=[{"name": "Blue", "hex": "#0000FF"}],
+    )
+    assert first.options == second.options
