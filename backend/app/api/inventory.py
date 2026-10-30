@@ -78,6 +78,11 @@ def _physical_count_reference_type(variance: Decimal) -> str:
     return "physical_count_in" if variance > 0 else "physical_count_out"
 
 
+def _stock_issue_reference_type(reason_type: str) -> str:
+    """Identify stock reductions while retaining the existing movement type contract."""
+    return "manual_scrap_out" if reason_type == "scrap" else "manual_issue_out"
+
+
 def _db_error(exc: psycopg.Error) -> HTTPException:
     code = getattr(exc, "sqlstate", None)
     if code == "23503":
@@ -253,7 +258,7 @@ def issue_stock(payload: StockIssue) -> dict[str, Any]:
                 "(variant_id, location_id, movement_type, quantity, reference_type, note) "
                 "VALUES (%s, %s, 'adjustment', %s, %s, %s) "
                 "RETURNING id, variant_id, location_id, movement_type, quantity, reference_type, note, created_at",
-                (payload.variant_id, payload.location_id, payload.quantity, "manual_scrap" if payload.reason_type == "scrap" else "manual_issue", payload.note.strip()),
+                (payload.variant_id, payload.location_id, payload.quantity, _stock_issue_reference_type(payload.reason_type), payload.note.strip()),
             ).fetchone()
         return movement
     except HTTPException:
