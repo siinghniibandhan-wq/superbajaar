@@ -2,9 +2,9 @@
 
 > [!IMPORTANT]
 > ## LATEST AUDIT STATUS — SCHEMA REVIEW
-> **Status:** IN PROGRESS — repository/schema review underway; production schema state NOT VERIFIED.
+> **Status:** IN PROGRESS — schema dependency mapping completed at repository level; application/security/workflow audit underway; production schema state NOT VERIFIED.
 >
-> **Latest critical finding:** Git files and CI cannot establish which migrations are applied in production. The live `sb_app` `schema_migrations` ledger, checksums, runner `--status`, and backup readiness have not been inspected in this review. Do not merge or deploy on the assumption that repository files are applied.
+> **Latest critical findings:** (1) a non-owner admin can demote/deactivate another owner when another active owner exists; (2) manager/staff roles have backend permissions but the frontend blocks them from the admin console; (3) the repository contains active `backend/schema/` assets plus a separate historical `database/migrations/` set and `database/schema.sql`, creating a dual-source-of-truth risk. Separately, production `sb_app` ledger/checksums, runner `--status`, and backup readiness remain NOT VERIFIED. No fixes or schema changes were made.
 >
 > **Repository review completed so far (2026-10-30):**
 > - Confirmed the schema directory currently has eight SQL files: one baseline and seven additive migrations. The migration filenames are `000_baseline_schema.sql`, `009_loyalty_programme.sql`, `009_product_availability_delivery.sql`, `010_customer_accounts_referrals.sql`, `011_customer_phone_uniqueness.sql`, `012_product_category_assignments.sql`, `012_variant_image_primary.sql`, and `013_product_deletion_audit.sql`.
