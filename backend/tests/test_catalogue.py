@@ -34,11 +34,28 @@ def test_blank_category_name_rejected_before_database_access():
     assert response.status_code == 422
 
 
-def test_attribute_requires_options_for_select():
-    response = client.post("/api/catalogue/attributes", json={
-        "name": "Size", "code": "size", "value_type": "size", "is_variant_attribute": True,
-    })
+def test_attribute_rejects_legacy_number_type():
+    response = client.post("/api/catalogue/attributes", json={"name": "Weight", "code": "weight", "value_type": "number"})
     assert response.status_code == 422
+
+
+def test_attribute_accepts_three_value_types_and_display_type():
+    from app.api.catalogue import AttributeCreate
+    display_types = {"text": "button", "colour": "colour", "image": "image"}
+    for value_type, display_type in display_types.items():
+        payload = AttributeCreate(name="Example", code="example", value_type=value_type, display_type=display_type, options=["one"] if value_type in {"colour", "image"} else [])
+        assert payload.value_type == value_type
+        assert payload.display_type == display_type
+
+
+def test_attribute_rejects_invalid_display_type():
+    from pydantic import ValidationError
+    from app.api.catalogue import AttributeCreate
+    try:
+        AttributeCreate(name="Size", code="size", value_type="text", display_type="radio")
+        assert False, "Expected a validation error"
+    except ValidationError:
+        pass
 
 
 def test_variant_requires_nonnegative_price_and_valid_mrp():
@@ -230,3 +247,14 @@ def test_attribute_update_route_rejects_invalid_payload_before_database_access()
 def test_attribute_option_removal_requires_a_value():
     response = client.request("DELETE", "/api/catalogue/attributes/1/options", json={})
     assert response.status_code == 422
+
+
+
+def test_attribute_rejects_incompatible_display_type():
+    from pydantic import ValidationError
+    from app.api.catalogue import AttributeCreate
+    try:
+        AttributeCreate(name="Colour", code="colour", value_type="colour", display_type="image", options=["Red"])
+        assert False, "Expected a validation error"
+    except ValidationError:
+        pass
