@@ -1,19 +1,62 @@
-## What this changes (plain words)
+## Change summary
 
-## Does this touch the database, tables, data, runner or deploy?  yes / no
-If yes, I read `docs/DATABASE_CHANGE_RULES.md` and:
-- [ ] SQL and runner changes were written by Claude, or another agent with the owner's explicit approval recorded in this PR
-- [ ] No existing schema file was edited, renamed or deleted (or the exception is explained below)
-- [ ] New file uses the next unused number and is repeatable (tested twice on Postgres 15 and 16)
-- [ ] If code needs the new table/column, the file is added to `backend/schema_required.txt`
-- [ ] Live checks were run by the owner, and the results are pasted below
-- [ ] I have not claimed anything passed that I did not run
+## Scope and acceptance criteria
 
-## Tests actually run (paste real output)
+## Documentation impact
+- [ ] Read `README.md` and `AGENTS.md`.
+- [ ] Read the task-specific canonical document(s).
+- [ ] Updated relevant documentation in this PR.
+- [ ] If no documentation change is needed, explain why below.
+- [ ] Added a dated `IMPORTANT_UPDATES.md` entry for a major change.
 
-## Exceptions or risks
+## Architecture / API impact
+- [ ] No architecture/API contract change.
+- [ ] If changed, updated `docs/architecture.md` (routes, methods, auth, roles, request/response, data effects and errors).
+- [ ] Verified UI → API → permission/business rule → PostgreSQL → response path where applicable.
 
-## Owner-only release gates (complete before merge/deploy)
-- [ ] GitHub main-branch protection requires both PostgreSQL matrix checks and requires the branch to be up to date.
-- [ ] Production preflight in `docs/RELEASE_GATES.md` was reviewed; live ledger/checksum results are recorded below (no secrets).
-- [ ] A verified production backup is available before applying database changes.
+## Database / schema impact
+Does this PR touch SQL, schema, tables, data, migration runner, required-schema manifest, database permissions or a DB-dependent release? yes / no
+
+If yes:
+- [ ] Read `docs/DATABASE_CHANGE_RULES.md` and `CLAUDE.md`.
+- [ ] Database author/owner approval is recorded.
+- [ ] No existing/applied migration was edited, renamed, deleted or reformatted.
+- [ ] New migration is additive, idempotent and correctly numbered under current legacy exceptions.
+- [ ] `backend/schema_required.txt` updated when application code requires the new schema.
+- [ ] Schema set passed twice on disposable PostgreSQL 15 and 16.
+- [ ] Migration-runner tests passed if runner behaviour changed.
+- [ ] Live production preflight was completed by the owner only if a release requires it; record non-secret evidence below.
+- [ ] No production migration was run without separate explicit approval.
+
+## Tooling / operations impact
+- [ ] No tooling, GitHub workflow, deployment or infrastructure change.
+- [ ] If changed, updated `docs/DEVELOPMENT_WORKFLOW.md` and/or relevant architecture/database guide.
+- [ ] AWS was used only when runtime/hosting/infrastructure evidence justified it.
+- [ ] No production service, timer, port, secret or deployment setting changed without approval.
+
+## Tests actually run (include exact command/workflow and result)
+
+## CI evidence
+- Commit SHA:
+- Backend tests:
+- Frontend build(s):
+- PostgreSQL 15/16:
+- Other:
+
+## Release status (do not conflate these)
+- [ ] Source change complete
+- [ ] CI verified on exact commit
+- [ ] Reviewed / approved
+- [ ] Merged
+- [ ] Deployment separately approved
+- [ ] Deployed (environment + commit):
+- [ ] Post-deployment verified (evidence):
+
+## Risks, blockers and exceptions
+
+## Owner-only release gates
+- [ ] Main branch protection requires PR review, required PostgreSQL matrix checks and up-to-date branches.
+- [ ] If database release is needed, production preflight in `docs/DATABASE_CHANGE_RULES.md` was reviewed.
+- [ ] Verified fresh backup is available before an approved production migration.
+
+> Never claim a test, migration, deployment or production verification passed unless it was actually executed and observed.

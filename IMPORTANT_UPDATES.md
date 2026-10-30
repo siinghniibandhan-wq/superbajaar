@@ -2,6 +2,23 @@
 
 This file is the concise, chronological change log for major Super Bajaar project updates. It complements `README.md`, which contains the detailed architecture, API contracts, workflows, setup and safety rules.
 
+## 2026-10-30 — Project documentation and operating model expansion
+
+**Status:** Updated on documentation PR [#170](https://github.com/siinghniibandhan-wq/superbajaar/pull/170); review and CI pending.
+
+- Reorganised `README.md` as the central project handbook with latest status, critical findings, architecture, tool register, schema automation overview, diagnostic guide, GitHub flow and documentation index.
+- Added `docs/DEVELOPMENT_WORKFLOW.md` as the canonical register for tools, primary use, diagnostic order, Codespaces/Swagger/AWS decision rules, GitHub lifecycle and PR operating targets.
+- Rewrote `docs/architecture.md` to distinguish actual implementation from target patterns and document runtime topology, request lifecycle, domain boundaries, API contract change control and schema data flow.
+- Expanded `docs/DATABASE_CHANGE_RULES.md` with the checked-in runner's actual modes, backup/transaction/checksum/failure behaviour, required-file gate, exit codes and CI boundaries.
+- Updated `AGENTS.md`, `CLAUDE.md` and the PR template with mandatory reading, document-update responsibilities, database authorship controls and evidence requirements.
+- PR operating targets: no more than 15 open PRs in normal conditions; 5-day resolution target; Day 7 escalation; Day 10 target closure. These are team targets, not automatic GitHub enforcement.
+
+**Verification boundary:** Documentation was prepared against checked-in project documents, the schema runner, required-schema manifest and GitHub workflow definitions. This update does not execute production preflight, apply migrations, change application code, alter production data or deploy services. PR CI and final cross-reference checks remain pending.
+
+**Files updated:** README, AGENTS, CLAUDE, architecture, database rules, PR template, this history; new `docs/DEVELOPMENT_WORKFLOW.md`.
+
+---
+
 ## How to maintain this log
 
 - Add an entry for every major feature, API, database/schema, security, architecture, integration, deployment or workflow change.
@@ -15,9 +32,9 @@ This file is the concise, chronological change log for major Super Bajaar projec
 
 ## 2026-10-30 — Standard project progress structure
 
-**Status:** Added on a documentation feature branch; pull request review pending.
+**Status:** Merged into `main` in PR [#169](https://github.com/siinghniibandhan-wq/superbajaar/pull/169).
 
-- Added `docs/PROJECT_PROGRESS_STRUCTURE.md` as the standard work breakdown for Development, Deployment and Audit.
+- Added `docs/PROJECT_PROGRESS_STRUCTURE.md` as the standard work breakdown for Development, Deployment and Audit; expanded the Audit section to include database/schema, integrations/automation, infrastructure/deployment, documentation/compliance and evidence-based finding records. The audit framework remains in this same file; no separate audit folder or structure file is required.
 - Development is split into Coding and Bug / Error Fixing, each with Frontend, Backend, API and UI / Interface workstreams.
 - Added Database / Schema and Integrations / Automation workstreams to avoid hiding cross-layer work.
 - Added separate Deployment stages, Audit categories (Frontend, Backend, API, UI, Security and Others), QA / Testing and Documentation / Release Records.
@@ -26,7 +43,7 @@ This file is the concise, chronological change log for major Super Bajaar projec
 
 **Impact:** Project updates can now report work consistently without confusing code completion, CI success, deployment, audit approval and production verification.
 
-**Verification:** Documentation links and PR diff to be reviewed. No application code, schema, production data or deployment configuration changed.
+**Verification:** PR #169 merged after its CI checks passed. No application code, schema, production data or deployment configuration changed.
 
 
 ## 2026-10-30 — Database migration safety and protected-main controls
