@@ -176,21 +176,53 @@ def test_product_delete_rejects_blank_or_short_reason():
         except ValidationError:
             pass
 
-def test_shared_attribute_options_append_and_deduplicate_values():
-    from app.api.catalogue import _merge_attribute_options
-
-    assert _merge_attribute_options(
-        ["Red", "Yellow"],
-        [" Pink ", "red", "", "PINK", "Blue"],
-    ) == ["Red", "Yellow", "Pink", "Blue"]
-
-
-def test_shared_attribute_options_reject_non_scalar_values():
+def test_shared_attribute_options_reject_duplicate_values_with_message():
     from fastapi import HTTPException
     from app.api.catalogue import _merge_attribute_options
 
     try:
-        _merge_attribute_options(["Red"], [{"name": "Pink"}])
+        _merge_attribute_options(["Red", "Yellow"], ["red"])
+        assert False, "Expected duplicate option to be rejected"
+    except HTTPException as exc:
+        assert exc.status_code == 409
+        assert "already exists in this attribute" in exc.detail
+
+
+def test_colour_options_store_name_and_hex_and_reject_duplicate_name_or_hex():
+    from fastapi import HTTPException
+    from app.api.catalogue import _merge_attribute_options
+
+    existing = [{"name": "Royal Blue", "hex": "#4169E1"}]
+    assert _merge_attribute_options(existing, [{"name": "Nude Blue", "hex": "#0000FF"}], "colour") == [
+        {"name": "Royal Blue", "hex": "#4169E1"},
+        {"name": "Nude Blue", "hex": "#0000FF"},
+    ]
+    for duplicate in (
+        {"name": "royal blue", "hex": "#123456"},
+        {"name": "Different Name", "hex": "#4169e1"},
+    ):
+        try:
+            _merge_attribute_options(existing, [duplicate], "colour")
+            assert False, "Expected duplicate colour to be rejected"
+        except HTTPException as exc:
+            assert exc.status_code == 409
+            assert "already exists in this attribute" in exc.detail
+
+
+def test_colour_names_can_be_reused_in_separate_attributes():
+    from app.api.catalogue import _merge_attribute_options
+
+    first_attribute = _merge_attribute_options([], [{"name": "Blue", "hex": "#0000FF"}], "colour")
+    second_attribute = _merge_attribute_options([], [{"name": "Blue", "hex": "#0000FF"}], "colour")
+    assert first_attribute == second_attribute
+
+
+def test_shared_attribute_options_reject_non_colour_objects():
+    from fastapi import HTTPException
+    from app.api.catalogue import _merge_attribute_options
+
+    try:
+        _merge_attribute_options(["Red"], [{"name": "Pink", "hex": "#FFC0CB"}], "text")
         assert False, "Expected invalid option to be rejected"
     except HTTPException as exc:
         assert exc.status_code == 422
@@ -256,5 +288,38 @@ def test_attribute_rejects_incompatible_display_type():
     try:
         AttributeCreate(name="Colour", code="colour", value_type="colour", display_type="image", options=["Red"])
         assert False, "Expected a validation error"
+    except ValidationError:
+        pass
+
+def test_colour_attribute_accepts_named_hex_options():
+    from app.api.catalogue import AttributeCreate
+
+    payload = AttributeCreate(
+        name="Any Custom Name",
+        code="custom_tone",
+        value_type="colour",
+        display_type="colour",
+        options=[{"name": "Nude Blue", "hex": "#4169E1"}],
+    )
+    assert payload.name == "Any Custom Name"
+    assert payload.options[0] == {"name": "Nude Blue", "hex": "#4169E1"}
+
+
+def test_colour_attribute_rejects_duplicate_hex_values():
+    from pydantic import ValidationError
+    from app.api.catalogue import AttributeCreate
+
+    try:
+        AttributeCreate(
+            name="Custom Tone",
+            code="custom_tone",
+            value_type="colour",
+            display_type="colour",
+            options=[
+                {"name": "Blue", "hex": "#0000FF"},
+                {"name": "Ocean", "hex": "#0000ff"},
+            ],
+        )
+        assert False, "Expected duplicate HEX to be rejected"
     except ValidationError:
         pass
