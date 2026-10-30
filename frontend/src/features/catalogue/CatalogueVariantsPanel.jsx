@@ -86,11 +86,6 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
   }
 
   async function archiveAttribute(definition) {
-    });
-    setShowAttributeForm(true);
-  }
-
-  async function archiveAttribute(definition) {
     if (!window.confirm('Archive attribute "' + definition.name + '"? It will disappear from new product setup, but existing product and variant data will be retained.')) return;
     setBusy(true); setError(""); setNotice("");
     try {
