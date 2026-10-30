@@ -11,7 +11,7 @@ ORDER_RESERVATION_REF = "order_reservation"
 ORDER_FULFILMENT_REF = "order_fulfilment"
 
 
-def reserve_order_stock(conn, order_id: int, delivery_pin: str | None, lines: list[tuple[int, int]]):
+def reserve_order_stock(conn, order_id: int, delivery_pin: str | None, lines: list[tuple[int, int]], location_id: int | None = None):
     """Reserve every line at one active PIN-matched location, or reserve none.
 
     Orders without a delivery PIN retain the legacy no-reservation behaviour.
@@ -22,10 +22,16 @@ def reserve_order_stock(conn, order_id: int, delivery_pin: str | None, lines: li
         return None
 
     variant_ids = [variant_id for variant_id, _ in lines]
-    locations = conn.execute(
-        "SELECT id FROM stock_locations WHERE is_active=TRUE AND pin_code=%s ORDER BY id FOR UPDATE",
-        (delivery_pin,),
-    ).fetchall()
+    if location_id is not None:
+        locations = conn.execute(
+            "SELECT id FROM stock_locations WHERE id=%s AND is_active=TRUE AND pin_code=%s FOR UPDATE",
+            (location_id, delivery_pin),
+        ).fetchall()
+    else:
+        locations = conn.execute(
+            "SELECT id FROM stock_locations WHERE is_active=TRUE AND pin_code=%s ORDER BY id FOR UPDATE",
+            (delivery_pin,),
+        ).fetchall()
 
     for location in locations:
         balances = conn.execute(
@@ -58,7 +64,7 @@ def reserve_order_stock(conn, order_id: int, delivery_pin: str | None, lines: li
             )
         return int(location["id"])
 
-    raise ValueError("Insufficient stock at an active location serving this delivery PIN")
+    raise ValueError("No single active location serving this delivery PIN has sufficient stock for the complete order")
 
 
 def _outstanding_order_reservations(conn, order_id: int):
@@ -123,3 +129,13 @@ def dispatch_order_stock(conn, order_id: int):
              str(order_id), f"Order dispatch {order_id}"),
         )
     return len(rows)
+
+
+def order_reservation_locations(conn, order_id: int):
+    """Return only locations with a positive, still-outstanding reservation."""
+    rows = _outstanding_order_reservations(conn, order_id)
+    return sorted({int(row["location_id"]) for row in rows})
+
+
+def order_has_reservation(conn, order_id: int) -> bool:
+    return bool(_outstanding_order_reservations(conn, order_id))
