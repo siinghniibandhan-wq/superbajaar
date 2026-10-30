@@ -220,6 +220,10 @@
 > - **Legacy generation retained in baseline:** `products_legacy`, `inventory`, `orders_legacy`, `users`, `order_items`, `price_history`, `tickets`. These are separate historical entities; current API routes reviewed here primarily query the current-generation tables.
 > - No canonical foreign-key link currently joins `customer_accounts` to CRM `customers` or `orders` to a customer ID; website orders retain customer email/contact fields. This matches the customer identity fragmentation finding above.
 
+
+> **CI merge-protection coverage — owner configuration check:**
+> - `ci.yml` runs backend unit tests plus both root/frontend Vite builds on pull requests to `main`. However, `docs/RELEASE_GATES.md` instructs the owner to require only the PostgreSQL 15/16 `Database files check` matrix statuses; it does not explicitly require the `Super Bajaar CI` status in branch protection. If followed literally, database checks may be enforced while backend tests/frontend builds remain advisory. Verify actual GitHub ruleset status-check selection and include the CI job if it is not already required. Repository settings were not queried or changed.
+
 > **Audit sequence agreed:** (1) finish the schema requirements/dependency audit, (2) audit all application modules and integrations against those requirements, (3) consolidate and prioritise findings in this register, and only then (4) prepare schema-change recommendations/change requests for Database Owner approval. No schema changes are being made at this stage.
 >
 > **Next required checks:** Complete table/column/constraint/index and application dependency mapping, then run the full application audit. After that, have the Database Owner run the read-only production checks in `docs/RELEASE_GATES.md` (database/version, full ledger and checksums, runner `--status` exit code, and backup storage). Record unavailable checks as NOT VERIFIED. No SQL, schema files, required-schema list, production database, merge, or deployment changed in this review.
