@@ -246,3 +246,14 @@ def test_attribute_update_route_rejects_invalid_payload_before_database_access()
 def test_attribute_option_removal_requires_a_value():
     response = client.request("DELETE", "/api/catalogue/attributes/1/options", json={})
     assert response.status_code == 422
+
+
+
+def test_attribute_rejects_incompatible_display_type():
+    from pydantic import ValidationError
+    from app.api.catalogue import AttributeCreate
+    try:
+        AttributeCreate(name="Colour", code="colour", value_type="colour", display_type="image", options=["Red"])
+        assert False, "Expected a validation error"
+    except ValidationError:
+        pass
