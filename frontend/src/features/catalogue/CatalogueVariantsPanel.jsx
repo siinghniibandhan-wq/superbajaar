@@ -205,7 +205,7 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
     finally { setBusy(false); }
   }
 
-  return <section className="sb-data-card">
+  return <section className="sb-data-card sb-attributes-panel">
     <div className="sb-data-heading">
       <h2>Attributes & variants</h2>
       <button type="button" className="sb-primary" onClick={() => { setError(""); setEditingAttributeId(null); setAttribute(initialAttribute); setShowAttributeForm(true); }}>+ Add attribute</button>
@@ -245,10 +245,10 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
         </form>
       </>}
     </CatalogueModal>
-    <div className="sb-strip-list" aria-label="Attribute definitions">
-      {definitions.length ? definitions.map(definition => <article className="sb-strip-row" key={definition.id}>
+    <div className="sb-strip-list sb-attribute-definitions" aria-label="Attribute definitions">
+      {definitions.length ? definitions.map(definition => <article className="sb-strip-row sb-attribute-card" key={definition.id}>
         <div className="sb-strip-icon" aria-hidden="true">Aa</div>
-        <div className="sb-strip-main">
+        <div className="sb-strip-main sb-attribute-main">
           <strong>{definition.name}</strong>
           <small>{definition.code} · {definition.value_type} · Display: {definition.display_type || "dropdown"}{definition.options?.length ? " · " + definition.options.map(value => definition.value_type === "colour" ? colourOptionLabel(value) : String(value)).join(", ") : ""}</small>
           {OPTION_TYPES.includes(definition.value_type) && <>
