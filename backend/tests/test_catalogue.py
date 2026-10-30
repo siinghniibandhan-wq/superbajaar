@@ -41,10 +41,11 @@ def test_attribute_rejects_legacy_number_type():
 
 def test_attribute_accepts_three_value_types_and_display_type():
     from app.api.catalogue import AttributeCreate
-    for value_type in ("text", "colour", "image"):
-        payload = AttributeCreate(name="Example", code="example", value_type=value_type, display_type="button", options=["one"] if value_type in {"colour", "image"} else [])
+    display_types = {"text": "button", "colour": "colour", "image": "image"}
+    for value_type, display_type in display_types.items():
+        payload = AttributeCreate(name="Example", code="example", value_type=value_type, display_type=display_type, options=["one"] if value_type in {"colour", "image"} else [])
         assert payload.value_type == value_type
-        assert payload.display_type == "button"
+        assert payload.display_type == display_type
 
 
 def test_attribute_rejects_invalid_display_type():
