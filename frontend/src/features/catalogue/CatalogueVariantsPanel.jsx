@@ -4,7 +4,7 @@ import CatalogueModal from "./CatalogueModal.jsx";
 
 const initialAttribute = { name: "", code: "", value_type: "text", display_type: "dropdown", is_variant_attribute: true, is_required: true, options: "" };
 const initialVariant = { sku: "", barcode: "", attributes: "{}", selling_price: "", mrp: "", cost_price: "" };
-const OPTION_TYPES = ["text", "colour", "image"];
+const OPTION_TYPES = ["text", "colour", "image", "select", "multi_select", "size"];
 function makeCombinations(items) {
   return items.reduce((rows, item) => rows.flatMap(row => item.values.map(value => [...row, [item.code, value]])), [[]]).map(entries => Object.fromEntries(entries));
 }
