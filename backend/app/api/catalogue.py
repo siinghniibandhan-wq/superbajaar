@@ -237,6 +237,19 @@ def _generate_variant_sku(conn, product_id: int, attributes: dict[str, Any]) -> 
             return candidate
         version += 1
 
+def _validate_required_variant_attributes(definitions: list[dict[str, Any]], values: dict[str, Any]) -> None:
+    missing = sorted(
+        definition["code"]
+        for definition in definitions
+        if definition["is_required"] and definition["code"] not in values
+    )
+    if missing:
+        raise HTTPException(
+            status_code=422,
+            detail="Required variant attributes are missing: " + ", ".join(missing),
+        )
+
+
 def _validate_attribute_value(conn, attribute: dict[str, Any], value: Any) -> None:
     kind = attribute["value_type"]
     options = attribute["options"] or []
@@ -631,6 +644,7 @@ def create_variant(product_id: int, payload: VariantCreate):
             unknown = sorted(set(payload.attributes) - set(by_code))
             if unknown:
                 raise HTTPException(status_code=422, detail=f"Unknown or non-variant attributes: {', '.join(unknown)}")
+            _validate_required_variant_attributes(attributes, payload.attributes)
             for code, value in payload.attributes.items():
                 _validate_attribute_value(conn, by_code[code], value)
             duplicate = conn.execute(
@@ -703,13 +717,14 @@ def update_variant(variant_id: int, payload: VariantUpdate):
             if current is None:
                 raise HTTPException(status_code=404, detail="Active variant not found")
             definitions = conn.execute(
-                "SELECT code, name, value_type, options FROM product_attributes "
+                "SELECT code, name, value_type, options, is_required FROM product_attributes "
                 "WHERE is_active = TRUE AND is_variant_attribute = TRUE"
             ).fetchall()
             by_code = {row["code"]: row for row in definitions}
             unknown = sorted(set(payload.attributes) - set(by_code))
             if unknown:
                 raise HTTPException(status_code=422, detail=f"Unknown or non-variant attributes: {', '.join(unknown)}")
+            _validate_required_variant_attributes(definitions, payload.attributes)
             for code, value in payload.attributes.items():
                 _validate_attribute_value(conn, by_code[code], value)
             duplicate = conn.execute(
