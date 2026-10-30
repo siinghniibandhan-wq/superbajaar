@@ -13,6 +13,22 @@ This file is the concise, chronological change log for major Super Bajaar projec
 
 ---
 
+## 2026-10-30 — Standard project progress structure
+
+**Status:** Added on a documentation feature branch; pull request review pending.
+
+- Added `docs/PROJECT_PROGRESS_STRUCTURE.md` as the standard work breakdown for Development, Deployment and Audit.
+- Development is split into Coding and Bug / Error Fixing, each with Frontend, Backend, API and UI / Interface workstreams.
+- Added Database / Schema and Integrations / Automation workstreams to avoid hiding cross-layer work.
+- Added separate Deployment stages, Audit categories (Frontend, Backend, API, UI, Security and Others), QA / Testing and Documentation / Release Records.
+- Defined evidence-based status vocabulary and a required progress-report template, with latest findings and critical blockers shown first.
+- Linked the structure from the main README.
+
+**Impact:** Project updates can now report work consistently without confusing code completion, CI success, deployment, audit approval and production verification.
+
+**Verification:** Documentation links and PR diff to be reviewed. No application code, schema, production data or deployment configuration changed.
+
+
 ## 2026-10-30 — Database migration safety and protected-main controls
 
 **Status:** Merged to `main` in PR [#150](https://github.com/siinghniibandhan-wq/superbajaar/pull/150).
