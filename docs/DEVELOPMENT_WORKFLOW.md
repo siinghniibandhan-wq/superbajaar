@@ -10,7 +10,8 @@
 | GitHub Codespaces | Primary development workspace | Read/edit source, reproduce bugs, run tests/builds, inspect dependencies and local logs | Production runtime verification |
 | Swagger / OpenAPI | API contract and interactive endpoint testing | Routes, schemas, auth, request/response, status codes and reproducible API tests | Frontend rendering or production infrastructure diagnosis |
 | ChatGPT | Technical lead and coordinator | Planning, architecture, analysis, review, documentation and evidence-based decisions | Executing a test unless a runner/tool actually ran it |
-| Claude | Designated database/SQL/runner author by current project policy | Scoped schema, migration runner and database review work | Owner approval or live production authorization |\n| GitHub Copilot | Additional AI coding assistant; capabilities depend on the assigned plan | Code completion, explanations, bounded implementation, test suggestions and first-pass review where enabled | Human review, required CI, repository safety rules, database authorisation or owner approval |
+| Claude | Designated database/SQL/runner author by current project policy | Scoped schema, migration runner and database review work | Owner approval or live production authorization |
+| GitHub Copilot | Additional AI coding assistant; capabilities depend on the assigned plan | Code completion, explanations, bounded implementation, test suggestions and first-pass review where enabled | Human review, required CI, repository safety rules, database authorisation or owner approval |
 | GitHub Actions | Automated CI | Backend tests, frontend builds, schema tests and PR quality gates | Production DB checks or post-deployment E2E verification |
 | AWS EC2 | Backend host | Runtime, OS, process, networking, disk, logs and environment investigation | Source-code development |
 | AWS Systems Manager Run Command | Remote EC2 operations | Approved read-only diagnostics and explicitly approved commands | An unrestricted substitute for review/approval |
@@ -97,7 +98,15 @@ Draft → Ready for review → In review → Changes requested / Blocked → App
 
 A closed PR must have a short reason (superseded, duplicate, no longer required, unsafe, abandoned with owner decision, etc.). Merged means integrated into the target branch; it does not mean deployed.
 
-## 4. AI coding assistants and delegation\n\nGitHub Copilot is an additional coding assistant, not a replacement for the repository owner, technical lead, designated database author, CI or review process. Its actual plan and enabled capabilities must be checked in the account; repository integration alone does not prove paid access, cloud-agent eligibility or unlimited usage. See [GitHub Copilot plans, limits and repository policy](GITHUB_COPILOT.md) for the research dated 31 October 2026.\n\nDelegate bounded implementation, explanations, test scaffolding and first-pass review to Copilot where the plan permits. All agents must follow `AGENTS.md`, work on feature branches, preserve protected files and provide exact test/CI evidence. Copilot must not merge, bypass branch protection, deploy, change production data/secrets/infrastructure, or take over protected SQL/migration authorship.\n\n## 5. Codespaces: primary use
+## 4. AI team collaboration and delegation
+
+Use [AI Team Collaboration & Delivery Policy](AI_TEAM_COLLABORATION.md) as the canonical source for contributor roles, file ownership, batch sizing, handoffs, review and stop conditions. The policy treats the owner as final decision-maker and ChatGPT as coordinator; Claude, Copilot, Perplexity and Gemini have distinct, bounded responsibilities. GitHub issues, branches, PRs and Actions are the shared project record; separate AI chat sessions do not communicate directly.
+
+Keep Claude and Copilot implementation batches to 2–3 related files where practical, assign non-overlapping file sets, and start the next batch only after the prior batch is reviewed. Use two focused work windows per day separated by roughly 3–4 hours when practical; this is a planning preference, not an automatic background schedule. Perplexity starts read-only until repository access is verified. Gemini reviews only the exact excerpts, diffs or screenshots supplied. Verify actual plan, permissions and repository coverage before relying on any agent feature.
+
+GitHub Copilot remains an additional coding assistant, not a replacement for the owner, technical lead, designated database author, CI or human review. Its actual plan and enabled capabilities must be checked in the account; repository integration alone does not prove paid access, cloud-agent eligibility or unlimited usage. See [GitHub Copilot plans, limits and repository policy](GITHUB_COPILOT.md). All contributors must follow `AGENTS.md`, work on feature branches, preserve protected files and provide exact test/CI evidence. No agent may merge, bypass branch protection, deploy, change production data/secrets/infrastructure, or take over protected SQL/migration authorship.
+
+## 5. Codespaces: primary use
 
 Use Codespaces extensively as the primary place to:
 
