@@ -157,17 +157,17 @@ def create_shipment(payload: DeliveryCreate):
                 if order_pin != payload.delivery_pin:
                     raise HTTPException(status_code=422, detail="Shipment delivery PIN must match the order delivery PIN")
 
-                if order["channel"] == "website":
+                if order["channel"] in {"website", "manual"}:
                     eligible_locations = _available_location_query(conn, payload.order_id, order_pin)
                     if not eligible_locations:
                         raise HTTPException(status_code=409, detail="No active location serving this PIN has enough available stock for every order item")
                     selected_location = _rank_locations_by_available_stock(eligible_locations)[0]
                     if payload.location_id is not None and payload.location_id != selected_location["id"]:
-                        raise HTTPException(status_code=422, detail="Website shipments are assigned automatically to the eligible location with the most available stock")
+                        raise HTTPException(status_code=422, detail="Website and manual shipments are assigned automatically to the eligible location with the most available stock")
                     location_id = selected_location["id"]
                 else:
                     if payload.location_id is None:
-                        raise HTTPException(status_code=422, detail="Select the fulfilment store/location for POS or manual orders")
+                        raise HTTPException(status_code=422, detail="Select the fulfilment store/location for POS orders")
                     selected_location = conn.execute(
                         "SELECT id FROM stock_locations WHERE id=%s AND is_active=TRUE AND pin_code=%s",
                         (payload.location_id, order_pin),
