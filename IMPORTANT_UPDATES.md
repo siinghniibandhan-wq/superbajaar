@@ -177,6 +177,10 @@
 > - A prior runtime check reported only 16 registered routes, apparently documentation/root routes, with the expected business endpoints absent. This conflicts with the current repository source. The exact deployed commit, active Gunicorn import target, Python module path, and live OpenAPI route list have not been reconciled in this audit.
 > - **HIGH — do not treat repository router imports or CI as proof that production endpoints are registered.** Before any release, verify the running process command/import path and inspect `/openapi.json`/Swagger against the expected route inventory on the intended release. No server restart, AWS action or live endpoint change was performed here.
 
+
+> **Authentication abuse protection review:**
+> - **MEDIUM — no application-level login throttling/lockout found:** staff `POST /api/auth/login` and customer `POST /api/customer-auth/login` do not implement visible failed-attempt throttling, progressive delay or account lockout in the reviewed route/middleware. No rate-limit package is declared in `backend/requirements.txt`. Edge/WAF rate limiting may exist outside the repository but is NOT VERIFIED. Confirm protection for staff/customer login, customer registration, support-ticket intake and partner enquiries before public launch.
+
 > **Audit sequence agreed:** (1) finish the schema requirements/dependency audit, (2) audit all application modules and integrations against those requirements, (3) consolidate and prioritise findings in this register, and only then (4) prepare schema-change recommendations/change requests for Database Owner approval. No schema changes are being made at this stage.
 >
 > **Next required checks:** Complete table/column/constraint/index and application dependency mapping, then run the full application audit. After that, have the Database Owner run the read-only production checks in `docs/RELEASE_GATES.md` (database/version, full ledger and checksums, runner `--status` exit code, and backup storage). Record unavailable checks as NOT VERIFIED. No SQL, schema files, required-schema list, production database, merge, or deployment changed in this review.
