@@ -607,6 +607,12 @@ def set_product_attribute_value(product_id: int, attribute_id: int, payload: Att
             ).fetchone()
             if attribute is None or not attribute["is_active"]:
                 raise HTTPException(status_code=404, detail="Active attribute not found")
+            if payload.value is None:
+                conn.execute(
+                    "DELETE FROM product_attribute_values WHERE product_id=%s AND attribute_id=%s",
+                    (product_id, attribute_id),
+                )
+                return {"deleted": True, "product_id": product_id, "attribute_id": attribute_id}
             _validate_attribute_value(conn, attribute, payload.value)
             row = conn.execute(
                 "INSERT INTO product_attribute_values (product_id, attribute_id, value) VALUES (%s, %s, %s::jsonb) "
