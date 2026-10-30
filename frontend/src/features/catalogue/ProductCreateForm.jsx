@@ -149,7 +149,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
         setActiveTab("general");
         throw new Error("Select at least one category for this product.");
       }
-      const missingRequiredAttribute = definitions.find(def => !def.is_variant_attribute && def.is_required && !(selected[def.code] || []).length);
+      const missingRequiredAttribute = definitions.find(def => def.is_required && !(selected[def.code] || []).length);
       if (missingRequiredAttribute) {
         setActiveTab("attributes");
         throw new Error("Enter a value for required attribute: " + missingRequiredAttribute.name + ".");
