@@ -350,7 +350,7 @@ Super Bajaar uses a repository-based database migration runner, automated checks
 3. Keep existing/applied schema files unchanged. Use the approved additive migration process for necessary schema changes, and update `backend/schema_required.txt` when application code requires a new schema file.
 4. Open a pull request with the project template. Review the complete diff and wait for required checks to pass.
 5. Keep the PR branch up to date with `main`. Merge only through the protected pull-request workflow.
-6. Before a production deployment or migration, complete the read-only checks in `docs/RELEASE_GATES.md`, inspect the live migration ledger/checksums, and confirm backup readiness. Production migration/deployment is a separate owner-approved action.
+6. Before a production deployment or migration, complete the read-only production preflight in `docs/DATABASE_CHANGE_RULES.md`, inspect the live migration ledger/checksums, and confirm backup readiness. Production migration/deployment is a separate owner-approved action.
 
 ### What these checks do not prove
 
@@ -359,7 +359,7 @@ Successful CI checks prove the tested code and schema passed on disposable Postg
 ### Detailed documentation
 
 - [Database change rules](docs/DATABASE_CHANGE_RULES.md)
-- [Database release gates and production preflight](docs/RELEASE_GATES.md)
+- [Database governance, design and release handbook](docs/DATABASE_CHANGE_RULES.md)
 - [Pull request checklist](.github/pull_request_template.md)
 - [Migration check workflow](.github/workflows/migration-check.yml)
 - [AI coding-agent instructions](AGENTS.md) and [Claude instructions](CLAUDE.md)
@@ -516,7 +516,7 @@ flowchart TD
 
 ### 4. Employee workflow — manager, staff and viewer
 
-The API role policy is documented in `docs/api-contracts.md`. Employee permissions are role-limited; an employee must not receive owner/admin access merely to complete routine work.
+The API contracts and role policy are documented in `docs/architecture.md`. Employee permissions are role-limited; an employee must not receive owner/admin access merely to complete routine work.
 
 ```mermaid
 flowchart TD
