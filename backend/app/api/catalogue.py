@@ -566,7 +566,7 @@ class AttributeOptionsUpdate(BaseModel):
 def update_attribute_options(attribute_id: int, payload: AttributeOptionsUpdate):
     try:
         with _connection() as conn:
-            row = conn.execute("SELECT id, name, value_type, options, is_active FROM product_attributes WHERE id=%s", (attribute_id,)).fetchone()
+            row = conn.execute("SELECT id, name, value_type, options, is_active FROM product_attributes WHERE id=%s FOR UPDATE", (attribute_id,)).fetchone()
             if row is None or not row["is_active"]:
                 raise HTTPException(status_code=404, detail="Active attribute not found")
             if row["value_type"] not in {"select", "multi_select", "colour", "size"}:
