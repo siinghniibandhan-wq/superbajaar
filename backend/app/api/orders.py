@@ -10,6 +10,7 @@ from psycopg.rows import dict_row
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.core.config import settings
+from app.services.order_inventory import dispatch_order_stock, release_order_stock, reserve_order_stock
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 ORDER_STATUSES = {"draft", "placed", "confirmed", "processing", "ready_for_dispatch", "dispatched", "delivered", "cancelled"}
@@ -188,7 +189,14 @@ def create_order(payload: OrderCreate, request: Request):
                         "INSERT INTO order_lines (order_id, variant_id, quantity, unit_price, line_total) VALUES (%s,%s,%s,%s,%s)",
                         (order["id"], line.variant_id, line.quantity, unit_price, unit_price * line.quantity),
                     )
-        return order
+                try:
+                    inventory_location_id = reserve_order_stock(
+                        conn, order["id"], payload.delivery_pin,
+                        [(line.variant_id, line.quantity) for line in payload.lines],
+                    )
+                except ValueError as exc:
+                    raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {**order, "inventory_location_id": inventory_location_id, "stock_reserved": inventory_location_id is not None}
     except HTTPException:
         raise
     except psycopg.Error as exc:
@@ -218,6 +226,13 @@ def update_order_status(order_id: int, payload: OrderStatusUpdate):
                     return {"id": order_id, "status": old}
                 if payload.status not in allowed[old]:
                     raise HTTPException(status_code=409, detail=f"Cannot change order status from {old} to {payload.status}")
+                if payload.status == "cancelled":
+                    release_order_stock(conn, order_id)
+                elif payload.status == "dispatched":
+                    try:
+                        dispatch_order_stock(conn, order_id)
+                    except ValueError as exc:
+                        raise HTTPException(status_code=409, detail=str(exc)) from exc
                 row = conn.execute(
                     "UPDATE orders SET status=%s, updated_at=now() WHERE id=%s RETURNING id, order_number, status, updated_at",
                     (payload.status, order_id),
