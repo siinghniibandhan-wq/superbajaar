@@ -126,7 +126,7 @@ Does the code require this change before it can deploy? (yes/no):
 
 ## 10. Release gates
 
-Before merge, the owner must enable GitHub main-branch protection requiring both PostgreSQL matrix checks and up-to-date branches. Before production deployment, the owner must complete the read-only production preflight and confirm the live ledger/checksums and backup readiness. See `docs/RELEASE_GATES.md`. CI success alone is not production approval.
+Before merge, the owner must enable GitHub main-branch protection requiring both PostgreSQL matrix checks and up-to-date branches. Before production deployment, the owner must complete the read-only production preflight and confirm the live ledger/checksums and backup readiness. See `docs/DATABASE_CHANGE_RULES.md`. CI success alone is not production approval.
 
 ## 11. Definition of done
 
@@ -209,3 +209,102 @@ Record only non-secret facts in the PR: production database name, PostgreSQL maj
 CI runs the schema set twice on disposable PostgreSQL 15 and 16 services and runs migration-runner tests against throw-away databases. Tests include refusal to apply an unrecorded baseline over a populated database and least-privilege permission handling. CI also checks protected legacy filenames and migration-number collisions.
 
 CI does **not** connect to production, inspect the live migration ledger, validate production data, create a production backup or enable GitHub branch protection. Those remain explicit owner responsibilities.
+
+
+---
+
+## 14. Implemented schema automation — actual runner contract
+
+This section documents the checked-in implementation in `backend/scripts/apply_schema.sh`, `backend/schema_required.txt`, `backend/scripts/tests/test_apply_schema.sh` and `.github/workflows/migration-check.yml`. If code changes, update this section in the same PR.
+
+### Components and responsibilities
+
+| Component | Responsibility |
+|---|---|
+| `backend/schema/*.sql` | Ordered SQL migration files named `NNN_lowercase_name.sql` |
+| `backend/schema_required.txt` | Files the current application release requires to be applied |
+| `backend/scripts/apply_schema.sh` | Classifies files, checks the ledger, creates/validates backup, applies transactions and records results |
+| `schema_migrations` | Applied filename, SHA-256 and applied timestamp |
+| `schema_migration_failures` | Failure history for failed migration attempts |
+| `backend/scripts/tests/test_apply_schema.sh` | Runner tests for backup, rollback, failures, alerts and exit codes |
+| `.github/workflows/migration-check.yml` | Disposable PostgreSQL 15/16 schema and runner test matrix |
+
+### End-to-end flow
+
+```mermaid
+flowchart TD
+  FILE[New additive migration] --> NAMING[Filename and sequence validation]
+  NAMING --> LEDGER[Compare SHA-256 with schema_migrations]
+  LEDGER --> REQUIRED[Read schema_required.txt]
+  REQUIRED --> BACKUP[Create fresh custom-format pg_dump]
+  BACKUP --> CHECK[Validate dump using pg_restore --list]
+  CHECK --> APPLY[Apply each file in its own transaction]
+  APPLY --> SUCCESS[Record filename + SHA-256 + timestamp]
+  APPLY --> FAIL[Rollback failed file + record failure]
+  SUCCESS --> HEALTH[Optional /api/health check]
+  FAIL --> ALERT[Log and optional SB_ALERT_CMD alert]
+  HEALTH --> RESULT[Evaluate required files and exit code]
+  ALERT --> RESULT
+```
+
+### Runner modes
+
+| Command mode | Behaviour |
+|---|---|
+| Default | Apply pending files using the guarded process |
+| `--dry-run` | Classify/show what would be applied; make no schema changes |
+| `--status` | Show applied, pending, changed and previously failed files; read-only |
+| `--retry` | Permit retry of previously failed files with the same content |
+
+The runner obtains the database name from `SB_DB` (default `sb_app`), uses the configured PostgreSQL command wrappers, defaults backup storage to `/home/ec2-user/schema-backups`, and defaults the health URL to `http://127.0.0.1:8001/api/health`. Environment overrides exist; never expose their values if they contain secrets.
+
+### Safety behaviour implemented in the runner
+
+- Uses a lock to prevent concurrent runs.
+- Validates migration filename format and computes SHA-256 for each file.
+- Reads the `schema_migrations` ledger and refuses to guess if the ledger is missing while user objects exist.
+- Refuses to apply an unrecorded baseline over a database that already contains user objects.
+- Detects applied files whose content has changed; it reports the mismatch and does not reapply the edited file.
+- Reads the required migration list and verifies every listed file exists in the schema directory.
+- Creates a fresh custom-format database backup before applying pending files and validates it with `pg_restore --list`. Backup failure exits before applying migrations.
+- Runs each migration file in its own transaction and records its filename/checksum on commit.
+- Records failed migration details; a failed file is rolled back. Independent later files may still be attempted unless configured to stop.
+- Sends alerts only when `SB_ALERT_CMD` is configured.
+- Performs an optional health request after the application attempt when `SB_HEALTH_URL` is non-empty.
+
+### Exit-code contract
+
+| Code | Meaning / release handling |
+|---:|---|
+| `0` | All schema files are applied and no outstanding issue was detected |
+| `10` | A file failed/changed or remains outstanding when no required-file list is available; strict stop |
+| `11` | Some non-required file failed/changed, but every required file is applied; runner says deployment may continue, subject to the release owner |
+| `20` | At least one file required by this release is not applied; do not deploy |
+| `30` | Backup failed; no migration was applied |
+| `50` | Setup/validation/database/ledger problem; stop |
+| `60` | Another runner instance holds the lock; stop and investigate |
+
+The runner header states that deployment should continue only on 0 or 11. A production release still requires owner approval and all other release gates. Do not infer success solely from a shell command returning; capture the exact exit code and runner log.
+
+### Required-file release gate
+
+When application code starts relying on a new schema file, the exact migration must be listed in `backend/schema_required.txt` in the same approved change. The runner blocks the release with code 20 if a required file is not applied. CI also verifies that every non-comment manifest entry names a real file.
+
+Only the designated database author may edit the manifest under current policy, unless the owner explicitly authorizes a scoped exception recorded in the PR.
+
+### CI coverage and its limits
+
+The migration workflow:
+
+1. Runs on disposable PostgreSQL 15 and 16 services.
+2. Checks migration filename format and protected historical migration pairs.
+3. Applies every SQL file in sorted order.
+4. Applies the complete set a second time to test repeatability.
+5. Runs the migration runner test suite for backup, rollback, failure, alert and exit-code behaviour.
+6. Verifies manifest entries refer to existing migration files.
+
+This CI does not connect to production, inspect the production ledger, validate production records, create a production backup, or prove that the deployed service uses the PR commit.
+
+### Production operation boundary
+
+Production preflight is owner-only and read-only. It must verify the intended checkout, target database `sb_app`, PostgreSQL version/port, live migration ledger, exact file checksums, runner `--status`, and backup storage. Any unexplained mismatch is a stop condition. A real migration is a separate explicitly approved action; do not treat documentation, CI or preflight as authorization to apply it.
