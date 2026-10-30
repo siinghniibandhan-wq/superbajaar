@@ -520,7 +520,7 @@ def list_product_attributes(product_id: int):
     with _connection() as conn:
         _require_product(conn, product_id)
         rows = conn.execute(
-            "SELECT a.id, a.name, a.code, a.value_type, a.is_variant_attribute, a.is_required, a.options, pav.value "
+            "SELECT a.id, a.name, a.code, a.value_type, a.display_type, a.is_variant_attribute, a.is_required, a.options, pav.value "
             "FROM product_attributes a LEFT JOIN product_attribute_values pav "
             "ON pav.attribute_id = a.id AND pav.product_id = %s "
             "WHERE a.is_active = TRUE ORDER BY a.name", (product_id,)
@@ -577,7 +577,7 @@ def update_attribute_options(attribute_id: int, payload: AttributeOptionsUpdate)
             ).fetchone()
             if row is None or not row["is_active"]:
                 raise HTTPException(status_code=404, detail="Active attribute not found")
-            if row["value_type"] not in {"select", "multi_select", "colour", "size"}:
+            if row["value_type"] not in {"text", "colour", "image"}:
                 raise HTTPException(status_code=422, detail="This attribute type does not support options")
             combined = _merge_attribute_options(row["options"] or [], payload.options)
             updated = conn.execute(
