@@ -54,7 +54,7 @@ export default function CatalogueWorkspace({ onBack, currentUser }) {
 
   function closeCategoryForm() {
     if (categoryFormBusy) return;
-    if ((name || slug) && !window.confirm("Discard unsaved category changes?")) return;
+    if ((name || slug || description || parentId) && !window.confirm("Discard unsaved category changes?")) return;
     setShowCategoryForm(false);
     setEditingCategory(null);
     setName("");
