@@ -190,3 +190,30 @@ def test_catalogue_number_attribute_rejects_non_finite_values():
             assert False, f"Expected non-finite number to be rejected: {value}"
         except HTTPException as exc:
             assert exc.status_code == 422
+
+
+def test_required_variant_attributes_are_enforced():
+    from fastapi import HTTPException
+    from app.api.catalogue import _validate_required_variant_attributes
+
+    definitions = [
+        {"code": "colour", "is_required": True},
+        {"code": "size", "is_required": True},
+        {"code": "material", "is_required": False},
+    ]
+    try:
+        _validate_required_variant_attributes(definitions, {"colour": "Black"})
+        assert False, "Expected missing required size to be rejected"
+    except HTTPException as exc:
+        assert exc.status_code == 422
+        assert "size" in exc.detail
+
+
+def test_required_variant_attributes_accept_complete_values():
+    from app.api.catalogue import _validate_required_variant_attributes
+
+    definitions = [
+        {"code": "colour", "is_required": True},
+        {"code": "size", "is_required": True},
+    ]
+    _validate_required_variant_attributes(definitions, {"colour": "Black", "size": "M"})
