@@ -62,6 +62,21 @@
 > - PR #160 head `fc86d91ae54aac44438ed316b8190ac76a234652`: `Super Bajaar CI` and `Database files check` both completed successfully. PR remains open/draft/unmerged. Category changes remain outside the audit scope unless specifically authorised.
 > - CI success is limited to the tested commits and disposable CI environments; it does not establish production migration status or live runtime correctness.
 
+
+> **Schema dependency matrix — static repository mapping:**
+> | File | Objects/changes | Application consumers | Required gate |
+> |---|---|---|---|
+> | `000_baseline_schema.sql` | Current + legacy user/customer/catalogue/order/inventory/delivery/payment/purchasing/support tables and core constraints/indexes | Most backend APIs | Yes |
+> | `009_loyalty_programme.sql` | `orders.customer_email`, loyalty rules/accounts/transactions/redemption allocations, partner enquiries | Orders, loyalty, customer registration, settings | Yes |
+> | `009_product_availability_delivery.sql` | Product POS/website flags, delivery options, scoped availability rules | Catalogue/storefront | Yes |
+> | `010_customer_accounts_referrals.sql` | Customer accounts/sessions/referrals | Customer auth, auth middleware, order/referral rewards | Yes |
+> | `011_customer_phone_uniqueness.sql` | Canonical-phone expression unique index | Customer registration duplicate guard | No — intentional optional gate |
+> | `012_product_category_assignments.sql` | Multi-category assignment table and primary-category backfill | Catalogue list/create/update | Yes |
+> | `012_variant_image_primary.sql` | `product_images.is_primary` and one-primary-per-gallery partial unique index | Catalogue image management/listing | Yes |
+> | `013_product_deletion_audit.sql` | Product deletion audit table and conditional narrow grants | Catalogue product deletion | Yes |
+>
+> This matrix maps repository DDL to inspected API references; it is not a production inventory. The legacy/current parallel tables remain a separate compatibility concern, and no data migration or consolidation is authorised by this audit.
+
 > **Audit sequence agreed:** (1) finish the schema requirements/dependency audit, (2) audit all application modules and integrations against those requirements, (3) consolidate and prioritise findings in this register, and only then (4) prepare schema-change recommendations/change requests for Database Owner approval. No schema changes are being made at this stage.
 >
 > **Next required checks:** Complete table/column/constraint/index and application dependency mapping, then run the full application audit. After that, have the Database Owner run the read-only production checks in `docs/RELEASE_GATES.md` (database/version, full ledger and checksums, runner `--status` exit code, and backup storage). Record unavailable checks as NOT VERIFIED. No SQL, schema files, required-schema list, production database, merge, or deployment changed in this review.
