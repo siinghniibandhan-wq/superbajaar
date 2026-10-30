@@ -5,7 +5,7 @@ STOP. Before ANY change that involves the database, tables, data, migrations, de
 1. Read `docs/DATABASE_CHANGE_RULES.md` completely, and the safety section of `README.md`.
 2. Begin your first reply with: "I have read docs/DATABASE_CHANGE_RULES.md" and name the section numbers you are relying on. If you cannot read it, stop and tell the owner.
 
-You must NOT write or edit:
+The following restrictions apply unless the owner explicitly approves the exact scoped change in the pull request. You must NOT write or edit:
 - anything in `backend/schema/`
 - `backend/schema_required.txt`
 - `backend/scripts/apply_schema.sh` or any backup, migration or deploy script
