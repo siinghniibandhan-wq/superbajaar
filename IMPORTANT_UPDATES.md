@@ -1,5 +1,15 @@
 # Important project updates
 
+## 2026-10-30 — Product-level attribute values and required variant attributes
+
+- Product Create/Edit now loads and saves ordinary product-level attribute values through the existing catalogue attribute API, including clearing a previously saved optional value.
+- Attribute inputs use type-appropriate controls for text, number, boolean, date, select, multi-select, colour and size values.
+- Required attributes are checked before the product form saves; the backend also rejects variant create/update requests that omit required variant attributes.
+- Added a product-attribute value delete endpoint; no schema or migration files were changed.
+
+**Verification:** Pending GitHub Actions frontend builds, backend tests and PostgreSQL 15/16 safety checks. No production database operation or deployment was performed.
+
+
 This file is the concise, chronological change log for major Super Bajaar project updates. It complements `README.md`, which contains the detailed architecture, API contracts, workflows, setup and safety rules.
 
 ## How to maintain this log
