@@ -78,7 +78,8 @@ class ProductCreate(BaseModel):
 class AttributeCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     code: str = Field(min_length=1, max_length=120, pattern=r"^[a-z][a-z0-9_]*$")
-    value_type: str = Field(pattern=r"^(text|number|boolean|date|select|multi_select|colour|size)$")
+    value_type: str = Field(pattern=r"^(text|colour|image)$")
+    display_type: str = Field(default="dropdown", pattern=r"^(text|dropdown|button|colour|image)$")
     is_variant_attribute: bool = False
     is_required: bool = False
     options: list[Any] = Field(default_factory=list, max_length=200, validate_default=True)
@@ -94,10 +95,8 @@ class AttributeCreate(BaseModel):
     @classmethod
     def options_for_select_types(cls, value: list[Any], info):
         value_type = info.data.get("value_type")
-        if value_type in {"select", "multi_select", "colour", "size"} and not value:
-            raise ValueError("This attribute type requires at least one option")
-        if value_type not in {"select", "multi_select", "colour", "size"} and value:
-            raise ValueError("Options are only supported for select, multi_select, colour and size attributes")
+        if value_type in {"colour", "image"} and not value:
+            raise ValueError("Colour and image attributes require at least one value")
         if any(not isinstance(option, (str, int, float, bool)) for option in value):
             raise ValueError("Attribute options must be simple scalar values")
         if len({str(option) for option in value}) != len(value):
@@ -108,7 +107,8 @@ class AttributeCreate(BaseModel):
 
 class AttributeUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
-    value_type: str | None = Field(default=None, pattern=r"^(text|number|boolean|date|select|multi_select|colour|size)$")
+    value_type: str | None = Field(default=None, pattern=r"^(text|colour|image)$")
+    display_type: str | None = Field(default=None, pattern=r"^(text|dropdown|button|colour|image)$")
     is_variant_attribute: bool | None = None
     is_required: bool | None = None
     options: list[Any] | None = Field(default=None, max_length=200)
@@ -258,18 +258,10 @@ def _validate_attribute_value(conn, attribute: dict[str, Any], value: Any) -> No
     kind = attribute["value_type"]
     options = attribute["options"] or []
     valid = True
-    if kind in {"select", "colour", "size"}:
-        valid = value in options
-    elif kind == "multi_select":
-        valid = isinstance(value, list) and all(item in options for item in value) and len(value) == len(set(map(str, value)))
+    if kind in {"colour", "image"}:
+        valid = isinstance(value, str) and value in options
     elif kind == "text":
         valid = isinstance(value, str)
-    elif kind == "number":
-        valid = isinstance(value, (int, float)) and not isinstance(value, bool)
-    elif kind == "boolean":
-        valid = isinstance(value, bool)
-    elif kind == "date":
-        valid = isinstance(value, str) and len(value) == 10 and value[4:5] == "-" and value[7:8] == "-"
     if not valid:
         raise HTTPException(status_code=422, detail=f"Invalid value for attribute '{attribute['name']}'")
 
@@ -541,10 +533,10 @@ def create_attribute(payload: AttributeCreate):
     try:
         with _connection() as conn:
             row = conn.execute(
-                "INSERT INTO product_attributes (name, code, value_type, is_variant_attribute, is_required, options) "
-                "VALUES (%s, %s, %s, %s, %s, %s::jsonb) "
-                "RETURNING id, name, code, value_type, is_variant_attribute, is_required, options, is_active, created_at",
-                (payload.name, payload.code, payload.value_type, payload.is_variant_attribute, payload.is_required, __import__("json").dumps(payload.options)),
+                "INSERT INTO product_attributes (name, code, value_type, display_type, is_variant_attribute, is_required, options) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb) "
+                "RETURNING id, name, code, value_type, display_type, is_variant_attribute, is_required, options, is_active, created_at",
+                (payload.name, payload.code, payload.value_type, payload.display_type, payload.is_variant_attribute, payload.is_required, __import__("json").dumps(payload.options)),
             ).fetchone()
         return row
     except psycopg.Error as exc:
@@ -609,7 +601,7 @@ def update_attribute(attribute_id: int, payload: AttributeUpdate):
     try:
         with _connection() as conn:
             current = conn.execute(
-                "SELECT id, name, code, value_type, is_variant_attribute, is_required, options, is_active "
+                "SELECT id, name, code, value_type, display_type, is_variant_attribute, is_required, options, is_active "
                 "FROM product_attributes WHERE id=%s FOR UPDATE",
                 (attribute_id,),
             ).fetchone()
@@ -627,15 +619,15 @@ def update_attribute(attribute_id: int, payload: AttributeUpdate):
             ).fetchone()["used"]
             in_use = bool(has_product_values or has_variant_values)
             next_type = changes.get("value_type", current["value_type"])
+            next_display_type = changes.get("display_type", current["display_type"] or "dropdown")
             next_variant = changes.get("is_variant_attribute", current["is_variant_attribute"])
             next_options = changes.get("options", current["options"] or [])
-            option_types = {"select", "multi_select", "colour", "size"}
-            if next_type in option_types and not next_options:
-                raise HTTPException(status_code=422, detail="This attribute type requires at least one option")
-            if next_type not in option_types:
-                if next_options:
-                    raise HTTPException(status_code=422, detail="Options are only supported for select, multi_select, colour and size attributes")
-                next_options = []
+            if next_type in {"colour", "image"} and not next_options:
+                raise HTTPException(status_code=422, detail="Colour and image attributes require at least one value")
+            if next_display_type == "colour" and next_type != "colour":
+                raise HTTPException(status_code=422, detail="Colour display type requires Colour attribute type")
+            if next_display_type == "image" and next_type != "image":
+                raise HTTPException(status_code=422, detail="Image display type requires Image attribute type")
             if any(not isinstance(option, (str, int, float, bool)) for option in next_options):
                 raise HTTPException(status_code=422, detail="Attribute options must be simple scalar values")
             normalized = [str(option).strip().casefold() for option in next_options]
@@ -649,11 +641,12 @@ def update_attribute(attribute_id: int, payload: AttributeUpdate):
             if in_use and current["is_variant_attribute"] and not next_variant and has_variant_values:
                 raise HTTPException(status_code=409, detail="This attribute is used by existing variants and cannot be disabled as a variant attribute")
             row = conn.execute(
-                "UPDATE product_attributes SET name=%s, value_type=%s, is_variant_attribute=%s, is_required=%s, options=%s::jsonb "
-                "WHERE id=%s RETURNING id, name, code, value_type, is_variant_attribute, is_required, options, is_active, created_at",
+                "UPDATE product_attributes SET name=%s, value_type=%s, display_type=%s, is_variant_attribute=%s, is_required=%s, options=%s::jsonb "
+                "WHERE id=%s RETURNING id, name, code, value_type, display_type, is_variant_attribute, is_required, options, is_active, created_at",
                 (
                     changes.get("name", current["name"]),
                     next_type,
+                    next_display_type,
                     next_variant,
                     changes.get("is_required", current["is_required"]),
                     __import__("json").dumps(next_options),
@@ -726,7 +719,7 @@ def remove_attribute_option(attribute_id: int, payload: AttributeOptionRemove):
 def list_attributes(limit: int = Query(default=100, ge=1, le=500), offset: int = Query(default=0, ge=0)):
     with _connection() as conn:
         rows = conn.execute(
-            "SELECT id, name, code, value_type, is_variant_attribute, is_required, options, is_active, created_at "
+            "SELECT id, name, code, value_type, display_type, is_variant_attribute, is_required, options, is_active, created_at "
             "FROM product_attributes WHERE is_active = TRUE ORDER BY name LIMIT %s OFFSET %s", (limit, offset)
         ).fetchall()
     return {"items": rows, "limit": limit, "offset": offset}
