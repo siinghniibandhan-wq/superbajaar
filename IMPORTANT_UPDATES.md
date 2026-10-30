@@ -72,3 +72,13 @@ For every future major change:
 3. Keep both changes in the same feature branch and PR as the implementation where practical.
 4. Include only verified endpoints, status and test evidence.
 5. Never push directly to `main`; use the protected pull-request process.
+
+
+## 2026-10-30 — Owner account protection
+
+- Static auth audit found that an admin could demote or deactivate another owner whenever more than one active owner existed. Last-active-owner protection alone did not enforce the intended owner-only authority.
+- Added an explicit owner-only guard before an owner account can be demoted or deactivated. Existing last-active-owner protection remains in place.
+- Added unit tests for admin denial, owner permission, and unchanged admin management of non-owner accounts.
+- Commits: `bdece88`, `66ae57e`.
+- **Verification:** CI pending; no production verification. This is an application-only change using existing auth tables.
+- No schema, production database, merge or deployment changes.
