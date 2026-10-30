@@ -40,6 +40,13 @@ class ProductCreate(BaseModel):
     is_website_available: bool = True
     delivery_options: list[str] = Field(default_factory=lambda: ["standard"], max_length=2)
 
+    @field_validator("category_ids")
+    @classmethod
+    def valid_category_ids(cls, value: list[int]) -> list[int]:
+        if any(category_id <= 0 for category_id in value):
+            raise ValueError("Category IDs must be positive integers")
+        return list(dict.fromkeys(value))
+
     @field_validator("delivery_options")
     @classmethod
     def valid_delivery_options(cls, value: list[str]) -> list[str]:
