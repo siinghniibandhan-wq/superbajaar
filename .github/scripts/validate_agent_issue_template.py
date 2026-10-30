@@ -2,7 +2,8 @@
 """Validate the GitHub Issue Forms template used for AI agent work packages."""
 
 from pathlib import Path
-import sys
+import subprocess
+import tempfile
 
 try:
     import yaml
@@ -85,3 +86,26 @@ if not any(step.get("uses") == "actions/github-script@v7" for step in steps):
 if not workflow.get("concurrency"):
     raise SystemExit("Workflow must define a concurrency group.")
 print(f"PASS: {workflow_path} parsed; least-privilege permissions and required triggers verified.")
+
+governance_job = workflow["jobs"]["validate-agent-task"]
+github_script_step = next(
+    (step for step in governance_job.get("steps", []) if step.get("uses") == "actions/github-script@v7"),
+    None,
+)
+if not github_script_step:
+    raise SystemExit("GitHub Script action step is missing.")
+javascript = github_script_step.get("with", {}).get("script", "")
+if not javascript.strip():
+    raise SystemExit("Embedded governance JavaScript is empty.")
+
+with tempfile.NamedTemporaryFile("w", suffix=".js", encoding="utf-8", delete=False) as temp_file:
+    temp_file.write("async function main() {" + chr(10) + javascript + chr(10) + "}" + chr(10))
+    javascript_path = Path(temp_file.name)
+try:
+    result = subprocess.run(["node", "--check", str(javascript_path)], capture_output=True, text=True)
+    if result.returncode != 0:
+        raise SystemExit("Embedded governance JavaScript syntax check failed:" + chr(10) + result.stderr)
+finally:
+    javascript_path.unlink(missing_ok=True)
+
+print("PASS: embedded governance JavaScript syntax verified by Node.")
