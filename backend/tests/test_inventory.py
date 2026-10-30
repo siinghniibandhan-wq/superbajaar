@@ -126,3 +126,18 @@ def test_inventory_count_requires_database_configuration(monkeypatch):
     })
     assert response.status_code == 503
     assert response.json()["detail"] == "Inventory database is not configured"
+
+
+def test_physical_count_movement_reference_preserves_variance_direction():
+    from decimal import Decimal
+    from app.api.inventory import _physical_count_reference_type
+
+    assert _physical_count_reference_type(Decimal("2.000")) == "physical_count_in"
+    assert _physical_count_reference_type(Decimal("-2.000")) == "physical_count_out"
+
+
+def test_stock_issue_movement_reference_preserves_reduction_reason():
+    from app.api.inventory import _stock_issue_reference_type
+
+    assert _stock_issue_reference_type("issue") == "manual_issue_out"
+    assert _stock_issue_reference_type("scrap") == "manual_scrap_out"
