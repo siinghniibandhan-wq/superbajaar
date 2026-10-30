@@ -6,6 +6,8 @@ const money = value => new Intl.NumberFormat("en-IN", { style: "currency", curre
 
 export default function POSWorkspace({ onBack }) {
   const [variants, setVariants] = useState([]);
+  const [locations, setLocations] = useState([]);
+  const [locationId, setLocationId] = useState("");
   const [cart, setCart] = useState([]);
   const [customer, setCustomer] = useState({ name: "Walk-in Customer", phone: "", pin: "" });
   const [method, setMethod] = useState("upi");
@@ -20,8 +22,13 @@ export default function POSWorkspace({ onBack }) {
   async function load() {
     setLoading(true); setError("");
     try {
-      const result = await apiRequest("/catalogue/variants?limit=500");
+      const [result, locationResult] = await Promise.all([
+        apiRequest("/catalogue/variants?limit=500"),
+        apiRequest("/inventory/locations?limit=500"),
+      ]);
       setVariants(result.items || []);
+      setLocations(locationResult.items || []);
+      setLocationId(current => current && (locationResult.items || []).some(item => String(item.id) === current) ? current : "");
     } catch (e) { setError(e.message || "Unable to load active catalogue variants."); }
     finally { setLoading(false); }
   }
@@ -67,12 +74,13 @@ export default function POSWorkspace({ onBack }) {
   async function checkout(event) {
     event.preventDefault();
     if (!cart.length) { setError("Add at least one item before checkout."); return; }
+    if (!locationId) { setError("Select the stock location for this POS sale."); return; }
     setSaving(true); setError(""); setNotice(""); setReceipt(null);
     let order;
     try {
       order = await apiRequest("/orders", { method: "POST", body: JSON.stringify({
         channel: "pos", customer_name: customer.name.trim(), customer_phone: customer.phone.trim() || null,
-        delivery_pin: customer.pin.trim() || null, notes: "Created at POS", lines: cart.map(line => ({ variant_id: line.id, quantity: line.quantity })),
+        delivery_pin: customer.pin.trim() || null, location_id: Number(locationId), notes: "Created at POS", lines: cart.map(line => ({ variant_id: line.id, quantity: line.quantity })),
       }) });
     } catch (e) {
       setError(e.message || "Order could not be created. No payment record was created.");
@@ -115,6 +123,7 @@ export default function POSWorkspace({ onBack }) {
           <h3>Customer & payment record</h3>
           <label>Customer name<input required minLength="1" maxLength="200" value={customer.name} onChange={e => setCustomer(v => ({ ...v, name: e.target.value }))} /></label>
           <label>Phone (optional)<input maxLength="20" value={customer.phone} onChange={e => setCustomer(v => ({ ...v, phone: e.target.value }))} /></label>
+          <label>Stock location<select required value={locationId} onChange={e => setLocationId(e.target.value)}><option value="">Select the store / stock location</option>{locations.map(location => <option key={location.id} value={location.id}>{location.name}{location.pin_code ? " · PIN " + location.pin_code : ""}</option>)}</select></label>
           <label>Delivery PIN (optional)<input inputMode="numeric" pattern="[0-9]{6}" maxLength="6" value={customer.pin} onChange={e => setCustomer(v => ({ ...v, pin: e.target.value }))} /></label>
           <label>Payment method<select value={method} onChange={e => setMethod(e.target.value)}><option value="upi">UPI</option><option value="card">Card</option><option value="netbanking">Net banking</option><option value="cod">Cash / COD</option><option value="wallet">Wallet</option><option value="bank_transfer">Bank transfer</option><option value="other">Other</option></select></label>
           <p className="sb-muted">Checkout creates an order and a pending payment record. It does not charge a gateway, mark cash as received, or confirm a payment.</p>
