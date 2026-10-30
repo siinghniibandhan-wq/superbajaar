@@ -9,4 +9,5 @@
 009_product_availability_delivery.sql
 010_customer_accounts_referrals.sql
 012_product_category_assignments.sql
+013_product_multiple_categories.sql
 012_variant_image_primary.sql

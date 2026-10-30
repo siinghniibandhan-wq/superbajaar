@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiRequest } from "../../services/api.js";
+import "./POSWorkspace.css";
 
 const money = value => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(Number(value || 0));
 
@@ -46,7 +47,7 @@ export default function POSWorkspace({ onBack }) {
   }, [visible, selectedVariantByProduct]);
   const variantLabel = v => {
     const attrs = Object.entries(v.attributes || {}).map(([key, value]) => (Array.isArray(value) ? value.join(", ") : String(value)));
-    return attrs.length ? attrs.join(" / ") + (v.sku ? " · " + v.sku : "") : (v.sku || "Default");
+    return attrs.length ? attrs.join(" / ") : "Default variant";
   };
   const total = cart.reduce((sum, line) => sum + Number(line.selling_price || 0) * line.quantity, 0);
 
