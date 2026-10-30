@@ -234,6 +234,9 @@
 
 > - Static route inventory count on `main`: **89 API route decorators across 11 routers**, plus the root `/` route. This makes the prior runtime report of 16 registered routes a substantial unresolved mismatch. Expected paths are declared in the 11 API modules; runtime verification must compare the deployed OpenAPI `paths` against this static inventory and confirm the Gunicorn working directory/module target.
 
+
+> - **HIGH — website checkout does not enforce the public serviceability result:** the storefront's checkout submits an optional PIN directly to `POST /api/orders`; the order handler does not call the configured `/delivery/serviceability/{pin}` rule. PR #158 reservation instead selects a stock location by `stock_locations.pin_code`. These are separate sources of truth, so the global serviceable-PIN list, active stock-location PINs and product-specific availability rules can disagree. Server-side checkout must enforce one authoritative serviceability/location decision before accepting the order.
+
 > **Audit sequence agreed:** (1) finish the schema requirements/dependency audit, (2) audit all application modules and integrations against those requirements, (3) consolidate and prioritise findings in this register, and only then (4) prepare schema-change recommendations/change requests for Database Owner approval. No schema changes are being made at this stage.
 >
 > **Next required checks:** Complete table/column/constraint/index and application dependency mapping, then run the full application audit. After that, have the Database Owner run the read-only production checks in `docs/RELEASE_GATES.md` (database/version, full ledger and checksums, runner `--status` exit code, and backup storage). Record unavailable checks as NOT VERIFIED. No SQL, schema files, required-schema list, production database, merge, or deployment changed in this review.
