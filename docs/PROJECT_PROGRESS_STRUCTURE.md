@@ -102,10 +102,28 @@ Audit is an independent verification workstream. Findings must be evidence-based
 - Authentication, authorization, session handling, input validation, injection risks, CORS, CSRF where applicable, secrets handling, dependency vulnerabilities, rate limiting and sensitive-data exposure.
 - Record severity, exploitability, evidence and remediation owner.
 
-### 3.6 Others
-- Database/schema integrity, migration safety, backup and recovery evidence.
-- Integrations, webhooks, retries, observability, performance, reliability, documentation, compliance and operational readiness.
-- Verify that production claims are supported by production evidence; CI against a disposable database is not production certification.
+### 3.6 Database and Schema Audit
+- Compare application queries and data models with the actual versioned schema files and required-schema manifest.
+- Review constraints, indexes, foreign keys, triggers, grants, transaction boundaries, data integrity and migration compatibility.
+- Verify migration numbering, idempotency, checksums, protected historical files, live ledger status and backup/recovery evidence. Never infer production state from Git alone.
+
+### 3.7 Integrations and Automation Audit
+- Review payment, logistics, messaging and other external integrations; API credentials handling; webhook signature validation; retries; idempotency; timeout handling; failure recovery and duplicate-event protection.
+- Review scheduled jobs, systemd timers, synchronization processes and automation permissions.
+
+### 3.8 Infrastructure and Deployment Audit
+- Verify AWS EC2, Amplify, Nginx, Gunicorn, systemd, PostgreSQL, ports, TLS, environment configuration, deployment triggers, logs, monitoring and rollback arrangements against approved architecture.
+- Separate repository/CI evidence from staging and production evidence. Do not claim a live deployment is healthy based only on a successful build.
+
+### 3.9 Documentation and Compliance Audit
+- Check whether README, API contracts, architecture, database rules, release instructions and change history match the current implementation.
+- Identify outdated instructions, conflicting rules, missing operational guidance, privacy/data-retention concerns and applicable legal or regulatory obligations. Record matters requiring specialist or owner confirmation.
+
+### 3.10 Other Audit Findings
+- Performance, reliability, observability, accessibility, operational readiness and cross-module risks not covered above.
+- Verify that every production claim is supported by production evidence; CI against a disposable database is not production certification.
+
+For every finding, record: unique ID, severity (Critical/High/Medium/Low/Informational), affected module/file, evidence, impact, root cause (if confirmed), recommended action, owner, status and verification reference. Do not label an issue Critical without explaining its demonstrated or credible impact.
 
 ## 4. Quality Assurance and Testing (additional cross-cutting workstream)
 
@@ -186,7 +204,11 @@ Overall status:
    - API:
    - UI:
    - Security:
-   - Others:
+   - Database and Schema:
+   - Integrations and Automation:
+   - Infrastructure and Deployment:
+   - Documentation and Compliance:
+   - Other:
 
 4. Quality Assurance and Testing
    - Unit:
@@ -212,3 +234,4 @@ Evidence / PR / commit:
 - Distinguish repository/source verification, CI verification, staging verification and production verification.
 - Never mark a task complete based only on assumptions, screenshots, route registration or code presence.
 - Keep schema work separate from non-schema work and follow the repository's protected migration rules.
+- Keep the audit framework in this file. Do not create a separate audit-structure document or audit folder. Store individual audit reports/evidence separately only when an actual audit is performed and a report is required.
