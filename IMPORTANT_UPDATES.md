@@ -201,6 +201,9 @@
 > - `_is_public_catalogue_read()` explicitly allows unauthenticated `GET /api/catalogue/variants` for the storefront. The same `list_all_variants()` handler returns `cost_price`, `barcode`, and all active variants without filtering on `products.is_website_available`. This means an unauthenticated caller can query internal cost prices and discover POS-only variants even though the storefront later filters cards client-side using the public product list.
 > - **Treat as a production security blocker.** Public API responses must be server-filtered to website-available products and omit internal cost price (and any other non-public fields); staff/POS needs should use an authenticated response. Client-side filtering is not access control. No code was changed.
 
+
+> - No catalogue test asserts that unauthenticated variant responses omit `cost_price` or filter out non-website products. Existing catalogue tests primarily validate request schemas and error handling without a database-backed public response test. Add a regression test before release when the fix is authorised.
+
 > **Audit sequence agreed:** (1) finish the schema requirements/dependency audit, (2) audit all application modules and integrations against those requirements, (3) consolidate and prioritise findings in this register, and only then (4) prepare schema-change recommendations/change requests for Database Owner approval. No schema changes are being made at this stage.
 >
 > **Next required checks:** Complete table/column/constraint/index and application dependency mapping, then run the full application audit. After that, have the Database Owner run the read-only production checks in `docs/RELEASE_GATES.md` (database/version, full ledger and checksums, runner `--status` exit code, and backup storage). Record unavailable checks as NOT VERIFIED. No SQL, schema files, required-schema list, production database, merge, or deployment changed in this review.
