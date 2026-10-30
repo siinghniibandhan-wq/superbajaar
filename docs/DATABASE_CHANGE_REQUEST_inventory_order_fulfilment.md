@@ -25,11 +25,9 @@ The checked-in schema and repository search did not reveal:
 
 - Batch/lot-level stock with expiry and remaining quantity.
 - A first-class GRN header and receipt-line record (the current receive endpoint directly updates PO received quantity, aggregate balance and movement).
-- An order-linked reservation ledger and batch allocation records.
-- A durable return/quarantine inspection workflow.
-- A persisted fulfilment location on the order itself.
+- Batch-level reservation allocation records and a durable return/quarantine inspection workflow.
 
-The existing `reserved` balance and reservation/release movement types are useful primitives, but do not identify which order owns a reservation or which batch is allocated.
+The application now uses the existing `inventory_movements.reference_type/reference_id` fields to identify order-owned aggregate reservations, and `deliveries.location_id` to persist the selected fulfilment location on the shipment. A separate aggregate reservation header/table and an `orders.fulfilment_location_id` column are not required for this first phase.
 
 ## 3. Minimal additive schema proposal
 
@@ -60,22 +58,15 @@ Create a durable GRN record linked to the existing purchase order:
 
 One PO line may be received across multiple batches and multiple GRNs, while the existing PO received quantity remains the authoritative cumulative received quantity. Enforce that cumulative receipt never exceeds the outstanding PO quantity inside one transaction.
 
-### C. `inventory_reservations` and `inventory_reservation_allocations` — new
+### C. Batch allocation records — new only if batch-level fulfilment is enabled
 
-Reservation header/line ledger must link reservation to an order, variant, location, quantity, status, expiry and lifecycle timestamps. Allocation rows link each reservation to one or more batches and quantities.
+The aggregate order reservation lifecycle is implemented using the existing movement ledger:
+- `movement_type='reservation'` and `reference_type='order_reservation'` record reserved quantity against an order ID.
+- `movement_type='release'` with the same reference type records released quantity.
+- `movement_type='sale'` and `reference_type='order_fulfilment'` record stock consumed at dispatch.
+- `inventory_balances.reserved` remains the aggregate projection and is updated in the same transaction.
 
-- Reservation creation and updates to existing `inventory_balances.reserved` plus `inventory_movements` must be atomic.
-- Use row locks to prevent overselling.
-- A reservation must be idempotent per order/variant.
-- Unpaid reservation expiry is 30 minutes; payment confirmation keeps it active.
-- Cancellation or verified payment failure releases it exactly once.
-- Existing orders are not silently reserved retroactively.
-
-### D. Extend existing tables (no replacements)
-
-- Add nullable `orders.fulfilment_location_id` referencing `stock_locations.id`, so the chosen source location is persisted on the order.
-- Add nullable `inventory_movements.batch_id` referencing `inventory_batches.id`, preserving all existing aggregate movement rows.
-- Continue using `inventory_balances` as the aggregate balance/projection and `inventory_movements` as the common audit ledger.
+Do not add a duplicate reservation header/line schema for this aggregate phase. If batch/lot allocation is approved, add only the batch-allocation link needed to identify which batch quantities back an order reservation. Reservation writes must remain atomic with the existing balance and movement writes.
 
 ### E. `inventory_returns` and `inventory_return_lines` — new
 
@@ -85,7 +76,7 @@ Record return against the existing order/delivery, variant, quantity, received l
 
 1. FEFO allocation: eligible, non-expired batches with the earliest expiry first; FIFO by received date when expiry is absent. Never allocate expired, quarantined or blocked stock.
 2. Reserve all order lines atomically or reserve none.
-3. A location must be eligible for the delivery PIN and have sufficient available stock for the complete order. Persist that location on the order.
+3. A location must be eligible for the delivery PIN (or explicitly selected by POS staff) and have sufficient available stock for the complete order. Persist the chosen location in the order-linked reservation movements and the shipment's existing `location_id`.
 4. Website/manual allocation follows the approved PIN/location selection rule; POS uses the staff-selected location and validates it.
 5. Dispatch consumes only the quantity actually dispatched; partial dispatch is supported and consumes only its corresponding batch allocations.
 6. Cancellation and verified payment failure release outstanding reservations once. Do not infer gateway success/failure without verified provider status.
@@ -98,7 +89,7 @@ Record return against the existing order/delivery, variant, quantity, received l
 
 - `backend/app/api/purchasing.py`: GRN creation and multi-batch receiving.
 - `backend/app/api/inventory.py`: batch listing, expiry visibility and controlled batch adjustments.
-- `backend/app/api/orders.py`: location selection, atomic reservation, cancellation release and order fulfilment location.
+- `backend/app/api/orders.py`: location selection, atomic reservation, cancellation release and dispatch consumption.
 - `backend/app/api/payments.py`: release on verified failed/cancelled payment only.
 - `backend/app/api/delivery.py`: batch-aware partial dispatch, stock deduction and return intake/inspection.
 - Corresponding backend tests and existing purchasing, inventory, order and delivery workspaces.
