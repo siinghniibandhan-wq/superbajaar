@@ -77,6 +77,10 @@
 >
 > This matrix maps repository DDL to inspected API references; it is not a production inventory. The legacy/current parallel tables remain a separate compatibility concern, and no data migration or consolidation is authorised by this audit.
 
+
+> - Main-branch backend `app/services/` contains only `__init__.py`; business rules and SQL are largely implemented directly inside API route modules. PR #158 introduces `services/order_inventory.py` for its new reservation workflow. This is an architecture/maintainability divergence from the documented service/repository layering; do not refactor unrelated modules during this audit.
+> - Current backend test inventory includes auth, access-control, catalogue, customer auth, customers, delivery, health, inventory, orders, payments and purchasing tests. No dedicated `test_loyalty.py` or service/repository integration test module is present in the main test directory. Test existence alone does not prove end-to-end coverage; inspect assertions and gaps before final severity grading.
+
 > **Audit sequence agreed:** (1) finish the schema requirements/dependency audit, (2) audit all application modules and integrations against those requirements, (3) consolidate and prioritise findings in this register, and only then (4) prepare schema-change recommendations/change requests for Database Owner approval. No schema changes are being made at this stage.
 >
 > **Next required checks:** Complete table/column/constraint/index and application dependency mapping, then run the full application audit. After that, have the Database Owner run the read-only production checks in `docs/RELEASE_GATES.md` (database/version, full ledger and checksums, runner `--status` exit code, and backup storage). Record unavailable checks as NOT VERIFIED. No SQL, schema files, required-schema list, production database, merge, or deployment changed in this review.
