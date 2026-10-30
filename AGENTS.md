@@ -11,6 +11,6 @@ The following restrictions apply unless the owner explicitly approves the exact 
 - `backend/scripts/apply_schema.sh` or any backup, migration or deploy script
 - SQL that changes structure or existing data
 
-Claude writes all of that. If you need such a change, fill in the "Database Change Request" from section 9 of the rules file and hand it to the owner.
+Claude is the default author for all of that; another agent may implement a specifically scoped runner or CI change only with the owner's explicit approval recorded in the pull request. If you need such a change, fill in the "Database Change Request" from section 9 of the rules file and hand it to the owner.
 
 You may write application code (backend and frontend) and tests, on a new branch from `main`, with a pull request. Never push to `main`. Never deploy to test. Never claim a test, build or deploy passed unless you ran it and saw the result. If you are missing information, ask the owner instead of guessing.
