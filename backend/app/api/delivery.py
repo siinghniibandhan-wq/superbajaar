@@ -112,18 +112,85 @@ def list_shipments(
         raise _db_error(exc) from exc
 
 
+def _rank_locations_by_available_stock(locations):
+    """Prefer the eligible location with the greatest total unreserved stock."""
+    return sorted(locations, key=lambda location: (-location["available_stock"], location["id"]))
+
+
+def _available_location_query(conn, order_id: int, pin_code: str):
+    """Return locations serving the PIN that can fulfil every order line."""
+    return conn.execute(
+        """
+        SELECT sl.id, sl.name,
+               SUM(ib.on_hand - ib.reserved) AS available_stock
+        FROM stock_locations sl
+        JOIN inventory_balances ib ON ib.location_id = sl.id
+        JOIN order_lines ol
+          ON ol.variant_id = ib.variant_id AND ol.order_id = %s
+        WHERE sl.is_active = TRUE
+          AND sl.pin_code = %s
+        GROUP BY sl.id, sl.name
+        HAVING COUNT(DISTINCT ol.variant_id) = (
+                   SELECT COUNT(DISTINCT variant_id)
+                   FROM order_lines WHERE order_id = %s
+               )
+           AND BOOL_AND((ib.on_hand - ib.reserved) >= ol.quantity)
+        ORDER BY available_stock DESC, sl.id
+        """,
+        (order_id, pin_code, order_id),
+    ).fetchall()
+
+
 @router.post("/shipments", status_code=201)
 def create_shipment(payload: DeliveryCreate):
     try:
         with _connect() as conn:
             with conn.transaction():
-                order = conn.execute("SELECT id, status, delivery_pin FROM orders WHERE id=%s FOR SHARE", (payload.order_id,)).fetchone()
+                order = conn.execute("SELECT id, status, channel, delivery_pin FROM orders WHERE id=%s FOR SHARE", (payload.order_id,)).fetchone()
                 if order is None:
                     raise HTTPException(status_code=404, detail="Order not found")
                 if order["status"] in {"cancelled", "delivered"}:
                     raise HTTPException(status_code=409, detail="Cannot create a shipment for a cancelled or delivered order")
-                if order["delivery_pin"] and order["delivery_pin"].strip() != payload.delivery_pin:
+                order_pin = (order["delivery_pin"] or "").strip()
+                if not order_pin:
+                    raise HTTPException(status_code=422, detail="The order has no delivery PIN; update the order before creating a shipment")
+                if order_pin != payload.delivery_pin:
                     raise HTTPException(status_code=422, detail="Shipment delivery PIN must match the order delivery PIN")
+
+                if order["channel"] in {"website", "manual"}:
+                    eligible_locations = _available_location_query(conn, payload.order_id, order_pin)
+                    if not eligible_locations:
+                        raise HTTPException(status_code=409, detail="No active location serving this PIN has enough available stock for every order item")
+                    selected_location = _rank_locations_by_available_stock(eligible_locations)[0]
+                    if payload.location_id is not None and payload.location_id != selected_location["id"]:
+                        raise HTTPException(status_code=422, detail="Website and manual shipments are assigned automatically to the eligible location with the most available stock")
+                    location_id = selected_location["id"]
+                else:
+                    if payload.location_id is None:
+                        raise HTTPException(status_code=422, detail="Select the fulfilment store/location for POS orders")
+                    selected_location = conn.execute(
+                        "SELECT id FROM stock_locations WHERE id=%s AND is_active=TRUE AND pin_code=%s",
+                        (payload.location_id, order_pin),
+                    ).fetchone()
+                    if selected_location is None:
+                        raise HTTPException(status_code=422, detail="Selected location is inactive or is not configured for the order delivery PIN")
+                    stock_check = conn.execute(
+                        """
+                        SELECT COUNT(DISTINCT ol.variant_id) AS matched_variants,
+                               COUNT(DISTINCT CASE
+                                   WHEN ib.on_hand - ib.reserved >= ol.quantity
+                                   THEN ol.variant_id END) AS available_variants
+                        FROM order_lines ol
+                        LEFT JOIN inventory_balances ib
+                          ON ib.variant_id=ol.variant_id AND ib.location_id=%s
+                        WHERE ol.order_id=%s
+                        """,
+                        (payload.location_id, payload.order_id),
+                    ).fetchone()
+                    if stock_check["matched_variants"] != stock_check["available_variants"]:
+                        raise HTTPException(status_code=409, detail="Selected location does not have enough available stock for every order item")
+                    location_id = payload.location_id
+
                 existing = conn.execute("SELECT id FROM deliveries WHERE order_id=%s AND status NOT IN ('cancelled','returned','failed')", (payload.order_id,)).fetchone()
                 if existing:
                     raise HTTPException(status_code=409, detail="An active shipment already exists for this order")
@@ -131,7 +198,7 @@ def create_shipment(payload: DeliveryCreate):
                 row = conn.execute(
                     "INSERT INTO deliveries (shipment_reference, order_id, delivery_pin, recipient_name, recipient_phone, address, location_id, status, delivery_notes) "
                     "VALUES (%s,%s,%s,%s,%s,%s,%s,'pending',%s) RETURNING id, shipment_reference, order_id, delivery_pin, recipient_name, recipient_phone, address, location_id, status, delivery_notes, created_at, updated_at",
-                    (ref, payload.order_id, payload.delivery_pin, payload.recipient_name, payload.recipient_phone, payload.address, payload.location_id, payload.delivery_notes),
+                    (ref, payload.order_id, payload.delivery_pin, payload.recipient_name, payload.recipient_phone, payload.address, location_id, payload.delivery_notes),
                 ).fetchone()
         return row
     except HTTPException:
