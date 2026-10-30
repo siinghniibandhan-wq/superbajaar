@@ -112,7 +112,6 @@ def list_shipments(
         raise _db_error(exc) from exc
 
 
-@router.post("/shipments", status_code=201)
 def _rank_locations_by_available_stock(locations):
     """Prefer the eligible location with the greatest total unreserved stock."""
     return sorted(locations, key=lambda location: (-location["available_stock"], location["id"]))
@@ -142,6 +141,7 @@ def _available_location_query(conn, order_id: int, pin_code: str):
     ).fetchall()
 
 
+@router.post("/shipments", status_code=201)
 def create_shipment(payload: DeliveryCreate):
     try:
         with _connect() as conn:
