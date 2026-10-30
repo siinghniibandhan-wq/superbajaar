@@ -106,3 +106,41 @@ def test_release_records_a_release_movement_for_outstanding_quantity():
     movement = next(call for call in conn.calls if "INSERT INTO inventory_movements" in call[0])
     assert "'release'" in movement[0]
     assert movement[1][4] == "101"
+
+
+
+def test_partial_dispatch_consumes_only_requested_quantity():
+    conn = FakeConnection(outstanding=[{
+        "variant_id": 7,
+        "location_id": 4,
+        "outstanding": Decimal("5"),
+    }])
+    assert dispatch_order_stock(conn, 101, {7: 2}) == 1
+    update = next(call for call in conn.calls if "UPDATE inventory_balances" in call[0])
+    assert update[1][0] == Decimal("2")
+    assert update[1][1] == Decimal("2")
+    movement = next(call for call in conn.calls if "INSERT INTO inventory_movements" in call[0])
+    assert movement[1][2] == Decimal("2")
+
+
+def test_partial_dispatch_rejects_quantity_above_reservation_before_mutation():
+    conn = FakeConnection(outstanding=[{
+        "variant_id": 7,
+        "location_id": 4,
+        "outstanding": Decimal("3"),
+    }])
+    with pytest.raises(ValueError, match="exceeds the outstanding reservation"):
+        dispatch_order_stock(conn, 101, {7: 4})
+    assert not any("UPDATE inventory_balances" in sql for sql, _ in conn.calls)
+    assert not any("INSERT INTO inventory_movements" in sql for sql, _ in conn.calls)
+
+
+def test_partial_dispatch_rejects_empty_quantity_map():
+    conn = FakeConnection(outstanding=[{
+        "variant_id": 7,
+        "location_id": 4,
+        "outstanding": Decimal("3"),
+    }])
+    with pytest.raises(ValueError, match="must be positive"):
+        dispatch_order_stock(conn, 101, {})
+    assert not any("UPDATE inventory_balances" in sql for sql, _ in conn.calls)
