@@ -61,12 +61,17 @@ jobs:
             const existingRepositoryLabels = new Set(repositoryLabels.map(label => label.name));
             for (const label of statusLabels) {
               if (existingRepositoryLabels.has(label.name)) continue;
-              await github.rest.issues.createLabel({
-                ...context.repo,
-                name: label.name,
-                color: label.color,
-                description: label.description
-              });
+              try {
+                await github.rest.issues.createLabel({
+                  ...context.repo,
+                  name: label.name,
+                  color: label.color,
+                  description: label.description
+                });
+              } catch (error) {
+                // Parallel issue events may race to create the same shared label.
+                if (error.status !== 422) throw error;
+              }
             }
 
             const requiredHeadings = [
