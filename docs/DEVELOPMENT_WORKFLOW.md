@@ -10,7 +10,7 @@
 | GitHub Codespaces | Primary development workspace | Read/edit source, reproduce bugs, run tests/builds, inspect dependencies and local logs | Production runtime verification |
 | Swagger / OpenAPI | API contract and interactive endpoint testing | Routes, schemas, auth, request/response, status codes and reproducible API tests | Frontend rendering or production infrastructure diagnosis |
 | ChatGPT | Technical lead and coordinator | Planning, architecture, analysis, review, documentation and evidence-based decisions | Executing a test unless a runner/tool actually ran it |
-| Claude | Designated database/SQL/runner author by current project policy | Scoped schema, migration runner and database review work | Owner approval or live production authorization |
+| Claude | Designated database/SQL/runner author by current project policy | Scoped schema, migration runner and database review work | Owner approval or live production authorization |\n| GitHub Copilot | Additional AI coding assistant; capabilities depend on the assigned plan | Code completion, explanations, bounded implementation, test suggestions and first-pass review where enabled | Human review, required CI, repository safety rules, database authorisation or owner approval |
 | GitHub Actions | Automated CI | Backend tests, frontend builds, schema tests and PR quality gates | Production DB checks or post-deployment E2E verification |
 | AWS EC2 | Backend host | Runtime, OS, process, networking, disk, logs and environment investigation | Source-code development |
 | AWS Systems Manager Run Command | Remote EC2 operations | Approved read-only diagnostics and explicitly approved commands | An unrestricted substitute for review/approval |
@@ -97,7 +97,7 @@ Draft → Ready for review → In review → Changes requested / Blocked → App
 
 A closed PR must have a short reason (superseded, duplicate, no longer required, unsafe, abandoned with owner decision, etc.). Merged means integrated into the target branch; it does not mean deployed.
 
-## 4. Codespaces: primary use
+## 4. AI coding assistants and delegation\n\nGitHub Copilot is an additional coding assistant, not a replacement for the repository owner, technical lead, designated database author, CI or review process. Its actual plan and enabled capabilities must be checked in the account; repository integration alone does not prove paid access, cloud-agent eligibility or unlimited usage. See [GitHub Copilot plans, limits and repository policy](GITHUB_COPILOT.md) for the research dated 31 October 2026.\n\nDelegate bounded implementation, explanations, test scaffolding and first-pass review to Copilot where the plan permits. All agents must follow `AGENTS.md`, work on feature branches, preserve protected files and provide exact test/CI evidence. Copilot must not merge, bypass branch protection, deploy, change production data/secrets/infrastructure, or take over protected SQL/migration authorship.\n\n## 5. Codespaces: primary use
 
 Use Codespaces extensively as the primary place to:
 
@@ -110,7 +110,7 @@ Use Codespaces extensively as the primary place to:
 
 Before running commands, confirm repository, branch, working tree and commit. Never point a local test at production credentials or database. Keep secrets out of terminal output and screenshots.
 
-## 5. Swagger / OpenAPI: primary use
+## 6. Swagger / OpenAPI: primary use
 
 Use Swagger first for API-specific defects:
 
@@ -122,7 +122,7 @@ Use Swagger first for API-specific defects:
 
 Swagger is commonly available at the FastAPI OpenAPI UI path (for example `/docs`) on the configured backend host. Confirm the deployed URL and environment rather than assuming a URL. A successful Swagger request proves only that specific request in that environment; it does not prove the frontend journey or all roles.
 
-## 6. AWS: when and how to use it
+## 7. AWS: when and how to use it
 
 Use AWS only when evidence indicates server, runtime, networking, environment, hosting, deployment or production database concerns.
 
@@ -154,7 +154,7 @@ Use Amplify for frontend build/deploy state, build logs, hosting configuration a
 
 Do not change these targets as a workaround. Verify the real environment before any operation.
 
-## 7. Release and verification gates
+## 8. Release and verification gates
 
 | Gate | Evidence required |
 |---|---|
