@@ -84,7 +84,15 @@ If the provider cannot satisfy API-based dispatch, it may still be used manually
 - No new server, database, paid subscription, API billing or permission expansion without explicit owner approval.
 - An assignment is not a running task. Record provider acceptance or a real run ID before changing state to IN PROGRESS.
 
-## 7. Current blockers and next checkpoint
+## 7. Execution evidence for pilot issue #178
+
+- GitHub issue #178: `[AGENT TASK] Pilot 1 — Lovable compatibility audit`; open; task body uses the `###` headings expected by the validator.
+- Existing Lovable project audit message remains RUNNING; no final audit report has been returned yet. No implementation prompts or writes were sent to that project.
+- Preliminary coordinator-side inspection of Lovable project ref `abcccc904fdf8962f363089e8d7d6e2c3a7e1a4f` confirms the TanStack Start template, a placeholder root page, a standalone server entry, and empty workspace connector/project-knowledge state. Full recommendation remains KEEP ISOLATED pending completion of the audit.
+- The latest local state-machine test script exercises complete -> READY, incomplete -> BLOCKED and reopened DONE -> READY. It uses a mocked GitHub issue/API surface; it does not call GitHub or dispatch an agent.
+- Latest PR workflow execution for head `cb319e3641f512276557e6ea877095e3bf9fddd0` was queued at last check. Do not mark the latest test run successful until GitHub reports the terminal conclusion.
+
+## 8. Current blockers and next checkpoint
 
 1. **Owner action:** review and merge PR #177. The PR is mergeable; it remains unmerged by design because the repository policy reserves merge authority to the owner.
 2. **GitHub test:** after merge, create a test issue and verify the issue-event workflow on the default branch.
