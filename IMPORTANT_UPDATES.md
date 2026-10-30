@@ -349,3 +349,13 @@ For every future major change:
 3. Keep both changes in the same feature branch and PR as the implementation where practical.
 4. Include only verified endpoints, status and test evidence.
 5. Never push directly to `main`; use the protected pull-request process.
+
+
+## 2026-10-30 — Order reservation fail-closed hardening
+
+- Follow-up review of PR #158 confirmed a critical bypass: website/manual orders without a PIN could be created without a stock reservation, and callers could supply a stock location directly.
+- PR #158 branch now rejects website/manual order creation without a six-digit delivery PIN, rejects caller-selected locations for those channels, and requires a PIN or staff-selected POS location in the reservation helper. Missing eligibility input now fails closed rather than silently skipping reservation.
+- Added regression tests for website/manual missing-PIN requests, caller-supplied website location, and helper-level no-PIN/no-location behaviour.
+- Commits: `065d864`, `dc7b1a6`, `bce3df7`, `1e1de26`.
+- **Verification:** CI status for these latest PR #158 commits has not yet been observed. The PR remains draft/unmerged. The remaining authoritative serviceability/product-availability alignment, delivery-to-order lifecycle reconciliation, and PostgreSQL-backed transaction tests are still blockers.
+- **Safety:** no schema, production database, AWS/infrastructure, merge or deployment changes.
