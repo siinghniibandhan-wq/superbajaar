@@ -237,16 +237,34 @@ def _generate_variant_sku(conn, product_id: int, attributes: dict[str, Any]) -> 
             return candidate
         version += 1
 
+def _has_attribute_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, list):
+        return len(value) > 0
+    return True
+
+
+def _validate_required_product_attribute(attribute: dict[str, Any], value: Any) -> None:
+    if attribute["is_required"] and not attribute["is_variant_attribute"] and not _has_attribute_value(value):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Required product attribute '{attribute['name']}' cannot be empty",
+        )
+
+
 def _validate_required_variant_attributes(definitions: list[dict[str, Any]], values: dict[str, Any]) -> None:
     missing = sorted(
         definition["code"]
         for definition in definitions
-        if definition["is_required"] and definition["code"] not in values
+        if definition["is_required"] and not _has_attribute_value(values.get(definition["code"]))
     )
     if missing:
         raise HTTPException(
             status_code=422,
-            detail="Required variant attributes are missing: " + ", ".join(missing),
+            detail="Required variant attributes are missing or empty: " + ", ".join(missing),
         )
 
 
@@ -648,11 +666,12 @@ def set_product_attribute_value(product_id: int, attribute_id: int, payload: Att
         with _connection() as conn:
             _require_product(conn, product_id)
             attribute = conn.execute(
-                "SELECT id, name, value_type, options, is_active FROM product_attributes WHERE id = %s",
+                "SELECT id, name, value_type, options, is_active, is_required, is_variant_attribute FROM product_attributes WHERE id = %s",
                 (attribute_id,),
             ).fetchone()
             if attribute is None or not attribute["is_active"]:
                 raise HTTPException(status_code=404, detail="Active attribute not found")
+            _validate_required_product_attribute(attribute, payload.value)
             if payload.value is None:
                 conn.execute(
                     "DELETE FROM product_attribute_values WHERE product_id=%s AND attribute_id=%s",
