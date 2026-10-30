@@ -271,10 +271,20 @@ def _validate_attribute_value(conn, attribute: dict[str, Any], value: Any) -> No
     kind = attribute["value_type"]
     options = attribute["options"] or []
     valid = True
-    if kind in {"colour", "image"}:
+    if kind in {"select", "colour", "size"}:
+        valid = value in options
+    elif kind == "multi_select":
+        valid = isinstance(value, list) and all(item in options for item in value) and len(value) == len(set(map(str, value)))
+    elif kind in {"colour", "image"}:
         valid = isinstance(value, str) and value in options
     elif kind == "text":
         valid = isinstance(value, str)
+    elif kind == "number":
+        valid = isinstance(value, (int, float)) and not isinstance(value, bool)
+    elif kind == "boolean":
+        valid = isinstance(value, bool)
+    elif kind == "date":
+        valid = isinstance(value, str) and len(value) == 10 and value[4:5] == "-" and value[7:8] == "-"
     if not valid:
         raise HTTPException(status_code=422, detail=f"Invalid value for attribute '{attribute['name']}'")
 
@@ -590,7 +600,7 @@ def update_attribute_options(attribute_id: int, payload: AttributeOptionsUpdate)
             ).fetchone()
             if row is None or not row["is_active"]:
                 raise HTTPException(status_code=404, detail="Active attribute not found")
-            if row["value_type"] not in {"text", "colour", "image"}:
+            if row["value_type"] not in {"text", "colour", "image", "select", "multi_select", "size"}:
                 raise HTTPException(status_code=422, detail="This attribute type does not support options")
             combined = _merge_attribute_options(row["options"] or [], payload.options)
             updated = conn.execute(
