@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This policy defines the independent technical, security, and change-review role assigned to KPMC Enterprises as a human collaborator on the Superbajaar repository. Superbajaar remains the product owner and retains business, product, release, and production decision authority.
+This policy describes an optional independent technical and security review resource available from KPMC Enterprises as a human collaborator on the Superbajaar repository. KPMC participation is voluntary and is not a mandatory approver, code owner, or release gate. Superbajaar remains the product owner and retains business, product, release, and production decision authority.
 
 ## Roles and separation of duties
 
@@ -12,16 +12,16 @@ This policy defines the independent technical, security, and change-review role 
 - Authorises production releases, infrastructure changes, production data operations, and changes to secrets or deployment configuration.
 - Retains repository administration and final merge/release authority, subject to enforced repository rules.
 
-### KPMC Enterprises — independent technical and security reviewer
+### KPMC Enterprises — optional independent technical and security reviewer
 
-- Reviews pull requests independently for correctness, maintainability, security, and consistency with approved architecture.
-- Reviews authentication, authorisation, input validation, data exposure, dependency changes, and security-sensitive configuration.
-- Reviews database migrations for additive/idempotent design, unique migration numbering, data integrity, rollback/recovery considerations, and compliance with the repository's database change rules.
-- Checks relevant CI evidence, including backend tests, frontend builds, PostgreSQL compatibility checks, secret scanning, and static analysis.
-- Records actionable review comments and approves only after material concerns are resolved.
+- May review pull requests independently for correctness, maintainability, security, and consistency with approved architecture, when invited and available.
+- May review authentication, authorisation, input validation, data exposure, dependency changes, and security-sensitive configuration.
+- May review database migrations for additive/idempotent design, unique migration numbering, data integrity, rollback/recovery considerations, and compliance with the repository's database change rules.
+- May check relevant CI evidence, including backend tests, frontend builds, PostgreSQL compatibility checks, secret scanning, and static analysis.
+- May record actionable review comments and, if formally asked to review, approve only after material concerns are resolved.
 - Reviews deployment-related code and release evidence, but does not deploy to production or change production infrastructure without explicit owner authorisation.
 
-KPMC's collaborator status does not itself grant authority to change product scope, production systems, secrets, billing, customer data, or deployment settings.
+KPMC review is optional and does not create an obligation to review or approve any pull request. Required human approval under repository branch rules may be provided by any eligible independent reviewer; it does not have to come from KPMC. KPMC's collaborator status does not itself grant authority to change product scope, production systems, secrets, billing, customer data, or deployment settings.
 
 ## Required change-control process
 
@@ -52,8 +52,8 @@ KPMC's collaborator status does not itself grant authority to change product sco
 
 ## Audit evidence
 
-For each material change, retain the pull request, human review decision, CI run links/results, relevant migration/test evidence, and release approval. Do not claim a test, scan, backup, deployment, or production check passed unless it was actually executed and observed.
+For each material change, retain the pull request, any applicable human review decision, CI run links/results, relevant migration/test evidence, and release approval. Do not claim a test, scan, backup, deployment, or production check passed unless it was actually executed and observed.
 
 ## Limits and review cadence
 
-KPMC provides independent review and technical/security oversight as a collaborator; it is not a substitute for a qualified penetration test, legal/compliance assessment, or operational monitoring. Review repository access, branch rules, required checks, and security settings periodically and whenever responsibilities or personnel change.
+KPMC may provide independent review and technical/security oversight when requested; this optional assistance is not a substitute for a qualified penetration test, legal/compliance assessment, or operational monitoring. Review repository access, branch rules, required checks, and security settings periodically and whenever responsibilities or personnel change.
