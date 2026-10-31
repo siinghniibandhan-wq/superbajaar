@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Heart, ShoppingBag, Search, Sparkles, Flame, Clock3, ChevronLeft, ChevronRight, UserRound, MapPin, X, Coins, CreditCard, CalendarClock } from "lucide-react";
 import { apiRequest } from "../services/api.js";
-import GoogleAnalytics, { trackAnalyticsEvent } from "./GoogleAnalytics.jsx";
+import GoogleAnalytics, { getAnalyticsConsent, setAnalyticsConsent, trackAnalyticsEvent } from "./GoogleAnalytics.jsx";
 import "./storefront.css";
 
 const categoryOrder = [
@@ -57,7 +57,7 @@ export default function Storefront() {
   const [deliveryDraft, setDeliveryDraft] = useState(() => { try { return window.localStorage.getItem("sb-delivery-pin") || ""; } catch { return ""; } });
   const [deliveryMessage, setDeliveryMessage] = useState("");
   const [accountOpen, setAccountOpen] = useState(false);
-  const [accountSection, setAccountSection] = useState("overview");
+  const [accountSection, setAccountSection] = useState("overview");\n  const [analyticsEnabled, setAnalyticsEnabled] = useState(getAnalyticsConsent);
   const [canOpenAdmin, setCanOpenAdmin] = useState(false);
   const [ticketDraft, setTicketDraft] = useState({ name: "", phone: "", email: "", subject: "", description: "" });
   const [ticketCreated, setTicketCreated] = useState(null);
@@ -676,7 +676,7 @@ export default function Storefront() {
       <div className="storefront-account-welcome"><span className="storefront-kicker">YOUR SUPER BAJAAR</span><h1>{customer.name.trim() ? `Hello, ${customer.name.trim().split(/\s+/)[0]}` : "My Account"}</h1><p>Manage your profile, purchases and support in one place.</p></div>
       <div className="storefront-account-layout">
         <nav className="storefront-account-nav" aria-label="Customer account sections">
-          {[["overview","Overview","user-round"],["loyalty","Loyalty Card & Coins","coins"],["referrals","Refer & Earn","users"],["orders","My Orders","package"],["tickets","My Tickets","ticket"],["wishlist","My Wishlist","heart"],["addresses","Addresses","map-pin"],["security","Security","shield-check"]].map(([key,label])=><button key={key} type="button" className={accountSection===key?"is-active":""} onClick={()=>{if(key==="wishlist"){openWishlist();return;}setAccountSection(key);setNotice("");setError("");if(key==="referrals") loadReferrals();if(key==="loyalty") loadCustomerLoyalty();}}>{label}<span aria-hidden="true">›</span></button>)}
+          {[["overview","Overview","user-round"],["loyalty","Loyalty Card & Coins","coins"],["referrals","Refer & Earn","users"],["orders","My Orders","package"],["tickets","My Tickets","ticket"],["wishlist","My Wishlist","heart"],["addresses","Addresses","map-pin"],["security","Security","shield-check"],["privacy","Privacy & Analytics","shield-check"]].map(([key,label])=><button key={key} type="button" className={accountSection===key?"is-active":""} onClick={()=>{if(key==="wishlist"){openWishlist();return;}setAccountSection(key);setNotice("");setError("");if(key==="referrals") loadReferrals();if(key==="loyalty") loadCustomerLoyalty();}}>{label}<span aria-hidden="true">›</span></button>)}
         </nav>
         <div className="storefront-account-panel">
           {accountSection==="overview" && <div className="storefront-account-section">
@@ -741,6 +741,26 @@ export default function Storefront() {
             {error && <p className="storefront-account-note" role="alert">{error}</p>}
           </div>}
           {accountSection==="addresses" && <div className="storefront-account-section"><h2>Addresses</h2><p>Manage your preferred delivery address and PIN code.</p><form className="storefront-account-form" onSubmit={saveCustomerProfile}><label>Delivery PIN<input inputMode="numeric" autoComplete="postal-code" pattern="[1-9][0-9]{5}" maxLength="6" value={customer.pin} onChange={event=>setCustomer(old=>({...old,pin:event.target.value.replace(/\\D/g,"").slice(0,6)}))}/></label><label className="storefront-account-address">Delivery address<textarea autoComplete="street-address" rows="3" maxLength="1000" value={customer.address} onChange={event=>setCustomer(old=>({...old,address:event.target.value}))}/></label><button className="storefront-primary" type="submit">Save address</button><p className="storefront-account-note">Address is currently saved on this device, not synced to a signed-in customer account.</p></form></div>}
+          {accountSection==="privacy" && <div className="storefront-account-section">
+            <span className="storefront-kicker">YOUR PRIVACY</span>
+            <h2>Analytics preferences</h2>
+            <p>Choose whether Super Bajaar may use Google Analytics to understand storefront usage and improve your shopping experience. This setting does not affect essential account, cart or checkout functions.</p>
+            <div className="storefront-security-list">
+              <div>
+                <span><strong>Google Analytics</strong><small>{analyticsEnabled ? "Analytics is enabled on this browser." : "Analytics is disabled on this browser."}</small></span>
+                <label className="storefront-analytics-toggle">
+                  <input type="checkbox" role="switch" checked={analyticsEnabled} onChange={event => {
+                    const enabled = event.target.checked;
+                    setAnalyticsEnabled(enabled);
+                    setAnalyticsConsent(enabled);
+                    setNotice(enabled ? "Analytics enabled. Thank you for helping us improve." : "Analytics disabled. No further analytics events will be sent.");
+                  }} />
+                  <span>{analyticsEnabled ? "On" : "Off"}</span>
+                </label>
+              </div>
+            </div>
+            <p className="storefront-account-note">You can change this choice anytime in My Account → Privacy &amp; Analytics. If you turn analytics off, further GA4 events are blocked and analytics consent is withdrawn for this browser.</p>
+          </div>}
           {accountSection==="security" && <div className="storefront-account-section"><h2>Security</h2><p>Protect your account and keep your contact details verified.</p><div className="storefront-security-list"><div><span><strong>Change password</strong><small>Change the password used to sign in.</small></span><button type="button" disabled>Not available yet</button></div><div><span><strong>Update mobile number</strong><small>Requires OTP verification of the new number.</small></span><button type="button" disabled>OTP setup required</button></div><div><span><strong>Update email address</strong><small>Requires verification of the new email address.</small></span><button type="button" disabled>Email verification required</button></div><div><span><strong>Login sessions</strong><small>Review and end active customer sessions.</small></span><button type="button" disabled>Customer sign-in required</button></div></div><p className="storefront-account-note">These actions are not enabled because customer authentication and verification are not implemented yet. We will not simulate security changes in the browser.</p></div>}
           {notice && <p className="storefront-order-success" role="status">{notice}</p>}
         </div>
