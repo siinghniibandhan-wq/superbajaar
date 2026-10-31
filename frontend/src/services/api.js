@@ -57,7 +57,11 @@ export async function apiRequest(path, options = {}) {
   }
 
   if (!response.ok) {
-    const message = typeof body === "object" && body !== null ? body.detail || body.message : body;
+    const detail = typeof body === "object" && body !== null ? body.detail : undefined;
+    // FastAPI validation errors return detail as a list; show their readable messages.
+    const message = Array.isArray(detail)
+      ? detail.map((item) => (item && item.msg ? String(item.msg).replace(/^Value error, /, "") : String(item))).join("; ")
+      : typeof body === "object" && body !== null ? detail || body.message : body;
     if (response.status === 404) {
       const responseHint = typeof message === "string" && message.length < 180 ? ` Response: ${message}` : "";
       throw new Error(`404 from ${requestUrl}.${responseHint} Verify that this URL reaches the deployed FastAPI service and that its /api route is deployed.`);
