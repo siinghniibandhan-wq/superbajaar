@@ -21,6 +21,24 @@ function loadGoogleTag() {
   document.head.appendChild(script);
 }
 
+export function getAnalyticsConsent() {
+  try { return window.localStorage.getItem(CONSENT_KEY) === "granted"; } catch { return false; }
+}
+
+export function setAnalyticsConsent(granted) {
+  const value = granted ? "granted" : "denied";
+  try { window.localStorage.setItem(CONSENT_KEY, value); } catch {}
+  if (typeof window.gtag === "function") {
+    window.gtag("consent", "update", {
+      analytics_storage: granted ? "granted" : "denied",
+      ad_storage: "denied",
+      ad_user_data: "denied",
+      ad_personalization: "denied",
+    });
+  }
+  window.dispatchEvent(new CustomEvent("sb:analytics-consent", { detail: { granted } }));
+}
+
 export function trackAnalyticsEvent(name, params = {}) {
   if (!measurementId || !hasConsent() || typeof window.gtag !== "function") return;
   window.gtag("event", name, params);
@@ -28,6 +46,11 @@ export function trackAnalyticsEvent(name, params = {}) {
 
 export default function GoogleAnalytics({ pagePath }) {
   const [consent, setConsent] = useState(hasConsent);
+  useEffect(() => {
+    const syncConsent = event => setConsent(Boolean(event.detail?.granted));
+    window.addEventListener("sb:analytics-consent", syncConsent);
+    return () => window.removeEventListener("sb:analytics-consent", syncConsent);
+  }, []);
 
   useEffect(() => {
     if (!measurementId || !consent) return;
