@@ -93,7 +93,7 @@ See [Architecture and API contracts](docs/architecture.md) for detailed diagrams
 | Tool / service | Why it exists | Primary use | Use it when |
 |---|---|---|---|
 | **GitHub** | Source of truth and controlled collaboration | Repository, branches, commits, PRs, reviews, Actions | Every code/document change and release review |
-| **GitHub Codespaces** | Reproducible development workspace | Inspect/edit code, run backend tests, frontend builds, linters and local diagnostics | Default place to investigate and implement code changes |
+| **GitHub Codespaces** | Optional interactive development workspace | Inspect/edit code and run local checks when available | Preferred when available; current usage budget is exhausted, so do not incur paid usage without owner approval |
 | **Swagger / OpenAPI** | Live API contract and interactive endpoint explorer | Inspect schemas, auth, parameters, responses and test requests | First stop for API/endpoint/request-response defects |
 | **ChatGPT** | Technical leadership and work coordination | Architecture reasoning, task planning, code review, debugging, documentation and evidence review | Plan and coordinate work; never treat an unexecuted suggestion as a test result |
 | **Claude** | Designated database/schema implementation reviewer and default SQL/runner author under current governance | Scoped SQL, migration runner and schema workflow work | Database-impacting changes, following `CLAUDE.md` and owner approval |
@@ -114,6 +114,11 @@ Detailed usage, diagnostic order and decision matrix: [Development, GitHub and o
 AI contributor roles, file ownership, 2–3-file work batches and cross-agent handoffs: [AI Team Collaboration & Delivery Policy](docs/AI_TEAM_COLLABORATION.md).
 
 ---
+
+
+### AI engineering team and coordination
+
+The canonical contributor roles, exclusive responsibilities, non-overlap rules, GitHub issue/PR workflow, handoff format, usage controls and approval gates are documented in [AI Engineering Operating Model](docs/AI_ENGINEERING_OPERATING_MODEL.md). The shorter [AI Team Collaboration policy](docs/AI_TEAM_COLLABORATION.md) is the required entry point. GitHub remains the shared source of truth; agent access and plan entitlements must be verified rather than assumed.
 
 ## 4. Database and schema automation
 
