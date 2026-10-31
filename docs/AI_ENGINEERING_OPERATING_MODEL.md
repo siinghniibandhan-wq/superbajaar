@@ -4,6 +4,30 @@
 
 ## 1. Command, accountability and principles
 
+### Verified access model and execution limits
+
+The repository is public. Public visibility means an agent can read public GitHub pages and files; it does **not** grant authenticated write access, provider dispatch, issue acknowledgement or permission to change production.
+
+| Agent | Access that may be relied on | Permitted operating mode |
+|---|---|---|
+| **ChatGPT** | Public read access plus the connected GitHub integration's available read/write operations. Verify each operation. | CTO coordination; may create branches, edit files, comment and open PRs through authorised tools. No direct push to `main`; merge/deploy only under owner approval and repository policy. |
+| **GitHub Copilot** | Public repository visibility; coding-agent write/branch/PR capability only when the repository/account feature is enabled and GitHub actually starts an agent session. | Bounded implementation on its assigned issue. A label or @mention alone is not dispatch evidence. |
+| **Google Gemini (main)** | Public repository read access when its own browsing/session can open the repository. No GitHub write integration is assumed. | Read-only audit/review by default. Return findings; do not claim edits, commits or PRs. |
+| **Perplexity** | Public repository/documentation read access where available in its session, plus external research access. No GitHub write integration is assumed. | External research and source verification only. Do not modify repository files or claim issue changes. |
+| **Claude** | Public repository read access; may return complete files or patches. Direct GitHub write/commit/PR access is not assumed. | Complex backend/data-integrity analysis and designated SQL/schema/migration/runner authoring. ChatGPT integrates returned patches through an authorised feature branch. |
+
+Before relying on access, each agent must verify the exact repository, issue/file and operation in its own session. If unavailable, report the precise limitation; do not infer access from another agent's connection. Repository access never grants production, secrets, database or deployment access.
+
+### Role-specific start notes — 31 October 2026
+
+These notes clarify current handoffs; live GitHub issue bodies and comments override them if state changes.
+
+- **ChatGPT:** coordinate #207 (Copilot), #206 (Gemini) and #209 (Perplexity); inspect live GitHub state before reporting progress; integrate and independently review deliverables. Keep one owner per task.
+- **GitHub Copilot:** #207 is its bounded implementation assignment for the 60-second fallback dispatch. Do not touch #176 or Claude's database/schema responsibilities. Start only after checking the live issue, acknowledging it and verifying a supported Copilot coding-agent session.
+- **Google Gemini:** #206 is the read-only catalogue/product/attribute and inventory audit assignment. Do not take ownership of #207 or #209, do not edit code, and report exact evidence and unknowns.
+- **Perplexity:** #209 is the P2 external research assignment, Status READY. Acknowledge it in the issue before research. Item B is documented GitHub facts only for #207; item D is external design references only for #206; item E must distinguish current law, future-effective notified provisions and proposals/historical rules.
+- **Claude:** pull only an explicitly routed READY Claude issue. Do not assume #206, #207 or #209 belongs to Claude. For SQL/schema/runner work, follow `CLAUDE.md` and owner approval gates.
+
 - **Project owner:** final authority for product priorities, access, paid usage, merge, production data, secrets, infrastructure and release approval.
 - **ChatGPT — CTO / coordinator:** architecture, task decomposition, single-owner allocation, dependency management, cross-agent handoffs, integration review, evidence review and documentation governance. It does not claim another agent's execution or unrun tests.
 - **One task = one accountable owner.** Reviewers may challenge work read-only; they do not become co-implementers.
