@@ -8,7 +8,7 @@ Every task starts by reading:
 
 1. `README.md` — project overview, safety constraints, architecture summary and document index.
 2. `AGENTS.md` — these shared contributor rules.
-3. For GitHub Copilot tasks or when using Copilot in this repository, read `docs/GITHUB_COPILOT.md` and `.github/copilot-instructions.md`.
+3. If the owner explicitly invokes Copilot inside an available Codespace, read `docs/GITHUB_COPILOT.md` and `.github/copilot-instructions.md`. Copilot is not an issue-assigned coding agent.
 4. For multi-AI delegation, role boundaries, task batches or cross-agent handoffs, read `docs/AI_TEAM_COLLABORATION.md`, the canonical `docs/AI_ENGINEERING_OPERATING_MODEL.md`, and `docs/AI_AGENT_TASK_CHECK_COMMANDS.md`.
 5. The task-specific canonical document in the matrix below.
 
@@ -35,7 +35,7 @@ If a required document cannot be read, stop and tell the owner. Do not guess its
 - AWS EC2 / Systems Manager Run Command are used when evidence indicates runtime, host, networking, environment or infrastructure issues.
 - AWS Amplify is used for frontend build/hosting/deployment investigation.
 - PostgreSQL production operations are owner-controlled.
-- ChatGPT is the CTO/coordinator and owns architecture, task decomposition/allocation, integration, PR/evidence review and merge execution under repository approval rules. GitHub Copilot is the primary bounded React/Vite and non-schema FastAPI/API implementation agent. Gemini is the independent read-only auditor and may implement only a separately assigned non-schema fix on reserved paths. Perplexity is the external research/source-verification specialist. Claude owns complex backend/data-integrity engineering and designated SQL/schema/migration/runner work under `CLAUDE.md`. Supporting tools (GitHub Actions, Codespaces, Context7, Firecrawl, TinyFish, Manufact, Linear, GitLab, 3Min API, AWS, Amplify and Swagger) are not interchangeable AI task owners. Read `docs/AI_AGENT_TASK_CHECK_COMMANDS.md` for exact role prompts and `docs/AI_ENGINEERING_OPERATING_MODEL.md` for the full responsibility/tool register. No AI replaces owner approval.
+- ChatGPT is the CTO/coordinator and owns architecture, task decomposition/allocation, integration, PR/evidence review and merge execution under repository approval rules. ChatGPT leads bounded application implementation. GitHub Copilot is an optional coding assistant inside Codespaces only when explicitly invoked and usage is available. Gemini is the independent read-only auditor and may implement only a separately assigned non-schema fix on reserved paths. Perplexity is the external research/source-verification specialist. Claude owns complex backend/data-integrity engineering and designated SQL/schema/migration/runner work under `CLAUDE.md`. Supporting tools (GitHub Actions, Codespaces, Context7, Firecrawl, TinyFish, Manufact, Linear, GitLab, 3Min API, AWS, Amplify and Swagger) are not interchangeable AI task owners. Read `docs/AI_AGENT_TASK_CHECK_COMMANDS.md` for exact role prompts and `docs/AI_ENGINEERING_OPERATING_MODEL.md` for the full responsibility/tool register. No AI replaces owner approval.
 
 Follow the diagnostic order and tool boundaries in `docs/DEVELOPMENT_WORKFLOW.md`. Do not jump to AWS for ordinary source or API contract defects without evidence.
 
