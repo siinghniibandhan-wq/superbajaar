@@ -177,3 +177,25 @@ Do not change these targets as a workaround. Verify the real environment before 
 | Post-deploy verified | Health, logs and relevant end-to-end journeys passed |
 
 For schema releases, follow `docs/DATABASE_CHANGE_RULES.md`; the production preflight and live migration runner are owner-controlled. CI never substitutes for live ledger and backup checks.
+
+## 9. Context7: current library documentation lookup
+
+Use Context7 as a documentation retrieval aid when implementation depends on a framework, package, SDK or API whose current behaviour may differ from prior knowledge.
+
+### Required workflow
+
+1. Identify the exact library/package and the concept being implemented or debugged.
+2. Resolve the library through Context7 first and select the official or otherwise authoritative documentation source. Use a version-specific library ID when the installed/project version is known and Context7 provides that version.
+3. Query one focused topic at a time. For separate concepts, make separate queries rather than one broad request.
+4. Compare the returned guidance with the repository's declared dependency version, lockfile and existing implementation. Context7 results do not override the project's pinned versions, architecture, security rules or canonical repository documents.
+5. Apply only the relevant guidance, then verify it in the actual codebase with the appropriate tests, build, type checks or API checks.
+6. In the PR description, briefly record the library/version and documentation topic consulted when Context7 materially informed the change. Record actual tests separately; a documentation lookup is not a test.
+
+### Guardrails
+
+- Prefer official vendor/framework documentation and check source reputation and version coverage.
+- Do not paste credentials, tokens, customer data, production secrets or other confidential material into a documentation query.
+- Do not blindly copy snippets. Check compatibility, deprecations, security implications and project conventions.
+- If Context7 cannot resolve a trustworthy source or the required version, use the package's official documentation and state that limitation.
+- Context7 is a development-time reference tool only. It is not a runtime dependency, production service, source of truth for the repository, or substitute for code review and CI.
+- Do not claim Context7 was used on a task unless a real lookup was performed for that task.
