@@ -96,8 +96,10 @@ See [Architecture and API contracts](docs/architecture.md) for detailed diagrams
 | **GitHub Codespaces** | Optional interactive development workspace | Inspect/edit code and run local checks when available | Preferred when available; current usage budget is exhausted, so do not incur paid usage without owner approval |
 | **Swagger / OpenAPI** | Live API contract and interactive endpoint explorer | Inspect schemas, auth, parameters, responses and test requests | First stop for API/endpoint/request-response defects |
 | **ChatGPT** | Technical leadership and work coordination | Architecture reasoning, task planning, code review, debugging, documentation and evidence review | Plan and coordinate work; never treat an unexecuted suggestion as a test result |
-| **Claude** | Designated database/schema implementation reviewer and default SQL/runner author under current governance | Scoped SQL, migration runner and schema workflow work | Database-impacting changes, following `CLAUDE.md` and owner approval |
-| **GitHub Copilot** | Additional AI coding assistant | Code completion, explanations, bounded implementation, test suggestions and first-pass review where plan features permit | Feature branches only; follow `AGENTS.md` and [Copilot usage policy](docs/GITHUB_COPILOT.md); never bypass review, CI, schema governance or owner approval |
+| **Gemini** | Equal engineering partner A | Assigned frontend/backend implementation, debugging, tests, audits and independent review | One reserved path set per task; no SQL/schema/migration ownership |
+| **Perplexity** | Equal engineering partner B | Assigned frontend/backend implementation, debugging, research, tests and independent review | May edit assigned code but must not commit or push; return diff to ChatGPT |
+| **Claude** | Database and complex-backend specialist | SQL, schema, additive migrations, migration runner, database CI and data-integrity work | Follow `CLAUDE.md`, database rules and owner approval |
+| **GitHub Copilot** | Standby coding assistant | Optional bounded coding only when Codespaces quota is available and owner reactivates | Currently standby; no paid top-up or active dependency without approval |
 | **AWS EC2** | Hosts backend runtime | Inspect services, process state, logs, networking, environment and host health | Only when evidence points to runtime, server or infrastructure |
 | **AWS Systems Manager Run Command** | Controlled remote EC2 command execution | Approved operational commands and read-only checks | When remote server inspection/action is necessary and authorized |
 | **AWS Amplify** | Frontend hosting and build/deployment | Build logs, hosting status, deployed frontend | Frontend build or hosting/deployment investigation |
@@ -111,7 +113,7 @@ This is the documented core toolchain. A tool is not considered active merely be
 
 Detailed usage, diagnostic order and decision matrix: [Development, GitHub and operations workflow](docs/DEVELOPMENT_WORKFLOW.md).
 
-AI contributor roles, file ownership, 2–3-file work batches and cross-agent handoffs: [AI Team Collaboration & Delivery Policy](docs/AI_TEAM_COLLABORATION.md).
+AI contributor roles: ChatGPT leads; Gemini and Perplexity are equal engineering partners; Claude owns database work; Copilot is standby; Google Cloud is unavailable and excluded. See [AI Team Collaboration & Delivery Policy](docs/AI_TEAM_COLLABORATION.md) and [AI Engineering Operating Model](docs/AI_ENGINEERING_OPERATING_MODEL.md).
 
 ---
 
