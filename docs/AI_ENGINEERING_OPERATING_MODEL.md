@@ -11,7 +11,7 @@ The repository is public. Public visibility means an agent can read public GitHu
 | Agent | Access that may be relied on | Permitted operating mode |
 |---|---|---|
 | **ChatGPT** | Public read access plus the connected GitHub integration's available read/write operations. Verify each operation. | CTO coordination; may create branches, edit files, comment and open PRs through authorised tools. No direct push to `main`; merge/deploy only under owner approval and repository policy. |
-| **GitHub Copilot** | Public repository visibility; coding-agent write/branch/PR capability only when the repository/account feature is enabled and GitHub actually starts an agent session. | Bounded implementation on its assigned issue. A label or @mention alone is not dispatch evidence. |
+| **GitHub Copilot** | Optional in-Codespaces assistant; account screenshot shows Copilot Free and “Copilot in the cloud — Coming soon”. | Inline coding help only when explicitly invoked inside an available Codespace. Not an issue owner, cloud coding-agent executor or fallback dispatcher. |
 | **Google Gemini (main)** | Public repository read access when its own browsing/session can open the repository. No GitHub write integration is assumed. | Read-only audit/review by default. Return findings; do not claim edits, commits or PRs. |
 | **Perplexity** | Public repository/documentation read access where available in its session, plus external research access. No GitHub write integration is assumed. | External research and source verification only. Do not modify repository files or claim issue changes. |
 | **Claude** | Public repository read access; may return complete files or patches. Direct GitHub write/commit/PR access is not assumed. | Complex backend/data-integrity analysis and designated SQL/schema/migration/runner authoring. ChatGPT integrates returned patches through an authorised feature branch. |
@@ -22,8 +22,8 @@ Before relying on access, each agent must verify the exact repository, issue/fil
 
 These notes clarify current handoffs; live GitHub issue bodies and comments override them if state changes.
 
-- **ChatGPT:** coordinate #207 (Copilot), #206 (Gemini) and #209 (Perplexity); inspect live GitHub state before reporting progress; integrate and independently review deliverables. Keep one owner per task.
-- **GitHub Copilot:** #207 is its bounded implementation assignment for the 60-second fallback dispatch. Do not touch #176 or Claude's database/schema responsibilities. Start only after checking the live issue, acknowledging it and verifying a supported Copilot coding-agent session.
+- **ChatGPT:** lead bounded application implementation and coordinate #206 (Gemini) and #209 (Perplexity); inspect live GitHub state, integrate deliverables and independently review changes.
+- **GitHub Copilot:** optional in-Codespaces assistance only when explicitly invoked and Codespaces usage is available. No issue assignment, cloud-agent dispatch or autonomous fallback. Current Codespaces budget is exhausted; do not top up without owner approval.
 - **Google Gemini:** #206 is the read-only catalogue/product/attribute and inventory audit assignment. Do not take ownership of #207 or #209, do not edit code, and report exact evidence and unknowns.
 - **Perplexity:** #209 was verified as ACKNOWLEDGED / IN PROGRESS on 31 October 2026. Continue only the P2 external research assignment. Item B is documented GitHub facts only for #207; item D is external design references only for #206; item E must distinguish current law, future-effective notified provisions and proposals/historical rules.
 - **Claude:** pull only an explicitly routed READY Claude issue. Do not assume #206, #207 or #209 belongs to Claude. For SQL/schema/runner work, follow `CLAUDE.md` and owner approval gates.
@@ -34,7 +34,7 @@ These notes clarify current handoffs; live GitHub issue bodies and comments over
 - **One active writer per file set.** Reserve exact paths in the issue. No concurrent edits to the same files or branch.
 - **GitHub is shared memory:** issues hold scope and decisions; PRs hold diffs and review; Actions hold CI evidence; dated project updates hold accepted decisions.
 - No direct push to `main`; no self-merge; no bypass of branch protection; no deployment or production mutation without explicit owner approval.
-- Existing assignments remain in force. Do not reassign or duplicate Copilot issue #176 (FastAPI route-registration audit).
+- Copilot issues #176 and #207 are not active implementation assignments under the current team plan. Do not trigger cloud-agent work or paid usage from them. Reallocate or close only through an explicit owner-approved GitHub action.
 
 
 ## 2. Optional contributors and 60-second fallback
@@ -59,7 +59,7 @@ A GitHub Actions timer can detect a missing acknowledgement, add a status label/
 | Contributor | Primary role and responsibilities | Boundaries / status |
 |---|---|---|
 | **ChatGPT** | **CTO and engineering lead.** Own architecture, technical strategy, requirement analysis, decomposition, GitHub issue creation/allocation, dependency management, path reservation, cross-agent coordination, integration design, code/PR review, QA strategy, CI evidence review, documentation governance, release readiness and PR merging when authorised. | Does not claim other agents' execution. Claude remains designated SQL/schema author. No unapproved production, paid usage, infrastructure or deployment actions. |
-| **GitHub Copilot** | **Primary bounded coding and implementation agent.** Own assigned React/Vite frontend work, non-schema FastAPI/API/service implementation, scoped bug fixes, integrations, refactoring, tests, implementation documentation, feature branches and PR preparation. | No protected schema/migration/runner changes, production data or infrastructure. No direct main, self-merge or deployment. Cloud-agent capability must be verified for the actual account/repository. |
+| **GitHub Copilot** | **Optional Codespaces coding assistant only.** May provide inline suggestions, explanations and bounded coding help when explicitly invoked inside an available Codespace. | Not an issue owner, task-pull agent, cloud coding-agent executor or fallback dispatcher. No use while Codespaces usage is exhausted; no paid top-up without owner approval. All code remains subject to normal review and safeguards. |
 | **Google Gemini (main)** | **Independent auditor and quality challenger.** Own read-only audits of catalogue, products, variants, attributes, inventory, FIFO/FEFO/expiry, frontend/API/backend flows, security, performance and test gaps; independently review Copilot/Claude PRs; provide reproducible evidence. May implement a separate non-schema fix only through a new ChatGPT-assigned issue with distinct reserved paths. | Audit/review is read-only. No concurrent editing of Copilot/Claude files and no schema/migration/runner ownership. Repository access must be verified. |
 | **Perplexity** | **External research and source-verification specialist.** Own official documentation, API/vendor capability checks, release notes, security advisories, technical comparisons, pricing/plan checks and assigned Indian e-commerce/GST/consumer/privacy compliance research. Deliver source-backed briefs with dates and limitations. | Research-only. No code edits, commits, migrations or implementation PRs. Do not assume private repository access. |
 | **Claude** | **Complex engineering and database specialist.** Own difficult backend problems involving transactions, concurrency, data integrity, performance and cross-module complexity; SQL/schema design, additive migrations, migration runner and database CI under `CLAUDE.md` and database rules. | No historical/applied migration edits; no production SQL or release without explicit approval and preflight. No overlapping path ownership. |
@@ -103,12 +103,12 @@ A GitHub Actions timer can detect a missing acknowledgement, add a status label/
 | Product priorities and acceptance | Project owner | ChatGPT |
 | Architecture, strategy and cross-module design | ChatGPT | Gemini read-only challenge; Perplexity for external facts |
 | Requirement analysis, task decomposition and GitHub allocation | ChatGPT | Relevant domain agent |
-| Routine React/Vite frontend implementation | Copilot | Gemini read-only review; ChatGPT integration |
-| Bounded non-schema FastAPI/API/service implementation | Copilot | Gemini read-only review; ChatGPT integration |
+| Routine React/Vite frontend implementation | ChatGPT | Gemini read-only review |
+| Bounded non-schema FastAPI/API/service implementation | ChatGPT | Gemini read-only review |
 | Independent catalogue, product, variant and attribute audit | Gemini (read-only) | ChatGPT |
 | Independent inventory, batch, FIFO/FEFO and expiry audit | Gemini (read-only) | ChatGPT; Claude for complex database implications |
 | Independent UI/API/backend/security/performance audit, excluding Copilot #176 | Gemini (read-only) | ChatGPT |
-| FastAPI route-registration audit already assigned in #176 | Copilot | ChatGPT reviews evidence; Gemini does not duplicate |
+| FastAPI route-registration audit previously associated with #176 | Paused; owner to reallocate if still required | ChatGPT coordinates; Gemini audits only if separately assigned |
 | Separate non-schema fix discovered by Gemini | Gemini only when ChatGPT creates a distinct issue and reserves paths | ChatGPT; Copilot does not edit those paths |
 | Complex backend, transaction, concurrency and data-integrity issue | Claude | ChatGPT; Gemini read-only challenge |
 | SQL/schema/migrations/runner/database CI | Claude | ChatGPT coordinates; owner approves |
@@ -119,7 +119,7 @@ A GitHub Actions timer can detect a missing acknowledgement, add a status label/
 | PR merge | ChatGPT executes only when owner policy/approval and all required gates are satisfied | Owner retains final authority |
 | Production deployment and post-deploy verification | ChatGPT coordinates only after explicit owner approval | Claude supports complex database release; owner authorises |
 
-**Allocation rule:** Gemini's audit and review assignments are read-only. If an audit discovers a fix, ChatGPT creates a new implementation issue, reserves non-overlapping paths and chooses exactly one implementation owner. Copilot handles routine bounded non-schema changes; Claude handles complex backend/database work. Perplexity does not implement repository code.
+**Allocation rule:** Gemini's audit and review assignments are read-only. If an audit discovers a fix, ChatGPT creates a new implementation issue, reserves non-overlapping paths and chooses exactly one implementation owner. ChatGPT leads routine bounded non-schema changes; Claude handles complex backend/database work. Perplexity does not implement repository code.
 ## 5. Mandatory GitHub task workflow
 
 ### A. Intake and allocation
@@ -224,7 +224,7 @@ Never report tests as passed if they were not executed. If no terminal is availa
 - **Gemini:** main Gemini access and Gemini CLI consume the applicable Gemini account/API quota; CLI is not a second independent quota. API limits depend on model, tier, project and current AI Studio terms.
 - **Antigravity:** account/model/agent limits depend on the actual plan and current product policy; verify in the account before work.
 - **Claude:** subscription message limits or API input/output-token billing depend on the actual account and model; verify before large jobs.
-- **Copilot:** limits depend on the actual Copilot plan and AI-credit/model billing. Check live account allowance, reset and paid-overage settings; do not infer plan from repository access.
+- **Copilot:** screenshots reviewed 31 October 2026 show Copilot Free and Copilot in the cloud marked “Coming soon”; it is not part of the active issue-based workflow. Use only as an optional Codespaces assistant when explicitly invoked and Codespaces usage is available. No upgrade or paid overage without approval.
 - **Perplexity:** search/research allowances depend on Standard/Pro/Enterprise plan and feature; verify live account limits.
 - **Codespaces:** current usage budget is exhausted. Do not resume, top up or trigger billable compute without explicit approval.
 - Context7, Firecrawl, TinyFish, Manufact, Linear, GitLab and 3Min API have product/plan-specific limits; use only within the connected account's verified allowance.
@@ -256,7 +256,7 @@ Record the blocker, impact, safe options and decision needed in the originating 
 - Gemini main: owner reports repository access; verify access to the specific issue/PR before assigning.
 - Gemini CLI: installed in the prior Codespace, but successful authentication/model response was not verified; no active assignment.
 - Antigravity CLI: installed earlier; authentication/repository write access not verified; experimental only.
-- Copilot: preserve current GitHub issue assignments; #176 remains assigned to its existing route-registration audit.
+- Copilot: no active issue assignments or cloud-agent execution. Optional Codespaces-only assistant when usage is available; current Codespaces budget is exhausted.
 - Claude: designated SQL/schema author per `CLAUDE.md`.
 - Perplexity: owner reports connected and GitHub repository access; use for source-backed research, not code changes.
 
@@ -265,11 +265,11 @@ Record the blocker, impact, safe options and decision needed in the originating 
 
 ## 12. User-invoked agent task checking
 
-The standard pull-based activation protocol and copy/paste commands for Copilot, Gemini, Perplexity and ChatGPT are maintained in `docs/AI_AGENT_TASK_CHECK_COMMANDS.md`.
+The standard pull-based activation protocol and copy/paste commands for ChatGPT, Gemini, Perplexity and Claude are maintained in `docs/AI_AGENT_TASK_CHECK_COMMANDS.md`.
 
 - Route issues with exactly one `agent:<name>` label and an explicit accountable-owner field.
 - Each agent checks its own open assignments when the user invokes its activation prompt; it reports "no open assignments" when none match.
 - Each agent acknowledges and updates the same GitHub issue with progress, blockers and evidence.
-- An issue/label/@mention is not proof of delivery, acknowledgement or execution. Copilot must be started through a supported Copilot agent mechanism; Gemini and Perplexity require the user to invoke their connected AI and ask it to pull its tasks.
+- An issue/label/@mention is not proof of delivery, acknowledgement or execution. ChatGPT, Gemini, Perplexity and Claude are invoked through their available sessions; Copilot is not assigned issues.
 - This is user-invoked polling, not background polling. Do not claim automatic monitoring or dispatch unless a separately configured provider integration has been tested.
 - Start the 60-second fallback only after actual delivery to the preferred contributor is evidenced.
