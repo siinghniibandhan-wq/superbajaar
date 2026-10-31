@@ -110,7 +110,7 @@ export default function Storefront() {
   }, [routePath, variants, selectedProduct]);
 
   useEffect(() => {
-    if (!routePath.startsWith("/product/") || !/^\\d+$/.test(routePath.split("/")[2] || "") || !variants.length) return;
+    if (!routePath.startsWith("/product/") || !Number.isInteger(Number(routePath.split("/")[2])) || !variants.length) return;
     const productId = Number(routePath.split("/")[2]);
     const variant = variants.find(item => Number(item.product_id) === productId && item.is_active !== false);
     if (!variant) return;
