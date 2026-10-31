@@ -12,6 +12,24 @@
 - No direct push to `main`; no self-merge; no bypass of branch protection; no deployment or production mutation without explicit owner approval.
 - Existing assignments remain in force. Do not reassign or duplicate Copilot issue #176 (FastAPI route-registration audit).
 
+
+## 2A. Optional contributors and 60-second fallback
+
+**A contributor is an optional execution resource, never a blocker or mandatory dependency.** The task must have a fallback owner before it is dispatched.
+
+1. Create the issue with one preferred contributor and one named fallback (normally ChatGPT as coordinator, provided the required tools/access are available).
+2. Start a **60-second acknowledgement window** when the task is actually delivered to the preferred contributor. Record the dispatch timestamp and delivery evidence in the issue. Merely creating an issue does not start the clock.
+3. If the contributor acknowledges within 60 seconds, it may proceed within the reserved scope. Acknowledgement means acceptance of the task, not completion.
+4. If there is no acknowledgement after 60 seconds, mark the preferred contributor `NO RESPONSE / OPTIONAL` and activate the fallback owner. Do not wait indefinitely and do not create a duplicate parallel implementation.
+5. If the preferred contributor explicitly declines, reports unavailable access, or cannot meet the task's required capability, activate the fallback immediately; do not wait for the timer.
+6. The fallback inherits the same issue, acceptance criteria, allowed paths, protected paths, base SHA and approval gates. It must first check whether the preferred contributor made any changes before writing.
+7. If ChatGPT cannot directly execute in an available approved environment, it must take the next permitted action (for example, use an available GitHub/CI integration or create a tightly scoped fallback assignment for an available agent) and report the actual blocker. It must never claim that an unattended task was executed.
+8. The timeout is an acknowledgement/fallback rule, **not permission to bypass owner approval** for schema, production data, secrets, infrastructure, paid usage, merge or deployment.
+
+### Automation boundary
+
+A GitHub Actions timer can detect a missing acknowledgement, add a status label/comment and notify the fallback owner. It cannot, by itself, cause a ChatGPT conversation or an external AI agent to execute code. True unattended AI dispatch requires a separately configured and authorised agent/API integration with credentials, provider limits, cost controls and scoped repository permissions. Until that integration is implemented and verified, the 60-second fallback is coordinator-driven; do not describe it as an already-running autonomous dispatcher.
+
 ## 2. Agent and tool register
 
 | Contributor | Exclusive responsibility | Allowed work | Explicit exclusions / current status |
