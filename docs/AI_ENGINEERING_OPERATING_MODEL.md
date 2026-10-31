@@ -1,147 +1,126 @@
 # Super Bajaar — AI Engineering Operating Model
 
-> **Status: Proposed final operating model — 31 October 2026.** This document supersedes earlier role allocations that treated Copilot as the primary coder or Perplexity as research-only. It records the tools and access actually available today; it does not claim unattended agent-to-agent integrations.
+> **Final proposed model — 31 October 2026.** ChatGPT leads. Gemini and Perplexity are equal engineering partners. Claude owns database specialism. Copilot is standby. Google Cloud is excluded because access is unavailable.
 
-## 1. Command, accountability and principles
+## 1. Command and accountability
+- **Project owner:** final authority for priorities, access, paid usage, secrets, protected production/database changes, merge and release approval.
+- **ChatGPT — CTO / Team Lead:** architecture, strategy, task decomposition, allocation, GitHub coordination, integration, review, documentation governance, QA evidence and release readiness.
+- One task has one accountable owner, one reviewer and one reserved path set. No simultaneous edits to the same files.
+- GitHub is the shared source of truth: issues for scope/decisions, branches and PRs for code/review, Actions for CI evidence, canonical docs for policy.
+- Separate AI accounts do not automatically communicate. Use GitHub issue/PR handoffs. Never claim an agent was dispatched or completed work without evidence.
+- No direct push to `main`, self-merge, branch-protection bypass, unapproved spend, production mutation or deployment.
 
-- **Project owner:** final authority for product priorities, access, paid usage, secrets, protected production/database changes, merge and release approval.
-- **ChatGPT — CTO and team lead:** owns architecture, planning, task decomposition, allocation, GitHub coordination, integration, technical review, documentation governance, QA evidence review and release readiness. ChatGPT is the single coordination point and does not claim another provider's work.
-- **One task = one accountable owner. One active writer per path set.** Reserve exact paths and base SHA in GitHub before implementation. Reviewers remain read-only unless a separate issue assigns implementation.
-- **GitHub is the shared project record:** Issues contain scope and decisions; branches/PRs contain code and review; Actions contain CI evidence; canonical Markdown docs contain the current operating rules.
-- Separate Gemini, Claude and Perplexity chats do not automatically communicate with ChatGPT or each other. Use GitHub issue/PR comments and concise handoff reports to keep everyone in the loop.
-- No direct push to `main`, no self-merge, no branch-protection bypass, no production mutation or deployment without the owner's explicit approval.
-- No unapproved paid usage, new cloud service, API spend, Codespaces top-up or subscription change.
+## 2. Final team responsibility matrix
 
-## 2. Current team and responsibility matrix
+| Member | Role | Responsibilities | Boundaries |
+|---|---|---|---|
+| **ChatGPT** | **CTO / Team Lead / Integration Owner** | Architecture, planning, allocation, GitHub coordination, authorised code/docs work, integration, review, test strategy and release readiness. | Does not impersonate agents or claim unrun tests. No unapproved paid/production/merge/deploy action. |
+| **Gemini** | **Equal Engineering Partner A** | Assigned frontend/backend implementation, debugging, refactoring, testing, module audits, security/performance review and independent PR review. | Confirm actual access. One reserved path set per task. No schema/migration ownership or production actions. |
+| **Perplexity** | **Equal Engineering Partner B** | Assigned frontend/backend implementation, debugging, refactoring, testing, research, source verification, code review and independent audits. | May edit assigned code using owner-granted access but **must not commit or push**. Return full diff/patch, changed paths and test evidence to ChatGPT. No schema/migration or production work unless separately approved. |
+| **Claude** | **Database & Complex Backend Specialist** | SQL, schema, additive migrations, migration runner, database CI, data integrity, transaction/concurrency and complex backend work under `CLAUDE.md` and database rules. | Never alter historical/applied migrations. No production SQL, migration execution or release without explicit owner approval and preflight. |
+| **GitHub Copilot** | **Standby coding assistant** | Optional bounded coding when Codespaces is available and owner reactivates it. | Codespaces quota is exhausted. Not an active dependency. No paid top-up without approval. |
+| **GitHub Actions** | CI executor | Builds, tests, security and schema/policy checks. | Automation, not an AI agent; CI pass is not production verification. |
+| **GitHub** | Shared project system | Issues, branches, commits, PRs, reviews, permissions and CI records. | Not an AI agent; labels do not prove dispatch or completion. |
 
-| Member / platform | Role in Super Bajaar | Execution boundaries |
-|---|---|---|
-| **ChatGPT** | **CTO / Team Lead / Integration Owner.** Architecture, technical decisions, task planning, GitHub issue/PR coordination, code and documentation work through available authorised tools, review, integration, test strategy and final audit. | Cannot directly operate another AI account unless a real connector/session is available. Must distinguish its own edits from external-agent work. No unapproved production, paid, merge or deployment actions. |
-| **Gemini** | **Independent technical analyst and audit partner.** Second-opinion architecture, code-flow analysis, module audits, debugging hypotheses, test-gap/security/performance review and review of proposed fixes. | Implementation only when a distinct task is assigned, its actual repository/environment access is verified, and paths are reserved. Do not assume Gemini is connected to this ChatGPT session. |
-| **Claude** | **Deep engineering and database specialist.** Difficult backend/data-integrity/concurrency/performance issues; SQL/schema design, additive migrations, migration runner and database CI under `CLAUDE.md` and database rules. Also provides independent code reasoning for high-risk changes. | No edits to historical/applied migrations; no production SQL or release without owner approval and preflight. Direct repository access must be verified; otherwise return a reviewed patch/design for ChatGPT to apply. |
-| **Perplexity** | **Research, verification and audit partner.** Official documentation, vendor/API capability checks, security advisories, pricing/plan checks, technical comparisons and Indian e-commerce/GST/compliance research. May also make specifically assigned repository code edits using the access the owner has granted. | Per owner instruction, Perplexity may edit assigned code but **must not commit or push**. It must return changed paths, diff/patch and test evidence. ChatGPT reviews and owns integration/commit/PR. No schema/migration or production work unless separately authorised. No assumption of a direct Perplexity connector in this ChatGPT session. |
-| **Google Cloud (GCP)** | **Infrastructure/cloud workstream.** Keep GCP in the architecture and deployment loop for cloud design, compute/storage/networking, IAM, monitoring, cost controls and migration options when a task calls for it. | GCP is a cloud platform, not an AI coding agent. No direct GCP console/API access is assumed here. Existing production hosting remains AWS EC2 + Nginx/Gunicorn + Amplify unless the owner approves a researched migration plan. No new GCP resources or charges without approval. |
-| **GitHub Copilot** | **Standby coding assistant, Codespaces-dependent only.** May be reconsidered when Codespaces usage becomes available and the owner chooses to use it. | Current Codespaces usage limit is exhausted. Copilot is not an active dependency or primary coder now. Do not wait for it, assign critical work to it, top up, or incur charges without approval. |
-| **GitHub Actions** | Deterministic build, test, security, schema-policy and CI execution. | Automation, not an AI agent. Green CI is not production verification. |
-| **GitHub** | Canonical code, issue, branch, PR, review, CI and permission system. | Not an AI agent. Labels do not prove dispatch, acknowledgement or completion. |
+### Equal workload policy — Gemini and Perplexity
+- Split eligible non-schema work into comparable, independently deliverable tasks.
+- Rotate first implementation ownership across batches; neither is permanently only coder or reviewer.
+- Each receives a balanced mix of implementation and independent review over time.
+- Use different files/modules or sequential batches. Never edit the same path set concurrently.
+- ChatGPT tracks assignment and completion evidence in GitHub.
+- Perplexity's no-commit/no-push restriction remains; ChatGPT integrates accepted changes using authorised GitHub tools.
 
-### ChatGPT-connected supporting tools and plugins
+## 3. Supporting tools and access reality
 
-Use these only when relevant to the task and when the actual connection/permission is available. They support the team; they do not replace accountable owners.
-
-| Tool / plugin | Approved use |
+| Tool | Use / status |
 |---|---|
-| GitHub | Repository inspection, branches, issues, PRs, code review and CI evidence |
-| Figma | Approved UI/UX design, design files and design-to-code handoff |
+| GitHub / Actions | Active source control, task tracking, PR and deterministic CI |
+| Figma | Approved UI/UX design and design-to-code when connected |
 | Context7 | Current framework/library documentation |
-| Firecrawl / TinyFish / web search | External research, page extraction and authorised browser workflows |
-| GitBook | Documentation-site work when explicitly in scope and connected |
+| Firecrawl / TinyFish / web | External research and authorised browser tasks |
+| GitBook | Documentation site only when connected and in scope |
 | Linear | Optional planning mirror; GitHub remains canonical |
-| GitLab | Secondary repo/CI tasks only when explicitly required |
-| Manufact | MCP server/deployment management; not the default app deployer |
-| 3Min API | Approved API prototypes/management experiments; not the production FastAPI backend by default |
-| OpenAI Platform | OpenAI API project/key administration when explicitly requested; API usage may cost money |
-| Files / Library | Search and read project documents and reports |
-| Plugin Management | Discover/manage available integrations; installing or connecting requires owner action |
-| Automations | Approved reminders/monitoring of a clear future dependency; not an autonomous code dispatcher |
+| GitLab | Secondary repo/CI only when required |
+| Manufact | MCP server/deployment management; not default app deployer |
+| 3Min API | Approved API experiments; not production FastAPI by default |
+| OpenAI Platform | OpenAI API administration; explicit request only, may be billable |
+| Files / Library | Project-document retrieval |
+| Plugin Management | Discover/manage integrations; owner action required to connect |
+| Automations | Reminders/monitoring, not AI-agent dispatch |
+| **Google Cloud** | **Unavailable; excluded from active team. No GCP access, assignment, deployment or resource creation assumed.** |
+| **Codespaces** | Usage exhausted; no paid top-up without owner approval |
 
-**Integration truth:** the presence of a plugin or a user's separate AI subscription does not prove the provider is connected to this chat, has repository access, or can execute tasks. Verify each capability before assigning work. Until then, use copy/paste task briefs and GitHub handoffs.
+A subscription or listed plugin does not prove a connector is active in this chat. Verify each capability before use.
 
-## 3. Work allocation
+## 4. Work allocation
 
-| Workstream | Accountable owner | Independent support / reviewer |
+| Workstream | Owner | Support / reviewer |
 |---|---|---|
 | Product priorities and acceptance | Project owner | ChatGPT |
-| Architecture, technical strategy and cross-module design | ChatGPT | Gemini and Claude challenge; Perplexity researches external facts |
-| Task decomposition, issue creation, path reservation and coordination | ChatGPT | Relevant agent |
-| Routine implementation that ChatGPT can safely perform through authorised GitHub tools | ChatGPT | Gemini or Claude review according to risk |
-| Assigned code edits in Perplexity's accessible workspace | Perplexity (only when explicitly assigned) | ChatGPT reviews; Perplexity does not commit/push |
-| Independent module audits and second opinions | Gemini | ChatGPT consolidates findings |
-| Complex backend, transactions, concurrency and data-integrity engineering | Claude or ChatGPT, chosen per issue | Gemini/Perplexity read-only review |
-| SQL/schema/migration/runner/database CI authoring | Claude by default | ChatGPT coordinates; owner approves |
-| External documentation, vendor/API, security and Indian compliance research | Perplexity | ChatGPT validates sources |
-| Cloud architecture and infrastructure analysis | ChatGPT coordinates; GCP/AWS selected per approved target | Gemini/Claude review; owner approves spend/change |
-| Frontend/backend builds and automated tests | GitHub Actions or an approved terminal | ChatGPT reviews exact run and commit |
-| PR integration, release readiness and final audit | ChatGPT | Independent reviewer; owner decides |
-| Merge and production deployment | Owner approval required; ChatGPT may execute only within approved permissions | Owner retains final authority |
+| Architecture and cross-module design | ChatGPT | Gemini + Perplexity; Claude for DB implications |
+| Task decomposition, issue allocation and path reservation | ChatGPT | Relevant agent |
+| Non-schema implementation batch A | Gemini or Perplexity (rotate) | Other partner read-only; ChatGPT integrates |
+| Non-schema implementation batch B | Perplexity or Gemini (rotate) | Other partner read-only; ChatGPT integrates |
+| Independent module/PR audits | Gemini and Perplexity (balanced rotation) | ChatGPT consolidates |
+| Complex backend, data integrity and SQL/schema/migration/runner | Claude | ChatGPT coordinates; Gemini/Perplexity read-only challenge |
+| External facts, vendor/API and Indian compliance research | Perplexity; Gemini may cross-check | ChatGPT validates |
+| Builds/tests | GitHub Actions or approved terminal | ChatGPT reviews exact run/commit |
+| Integration, final audit and release readiness | ChatGPT | Gemini/Perplexity; Claude for DB changes |
+| Merge and production release | Owner approval required | ChatGPT acts only within explicit authorisation |
 
-**No role overlap:** ChatGPT creates one issue per bounded task, names one implementation owner and reserves paths. A reviewer does not edit those paths. If a second agent finds a fix, ChatGPT creates a separate issue or records a review comment; no parallel edits to the same files.
+## 5. Standard workflow
+1. ChatGPT inspects latest `main`, open issues/PRs, changed files and active path reservations.
+2. Define objective, impact, owner, reviewer, base SHA, allowed/protected paths, dependencies, acceptance criteria, tests and approval gates.
+3. Classify non-schema vs schema/database; flag security, infrastructure, paid and production impact separately.
+4. Assign one owner. Balance Gemini and Perplexity; Claude owns database work; Copilot stays standby.
+5. Assignee confirms identity, access, scope and acceptance in GitHub before editing.
+6. Implement on a feature branch from latest `main`; keep batches small. Perplexity returns a diff without commit/push.
+7. A different agent reviews read-only. Rotate Gemini/Perplexity review duties; Claude reviews DB implications.
+8. ChatGPT checks full diff, API/business rules, permissions, security, docs, schema impact and regressions.
+9. Run frontend build and backend tests separately. Prefer Actions while Codespaces is unavailable. Mark unavailable commands NOT RUN.
+10. PR records issue, files, exact commit, tests and risks. Owner approves merge. Deployment is separate and needs explicit approval plus post-deploy verification.
 
-## 4. Standard end-to-end workflow
-
-1. **Intake:** capture the request in GitHub; inspect existing issues, PRs, branch state and current path reservations before creating anything.
-2. **Plan:** ChatGPT defines objective, impact, scope, owner, reviewer, base branch/SHA, allowed paths, protected paths, dependencies, acceptance criteria, tests and approval gates.
-3. **Classify:** mark the task as non-schema or schema/database, and separately identify infrastructure, security, paid usage or production impact.
-4. **Assign:** one accountable owner. ChatGPT remains the overall lead. Gemini/Claude/Perplexity receive separate, non-overlapping tasks; Copilot remains standby.
-5. **Execute:** work on a feature branch from latest `main`; post progress and evidence in the same GitHub issue. Perplexity may edit only its assigned code and must not commit/push.
-6. **Audit:** a different agent reviews the diff read-only. Use Gemini for independent module/logic challenge, Claude for complex backend/database risk, and Perplexity for external source verification.
-7. **Integrate:** ChatGPT checks full diff, API contracts, business rules, security, regression risk, documentation and acceptance criteria.
-8. **Verify:** run frontend build and backend tests separately. Prefer GitHub Actions when Codespaces is unavailable. Report terminal-only checks as NOT RUN if no approved runner exists. Never infer a pass.
-9. **PR:** keep a focused branch and PR; link the issue, list exact files, tests actually run, CI run/commit SHA, schema/deployment impact and risks.
-10. **Approve and release:** owner approves merge/production actions. Merged does not mean deployed. Deployment and post-deployment health/end-to-end verification are separate steps.
-
-### Task handoff format
-
+### Required task brief
 ```text
 Issue:
 Task owner:
 Reviewer:
-Task type: research / audit / implementation / QA / documentation
+Task type: implementation / audit / research / QA / documentation
 Base branch + SHA:
 Allowed paths:
 Protected paths:
 Objective and acceptance criteria:
 Dependencies:
-Commands/tests expected:
-Evidence and results (PASS / FAIL / NOT VERIFIED):
-Files changed:
+Tests / commands:
+Files inspected / changed:
+Evidence: PASS / FAIL / NOT VERIFIED
 Risks / blockers:
 Next owner:
 Schema / infrastructure / paid / production impact:
 Approval required:
 ```
 
-## 5. Codespaces, Copilot and execution reality
-
-- Codespaces usage is currently exhausted. No top-up or paid compute without explicit owner approval.
-- Copilot stays on standby and is not required to complete work.
-- ChatGPT can use the GitHub integration for supported repository actions, but that is not the same as having a live shell, Codespace or production terminal.
-- Use GitHub Actions for supported deterministic checks. If a test requires an interactive shell or secrets/environment unavailable to Actions, mark it NOT RUN and request an approved execution route.
-- Gemini, Claude and Perplexity are separate products/sessions unless a verified connector is actually available. GitHub comments and task briefs are the handoff mechanism; no background agent-to-agent dispatch is assumed.
-
-## 6. Repository and database safeguards
-
-- Start from latest `main`; create focused feature branches. Never push directly to `main`.
-- Never overwrite or revert unrelated working code. One new migration file per approved schema change; SQL must be additive and idempotent under the repository's current rules.
+## 6. Repository, database and production safeguards
+- Feature branches only; never push directly to `main`. Preserve unrelated working code.
+- Read `docs/DATABASE_CHANGE_RULES.md` and `CLAUDE.md` before database work. Claude is default SQL/schema/migration/runner author.
 - Never edit, rename, delete or reformat historical/applied migrations. Do not touch `backend/schema/000_baseline_schema.sql` or `backend/schema/009_loyalty_programme.sql`.
-- Do not change `backend/schema_required.txt`, `backend/scripts/apply_schema.sh` or migration CI outside the approved database-owner process.
-- Read `docs/DATABASE_CHANGE_RULES.md` and `CLAUDE.md` before any database/schema/migration work. Claude is the designated default SQL/schema/runner author unless the owner records a specific exception.
-- No production data writes, destructive SQL, live migrations, credential/role changes, secret rotation, infrastructure changes or deployment without explicit owner approval and documented preflight.
-- Preserve the established targets unless a verified owner-approved change says otherwise: backend `127.0.0.1:8001`, PostgreSQL `5432`, database `sb_app`, API prefix `/api`, AWS EC2 + Nginx + Gunicorn backend, Amplify frontend and existing systemd service/timer.
-- Google Cloud remains an evaluated/available cloud workstream, not an automatic replacement for the current AWS production setup.
+- Follow unique numbering, one-new-file-per-change, additive/idempotent SQL and existing CI rules. Do not alter `backend/schema_required.txt`, `backend/scripts/apply_schema.sh` or migration CI outside approved scope.
+- No production data writes, destructive SQL, production migration, secrets/roles change, infrastructure change or deployment without explicit owner approval and preflight.
+- Preserve current setup unless owner approves a verified change: backend `127.0.0.1:8001`, PostgreSQL `5432`, database `sb_app`, API prefix `/api`, AWS EC2 + Nginx + Gunicorn backend, Amplify frontend and existing systemd service/timer.
+- No Google Cloud actions. Never expose credentials, tokens, private keys, production `.env`, customer or payment data.
 
-## 7. Diagnostic and verification order
+## 7. Diagnostics and verification
+1. GitHub issue/PR/commit/CI state.
+2. Swagger/OpenAPI first for route, request/response, auth and status defects.
+3. Trace UI → API client → FastAPI route → service/business rules → SQL/data model.
+4. Use approved terminal or GitHub Actions; Codespaces is unavailable currently.
+5. AWS only when evidence points to runtime/host/network/environment/log/infrastructure; Amplify for frontend hosting/build.
+6. Production DB state only through owner-approved read-only preflight.
+7. Verify exact commit, required CI, targeted tests and relevant user journey.
+8. Deployment is a separate owner-approved step.
 
-1. GitHub issue/PR/commit/CI inspection.
-2. Swagger/OpenAPI first for route, request/response, auth and status-code defects.
-3. Source trace: UI → API client → FastAPI route → service/business rules → SQL/data model.
-4. Use an approved terminal or GitHub Actions for execution; do not assume Codespaces is available.
-5. Use AWS/GCP consoles only when evidence points to hosting, runtime, networking, IAM, logs, environment or infrastructure.
-6. Use Amplify for current frontend hosting/build symptoms.
-7. Production database state requires owner-approved read-only preflight; Git is not proof of live DB state.
-8. Verify exact commit, required CI checks, targeted tests and relevant user journey.
-9. Deploy only after separate owner approval; then verify health and end-to-end behaviour.
+## 8. Status and truthfulness
+Use `READY`, `ACKNOWLEDGED`, `IN PROGRESS`, `BLOCKED`, `REVIEW`, `COMPLETE`. Reports include actual commands, results, commit/CI evidence, changed paths and risks. Use PASS / FAIL / NOT VERIFIED accurately. Stop on missing access, overlapping paths, stale base SHA, protected assets, unclear approval or unapproved spend. GitHub labels/@mentions do not wake external AIs; no unattended dispatch is assumed.
 
-## 8. Status and stop conditions
-
-Use only: `READY`, `ACKNOWLEDGED`, `IN PROGRESS`, `BLOCKED`, `REVIEW`, `COMPLETE`.
-
-- `COMPLETE` means acceptance criteria and evidence are recorded; it does not mean merged or deployed.
-- Report PASS, FAIL or NOT VERIFIED. Never claim an unrun test, unverified integration, agent dispatch, repository permission, merge or deployment.
-- Stop if paths overlap, required access is missing, the base SHA is stale, protected assets are implicated, a task needs unapproved spend, or production/schema approval is unclear.
-- If a preferred agent is unavailable, ChatGPT reassigns the same issue to one available owner after checking for partial changes. Do not create duplicate parallel implementations.
-- A GitHub timer/label cannot cause an external AI to wake up and execute. True unattended dispatch requires a separately configured, authorised and tested API/agent integration with cost and permission controls.
-
-## 9. Maintenance
-
-This document is the canonical role and workflow source. Update `docs/AI_TEAM_COLLABORATION.md`, `docs/AI_AGENT_TASK_CHECK_COMMANDS.md`, `AGENTS.md`, and Copilot instructions whenever the operating model changes. Keep role descriptions consistent; do not maintain competing role tables.
+## 9. Documentation governance
+Keep `docs/AI_TEAM_COLLABORATION.md`, `docs/AI_AGENT_TASK_CHECK_COMMANDS.md`, `AGENTS.md`, `.github/copilot-instructions.md` and `README.md` consistent with this canonical model.
