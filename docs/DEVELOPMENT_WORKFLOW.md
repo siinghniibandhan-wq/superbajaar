@@ -199,3 +199,43 @@ Use Context7 as a documentation retrieval aid when implementation depends on a f
 - If Context7 cannot resolve a trustworthy source or the required version, use the package's official documentation and state that limitation.
 - Context7 is a development-time reference tool only. It is not a runtime dependency, production service, source of truth for the repository, or substitute for code review and CI.
 - Do not claim Context7 was used on a task unless a real lookup was performed for that task.
+
+## 10. Main-branch protection: Protect main - Enhanced
+
+The active repository ruleset protecting the default branch is named **Protect main - Enhanced**. It targets the default branch (`main`) and has an empty bypass list. Treat the live GitHub ruleset as the authoritative configuration; if repository settings change, update this section to match the verified live state.
+
+### Required merge controls
+
+- Changes must enter `main` through a pull request.
+- At least one approving review is required.
+- Dismiss stale approvals when new commits are pushed.
+- All review conversations must be resolved before merge.
+- Branches must be up to date before merging.
+- Deletion and force-push protections remain enabled.
+- No bypass actors are configured.
+
+### Required status checks
+
+All of the following checks must pass before merging:
+
+1. `Backend tests (Python 3.12)`
+2. `Frontend build (frontend)`
+3. `Frontend build (.)`
+4. `Static application security scan` (Semgrep)
+5. `Scan repository for exposed secrets` (Gitleaks)
+6. `database-files (15)`
+7. `database-files (16)`
+
+Do not rename these workflow jobs without updating the ruleset's required status-check contexts in the same reviewed change. A renamed or missing check can block merges.
+
+### GitHub Copilot review controls
+
+- Automatically request Copilot code review for eligible new pull requests.
+- Request Copilot review on new pushes.
+- Do not automatically review draft pull requests.
+- Unattributed Copilot-authored pull requests require an additional approval under the ruleset.
+- Copilot review is supplementary; it does not replace the required human approval, CI checks or owner responsibility.
+
+### Change-control requirements
+
+Before changing or replacing this ruleset, record the current live configuration, prepare and activate the replacement, verify its target branch and every required rule/check, and only then retire the previous ruleset. Never leave `main` without active protection. Do not weaken or bypass the ruleset merely to merge a blocked pull request; obtain the required eligible review or follow an explicitly approved repository governance change.
