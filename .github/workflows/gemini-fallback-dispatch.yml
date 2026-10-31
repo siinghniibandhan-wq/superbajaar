@@ -20,9 +20,11 @@ jobs:
       !contains(github.event.issue.labels.*.name, 'gemini-dispatched')
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
     steps:
       - name: Stop safely when Gemini credentials are not configured
-        if: ${{ secrets.GEMINI_API_KEY == '' }}
+        if: ${{ env.GEMINI_API_KEY == '' }}
         uses: actions/github-script@v7
         with:
           script: |
@@ -41,7 +43,7 @@ jobs:
             });
 
       - name: Mark Gemini dispatch
-        if: ${{ secrets.GEMINI_API_KEY != '' }}
+        if: ${{ env.GEMINI_API_KEY != '' }}
         uses: actions/github-script@v7
         with:
           script: |
