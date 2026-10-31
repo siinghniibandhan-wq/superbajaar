@@ -9,7 +9,7 @@ Every task starts by reading:
 1. `README.md` — project overview, safety constraints, architecture summary and document index.
 2. `AGENTS.md` — these shared contributor rules.
 3. For GitHub Copilot tasks or when using Copilot in this repository, read `docs/GITHUB_COPILOT.md` and `.github/copilot-instructions.md`.
-4. For multi-AI delegation, role boundaries, task batches or cross-agent handoffs, read `docs/AI_TEAM_COLLABORATION.md` and the canonical `docs/AI_ENGINEERING_OPERATING_MODEL.md`.
+4. For multi-AI delegation, role boundaries, task batches or cross-agent handoffs, read `docs/AI_TEAM_COLLABORATION.md`, the canonical `docs/AI_ENGINEERING_OPERATING_MODEL.md`, and `docs/AI_AGENT_TASK_CHECK_COMMANDS.md`.
 5. The task-specific canonical document in the matrix below.
 
 | Work type | Mandatory detailed reading |
@@ -29,6 +29,7 @@ If a required document cannot be read, stop and tell the owner. Do not guess its
 ## 2. Project operating model
 
 - GitHub is the source of truth for code, review, PRs and CI.
+- When the owner asks an AI agent to check assignments, follow `docs/AI_AGENT_TASK_CHECK_COMMANDS.md`: inspect only open issues routed to that agent, acknowledge before execution, and report no assignments when none match. This is user-invoked polling, not background automation.
 - GitHub Codespaces is the preferred interactive development environment when available. If its budget or access is unavailable, do not incur paid usage without approval; use GitHub issues/PRs and Actions for supported repository workflows, and clearly mark terminal-only checks NOT RUN until an approved runner is available.
 - Swagger / OpenAPI is the first diagnostic stop for API route, request/response, auth and status-code issues.
 - AWS EC2 / Systems Manager Run Command are used when evidence indicates runtime, host, networking, environment or infrastructure issues.
