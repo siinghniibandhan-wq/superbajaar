@@ -6,7 +6,7 @@ writes orders, payments, purchase receipts and vouchers.
 """
 import os
 from decimal import Decimal
-from datetime import date, timedelta
+from datetime import timedelta
 
 import psycopg
 import pytest
