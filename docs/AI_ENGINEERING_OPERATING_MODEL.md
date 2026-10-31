@@ -217,3 +217,15 @@ Record the blocker, impact, safe options and decision needed in the originating 
 - Perplexity: owner reports connected and GitHub repository access; use for source-backed research, not code changes.
 
 **Maintenance:** Update this policy when actual access, agent capabilities, owner decisions or usage plans change. Record the date and evidence. This document does not grant permissions or authorize spending, merges or deployment.
+
+
+## 11. User-invoked agent task checking
+
+The standard pull-based activation protocol and copy/paste commands for Copilot, Gemini, Perplexity and ChatGPT are maintained in `docs/AI_AGENT_TASK_CHECK_COMMANDS.md`.
+
+- Route issues with exactly one `agent:<name>` label and an explicit accountable-owner field.
+- Each agent checks its own open assignments when the user invokes its activation prompt; it reports "no open assignments" when none match.
+- Each agent acknowledges and updates the same GitHub issue with progress, blockers and evidence.
+- An issue/label/@mention is not proof of delivery, acknowledgement or execution. Copilot must be started through a supported Copilot agent mechanism; Gemini and Perplexity require the user to invoke their connected AI and ask it to pull its tasks.
+- This is user-invoked polling, not background polling. Do not claim automatic monitoring or dispatch unless a separately configured provider integration has been tested.
+- Start the 60-second fallback only after actual delivery to the preferred contributor is evidenced.
