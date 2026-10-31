@@ -57,7 +57,8 @@ export default function Storefront() {
   const [deliveryDraft, setDeliveryDraft] = useState(() => { try { return window.localStorage.getItem("sb-delivery-pin") || ""; } catch { return ""; } });
   const [deliveryMessage, setDeliveryMessage] = useState("");
   const [accountOpen, setAccountOpen] = useState(false);
-  const [accountSection, setAccountSection] = useState("overview");\n  const [analyticsEnabled, setAnalyticsEnabled] = useState(getAnalyticsConsent);
+  const [accountSection, setAccountSection] = useState("overview");
+  const [analyticsEnabled, setAnalyticsEnabled] = useState(getAnalyticsConsent);
   const [canOpenAdmin, setCanOpenAdmin] = useState(false);
   const [ticketDraft, setTicketDraft] = useState({ name: "", phone: "", email: "", subject: "", description: "" });
   const [ticketCreated, setTicketCreated] = useState(null);
