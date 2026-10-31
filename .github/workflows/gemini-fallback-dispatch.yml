@@ -58,14 +58,14 @@ jobs:
             });
 
       - name: Checkout repository default branch
-        if: ${{ secrets.GEMINI_API_KEY != '' }}
+        if: ${{ env.GEMINI_API_KEY != '' }}
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
 
       - name: Run Gemini CLI as fallback implementation agent
-        if: ${{ secrets.GEMINI_API_KEY != '' }}
+        if: ${{ env.GEMINI_API_KEY != '' }}
         uses: google-github-actions/run-gemini-cli@v0
         with:
           gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
@@ -95,3 +95,4 @@ jobs:
           github_issue_number: ${{ github.event.issue.number }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
