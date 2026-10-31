@@ -39,6 +39,18 @@ If a required document cannot be read, stop and tell the owner. Do not guess its
 
 Follow the diagnostic order and tool boundaries in `docs/DEVELOPMENT_WORKFLOW.md`. Do not jump to AWS for ordinary source or API contract defects without evidence.
 
+### 2A. AI role and access boundaries
+
+The repository is public. Public read access is not authenticated write access, task dispatch or production permission.
+
+- **ChatGPT:** CTO/coordinator; connected GitHub tools may read/write supported GitHub resources. Verify each operation. Use feature branches and PRs; owner policy controls merge and release.
+- **GitHub Copilot:** primary bounded React/Vite and non-schema FastAPI implementation agent. It may write only when a supported Copilot coding-agent session is actually started for its assigned issue.
+- **Google Gemini:** public-repository read-only auditor by default. No repository write permission is assumed. A separate implementation requires a new issue and reserved paths.
+- **Perplexity:** public-repository context plus external research; research-only, no repository writes.
+- **Claude:** public-repository read access and patch delivery; direct GitHub write access is not assumed. Claude is the designated complex backend/database and SQL/schema/migration/runner specialist under `CLAUDE.md`.
+- **GitHub labels, @mentions and issue creation are routing/coordination metadata, not proof of delivery, acknowledgement or execution.**
+- No public-repository access grants production data, credentials, private resources, AWS, database operations or deployment.
+
 ## 3. GitHub and PR rules
 
 - Start from the latest `main`; create a focused feature branch.
