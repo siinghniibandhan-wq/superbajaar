@@ -1,4 +1,6 @@
-# Super Bajaar — GitHub Copilot repository instructions
+# Super Bajaar — optional GitHub Copilot in-Codespaces instructions
+
+Copilot is not an active issue-assigned agent. Use these instructions only when the owner explicitly invokes Copilot inside an available Codespace. Current Codespaces usage is exhausted; do not start billable compute or top up without approval.
 
 Read and follow these files before making repository changes:
 
@@ -10,7 +12,7 @@ Read and follow these files before making repository changes:
 
 ## Working rules
 
-- Treat GitHub Copilot as an assistant. Do not assume authority to merge, deploy, change repository rules or make production changes.
+- Treat GitHub Copilot only as an optional interactive coding assistant inside Codespaces. Do not pull GitHub issues, claim task ownership, dispatch cloud-agent work, merge, deploy, change repository rules or make production changes.
 - Start from the latest `main` and work only on a focused feature branch. Never push directly to `main`.
 - Inspect existing implementation and tests before editing. Preserve unrelated working code and established architecture.
 - Keep changes scoped. Default to 2–3 related files per batch where practical; do not edit files assigned to another contributor. Do not invent APIs, schema fields, environment variables, integrations or test results.
