@@ -1,6 +1,6 @@
 # Super Bajaar — AI Engineering Operating Model
 
-> **Status: Proposed for owner review.** This document becomes the canonical AI-team operating contract only after its pull request is approved and merged. GitHub is the shared system of record. Separate AI chats do not communicate directly.
+> **Status: Active — merged to `main` on 31 October 2026.** This is the canonical AI-team operating contract for Super Bajaar. GitHub is the shared system of record. Separate AI chats do not communicate directly.
 
 ## 1. Command, accountability and principles
 
@@ -13,7 +13,7 @@
 - Existing assignments remain in force. Do not reassign or duplicate Copilot issue #176 (FastAPI route-registration audit).
 
 
-## 2A. Optional contributors and 60-second fallback
+## 2. Optional contributors and 60-second fallback
 
 **A contributor is an optional execution resource, never a blocker or mandatory dependency.** The task must have a fallback owner before it is dispatched.
 
@@ -30,7 +30,7 @@
 
 A GitHub Actions timer can detect a missing acknowledgement, add a status label/comment and notify the fallback owner. It cannot, by itself, cause a ChatGPT conversation or an external AI agent to execute code. True unattended AI dispatch requires a separately configured and authorised agent/API integration with credentials, provider limits, cost controls and scoped repository permissions. Until that integration is implemented and verified, the 60-second fallback is coordinator-driven; do not describe it as an already-running autonomous dispatcher.
 
-## 2. Agent and tool register
+## 3. Agent and tool register
 
 | Contributor | Primary role and responsibilities | Boundaries / status |
 |---|---|---|
@@ -54,6 +54,14 @@ A GitHub Actions timer can detect a missing acknowledgement, add a status label/
 | **AWS EC2 / SSM** | Runtime/host investigation and approved backend operations when evidence points to infrastructure. | Not the first stop for ordinary source/API defects. |
 | **AWS Amplify** | Frontend hosting/build investigation and separately approved frontend releases. | Not the backend runtime or a coding agent. |
 | **Swagger / OpenAPI** | First diagnostic tool for API route, request/response, authentication and status-code defects. | API contract explorer; not proof of complete end-to-end correctness. |
+| **Figma** | UI/UX source of truth for approved screens, components, variables, design tokens and design-to-code handoff. | Use when the task references a Figma file or design deliverable; never invent design approval or alter files without the relevant user request. |
+| **GitBook** | Authoring, structuring and reviewing a separate documentation site when one is connected and explicitly in scope. | GitHub Markdown remains the repo source of truth unless a GitBook sync workflow is explicitly established. |
+| **OpenAI Platform** | Manage OpenAI API project/key lifecycle and platform setup when explicitly requested. | Never request or expose API keys in chat; API use may be billable and requires owner approval. |
+| **Plugin Management** | Discover connected integrations, inspect permissions and suggest relevant connections. | Connection/install always requires owner action; a listed plugin is not proof that an account is connected or authorised. |
+| **Conversation Files / Library** | Search and read project documents, prior reports and uploaded references. | File content is evidence only for the referenced version; it does not grant repository or production access. |
+| **Superpowers workflow skills** | Apply disciplined brainstorming, planning, debugging, test-driven development, code review and verification practices. | Process guidance, not an external coding agent or an execution environment. |
+| **NVIDIA tools/skills** | Specialised CUDA/GPU/NIM/NeMo work if Super Bajaar later adopts NVIDIA technology. | Not relevant to ordinary current React/FastAPI/PostgreSQL work unless a task explicitly introduces NVIDIA components. |
+| **Zuora tools/skills** | Zuora Billing/Revenue/CPQ API design and integration if the product adopts Zuora. | Not a default payment, subscription or accounting integration; do not introduce it without an approved product requirement. |
 
 ### Identity and ownership rules
 
@@ -64,7 +72,7 @@ A GitHub Actions timer can detect a missing acknowledgement, add a status label/
 - Perplexity is a research specialist, not a coding agent.
 - GitHub Actions, Context7, Firecrawl, TinyFish, Manufact, Linear, GitLab, 3Min API, Codespaces, AWS and Swagger are supporting tools/services, not substitutes for an accountable AI task owner.
 
-## 3. Exclusive work allocation
+## 4. Exclusive work allocation
 
 | Workstream | Accountable owner | Reviewer / support |
 |---|---|---|
@@ -88,7 +96,7 @@ A GitHub Actions timer can detect a missing acknowledgement, add a status label/
 | Production deployment and post-deploy verification | ChatGPT coordinates only after explicit owner approval | Claude supports complex database release; owner authorises |
 
 **Allocation rule:** Gemini's audit and review assignments are read-only. If an audit discovers a fix, ChatGPT creates a new implementation issue, reserves non-overlapping paths and chooses exactly one implementation owner. Copilot handles routine bounded non-schema changes; Claude handles complex backend/database work. Perplexity does not implement repository code.
-## 4. Mandatory GitHub task workflow
+## 5. Mandatory GitHub task workflow
 
 ### A. Intake and allocation
 
@@ -149,7 +157,7 @@ Production or schema impact: NONE / PROPOSED / APPROVED / VERIFIED
 
 Never report tests as passed if they were not executed. If no terminal is available, state NOT RUN and use GitHub Actions or another approved execution environment when available.
 
-## 5. Non-overlap and file-reservation protocol
+## 6. Non-overlap and file-reservation protocol
 
 - One issue reserves one path set. Before editing, the agent checks open issues and PRs for overlapping paths.
 - A read-only auditor may inspect an active implementation's diff but cannot edit its files.
@@ -159,7 +167,7 @@ Never report tests as passed if they were not executed. If no terminal is availa
 - Existing assignments are grandfathered until completed or explicitly reallocated by the owner.
 - Do not use labels or agent names as proof of execution; record actual provider/session/commit evidence when available.
 
-## 6. Repository, schema and production safeguards
+## 7. Repository, schema and production safeguards
 
 - Feature branches only; no direct push to `main`.
 - Owner retains merge and deployment authority. A connected integration does not override repository policy or branch protection.
@@ -173,7 +181,7 @@ Never report tests as passed if they were not executed. If no terminal is availa
 - No new paid service, API spend, AI usage budget or Codespaces top-up without owner approval.
 - Merged is not deployed. CI pass is not production verification.
 
-## 7. Diagnostic and verification workflow
+## 8. Diagnostic and verification workflow
 
 1. **GitHub first:** inspect issue, PR, changed files, branch, commit and CI.
 2. **Swagger/OpenAPI first for API defects:** inspect route, auth, request/response, status and reproduce contract failures before editing code.
@@ -185,7 +193,7 @@ Never report tests as passed if they were not executed. If no terminal is availa
 8. **Independent verification:** exact commit, required CI checks, targeted tests and relevant user journey evidence.
 9. **Deployment:** separately approved, followed by environment-specific health and end-to-end verification.
 
-## 8. AI usage, cost and entitlement controls
+## 9. AI usage, cost and entitlement controls
 
 - No agent is assumed to have unlimited tokens, requests, credits, context or repository permissions.
 - **ChatGPT:** usage depends on the owner's ChatGPT plan, selected model and current account limits. Do not quote a fixed token allowance without checking account/product documentation.
@@ -203,7 +211,7 @@ Never report tests as passed if they were not executed. If no terminal is availa
 
 For any task that materially consumes paid/API credits, record provider, model/tool, approximate usage if the provider exposes it, and whether it was free-tier or billable. Do not invent token counts or pricing. Review actual usage dashboards for exact remaining balances and resets.
 
-## 9. Stop conditions and escalation
+## 10. Stop conditions and escalation
 
 Pause and ask the owner if:
 - issue/PR scope conflicts with another active assignment;
@@ -216,7 +224,7 @@ Pause and ask the owner if:
 
 Record the blocker, impact, safe options and decision needed in the originating issue.
 
-## 10. Current operational baseline
+## 11. Current operational baseline
 
 - GitHub repository: `siinghniibandhan-wq/superbajaar`.
 - GitHub is the shared coordination centre.
@@ -231,7 +239,7 @@ Record the blocker, impact, safe options and decision needed in the originating 
 **Maintenance:** Update this policy when actual access, agent capabilities, owner decisions or usage plans change. Record the date and evidence. This document does not grant permissions or authorize spending, merges or deployment.
 
 
-## 11. User-invoked agent task checking
+## 12. User-invoked agent task checking
 
 The standard pull-based activation protocol and copy/paste commands for Copilot, Gemini, Perplexity and ChatGPT are maintained in `docs/AI_AGENT_TASK_CHECK_COMMANDS.md`.
 
