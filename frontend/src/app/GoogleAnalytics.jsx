@@ -70,7 +70,7 @@ export default function GoogleAnalytics({ pagePath }) {
 
   const choose = value => {
     try { window.localStorage.setItem(CONSENT_KEY, value); } catch { /* Consent remains session-only if storage is unavailable. */ }
-    setConsent(value === "granted");
+    setConsent(value);
   };
 
   return <aside className="sb-analytics-consent" aria-label="Analytics preferences">
