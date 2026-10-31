@@ -7,7 +7,7 @@
 1. GitHub issues, branches, pull requests, reviews and Actions are the shared project record. Separate AI chats do not communicate directly.
 2. The project owner retains final authority over priorities, access, paid usage, merges, production data, infrastructure and releases.
 3. ChatGPT is the CTO/coordinator: architecture, decomposition, ownership, handoffs, integration review and evidence review.
-4. Every task has exactly one accountable owner, one defined scope and explicit allowed paths. No two agents may edit the same file set concurrently.
+4. Every task has exactly one accountable owner, one defined scope and explicit allowed paths. Contributors are optional: allow 60 seconds for acknowledgement, then activate the named fallback owner if there is no response. No two agents may edit the same file set concurrently.
 5. Read-only auditors and reviewers do not edit implementation branches.
 6. Existing assignments are preserved. Copilot issue #176 (FastAPI route-registration audit) remains with Copilot; do not duplicate its scope.
 7. Claude remains the designated default SQL/schema/migration/runner author under `CLAUDE.md`.
@@ -38,6 +38,6 @@ Every task must record: GitHub issue, accountable owner, task type/access mode, 
 
 Intake → inspect current issues/PRs → reserve paths → assign one owner → execute within scope → self-review → independent read-only review → exact-commit CI → ChatGPT integration/evidence review → owner merge decision → separately approved deployment → post-deployment verification.
 
-If scopes overlap, access is missing, protected assets are implicated or paid usage is required, stop and record the blocker in GitHub. Do not improvise or duplicate work.
+If the preferred contributor does not acknowledge within 60 seconds, the fallback owner takes over the same issue and scope; do not wait indefinitely or start duplicate parallel work. A GitHub timer can notify/label the fallback but cannot execute an external AI by itself. If scopes overlap, access is missing, protected assets are implicated or paid usage is required, stop and record the blocker in GitHub. Do not improvise or duplicate work.
 
 **Read next:** [AI Engineering Operating Model](AI_ENGINEERING_OPERATING_MODEL.md), [Repository instructions](../AGENTS.md), [Development workflow](DEVELOPMENT_WORKFLOW.md), [Database change rules](DATABASE_CHANGE_RULES.md), and [Copilot policy](GITHUB_COPILOT.md).
