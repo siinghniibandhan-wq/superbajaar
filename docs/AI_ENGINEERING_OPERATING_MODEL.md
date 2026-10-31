@@ -54,6 +54,14 @@ A GitHub Actions timer can detect a missing acknowledgement, add a status label/
 | **AWS EC2 / SSM** | Runtime/host investigation and approved backend operations when evidence points to infrastructure. | Not the first stop for ordinary source/API defects. |
 | **AWS Amplify** | Frontend hosting/build investigation and separately approved frontend releases. | Not the backend runtime or a coding agent. |
 | **Swagger / OpenAPI** | First diagnostic tool for API route, request/response, authentication and status-code defects. | API contract explorer; not proof of complete end-to-end correctness. |
+| **Figma** | UI/UX source of truth for approved screens, components, variables, design tokens and design-to-code handoff. | Use when the task references a Figma file or design deliverable; never invent design approval or alter files without the relevant user request. |
+| **GitBook** | Authoring, structuring and reviewing a separate documentation site when one is connected and explicitly in scope. | GitHub Markdown remains the repo source of truth unless a GitBook sync workflow is explicitly established. |
+| **OpenAI Platform** | Manage OpenAI API project/key lifecycle and platform setup when explicitly requested. | Never request or expose API keys in chat; API use may be billable and requires owner approval. |
+| **Plugin Management** | Discover connected integrations, inspect permissions and suggest relevant connections. | Connection/install always requires owner action; a listed plugin is not proof that an account is connected or authorised. |
+| **Conversation Files / Library** | Search and read project documents, prior reports and uploaded references. | File content is evidence only for the referenced version; it does not grant repository or production access. |
+| **Superpowers workflow skills** | Apply disciplined brainstorming, planning, debugging, test-driven development, code review and verification practices. | Process guidance, not an external coding agent or an execution environment. |
+| **NVIDIA tools/skills** | Specialised CUDA/GPU/NIM/NeMo work if Super Bajaar later adopts NVIDIA technology. | Not relevant to ordinary current React/FastAPI/PostgreSQL work unless a task explicitly introduces NVIDIA components. |
+| **Zuora tools/skills** | Zuora Billing/Revenue/CPQ API design and integration if the product adopts Zuora. | Not a default payment, subscription or accounting integration; do not introduce it without an approved product requirement. |
 
 ### Identity and ownership rules
 
