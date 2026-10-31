@@ -1,0 +1,170 @@
+name: PR Portfolio Monitor
+
+on:
+  schedule:
+    # 09:00 Asia/Kolkata (UTC+05:30)
+    - cron: "30 3 * * *"
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review, closed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: write
+
+concurrency:
+  group: pr-portfolio-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    name: PR count and aging report
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Evaluate open PR portfolio
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const now = Date.now();
+            const DAY = 24 * 60 * 60 * 1000;
+            const thresholds = { capacity: 15, flag: 5, escalate: 7, target: 10 };
+
+            const { data: pulls } = await github.rest.pulls.list({
+              owner, repo, state: "open", per_page: 100, sort: "created", direction: "asc"
+            });
+
+            const ageDays = pr => Math.floor((now - Date.parse(pr.created_at)) / DAY);
+            const ensureLabel = async (name, color, description) => {
+              try {
+                await github.rest.issues.getLabel({ owner, repo, name });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+                await github.rest.issues.createLabel({ owner, repo, name, color, description });
+              }
+            };
+            const addLabel = async (number, name) => {
+              await github.rest.issues.addLabels({ owner, repo, issue_number: number, labels: [name] });
+            };
+            const hasMarker = async marker => {
+              for await (const response of github.paginate.iterator(github.rest.issues.listForRepo, {
+                owner, repo, state: "all", per_page: 100
+              })) {
+                const found = response.data.find(issue =>
+                  !issue.pull_request && (issue.body || "").includes(marker)
+                );
+                if (found) return found;
+              }
+              return null;
+            };
+            const commentOnce = async (pr, marker, body) => {
+              const { data: comments } = await github.rest.issues.listComments({
+                owner, repo, issue_number: pr.number, per_page: 100
+              });
+              if (comments.some(comment => (comment.body || "").includes(marker))) return;
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: pr.number, body: body + "\n\n" + marker
+              });
+            };
+
+            await ensureLabel("pr-aging-5d", "FBCA04", "PR open for at least 5 days; owner attention recommended.");
+            await ensureLabel("pr-escalation-7d", "D93F0B", "PR open for at least 7 days; escalation issue created.");
+            await ensureLabel("pr-target-10d", "B60205", "PR has exceeded the 10-day resolution target.");
+
+            const aged = pulls.map(pr => ({ ...pr, age: ageDays(pr) }));
+            const fiveDay = aged.filter(pr => pr.age >= thresholds.flag);
+            const sevenDay = aged.filter(pr => pr.age >= thresholds.escalate);
+            const tenDay = aged.filter(pr => pr.age >= thresholds.target);
+
+            for (const pr of fiveDay) {
+              await addLabel(pr.number, "pr-aging-5d");
+              await commentOnce(
+                pr,
+                "<!-- pr-monitor:5-day -->",
+                "PR portfolio monitor: this PR has been open for at least **5 days**. Please review its owner, blocker, next action and expected resolution date. This is an attention flag, not an instruction to merge or close."
+              );
+            }
+
+            for (const pr of sevenDay) {
+              await addLabel(pr.number, "pr-escalation-7d");
+              const marker = `<!-- pr-monitor:7-day:PR-${pr.number} -->`;
+              if (!(await hasMarker(marker))) {
+                await github.rest.issues.create({
+                  owner, repo,
+                  title: `PR aging escalation: #${pr.number} — ${pr.title}`,
+                  body: [
+                    `The linked pull request has been open for **${pr.age} days** (7-day escalation threshold).`,
+                    "",
+                    `- Pull request: #${pr.number}`,
+                    `- Author: @${pr.user.login}`,
+                    `- Opened: ${pr.created_at}`,
+                    `- Current link: ${pr.html_url}`,
+                    "",
+                    "Please record the blocker, accountable owner, next action and expected resolution date. The 10-day target is an operating target, not a reason to merge unsafe work.",
+                    "",
+                    "This monitor does not approve, merge or close pull requests.",
+                    "",
+                    marker
+                  ].join("\n")
+                });
+              }
+            }
+
+            for (const pr of tenDay) {
+              await addLabel(pr.number, "pr-target-10d");
+              await commentOnce(
+                pr,
+                "<!-- pr-monitor:10-day -->",
+                "PR portfolio monitor: this PR has exceeded the **10-day resolution target**. Please document the current decision (continue, split, supersede or close with owner agreement), blocker and next review date. Do not merge solely to meet the target."
+              );
+            }
+
+            const capacityMarker = "<!-- pr-monitor:capacity-over-15 -->";
+            let capacityIssue = await hasMarker(capacityMarker);
+            if (pulls.length > thresholds.capacity && !capacityIssue) {
+              capacityIssue = await github.rest.issues.create({
+                owner, repo,
+                title: `PR portfolio capacity alert: ${pulls.length} open PRs`,
+                body: [
+                  `The repository has **${pulls.length} open PRs**, exceeding the operating ceiling of ${thresholds.capacity}.`,
+                  "",
+                  "Review the portfolio for ownership, duplication, blockers, priority and next actions. This is a capacity alert only; do not close valid work merely to reduce the count.",
+                  "",
+                  "No PRs are automatically merged or closed.",
+                  "",
+                  capacityMarker
+                ].join("\n")
+              }).then(response => response.data);
+            } else if (pulls.length > thresholds.capacity && capacityIssue) {
+              await github.rest.issues.update({
+                owner, repo, issue_number: capacityIssue.number,
+                title: `PR portfolio capacity alert: ${pulls.length} open PRs`,
+                body: [
+                  `Latest monitor count: **${pulls.length} open PRs** (operating ceiling: ${thresholds.capacity}).`,
+                  "",
+                  "Review ownership, duplication, blockers, priority and next actions. Do not close valid work merely to reduce the count. No PRs are automatically merged or closed.",
+                  "",
+                  capacityMarker
+                ].join("\n")
+              });
+            }
+
+            const lines = [
+              "## PR Portfolio Monitor",
+              "",
+              `- **Open PRs:** ${pulls.length} / ${thresholds.capacity} operating ceiling`,
+              `- **At least 5 days:** ${fiveDay.length}`,
+              `- **At least 7 days (escalation):** ${sevenDay.length}`,
+              `- **At least 10 days (target exceeded):** ${tenDay.length}`,
+              `- **Capacity:** ${pulls.length > thresholds.capacity ? "OVER LIMIT" : "Within limit"}`,
+              "",
+              "### Open PRs (oldest first)",
+              ...aged.map(pr => `- #${pr.number} — ${pr.age} days — ${pr.title} — ${pr.html_url}`),
+              "",
+              "This workflow reports and escalates only. It never approves, merges or closes a PR."
+            ];
+            await core.summary.addRaw(lines.join("\n")).write();
