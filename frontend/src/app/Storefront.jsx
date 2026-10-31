@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Heart, ShoppingBag, Search, Sparkles, Flame, Clock3, ChevronLeft, ChevronRight, UserRound, MapPin, X, Coins, CreditCard, CalendarClock } from "lucide-react";
 import { apiRequest } from "../services/api.js";
+import GoogleAnalytics, { trackAnalyticsEvent } from "./GoogleAnalytics.jsx";
 import "./storefront.css";
 
 const categoryOrder = [
@@ -107,6 +108,18 @@ export default function Storefront() {
       setSelectedProduct(current || null);
     }
   }, [routePath, variants, selectedProduct]);
+
+  useEffect(() => {
+    if (!/^\\/product\\/\\d+$/.test(routePath) || !variants.length) return;
+    const productId = Number(routePath.split("/")[2]);
+    const variant = variants.find(item => Number(item.product_id) === productId && item.is_active !== false);
+    if (!variant) return;
+    trackAnalyticsEvent("view_item", {
+      currency: "INR",
+      value: Number(variant.selling_price || 0),
+      items: [{ item_id: String(variant.sku || variant.id), item_name: variant.product_name || "Product", price: Number(variant.selling_price || 0) }],
+    });
+  }, [routePath, variants]);
 
   useEffect(() => {
     const syncPath = () => setRoutePath(window.location.pathname.replace(/\/+$/, "") || "/");
@@ -508,6 +521,11 @@ export default function Storefront() {
   const total = cart.reduce((sum, line) => sum + Number(line.selling_price || 0) * line.quantity, 0);
   const addToCart = (variant, requestedQuantity = 1) => {
     const quantity = Math.min(100000, Math.max(1, Math.floor(Number(requestedQuantity) || 1)));
+    trackAnalyticsEvent("add_to_cart", {
+      currency: "INR",
+      value: Number(variant.selling_price || 0) * quantity,
+      items: [{ item_id: String(variant.sku || variant.id), item_name: variant.product_name || "Product", price: Number(variant.selling_price || 0), quantity }],
+    });
     setCart(old => {
       const found = old.find(line => line.id === variant.id);
       return found ? old.map(line => line.id === variant.id ? { ...line, quantity: Math.min(100000, line.quantity + quantity) } : line)
@@ -525,6 +543,11 @@ export default function Storefront() {
     event.preventDefault();
     if (!customerToken || !customerAuth) { openCustomerAuth("login", "/checkout"); return; }
     if (!cart.length) { setError("Add at least one item to your basket."); return; }
+    trackAnalyticsEvent("begin_checkout", {
+      currency: "INR",
+      value: total,
+      items: cart.map(line => ({ item_id: String(line.sku || line.id), item_name: line.product_name || "Product", price: Number(line.selling_price || 0), quantity: line.quantity })),
+    });
     setSubmitting(true); setError(""); setNotice(""); setOrder(null);
     try {
       const created = await customerRequest("/orders", {
@@ -540,6 +563,12 @@ export default function Storefront() {
         }),
       });
       setOrder(created);
+      trackAnalyticsEvent("order_placed", {
+        currency: "INR",
+        value: total,
+        transaction_id: String(created?.order_number || created?.order_id || created?.id || ""),
+        items: cart.map(line => ({ item_id: String(line.sku || line.id), item_name: line.product_name || "Product", price: Number(line.selling_price || 0), quantity: line.quantity })),
+      });
       setCart([]);
       setNotice("Your order has been placed. Online payment is not enabled yet.");
     } catch (e) {
@@ -602,6 +631,7 @@ export default function Storefront() {
   }
 
   return <main className="storefront">
+    <GoogleAnalytics pagePath={routePath} />
     <div className="storefront-promo">Your everyday favourites, all in one place <span>✦</span> Shop smarter with Super Bajaar</div>
     <header className="storefront-header">
       <a className="storefront-brand" href="/" onClick={event => { event.preventDefault(); openShopHome(); }} aria-label="Super Bajaar home"><span className="storefront-logo">S</span><span><strong>Super Bajaar <span className="storefront-crown" aria-hidden="true">♛</span></strong><small>Your Everyday Super Store</small></span></a>
