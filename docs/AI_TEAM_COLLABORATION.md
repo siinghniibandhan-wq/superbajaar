@@ -5,31 +5,38 @@
 ## Core rules
 
 1. GitHub issues, branches, pull requests, reviews and Actions are the shared project record. Separate AI chats do not communicate directly.
-2. The project owner retains final authority over priorities, access, paid usage, merges, production data, infrastructure and releases.
-3. ChatGPT is the CTO/coordinator: architecture, decomposition, ownership, handoffs, integration review and evidence review.
-4. Every task has exactly one accountable owner, one defined scope and explicit allowed paths. Contributors are optional: allow 60 seconds for acknowledgement, then activate the named fallback owner if there is no response. No two agents may edit the same file set concurrently.
-5. Read-only auditors and reviewers do not edit implementation branches.
-6. Existing assignments are preserved. Copilot issue #176 (FastAPI route-registration audit) remains with Copilot; do not duplicate its scope.
-7. Claude remains the designated default SQL/schema/migration/runner author under `CLAUDE.md`.
-8. Gemini main is the independent read-only repository auditor. Gemini CLI is an alternative interface to Gemini, not a second independent AI; it currently has no active assignment because authentication/model execution was not verified and Codespaces budget is exhausted.
-9. Antigravity CLI is experimental until authentication and repository permissions are verified. Perplexity is reserved for external research and source verification.
-10. No direct push to `main`, self-merge, branch-protection bypass, production data mutation, production migration, paid usage or deployment without the required owner approval.
+2. The project owner retains final authority over priorities, access, paid usage, protected production/database changes and releases.
+3. ChatGPT is the CTO: architecture, strategy, task decomposition, allocation, integration, evidence review, PR readiness and merge execution under the repository approval policy.
+4. Copilot is the primary bounded coding agent for assigned React/Vite and non-schema FastAPI/API/service implementation, bug fixes and tests.
+5. Gemini is the independent auditor and quality challenger. Audits/reviews are read-only; a separate non-schema implementation is allowed only with a new issue and reserved paths.
+6. Perplexity performs external research and source verification; it does not implement repository code.
+7. Claude owns complex backend/data-integrity work and designated SQL/schema/migration/runner work under `CLAUDE.md`.
+8. Every task has exactly one accountable owner, one defined scope and explicit allowed paths. No two agents edit the same file set concurrently.
+9. Existing assignments are preserved. Copilot issue #176 (FastAPI route-registration audit) remains with Copilot; do not duplicate its scope.
+10. Gemini CLI is an alternative interface to Gemini, not a second independent agent. Antigravity is experimental until authentication and repository permissions are verified.
+11. GitHub Actions and the supporting tools are not AI task owners. Their purpose and boundaries are listed in the canonical operating model.
+12. No direct push to `main`, self-merge, branch-protection bypass, production data mutation, production migration, unapproved paid usage or deployment.
 
 ## Role allocation at a glance
 
 | Contributor | Exclusive responsibility |
 |---|---|
-| ChatGPT | CTO, architecture, allocation, integration, final evidence review |
-| Gemini (main) | Read-only repository/module audit and technical findings |
-| Gemini CLI | Dormant alternative Gemini terminal interface; no duplicate assignment |
-| Antigravity CLI | Experimental alternative; no production assignment until verified |
-| Claude | SQL/schema/migration/runner and complex backend implementation on reserved paths |
-| GitHub Copilot | Existing assigned issues and bounded non-schema coding tasks |
-| Perplexity | External research, official documentation and source verification |
-| GitHub Actions | Automated CI/testing; not an AI agent |
+| ChatGPT | CTO, architecture, task decomposition/allocation, coordination, integration, PR review, CI evidence review, merge readiness and authorised merge execution |
+| GitHub Copilot | Primary bounded React/Vite and non-schema FastAPI/API implementation, bug fixes, tests and PR preparation |
+| Gemini (main) | Independent read-only module audits, defect discovery, quality/security review and separately assigned non-schema fixes only on reserved paths |
+| Perplexity | External research, official documentation, vendor/API capability and source verification, Indian compliance research |
+| Claude | Complex backend/data-integrity engineering and designated SQL/schema/migration/runner authoring under `CLAUDE.md` |
+| Gemini CLI | Optional Gemini terminal interface; not a separate AI owner |
+| Antigravity | Experimental alternative; no active production assignment until verified |
+| GitHub Actions | Deterministic CI/testing/security checks; not an AI agent |
+| GitHub | Canonical issue/PR/branch/permission system; not an AI worker |
+| Codespaces | Optional development terminal; no paid top-up without approval |
+| Context7 / Firecrawl / TinyFish | Documentation retrieval, web extraction and browser research support |
+| Manufact | Authorised MCP server/deployment management, not default app deployer |
+| Linear / GitLab / 3Min API | Optional supporting systems only when a task explicitly requires them |
+| AWS EC2 / SSM / Amplify / Swagger | Runtime, approved infrastructure, frontend hosting and API-contract diagnostics respectively |
 
-Supporting tools and their boundaries (GitHub, Codespaces, Context7, Firecrawl, TinyFish, Manufact, Linear, GitLab and 3Min API) are documented in the canonical operating model.
-
+Supporting tools and their detailed boundaries are documented in the canonical [AI Engineering Operating Model](AI_ENGINEERING_OPERATING_MODEL.md).
 ## Standard handoff
 
 Every task must record: GitHub issue, accountable owner, task type/access mode, base branch and SHA, allowed/protected paths, dependencies, acceptance criteria, exact tests, evidence, risks and next owner. Completion reports must distinguish PASS, FAIL and NOT VERIFIED. Never claim an unrun test or unverified permission.
