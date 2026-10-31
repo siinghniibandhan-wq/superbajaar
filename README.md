@@ -118,7 +118,7 @@ AI contributor roles, file ownership, 2–3-file work batches and cross-agent ha
 
 ### AI engineering team and coordination
 
-The canonical contributor roles, exclusive responsibilities, non-overlap rules, GitHub issue/PR workflow, handoff format, usage controls and approval gates are documented in [AI Engineering Operating Model](docs/AI_ENGINEERING_OPERATING_MODEL.md). The shorter [AI Team Collaboration policy](docs/AI_TEAM_COLLABORATION.md) is the required entry point. GitHub remains the shared source of truth; agent access and plan entitlements must be verified rather than assumed.
+The canonical contributor roles, exclusive responsibilities, non-overlap rules, GitHub issue/PR workflow, handoff format, usage controls and approval gates are documented in [AI Engineering Operating Model](docs/AI_ENGINEERING_OPERATING_MODEL.md). The shorter [AI Team Collaboration policy](docs/AI_TEAM_COLLABORATION.md) is the required entry point. GitHub remains the shared source of truth; agent access and plan entitlements must be verified rather than assumed. Copy/paste, role-specific task-pull commands are in [AI Agent Task Check Commands](docs/AI_AGENT_TASK_CHECK_COMMANDS.md).
 
 ## 4. Database and schema automation
 
