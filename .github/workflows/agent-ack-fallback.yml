@@ -76,6 +76,6 @@ jobs:
                 '',
                 'The fallback owner must take over this same issue and scope after checking for any existing work. Do not start duplicate parallel implementation.',
                 '',
-                '**Automation boundary:** this workflow marks and announces the fallback; it does not itself launch ChatGPT or another external AI agent. Automatic agent execution requires a separately configured, authorised dispatch integration. No permissions, paid usage, schema approval, merge or deployment are granted by this timeout.'
+                '**Automation:** this workflow marks the fallback. The separate Gemini dispatch workflow listens for `fallback-required` and launches Gemini when the repository secret `GEMINI_API_KEY` is configured. This does not launch a ChatGPT session. No schema approval, production access, merge or deployment is granted by the timeout.'
               ].join('\n')
             });
