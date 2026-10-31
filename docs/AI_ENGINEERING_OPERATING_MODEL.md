@@ -69,23 +69,25 @@ A GitHub Actions timer can detect a missing acknowledgement, add a status label/
 | Workstream | Accountable owner | Reviewer / support |
 |---|---|---|
 | Product priorities and acceptance | Project owner | ChatGPT |
-| Architecture and cross-module design | ChatGPT | Gemini read-only challenge; Perplexity for external facts |
-| Product catalogue, attributes, variants audit | Gemini (read-only) | ChatGPT |
-| Inventory, batch, FIFO/FEFO and expiry audit | Gemini (read-only) | ChatGPT |
-| Frontend, backend and API independent audit | Gemini (read-only), excluding existing Copilot #176 scope | ChatGPT |
-| FastAPI route-registration audit already assigned in #176 | Copilot | ChatGPT reviews evidence |
+| Architecture, strategy and cross-module design | ChatGPT | Gemini read-only challenge; Perplexity for external facts |
+| Requirement analysis, task decomposition and GitHub allocation | ChatGPT | Relevant domain agent |
+| Routine React/Vite frontend implementation | Copilot | Gemini read-only review; ChatGPT integration |
+| Bounded non-schema FastAPI/API/service implementation | Copilot | Gemini read-only review; ChatGPT integration |
+| Independent catalogue, product, variant and attribute audit | Gemini (read-only) | ChatGPT |
+| Independent inventory, batch, FIFO/FEFO and expiry audit | Gemini (read-only) | ChatGPT; Claude for complex database implications |
+| Independent UI/API/backend/security/performance audit, excluding Copilot #176 | Gemini (read-only) | ChatGPT |
+| FastAPI route-registration audit already assigned in #176 | Copilot | ChatGPT reviews evidence; Gemini does not duplicate |
+| Separate non-schema fix discovered by Gemini | Gemini only when ChatGPT creates a distinct issue and reserves paths | ChatGPT; Copilot does not edit those paths |
+| Complex backend, transaction, concurrency and data-integrity issue | Claude | ChatGPT; Gemini read-only challenge |
 | SQL/schema/migrations/runner/database CI | Claude | ChatGPT coordinates; owner approves |
-| Complex backend implementation | Claude, only on reserved paths | Copilot may implement separate bounded tasks on different paths |
-| Bounded non-schema code tasks already assigned | Copilot | ChatGPT |
-| New non-schema implementation | ChatGPT assigns exactly one of Claude or Copilot after path reservation | Other agent may review read-only |
-| External docs, vendor policy, pricing, security advisory research | Perplexity | ChatGPT validates sources |
-| Current package/API documentation lookup | Context7 as a reference tool | Implementing agent remains accountable |
-| CI execution and repeatable checks | GitHub Actions | ChatGPT reviews exact run/commit |
-| Integration, release readiness and final evidence review | ChatGPT | Owner decides merge/release |
-| Merge and production release | Project owner / authorised human | Required reviews and CI |
+| External official documentation, vendor/API capability, security and Indian compliance research | Perplexity | ChatGPT validates sources |
+| Library/framework documentation lookup | Context7 | Implementing agent remains accountable |
+| CI, tests, builds, security and policy gates | GitHub Actions | ChatGPT reviews exact run/commit |
+| Integration, release readiness and final evidence review | ChatGPT | Gemini read-only review; owner decides |
+| PR merge | ChatGPT executes only when owner policy/approval and all required gates are satisfied | Owner retains final authority |
+| Production deployment and post-deploy verification | ChatGPT coordinates only after explicit owner approval | Claude supports complex database release; owner authorises |
 
-No role in this table grants new repository permissions or subscription entitlements. Verify access and plan capability before depending on a feature.
-
+**Allocation rule:** Gemini's audit and review assignments are read-only. If an audit discovers a fix, ChatGPT creates a new implementation issue, reserves non-overlapping paths and chooses exactly one implementation owner. Copilot handles routine bounded non-schema changes; Claude handles complex backend/database work. Perplexity does not implement repository code.
 ## 4. Mandatory GitHub task workflow
 
 ### A. Intake and allocation
