@@ -4,6 +4,17 @@
 
 ## Core rules
 
+### Repository access: read is not write
+
+Super Bajaar is a public GitHub repository, so agents may inspect public files and issue pages when their own session supports browsing. This does not imply authenticated write access or automatic task dispatch.
+
+- **ChatGPT:** connected GitHub integration provides available read/write operations; verify each successful action and use feature branches/PRs.
+- **Copilot:** coding-agent implementation is possible only when GitHub actually starts an eligible session for this repository.
+- **Gemini:** public read access for independent read-only audits; no write access is assumed.
+- **Perplexity:** public read access for context plus external research; no repository writes.
+- **Claude:** public read access and patch/file delivery; direct GitHub writes are not assumed. ChatGPT handles integration.
+- No agent receives production database, secrets, infrastructure or deployment access from public repository visibility.
+
 1. GitHub issues, branches, pull requests, reviews and Actions are the shared project record. Separate AI chats do not communicate directly.
 2. The project owner retains final authority over priorities, access, paid usage, protected production/database changes and releases.
 3. ChatGPT is the CTO: architecture, strategy, task decomposition, allocation, integration, evidence review, PR readiness and merge execution under the repository approval policy.
