@@ -57,7 +57,21 @@ When the user invokes the prompt below, the agent must:
 9. Stay within the issue's exact scope and allowed paths. If blocked by missing access, approval, paid usage or protected assets, stop the affected action and record the blocker.
 10. Post progress, changed paths, exact commands, test outcomes, commit/PR links, risks and unverified items to the same issue.
 
-## 4. Copy/paste activation prompts
+## 4. Current role-specific start notes — 31 October 2026
+
+Use these notes after reading the live issue. They clarify immediate handoffs; they do not replace issue bodies or create dispatch.
+
+| Agent | Start note | Do not do |
+|---|---|---|
+| **ChatGPT** | Coordinate the queue and verify #207 Copilot, #206 Gemini and #209 Perplexity from live GitHub evidence. Review scope, dependencies and outputs; do not claim another agent started without acknowledgement/evidence. | Do not take over another agent's task or claim CI/deployment results without evidence. |
+| **Copilot** | Check and acknowledge #207, then implement only the assigned 60-second fallback dispatch scope using a supported Copilot coding-agent session. | Do not touch #176, schema/migration/runner assets, or Gemini/Perplexity scopes. |
+| **Gemini** | Check and acknowledge #206, then perform the assigned catalogue/product/attribute and inventory FIFO/FEFO audit read-only. | Do not implement #207, perform Perplexity's external research in #209, or edit repository files. |
+| **Perplexity** | Check and acknowledge #209 (P2, READY), then perform the defined A–E external research and post the cited report in the issue. | Do not review source code/tests for #206 or design/review/test workflow implementation in #207. |
+| **Claude** | Check only issues routed to Claude. For complex backend/database tasks, read `CLAUDE.md`; for SQL/schema/runner work, follow all database safeguards and approval gates. | Do not assume #206/#207/#209 is yours. Do not edit applied migrations or perform production DB actions without approval. |
+
+**Access reminder:** The repository is public. Gemini, Perplexity and Claude can read public files when their own session supports it, but no GitHub write access is assumed for them. Copilot's write capability requires an actual supported coding-agent session. ChatGPT's connected GitHub operations must be verified individually. A label or @mention is not dispatch evidence.
+
+## 5. Copy/paste activation prompts
 
 ### A. ChatGPT — CTO and Engineering Coordinator
 
