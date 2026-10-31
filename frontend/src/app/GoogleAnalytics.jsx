@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import "./GoogleAnalytics.css";
 
 const CONSENT_KEY = "sb.analytics.consent";
 const measurementId = import.meta.env.VITE_GA4_MEASUREMENT_ID || "";
