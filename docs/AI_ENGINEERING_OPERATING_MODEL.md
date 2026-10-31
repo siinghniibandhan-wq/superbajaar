@@ -32,27 +32,37 @@ A GitHub Actions timer can detect a missing acknowledgement, add a status label/
 
 ## 2. Agent and tool register
 
-| Contributor | Exclusive responsibility | Allowed work | Explicit exclusions / current status |
-|---|---|---|---|
-| **ChatGPT** | CTO, architecture and coordination | Design decisions, issue briefs, work allocation, integration review, PR/evidence review, documentation and final acceptance recommendation | Does not claim work done by agents; does not approve its own work, merge, deploy or mutate production |
-| **Google Gemini (main)** | Independent repository audit and technical findings | Read-only audit of allocated modules: product/catalogue/attributes, inventory/FIFO-FEFO/expiry, frontend/backend/API, security, performance, tests and documentation; report reproducible evidence and recommendations | Audit phase is read-only. No code edits, branches, migrations or production actions during audit. Repository access is owner-reported; verify issue/PR visibility before relying on it |
-| **Google Gemini CLI (`gemini`)** | Alternate terminal interface to Gemini models | May be used later for terminal-based repository work if authenticated and tested | Currently installed in a Codespace but model response/repository-agent execution is unverified; Codespaces budget is exhausted. It is not a second independent AI or separate task owner. No current assignments |
-| **Google Antigravity CLI (`agy`)** | Experimental alternative Google coding-agent interface | Sandbox evaluation only after authentication and repository permissions are verified | Installed earlier; authentication and repo write access unverified. No production assignments and no duplicate Gemini tasks |
-| **Claude** | Designated database/schema/migration/runner author; complex backend implementation | Database design, additive migration drafts, migration runner/database CI work under `CLAUDE.md`; complex backend implementation on separately reserved paths | No edits to another agent's reserved files; no applied migration edits; no production SQL without owner approval/preflight |
-| **GitHub Copilot** | Existing GitHub assignments and bounded non-schema implementation | Continue existing assigned issues; bounded implementation, tests and PR preparation on exact allowed paths; GitHub issue/PR operations only where account and repository permissions permit | Preserve existing assignments, especially #176. No protected SQL/runner authoring, no direct main, no self-merge, no deployment. Cloud-agent and merge capability are not assumed from a connected account |
-| **Perplexity AI** | Independent external research and source verification | Official docs, vendor release notes, security advisories, technical comparisons, pricing/plan fact checks and source-backed research briefs | No repository code edits, commits, migrations or PR implementation. Private repo access is not assumed; use only access actually verified or public/owner-provided material |
-| **GitHub Actions** | Deterministic automated quality gates | CI, tests, builds, migration checks, security scans and governance validation | Not an AI agent; green CI is not production verification |
-| **GitHub** | Shared source of truth and workflow system | Issues, branch/PR/commit/review records, Actions, permissions and protected-branch enforcement | GitHub integration does not itself provide a terminal or prove a coding agent can execute tests |
-| **Codespaces** | Optional interactive development terminal | Repository editing, shell, builds and tests when available | Current usage budget exhausted. Do not restart/top-up or incur paid usage without owner approval. Not required for GitHub issue/PR communication |
-| **Context7** | Version-aware technical documentation retrieval | Resolve official library docs and query exact installed versions for implementation/review | Reference source only; not an agent, test runner or source of truth |
-| **Firecrawl** | Web extraction and research support | Retrieve public documentation/pages for research tasks | No repository writes or implementation ownership |
-| **TinyFish** | Browser automation and website workflow research | User-authorized browser research and multi-step website checks | Not a code owner; no production actions without task-specific approval |
-| **Manufact** | MCP/server/deployment infrastructure management | Inspect/manage explicitly authorised MCP servers and deployments | Not a default app deployment tool; no infrastructure changes without approval |
-| **Linear** | Optional planning mirror | Planning only if specifically requested | GitHub remains canonical; do not duplicate task ownership |
-| **GitLab** | Secondary repository platform | Only explicitly authorised GitLab work | Not part of the active Super Bajaar delivery path unless a task requires it |
-| **3Min API** | API prototyping/management | Separate API prototypes when explicitly approved | Not a default production backend or an implementation owner |
+| Contributor | Primary role and responsibilities | Boundaries / status |
+|---|---|---|
+| **ChatGPT** | **CTO and engineering lead.** Own architecture, technical strategy, requirement analysis, decomposition, GitHub issue creation/allocation, dependency management, path reservation, cross-agent coordination, integration design, code/PR review, QA strategy, CI evidence review, documentation governance, release readiness and PR merging when authorised. | Does not claim other agents' execution. Claude remains designated SQL/schema author. No unapproved production, paid usage, infrastructure or deployment actions. |
+| **GitHub Copilot** | **Primary bounded coding and implementation agent.** Own assigned React/Vite frontend work, non-schema FastAPI/API/service implementation, scoped bug fixes, integrations, refactoring, tests, implementation documentation, feature branches and PR preparation. | No protected schema/migration/runner changes, production data or infrastructure. No direct main, self-merge or deployment. Cloud-agent capability must be verified for the actual account/repository. |
+| **Google Gemini (main)** | **Independent auditor and quality challenger.** Own read-only audits of catalogue, products, variants, attributes, inventory, FIFO/FEFO/expiry, frontend/API/backend flows, security, performance and test gaps; independently review Copilot/Claude PRs; provide reproducible evidence. May implement a separate non-schema fix only through a new ChatGPT-assigned issue with distinct reserved paths. | Audit/review is read-only. No concurrent editing of Copilot/Claude files and no schema/migration/runner ownership. Repository access must be verified. |
+| **Perplexity** | **External research and source-verification specialist.** Own official documentation, API/vendor capability checks, release notes, security advisories, technical comparisons, pricing/plan checks and assigned Indian e-commerce/GST/consumer/privacy compliance research. Deliver source-backed briefs with dates and limitations. | Research-only. No code edits, commits, migrations or implementation PRs. Do not assume private repository access. |
+| **Claude** | **Complex engineering and database specialist.** Own difficult backend problems involving transactions, concurrency, data integrity, performance and cross-module complexity; SQL/schema design, additive migrations, migration runner and database CI under `CLAUDE.md` and database rules. | No historical/applied migration edits; no production SQL or release without explicit approval and preflight. No overlapping path ownership. |
+| **Gemini CLI** | Optional terminal interface to Gemini for approved terminal-based work after authentication and model execution are verified. | Same Gemini model family, not a second independent agent or separate task owner. |
+| **Antigravity** | Experimental alternative agent/IDE workflow for sandbox evaluation only after account access and repository permissions are verified. | No active production assignment until verified. |
+| **GitHub Actions** | Deterministic CI: frontend/backend checks, tests, database-file validation, security scans and policy checks. | Automation, not an AI agent; green CI is not production verification. |
+| **GitHub** | Canonical source of truth for issues, labels, branches, commits, PRs, reviews, Actions and permissions. | Not an AI worker; issue labels do not prove delivery or execution. |
+| **Codespaces** | Interactive development terminal for editing and running checks when available. | Current usage budget is exhausted; no top-up or paid compute without owner approval. |
+| **Context7** | Version-specific framework/library documentation retrieval for implementation and review. | Reference tool only; not an implementation owner or test runner. |
+| **Firecrawl** | Public web-page and documentation extraction for research. | Research support only; no repository writes. |
+| **TinyFish** | Browser-based research and user-authorised website workflows. | Not a code owner or production deployment system. |
+| **Manufact** | Authorised MCP server and deployment management. | Not the default Super Bajaar application deployer; infrastructure changes require approval. |
+| **Linear** | Optional planning mirror when explicitly requested. | GitHub remains canonical; avoid duplicate task ownership. |
+| **GitLab** | Secondary repository/CI platform for explicitly scoped tasks. | Not part of the default Super Bajaar delivery path. |
+| **3Min API** | API prototyping/management for separately approved experiments. | Not the production FastAPI backend by default. |
+| **AWS EC2 / SSM** | Runtime/host investigation and approved backend operations when evidence points to infrastructure. | Not the first stop for ordinary source/API defects. |
+| **AWS Amplify** | Frontend hosting/build investigation and separately approved frontend releases. | Not the backend runtime or a coding agent. |
+| **Swagger / OpenAPI** | First diagnostic tool for API route, request/response, authentication and status-code defects. | API contract explorer; not proof of complete end-to-end correctness. |
 
-**Identity rule:** Gemini and Gemini CLI are the same model family/access route for this plan, not two independent reasoning agents. Do not count them as two AI brains or allocate separate duplicate work. Antigravity is a separate interface/product and remains experimental.
+### Identity and ownership rules
+
+- Gemini main and Gemini CLI are one model family/access route, not two independent AI contributors.
+- One issue has one accountable implementation owner. Reviewers remain read-only.
+- ChatGPT allocates paths before work begins. Gemini may implement only a separately assigned non-schema issue after audit; it must not overlap Copilot or Claude.
+- Claude retains database/schema/migration/runner ownership under `CLAUDE.md`.
+- Perplexity is a research specialist, not a coding agent.
+- GitHub Actions, Context7, Firecrawl, TinyFish, Manufact, Linear, GitLab, 3Min API, Codespaces, AWS and Swagger are supporting tools/services, not substitutes for an accountable AI task owner.
 
 ## 3. Exclusive work allocation
 
