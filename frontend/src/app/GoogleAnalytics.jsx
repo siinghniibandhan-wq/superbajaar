@@ -4,8 +4,12 @@ import "./GoogleAnalytics.css";
 const CONSENT_KEY = "sb.analytics.consent";
 const measurementId = import.meta.env.VITE_GA4_MEASUREMENT_ID || "";
 
+function readConsent() {
+  try { return window.localStorage.getItem(CONSENT_KEY); } catch { return null; }
+}
+
 function hasConsent() {
-  try { return window.localStorage.getItem(CONSENT_KEY) === "granted"; } catch { return false; }
+  return readConsent() === "granted";
 }
 
 function loadGoogleTag() {
@@ -36,7 +40,7 @@ export function setAnalyticsConsent(granted) {
       ad_personalization: "denied",
     });
   }
-  window.dispatchEvent(new CustomEvent("sb:analytics-consent", { detail: { granted } }));
+  window.dispatchEvent(new CustomEvent("sb:analytics-consent", { detail: { granted, value } }));
 }
 
 export function trackAnalyticsEvent(name, params = {}) {
@@ -45,15 +49,15 @@ export function trackAnalyticsEvent(name, params = {}) {
 }
 
 export default function GoogleAnalytics({ pagePath }) {
-  const [consent, setConsent] = useState(hasConsent);
+  const [consent, setConsent] = useState(readConsent);
   useEffect(() => {
-    const syncConsent = event => setConsent(Boolean(event.detail?.granted));
+    const syncConsent = event => setConsent(event.detail?.value ?? (event.detail?.granted ? "granted" : "denied"));
     window.addEventListener("sb:analytics-consent", syncConsent);
     return () => window.removeEventListener("sb:analytics-consent", syncConsent);
   }, []);
 
   useEffect(() => {
-    if (!measurementId || !consent) return;
+    if (!measurementId || consent !== "granted") return;
     loadGoogleTag();
     window.gtag("event", "page_view", {
       page_title: document.title,
@@ -62,7 +66,7 @@ export default function GoogleAnalytics({ pagePath }) {
     });
   }, [consent, pagePath]);
 
-  if (!measurementId || consent) return null;
+  if (!measurementId || consent !== null) return null;
 
   const choose = value => {
     try { window.localStorage.setItem(CONSENT_KEY, value); } catch { /* Consent remains session-only if storage is unavailable. */ }
