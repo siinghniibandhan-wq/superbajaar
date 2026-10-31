@@ -88,7 +88,7 @@ Do not use AWS as the first debugging destination for ordinary source, UI or API
 | Stale / blocked PR | State blocker, responsible person and next review date |
 | Urgent exception | Security/production incident PRs may exceed the cap with owner visibility |
 
-These are operating targets, not automatic GitHub enforcement. Unless an approved GitHub App or scheduled automation is configured, the repository does not automatically count open PRs or close aged PRs.
+These are operating targets, not automatic merge/closure rules. The repository now uses `.github/workflows/pr-portfolio-monitor.yml` to count open PRs, flag PRs at 5 days, create an escalation issue at 7 days, and mark the 10-day resolution target. It runs daily at 09:00 IST and on pull-request lifecycle changes. It reports and escalates only; it never approves, merges, or closes PRs. See [PR Portfolio Monitor](PR_PORTFOLIO_MONITOR.md).
 
 **No metric-driven unsafe merge:** Never merge merely to meet the five/ten-day target. Never close valid work just to reduce the count. If work cannot safely merge, keep it blocked with a documented owner and next review date, and escalate the portfolio exception.
 
