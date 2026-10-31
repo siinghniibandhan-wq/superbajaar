@@ -9,7 +9,7 @@ Every task starts by reading:
 1. `README.md` — project overview, safety constraints, architecture summary and document index.
 2. `AGENTS.md` — these shared contributor rules.
 3. For GitHub Copilot tasks or when using Copilot in this repository, read `docs/GITHUB_COPILOT.md` and `.github/copilot-instructions.md`.
-4. For multi-AI delegation, role boundaries, task batches or cross-agent handoffs, read `docs/AI_TEAM_COLLABORATION.md`.
+4. For multi-AI delegation, role boundaries, task batches or cross-agent handoffs, read `docs/AI_TEAM_COLLABORATION.md`, the canonical `docs/AI_ENGINEERING_OPERATING_MODEL.md`, and `docs/AI_AGENT_TASK_CHECK_COMMANDS.md`.
 5. The task-specific canonical document in the matrix below.
 
 | Work type | Mandatory detailed reading |
@@ -29,12 +29,13 @@ If a required document cannot be read, stop and tell the owner. Do not guess its
 ## 2. Project operating model
 
 - GitHub is the source of truth for code, review, PRs and CI.
-- GitHub Codespaces is the primary development and code-debugging environment.
+- When the owner asks an AI agent to check assignments, follow `docs/AI_AGENT_TASK_CHECK_COMMANDS.md`: inspect only open issues routed to that agent, acknowledge before execution, and report no assignments when none match. This is user-invoked polling, not background automation.
+- GitHub Codespaces is the preferred interactive development environment when available. If its budget or access is unavailable, do not incur paid usage without approval; use GitHub issues/PRs and Actions for supported repository workflows, and clearly mark terminal-only checks NOT RUN until an approved runner is available.
 - Swagger / OpenAPI is the first diagnostic stop for API route, request/response, auth and status-code issues.
 - AWS EC2 / Systems Manager Run Command are used when evidence indicates runtime, host, networking, environment or infrastructure issues.
 - AWS Amplify is used for frontend build/hosting/deployment investigation.
 - PostgreSQL production operations are owner-controlled.
-- ChatGPT coordinates architecture, analysis, planning, review and documentation. Claude is the designated default SQL/schema/runner author under `CLAUDE.md`. GitHub Copilot is an additional coding assistant governed by `docs/GITHUB_COPILOT.md` and `.github/copilot-instructions.md`. Perplexity and Gemini are optional review/research partners only when their actual access is verified. All role boundaries and handoffs are defined in `docs/AI_TEAM_COLLABORATION.md`. No AI replaces owner approval.
+- ChatGPT is the CTO/coordinator and owns architecture, task decomposition/allocation, integration, PR/evidence review and merge execution under repository approval rules. GitHub Copilot is the primary bounded React/Vite and non-schema FastAPI/API implementation agent. Gemini is the independent read-only auditor and may implement only a separately assigned non-schema fix on reserved paths. Perplexity is the external research/source-verification specialist. Claude owns complex backend/data-integrity engineering and designated SQL/schema/migration/runner work under `CLAUDE.md`. Supporting tools (GitHub Actions, Codespaces, Context7, Firecrawl, TinyFish, Manufact, Linear, GitLab, 3Min API, AWS, Amplify and Swagger) are not interchangeable AI task owners. Read `docs/AI_AGENT_TASK_CHECK_COMMANDS.md` for exact role prompts and `docs/AI_ENGINEERING_OPERATING_MODEL.md` for the full responsibility/tool register. No AI replaces owner approval.
 
 Follow the diagnostic order and tool boundaries in `docs/DEVELOPMENT_WORKFLOW.md`. Do not jump to AWS for ordinary source or API contract defects without evidence.
 
