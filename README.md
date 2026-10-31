@@ -60,6 +60,8 @@ Super Bajaar is a commerce storefront and ERP platform. This README is the **fro
 
 Catalogue, attributes and variants; pricing and promotions; inventory; purchasing; orders; payments; delivery/logistics; customers and CRM; loyalty; POS; accounting and tax; HR and payroll; reporting and administration.
 
+**Accounting and tax (feature branch, pending review):** double-entry ledger with chart of accounts, sales/purchase GST invoices, receipts, payments, expenses, contra, journals, credit/debit notes, opening balances, reversal-only corrections, books lock date, trial balance, profit and loss, balance sheet, ledgers, day book, GST summary, receivable/payable aging, bank reconciliation and idempotent posting of orders, payments, refunds and goods receipts. Requires migration `015_accounting_ledger.sql`. Contracts: `docs/architecture.md` §6 "Accounting API".
+
 The presence of a module in this list describes the product scope, not a claim that every workflow is complete or production-ready. Check the implementation and progress evidence before planning a release.
 
 ---

@@ -1,3 +1,16 @@
+## 2026-10-31 — Accounting module: double-entry ledger, GST, reports and app-style UI
+
+**Status:** Feature branch `feature/accounting-module-complete-20261031`; PR open for CTO/owner review. Not merged, not deployed, migration not applied to production.
+
+- New migration `backend/schema/015_accounting_ledger.sql` (additive, idempotent): settings, chart of accounts (46 seeded system/default accounts), voucher sequences, vouchers and lines, database-enforced balancing and no-edit/no-delete triggers, conditional grants to `superbajaar_user`. Added to `backend/schema_required.txt` on owner direction.
+- New `/api/accounting/*` router: settings and lock date, accounts, manual vouchers, GST invoices/bills/notes, reversal, trial balance, P&L, balance sheet, ledger, day book, GST summary, party aging, bank reconciliation, idempotent sync from orders/payments/refunds/goods receipts.
+- Replaced the read-only accounting screen with an app-style workspace (top app bar, tabs, mobile bottom navigation, floating "new entry" button and bottom sheets, printable vouchers, CSV exports).
+- Shared API client now shows readable FastAPI validation messages instead of `[object Object]`.
+
+**Verification boundary:** Backend unit suite and accounting integration tests run on disposable PostgreSQL 15 and 16; schema runner tests run on both. Browser check against a disposable database with stubbed auth. Production preflight, migration, live data and deployed behaviour are not verified. Details and exact commands in the PR.
+
+---
+
 ## 2026-10-31 — GitHub Copilot documentation and usage governance
 
 **Status:** Documentation and repository instructions prepared in PR #175; account subscription/feature assignment remains unverified.

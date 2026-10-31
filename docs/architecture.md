@@ -118,7 +118,7 @@ Some current route handlers contain direct database access. A fully separated se
 | Customers / CRM | Customer records, support cases and related activity |
 | Loyalty | Programme, referrals and points-related records |
 | POS | In-person sales workflow |
-| Accounting / tax | Financial records, tax calculations and reporting; verify implementation before relying on scope |
+| Accounting / tax | Double-entry ledger (`accounting_*` tables, migration 015): chart of accounts, vouchers and lines, GST invoices, reports, bank reconciliation, lock date and automatic posting from orders/payments/goods receipts. Reads operational tables; never writes them |
 | HR / payroll | Employee and payroll operations; verify implementation before relying on scope |
 | Reporting | Cross-domain read models and operational reporting |
 
@@ -138,6 +138,43 @@ The current README/route inventory is a navigation aid. The authoritative contra
 4. Update this document with path, method, auth, role, request/response and error semantics.
 5. Add or update backend tests and frontend API client usage.
 6. Test the real UI → API → database behaviour where feasible.
+
+### Accounting API (`/api/accounting`)
+
+Source: `backend/app/api/accounting.py`; schema: `backend/schema/015_accounting_ledger.sql`; UI: `frontend/src/features/accounting/`.
+
+**Authentication / authorization.** Staff bearer token with an active session (shared middleware). Reads: owner, admin, manager (router dependency `require_accounting_reader`, which runs after the session check). Writes (POST/PUT/PATCH): owner and admin only, enforced by the existing middleware write policy. Changing the books lock date: owner only. Other roles receive 403.
+
+**Ledger rules (enforced in API and database).** Every voucher balances (deferred constraint triggers); each line is either debit or credit; posted amounts and accounts cannot be edited and vouchers/lines cannot be deleted (protect triggers) — corrections are reversal vouchers with a reason. Entries dated on or before `lock_date` are rejected. Voucher numbers are sequential per type and Indian financial year (`SI/2026-27/00001`). `idempotency_key` makes a retried POST return the original voucher (`idempotent_replay: true`). All amounts are server-calculated with `Decimal` and rounded half-up to paise.
+
+| Method + path | Purpose | Request | Response / errors | Data effects |
+|---|---|---|---|---|
+| GET `/api/accounting/settings` | Business name, GSTIN, state code, default supply, lock date | — | settings row; 503 if migration 015 is missing | reads `accounting_settings` |
+| PUT `/api/accounting/settings` | Update settings | `business_name`, `gstin` (15-char format), `state_code` (2 digits, must match GSTIN), `default_supply` intra/inter, `lock_date` | updated row; 403 lock date change by non-owner; 422 validation | updates `accounting_settings` |
+| GET `/api/accounting/accounts` | Chart of accounts with balances | `include_inactive`, `as_of` | `items[]` (balance on natural side), `sub_types` | reads accounts + lines |
+| POST `/api/accounting/accounts` | Create account | `code`, `name`, `account_type`, `sub_type`, `parent_id`, `description` | 201 account; 409 duplicate code; 422 invalid type/sub-type | inserts `accounting_accounts` |
+| PATCH `/api/accounting/accounts/{id}` | Rename / describe / activate / deactivate | `name`, `description`, `is_active` | account; 409 system account deactivation; 404 | updates `accounting_accounts` |
+| GET `/api/accounting/vouchers` | List / search vouchers | `voucher_type`, `from_date`, `to_date`, `search`, `limit` ≤500, `offset` | `items`, `total` | reads vouchers |
+| GET `/api/accounting/vouchers/{id}` | Voucher with lines | — | voucher + `lines[]`; 404 | reads |
+| POST `/api/accounting/vouchers` | Manual journal, receipt, payment, contra, expense, opening | `voucher_type`, `voucher_date`, `lines[]` (`account_id`, `debit`/`credit`, `narration`), party, reference, `due_date`, `idempotency_key` | 201 voucher; 422 unbalanced / type rule (receipt must debit cash/bank, payment must credit cash/bank, contra cash/bank only, expense must debit an expense account) / inactive account; 409 date on or before lock date | inserts voucher + lines |
+| POST `/api/accounting/invoices` | Sales invoice, purchase bill, credit note, debit note with GST | `invoice_type`, `voucher_date`, `party_name`, `party_gstin`, `place_of_supply` intra (CGST+SGST) / inter (IGST), `settlement` credit/cash/bank/upi/card, `against_receipt` (purchase: clear 2050 GRNI instead of adding inventory), `round_off`, `lines[]` (`description`, `account_id`, `hsn_sac`, `quantity`, `rate` excl. GST, `discount`, `gst_rate`) | 201 voucher (`total_amount` = billed amount); 422 invalid GSTIN/HSN/rate/account; 409 locked date | inserts voucher + lines |
+| POST `/api/accounting/vouchers/{id}/reverse` | Reverse a posted voucher | `reason` ≥5 chars, `reversal_date` | 201 reversal voucher; 409 already reversed, reversal of a reversal, or locked date; 422 date before original | inserts reversal; marks original `reversed` (status/audit columns only) |
+| GET `/api/accounting/reports/trial-balance` | Trial balance | `as_of` | `items`, totals, `balanced` | reads |
+| GET `/api/accounting/reports/profit-loss` | P&L | `from_date`, `to_date` (default: current financial year) | sections revenue/cogs/other_income/expenses, gross and net profit | reads |
+| GET `/api/accounting/reports/balance-sheet` | Balance sheet incl. current-year earnings | `as_of` | assets, liabilities, equity, `balanced` | reads |
+| GET `/api/accounting/reports/ledger/{id}` | Account ledger with running balance | `from_date`, `to_date`, `limit` | opening, items, closing (Dr positive) | reads |
+| GET `/api/accounting/reports/day-book` | Day book with lines | `from_date`, `to_date`, `limit` | vouchers + lines | reads |
+| GET `/api/accounting/reports/gst-summary` | Output vs input GST and rate-wise B2B/B2C summary | `from_date`, `to_date` | components, net payable, `by_rate`, disclaimer | reads |
+| GET `/api/accounting/reports/parties` | Receivable or payable by party with 0–30/31–60/61–90/90+ aging | `kind` receivable/payable, `as_of` | `items`, `total` | reads |
+| GET `/api/accounting/reports/summary` | Dashboard KPIs, monthly income/expense, recent vouchers | `from_date`, `to_date` | KPI fields, `monthly`, `recent` | reads |
+| GET `/api/accounting/bank-reconciliation` | Book vs cleared balance for a bank/clearing account | `account_id`, `to_date`, `show` unreconciled/all | balances, `items`; 422 non-bank account | reads |
+| PATCH `/api/accounting/lines/{line_id}/reconcile` | Mark/unmark a bank line as cleared | `reconciled_on` (null to clear), `bank_reference` | line; 422 non-bank line / date before voucher | updates `reconciled_on`, `bank_reference` only |
+| GET `/api/accounting/sync/status` | Count operational records not yet posted | — | counts per source | reads orders, payments, inventory movements |
+| POST `/api/accounting/sync` | Post pending orders (sales + COGS), cancellations (credit note), captured payments (receipt), refunds, goods receipts (Dr inventory, Cr GRNI) | `limit` ≤1000 | counts, `skipped_locked`, `errors[]`, `pending` | inserts vouchers; one savepoint per record; unique `(source_type, source_id)` makes reruns safe |
+
+**Assumptions to review.** Order line totals are treated as GST-inclusive at each product's `tax_rate` with the default place of supply; order COGS uses current variant `cost_price`. Manual sales invoices do not relieve inventory/COGS (use a journal or the order sync for stock-backed sales). The GST summary is a bookkeeping aid, not a filed return.
+
+**Verification.** `backend/tests/test_accounting.py` (unit) and `backend/tests/test_accounting_integration.py` (runs only with `SB_TEST_DATABASE_URL` pointing at a disposable database; refuses `sb_app` and AWS hosts).
 
 ### Authentication principles
 

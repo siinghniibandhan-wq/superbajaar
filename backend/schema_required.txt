@@ -11,3 +11,5 @@
 012_product_category_assignments.sql
 012_variant_image_primary.sql
 013_product_deletion_audit.sql
+# 015 added by Perplexity Computer agent on 2026-10-31 under owner direction (accounting module); needs CTO/owner review.
+015_accounting_ledger.sql
