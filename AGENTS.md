@@ -8,7 +8,7 @@ Every task starts by reading:
 
 1. `README.md` — project overview, safety constraints, architecture summary and document index.
 2. `AGENTS.md` — these shared contributor rules.
-3. If the owner explicitly invokes Copilot inside an available Codespace, read `docs/GITHUB_COPILOT.md` and `.github/copilot-instructions.md`. Copilot is not an issue-assigned coding agent.
+3. For GitHub Copilot tasks or when using Copilot in this repository, read `docs/GITHUB_COPILOT.md` and `.github/copilot-instructions.md`.
 4. For multi-AI delegation, role boundaries, task batches or cross-agent handoffs, read `docs/AI_TEAM_COLLABORATION.md`, the canonical `docs/AI_ENGINEERING_OPERATING_MODEL.md`, and `docs/AI_AGENT_TASK_CHECK_COMMANDS.md`.
 5. The task-specific canonical document in the matrix below.
 
@@ -35,21 +35,9 @@ If a required document cannot be read, stop and tell the owner. Do not guess its
 - AWS EC2 / Systems Manager Run Command are used when evidence indicates runtime, host, networking, environment or infrastructure issues.
 - AWS Amplify is used for frontend build/hosting/deployment investigation.
 - PostgreSQL production operations are owner-controlled.
-- ChatGPT is the CTO/coordinator and owns architecture, task decomposition/allocation, integration, PR/evidence review and merge execution under repository approval rules. ChatGPT leads bounded application implementation. GitHub Copilot is an optional coding assistant inside Codespaces only when explicitly invoked and usage is available. Gemini is the independent read-only auditor and may implement only a separately assigned non-schema fix on reserved paths. Perplexity is the external research/source-verification specialist. Claude owns complex backend/data-integrity engineering and designated SQL/schema/migration/runner work under `CLAUDE.md`. Supporting tools (GitHub Actions, Codespaces, Context7, Firecrawl, TinyFish, Manufact, Linear, GitLab, 3Min API, AWS, Amplify and Swagger) are not interchangeable AI task owners. Read `docs/AI_AGENT_TASK_CHECK_COMMANDS.md` for exact role prompts and `docs/AI_ENGINEERING_OPERATING_MODEL.md` for the full responsibility/tool register. No AI replaces owner approval.
+- ChatGPT is the CTO/team lead and owns architecture, task decomposition/allocation, GitHub coordination, integration, PR/evidence review and release readiness. Gemini and Perplexity are equal engineering partners for balanced, non-overlapping frontend/backend implementation, debugging, testing and audits; Perplexity may edit assigned code but must not commit or push. Claude is the designated complex backend and SQL/schema/migration/runner specialist under `CLAUDE.md`. GitHub Copilot is standby only while Codespaces quota is exhausted. Google Cloud is unavailable and excluded from active work. Supporting tools (GitHub Actions, Codespaces, Context7, Firecrawl, TinyFish, Manufact, Linear, GitLab, 3Min API, AWS, Amplify and Swagger) are not interchangeable AI task owners. Read `docs/AI_AGENT_TASK_CHECK_COMMANDS.md` for exact role prompts and `docs/AI_ENGINEERING_OPERATING_MODEL.md` for the full responsibility/tool register. No AI replaces owner approval.
 
 Follow the diagnostic order and tool boundaries in `docs/DEVELOPMENT_WORKFLOW.md`. Do not jump to AWS for ordinary source or API contract defects without evidence.
-
-### 2A. AI role and access boundaries
-
-The repository is public. Public read access is not authenticated write access, task dispatch or production permission.
-
-- **ChatGPT:** CTO/coordinator; connected GitHub tools may read/write supported GitHub resources. Verify each operation. Use feature branches and PRs; owner policy controls merge and release.
-- **GitHub Copilot:** optional in-Codespaces assistant only when explicitly invoked and usage is available. It is not an issue owner, task-pull agent or cloud coding-agent fallback.
-- **Google Gemini:** public-repository read-only auditor by default. No repository write permission is assumed. A separate implementation requires a new issue and reserved paths.
-- **Perplexity:** public-repository context plus external research; research-only, no repository writes.
-- **Claude:** public-repository read access and patch delivery; direct GitHub write access is not assumed. Claude is the designated complex backend/database and SQL/schema/migration/runner specialist under `CLAUDE.md`.
-- **GitHub labels, @mentions and issue creation are routing/coordination metadata, not proof of delivery, acknowledgement or execution.**
-- No public-repository access grants production data, credentials, private resources, AWS, database operations or deployment.
 
 ## 3. GitHub and PR rules
 
