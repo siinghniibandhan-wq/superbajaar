@@ -156,6 +156,13 @@ def _require_user_admin(user: dict):
     return user
 
 
+def _require_owner_for_owner_change(actor: dict, target: dict, next_role: str, next_active: bool):
+    if target.get("role") == "owner" and (next_role != "owner" or not next_active):
+        if actor.get("role") != "owner":
+            raise HTTPException(403, "Only an owner can demote or deactivate another owner")
+    return None
+
+
 class UserCreate(BaseModel):
     email: str = Field(min_length=3, max_length=254)
     full_name: str = Field(min_length=1, max_length=200)
@@ -247,6 +254,7 @@ def update_user(user_id: int, payload: UserUpdate, user=Depends(current_user)):
                     raise HTTPException(404, "User not found")
                 next_role = payload.role if payload.role is not None else target["role"]
                 next_active = payload.is_active if payload.is_active is not None else target["is_active"]
+                _require_owner_for_owner_change(user, target, next_role, next_active)
                 if target["role"] == "owner" and (next_role != "owner" or not next_active):
                     owners = conn.execute("SELECT count(*) AS n FROM app_users WHERE role='owner' AND is_active=TRUE").fetchone()["n"]
                     if owners <= 1:
