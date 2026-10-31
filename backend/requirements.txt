@@ -7,4 +7,4 @@ pytest
 httpx
 boto3
 python-multipart
-email-validator==2.2.0
+email-validator==2.3.0
