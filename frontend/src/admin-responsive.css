@@ -1,0 +1,24 @@
+/* Launch responsive layer for the Admin Console (loaded after styles.css). */
+.sb-shell{overflow-x:clip}
+.sb-main-content{min-width:0}
+.sb-header{position:sticky;top:0;z-index:20;backdrop-filter:blur(8px)}
+.sb-header-actions{flex-wrap:wrap;justify-content:flex-end}
+.sb-user-label{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sb-workspace input,.sb-workspace select,.sb-workspace textarea,.sb-login-card input{max-width:100%;min-width:0}
+.sb-workspace img{max-width:100%;height:auto}
+.sb-table-wrap,.hr-table-wrap,.acc-table-wrap,.an-table-wrap{-webkit-overflow-scrolling:touch}
+:focus-visible{outline:3px solid #519bdc;outline-offset:2px}
+@media (max-width:900px){
+  .sb-header{padding:10px 14px}
+  .sb-user-label{display:none}
+  .sb-workspace{padding:16px 14px}
+  .sb-workspace h1{font-size:clamp(24px,6vw,32px)}
+}
+@media (max-width:640px){
+  .sb-workspace input,.sb-workspace select,.sb-workspace textarea,.sb-login-card input{font-size:16px}
+  .sb-workspace button,.sb-signout,.sb-primary,.sb-nav-item{min-height:42px}
+  .sb-orders-toolbar button,.sb-payment-toolbar button{width:100%}
+  footer{font-size:11px;padding:12px;text-align:center}
+}
+@media (max-width:360px){.sb-brand small{display:none}.sb-signout{padding:8px 10px}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
