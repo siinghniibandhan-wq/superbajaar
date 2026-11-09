@@ -1,0 +1,12 @@
+{
+  "name": "Super Bajaar — Your Everyday Super Store",
+  "short_name": "Super Bajaar",
+  "description": "Shop everyday essentials with Super Bajaar.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#4d1684",
+  "icons": [
+    { "src": "/superbajaar.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
