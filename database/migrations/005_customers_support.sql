@@ -21,10 +21,11 @@ CREATE TABLE IF NOT EXISTS support_cases(
  subject TEXT NOT NULL CHECK(length(trim(subject))>=3),
  description TEXT NOT NULL,
  priority TEXT NOT NULL DEFAULT 'normal' CHECK(priority IN ('low','normal','high','urgent')),
- status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','in_progress','waiting_customer','resolved','closed')),
+ status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','in_progress','waiting_customer','resolved','closed')),
  assigned_to TEXT,
  resolution TEXT,
  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS idx_support_cases_status"ôâ7W÷'Eö66W2‡7FGW2Æ7&VFVEöBDU42“°¤4ôÔÔ•C°
+CREATE INDEX IF NOT EXISTS idx_support_cases_status ON support_cases(status,created_at DESC);
+COMMIT;
