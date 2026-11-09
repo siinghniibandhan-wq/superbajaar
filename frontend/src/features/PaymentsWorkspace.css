@@ -1,0 +1,72 @@
+/* Payments & Refunds workspace */
+.sb-workspace.sb-payments{padding-top:8px;max-width:none}
+.sb-main-content .sb-payments .sb-back{margin-top:0;margin-bottom:18px}
+.sb-payments-heading{display:flex;align-items:center;justify-content:space-between;gap:20px;margin:0 0 22px;padding:4px 2px}
+.sb-payments-heading .sb-eyebrow{margin:0 0 9px}
+.sb-payments-heading .sb-eyebrow span{padding:0 5px;color:#9eb4c7}
+.sb-payments-heading h1{margin:0 0 7px;font:700 clamp(27px,3.5vw,38px) Lato,sans-serif;letter-spacing:-1.2px}
+.sb-payments-heading>div>p:last-child{margin:0;color:#79848d;font-size:13px;line-height:1.6}
+.sb-payment-heading-mark{display:grid;place-items:center;flex:0 0 76px;width:76px;height:76px;border-radius:25px;background:linear-gradient(145deg,#f1f2f3,#dee9f3 65%,#ffe5ce);color:#4180b8;font:700 37px Lato,sans-serif;box-shadow:inset 0 1px #fff,0 10px 26px #7540a018}
+.sb-payment-panel{margin:0 0 16px;padding:19px;border:1px solid #e3eaf0;border-radius:17px;background:#fff;box-shadow:0 4px 16px #34204d08}
+.sb-payment-section-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:0 0 16px}
+.sb-payment-section-heading>div{display:flex;align-items:center;gap:10px;min-width:0}
+.sb-payment-section-heading h2{margin:0;font:700 16px Lato,sans-serif;letter-spacing:-.3px}
+.sb-payment-section-icon{display:grid;place-items:center;flex:0 0 32px;width:32px;height:32px;border-radius:11px;background:#f2f3f4;color:#427cae;font-size:19px;font-weight:700}
+.sb-payment-asof,.sb-payment-manual-note{font-size:10px;color:#848e97}
+.sb-payment-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.sb-payment-summary-card{display:flex;flex-direction:column;align-items:flex-start;gap:7px;min-width:0;min-height:132px;padding:14px;border-radius:14px}
+.sb-payment-summary-card.tone-violet{background:linear-gradient(145deg,#f7f8f9,#f0f1f2)}
+.sb-payment-summary-card.tone-amber{background:linear-gradient(145deg,#fff8ed,#ffedd4)}
+.sb-payment-summary-card.tone-green{background:linear-gradient(145deg,#f0fbf5,#dcf5e8)}
+.sb-payment-summary-card.tone-rose{background:linear-gradient(145deg,#fff3f5,#ffe3e9)}
+.sb-payment-summary-mark{display:grid;place-items:center;width:29px;height:29px;border-radius:50%;background:#fff9;color:#427cae;font-size:17px;font-weight:700}
+.tone-amber .sb-payment-summary-mark{color:#bd751c}.tone-green .sb-payment-summary-mark{color:#218360}.tone-rose .sb-payment-summary-mark{color:#c54d69}
+.sb-payment-summary-label{font-size:11px;color:#58636d}
+.sb-payment-summary-card>strong{font:700 clamp(19px,2vw,25px) Lato,sans-serif;letter-spacing:-.6px;color:#24303b;overflow-wrap:anywhere}
+.sb-payment-summary-card>small{font-size:10px;color:#7a848d;line-height:1.4}
+.sb-payment-secondary-stats{display:flex;gap:22px;flex-wrap:wrap;margin:14px 2px 0;color:#78828b;font-size:10px}
+.sb-payment-secondary-stats strong{color:#33424f}
+.sb-payment-disclaimer{margin:12px 2px 0;color:#8e979f;font-size:10px;line-height:1.5}
+.sb-payment-form .sb-payment-section-heading{margin-bottom:18px}
+.sb-payment-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px 18px;margin-bottom:17px}
+.sb-payment-fields label{display:grid;gap:7px;min-width:0;color:#4c5761;font-size:11px;font-weight:700}
+.sb-payment-fields label>span{display:inline;color:#b23b53}
+.sb-payment-fields label>small{display:inline;color:#929ba3;font-size:10px;font-weight:400}
+.sb-payment-fields input,.sb-payment-fields select{width:100%;min-width:0;min-height:40px;padding:10px 11px;border:1px solid #dce2e8;border-radius:9px;background:#fff;color:#303c47;font:12px Lato,sans-serif}
+.sb-payment-fields input:focus,.sb-payment-fields select:focus,.sb-payment-toolbar input:focus,.sb-payment-toolbar select:focus{outline:2px solid #aacbe8;outline-offset:1px}
+.sb-payment-form-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.sb-payment-form-actions .sb-primary{min-height:39px;padding:10px 15px;border:0;border-radius:10px;background:linear-gradient(100deg,#4082bc,#4585bd);color:#fff;font:700 11px Lato,sans-serif;cursor:pointer}
+.sb-payment-form-actions .sb-primary:disabled{opacity:.6;cursor:wait}
+.sb-payment-clear,.sb-payment-refresh{min-height:37px;padding:9px 13px;border:1px solid #dbe5ed;border-radius:10px;background:#fff;color:#427cae;font:700 11px Lato,sans-serif;cursor:pointer}
+.sb-payment-refresh:disabled{opacity:.6;cursor:wait}
+.sb-payment-count{display:grid;place-items:center;min-width:23px;height:23px;padding:0 6px;border-radius:99px;background:#f1f3f4;color:#427cae;font-size:10px;font-weight:700}
+.sb-payment-toolbar{display:grid;grid-template-columns:minmax(180px,1fr) 160px 160px;gap:9px;margin:0 0 10px}
+.sb-payment-search{display:flex;align-items:center;gap:8px;min-width:0;min-height:39px;padding:0 10px;border:1px solid #dce2e8;border-radius:9px;background:#fff;color:#848f99}
+.sb-payment-search>span{font-size:19px}
+.sb-payment-search input{width:100%;min-width:0;border:0;outline:0!important;background:transparent;color:#303c47;font:11px Lato,sans-serif}
+.sb-payment-toolbar>select,.sb-payment-table td select{min-width:0;min-height:39px;padding:9px 10px;border:1px solid #dce2e8;border-radius:9px;background:#fff;color:#48535d;font:11px Lato,sans-serif}
+.sb-payment-record-count{margin:9px 0 11px;color:#8e979f;font-size:10px}
+.sb-payment-table-wrap{width:100%;overflow-x:auto;border:1px solid #e7ecf1;border-radius:11px}
+.sb-payment-table{width:100%;min-width:760px;border-collapse:collapse;text-align:left;font-size:11px}
+.sb-payment-table th{padding:12px 11px;background:#f4f6f7;color:#4b6073;font-weight:700;white-space:nowrap}
+.sb-payment-table td{padding:12px 11px;border-top:1px solid #eef0f2;color:#5a646d;vertical-align:middle}
+.sb-payment-table td:first-child{min-width:145px}
+.sb-payment-table td:first-child strong,.sb-payment-table td:first-child small{display:block}
+.sb-payment-table td:first-child strong{color:#33424f;font-size:11px}
+.sb-payment-table td:first-child small{margin-top:4px;color:#8e979f;font-size:10px}
+.sb-payment-table .sb-payment-amount{color:#25323d;font-weight:700;white-space:nowrap}
+.sb-payment-table .sb-payment-reference{max-width:170px;overflow-wrap:anywhere;color:#838d95}
+.sb-payment-status{display:inline-block;padding:5px 8px;border-radius:99px;background:#f1f2f3;color:#427cae;font-size:10px;white-space:nowrap}
+.sb-payment-status.status-captured{background:#e6f6ed;color:#21744f}
+.sb-payment-status.status-refunded{background:#fff0f2;color:#b13d57}
+.sb-payment-status.status-failed,.sb-payment-status.status-cancelled{background:#fff0f1;color:#a83b50}
+.sb-payment-status.status-authorized{background:#edf2ff;color:#4c68a6}
+.sb-payment-table td select{min-height:32px;padding:6px 8px;font-size:10px}
+.sb-payment-empty{display:grid;justify-items:center;gap:8px;min-height:190px;align-content:center;padding:24px;border:1px dashed #dbe5ee;border-radius:12px;text-align:center;background:linear-gradient(180deg,#fff,#fcfdfd)}
+.sb-payment-empty>span{display:grid;place-items:center;width:49px;height:49px;border-radius:16px;background:#f1f3f4;color:#4a86ba;font:700 23px Lato,sans-serif}
+.sb-payment-empty h3{margin:2px 0 0;color:#2a3c4c;font:700 15px Lato,sans-serif}
+.sb-payment-empty p{margin:0;color:#828c94;font-size:11px;line-height:1.5}
+.sb-payment-empty button{margin-top:5px;border:0;background:transparent;color:#427cae;font:700 11px Lato,sans-serif;cursor:pointer}
+@media(max-width:900px){.sb-payment-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.sb-payment-toolbar{grid-template-columns:minmax(0,1fr) 1fr 1fr}}
+@media(max-width:620px){.sb-payments-heading{align-items:flex-start}.sb-payment-heading-mark{flex-basis:52px;width:52px;height:52px;border-radius:17px;font-size:26px}.sb-payment-panel{padding:14px}.sb-payment-section-heading h2{font-size:14px}.sb-payment-manual-note,.sb-payment-asof{max-width:125px;text-align:right;line-height:1.4}.sb-payment-fields{grid-template-columns:1fr;gap:12px}.sb-payment-toolbar{grid-template-columns:1fr 1fr}.sb-payment-search{grid-column:1/-1}.sb-payment-secondary-stats{gap:8px 16px}}
+@media(max-width:390px){.sb-payment-summary-grid{gap:8px}.sb-payment-summary-card{min-height:120px;padding:11px}.sb-payment-summary-card>strong{font-size:18px}.sb-payment-summary-label{font-size:10px}.sb-payment-toolbar{grid-template-columns:1fr}.sb-payment-search{grid-column:auto}.sb-payment-section-heading{align-items:flex-start}}
