@@ -1,0 +1,225 @@
+.hr-workspace{display:flex;flex-direction:column;gap:16px}.hr-toolbar{display:flex;align-items:end;justify-content:space-between;gap:12px;flex-wrap:wrap}.hr-toolbar label,.hr-form label{display:flex;flex-direction:column;gap:6px;font-weight:600}.hr-toolbar input,.hr-form input,.hr-form select,.hr-form textarea,.hr-workspace table input{min-width:0;padding:10px 12px;border:1px solid var(--border,#dae2e9);border-radius:10px;background:var(--surface,#fff);color:inherit}.hr-tabs{display:flex;gap:8px;flex-wrap:wrap;border-bottom:1px solid var(--border,#ddd)}.hr-tabs button,.hr-toolbar button,.hr-form button,.hr-workspace button:not(.sb-back){border:0;border-radius:10px;padding:10px 14px;background:linear-gradient(110deg,#3f7aae,#ef8a31);color:#fff;font-weight:650;cursor:pointer}.hr-tabs button{background:transparent;color:inherit}.hr-tabs button.active{background:#eff1f2;color:#326089}.hr-panel{display:flex;flex-direction:column;gap:14px;padding:16px;border:1px solid var(--border,#dfe5ea);border-radius:16px;background:var(--surface,#fff)}.hr-panel h2{margin:8px 0 0}.hr-panel h3{grid-column:1/-1;margin:4px 0}.hr-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;padding:14px;border:1px solid var(--border,#dfe5ea);border-radius:12px}.hr-form button{align-self:end}.hr-department-list{display:flex;gap:8px;flex-wrap:wrap}.hr-department-list span{padding:8px 12px;border-radius:20px;background:#f2f3f4}.hr-table-wrap{width:100%;overflow:auto}.hr-workspace table{width:100%;border-collapse:collapse;min-width:620px}.hr-workspace th,.hr-workspace td{padding:11px 12px;border-bottom:1px solid var(--border,#e3e7ea);text-align:left;vertical-align:middle}.hr-workspace th{font-size:.84rem;color:var(--muted,#696f74)}.hr-workspace td small{display:block;color:var(--muted,#777);margin-top:3px}.hr-punch-card{padding:18px;border-radius:14px;background:#f4f5f6}.hr-punch-card button{min-width:140px}.hr-secondary{margin:5px}.hr-workspace button:disabled{opacity:.55;cursor:not-allowed}@media(max-width:640px){.hr-panel{padding:10px}.hr-form{grid-template-columns:1fr}.hr-toolbar{align-items:stretch}.hr-toolbar label{width:100%}}
+.hr-form label{min-width:0}.hr-form label small{font-weight:400;color:var(--muted,#777);line-height:1.4}.hr-gross-preview{display:flex;flex-direction:column;gap:4px;padding:12px;border-radius:10px;background:#f4f5f6;grid-column:1/-1}.hr-gross-preview small{color:var(--muted,#777)}.hr-workspace td button{margin:2px}.hr-workspace input:focus,.hr-workspace select:focus,.hr-workspace textarea:focus{outline:2px solid #5e91be;outline-offset:1px}
+
+.hr-nav{display:grid;gap:10px;padding:12px 14px;border:1px solid var(--border,#dfe5ea);border-radius:14px;background:var(--surface,#fff)}
+.hr-nav-group{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.hr-nav-group>span{min-width:145px;font-size:.76rem;font-weight:750;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#777)}
+.hr-nav-group .hr-tabs{border:0;gap:6px}
+.hr-nav-group .hr-tabs button{padding:8px 11px;border-radius:9px}
+.hr-nav-group .hr-tabs button.active{background:#eff1f2;color:#326089}
+.hr-overview{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:12px}
+.hr-overview article,.hr-overview-note{display:flex;flex-direction:column;gap:6px;padding:16px;border:1px solid var(--border,#dfe5ea);border-radius:14px;background:var(--surface,#fff)}
+.hr-overview article span,.hr-overview article small{color:var(--muted,#777)}
+.hr-overview article strong{font-size:1.8rem;line-height:1.2}
+.hr-overview-note{grid-column:1/-1}
+.hr-overview-note p{margin:0;color:var(--muted,#777)}
+.hr-search{display:flex;flex-direction:column;gap:6px;max-width:520px;font-weight:600}
+.hr-search input{padding:10px 12px;border:1px solid var(--border,#dae2e9);border-radius:10px;background:var(--surface,#fff);color:inherit}
+@media(max-width:640px){.hr-nav-group{align-items:flex-start;flex-direction:column;gap:6px}.hr-nav-group>span{min-width:0}.hr-nav-group .hr-tabs{width:100%}}
+
+
+.hr-advanced{display:flex;flex-direction:column;gap:14px;min-width:0}
+.hr-advanced-nav{display:flex;gap:8px;flex-wrap:wrap;padding:10px;border:1px solid var(--border,#dfe5ea);border-radius:12px;background:var(--surface,#fff)}
+.hr-advanced-nav button{border:0;border-radius:9px;padding:9px 12px;background:transparent;color:inherit;font-weight:650;cursor:pointer}
+.hr-advanced-nav button.active{background:#eff1f2;color:#326089}
+.hr-advanced .hr-panel{min-width:0}
+.hr-advanced .hr-form h3{grid-column:1/-1}
+.hr-advanced .hr-form label{min-width:0}
+.hr-advanced .hr-table-wrap{max-width:100%}
+.hr-advanced .hr-table-wrap table{min-width:700px}
+.hr-advanced .hr-panel>h3{margin:10px 0 0}
+@media(max-width:640px){.hr-advanced-nav{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.hr-advanced-nav button{padding:9px 7px;font-size:.86rem}.hr-advanced .hr-form{grid-template-columns:1fr}}
+
+.hr-advanced .hr-form label.hr-check{display:flex;flex-direction:row;align-items:center;gap:8px;font-weight:500}.hr-advanced .hr-form label.hr-check input{min-width:16px;width:16px;height:16px}
+
+
+/* HR & People OS: consistent information architecture and real desktop layouts. */
+.hr-workspace{gap:18px}
+.hr-workspace>.sb-back{align-self:flex-start;margin:0 0 2px!important}
+.hr-workspace>.sb-eyebrow{margin:0}
+.hr-workspace>h1{font-size:clamp(30px,3vw,42px);letter-spacing:-1.4px}
+.hr-workspace>.hr-toolbar{padding:14px 16px;border:1px solid var(--border,#e0e6ec);border-radius:14px;background:var(--surface,#fff)}
+.hr-nav{grid-template-columns:repeat(5,minmax(0,1fr));align-items:start;gap:14px;padding:16px}
+.hr-nav-group{display:flex;align-items:stretch;flex-direction:column;gap:8px;min-width:0}
+.hr-nav-group>span{min-width:0;font-size:10px;letter-spacing:.09em}
+.hr-nav-group .hr-tabs{display:grid;grid-template-columns:1fr;gap:4px;overflow:visible;white-space:normal}
+.hr-nav-group .hr-tabs button{width:100%;min-width:0;text-align:left;white-space:normal;line-height:1.35;padding:9px 10px;border-radius:9px}
+.hr-nav-group .hr-tabs button.active{background:#f0f1f2;color:#33628c;box-shadow:inset 3px 0 #437fb3}
+.hr-panel{gap:18px;padding:22px;border-radius:16px}
+.hr-panel>h2{font:700 19px Lato,sans-serif;letter-spacing:-.35px;margin:0}
+.hr-panel>h3{font:750 14px Lato,sans-serif;margin:12px 0 0}
+.hr-form{grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;padding:18px}
+.hr-form>h3,.hr-form>.hr-gross-preview{grid-column:1/-1}
+.hr-form label{font-size:12px;line-height:1.4}
+.hr-form input,.hr-form select,.hr-form textarea,.hr-toolbar input{width:100%;min-height:42px;font:inherit;font-size:13px}
+.hr-form textarea{resize:vertical}
+.hr-workspace table{min-width:760px}
+.hr-workspace th{font-size:11px;font-weight:750;white-space:nowrap}
+.hr-workspace td{font-size:12px;line-height:1.45}
+.hr-overview{grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.hr-overview article{min-height:116px;padding:18px}
+.hr-overview article strong{font-size:30px;font-family:Lato,sans-serif}
+.hr-overview-note{padding:18px}
+.hr-compliance-nav{position:sticky;top:8px;z-index:2;display:flex;flex-wrap:wrap;gap:7px;padding:10px;border:1px solid var(--border,#e0e6ec);border-radius:12px;background:rgba(255,255,255,.96);backdrop-filter:blur(10px)}
+.hr-compliance-nav a{display:inline-flex;align-items:center;padding:8px 11px;border-radius:8px;background:#f4f6f7;color:#3c6a92;text-decoration:none;font-size:11px;font-weight:700}
+.hr-compliance-nav a:hover,.hr-compliance-nav a:focus-visible{background:#e0ebf4;outline:2px solid #729dc2;outline-offset:1px}
+#hr-compliance-establishments,#hr-compliance-policies,#hr-compliance-employees,#hr-compliance-remittances,#hr-compliance-register{scroll-margin-top:80px}
+.hr-workspace :is(.hr-panel,.hr-form,.hr-overview,.hr-nav){min-width:0}
+.hr-workspace .hr-table-wrap{border:1px solid var(--border,#e3e8ed);border-radius:12px}
+.hr-workspace .hr-table-wrap table{margin:0}
+.hr-workspace .hr-table-wrap th,.hr-workspace .hr-table-wrap td{padding:12px 14px}
+.hr-workspace button:focus-visible,.hr-workspace a:focus-visible,.hr-workspace input:focus-visible,.hr-workspace select:focus-visible,.hr-workspace textarea:focus-visible{outline:2px solid #5e91be;outline-offset:2px}
+@media(max-width:1200px){
+  .hr-nav{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .hr-overview{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .hr-form{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:900px){
+  .hr-nav{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  .hr-panel{padding:16px}
+  .hr-overview{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:640px){
+  .hr-nav{grid-template-columns:1fr;padding:12px}
+  .hr-nav-group{gap:6px}
+  .hr-nav-group .hr-tabs{display:flex;flex-wrap:wrap;gap:6px}
+  .hr-nav-group .hr-tabs button{width:auto;flex:1 1 auto;text-align:center}
+  .hr-form,.hr-workspace .hr-grid{grid-template-columns:1fr}
+  .hr-form>*{grid-column:1/-1}
+  .hr-panel{padding:13px;gap:14px}
+  .hr-overview{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+  .hr-overview article{min-height:100px;padding:13px}
+  .hr-overview article strong{font-size:25px}
+  .hr-compliance-nav{position:static}
+  .hr-compliance-nav a{flex:1 1 calc(50% - 7px);justify-content:center}
+}
+@media(max-width:380px){
+  .hr-overview{grid-template-columns:1fr}
+  .hr-nav-group .hr-tabs button{flex-basis:100%}
+}
+
+@media(min-width:1201px){.hr-workspace .hr-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:1200px){.hr-workspace .hr-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:640px){.hr-workspace .hr-grid{grid-template-columns:1fr}}
+
+.hr-disclosure{min-width:0;border:1px solid var(--border,#e0e6ec);border-radius:13px;background:#fff;overflow:hidden}
+.hr-disclosure>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;color:#3a678f;font-size:13px;font-weight:750;cursor:pointer;list-style:none}
+.hr-disclosure>summary::-webkit-details-marker{display:none}
+.hr-disclosure>summary::after{content:"+";display:grid;place-items:center;width:24px;height:24px;border-radius:8px;background:#f0f2f3;font-size:17px}
+.hr-disclosure[open]>summary{border-bottom:1px solid var(--border,#e0e6ec);background:#fcfdfd}
+.hr-disclosure[open]>summary::after{content:"−"}
+.hr-disclosure>.hr-form{border:0;border-radius:0;padding:16px}
+
+.hr-compliance-section{min-width:0;border:1px solid var(--border,#e0e6ec);border-radius:13px;background:#fff;overflow:hidden}
+.hr-compliance-section>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 17px;background:#fcfdfd;color:#376186;font:750 14px Lato,sans-serif;cursor:pointer;list-style:none}
+.hr-compliance-section>summary::-webkit-details-marker{display:none}
+.hr-compliance-section>summary::after{content:"+";display:grid;place-items:center;width:25px;height:25px;border-radius:8px;background:#eff1f2;font:600 17px "DM Sans",sans-serif}
+.hr-compliance-section[open]>summary{border-bottom:1px solid var(--border,#e0e6ec)}
+.hr-compliance-section[open]>summary::after{content:"−"}
+.hr-compliance-section>h3,.hr-compliance-section>form,.hr-compliance-section>.hr-form,.hr-compliance-section>.hr-table-wrap,.hr-compliance-section>p,.hr-compliance-section>.hr-department-list{margin:14px 16px}
+.hr-compliance-section>.hr-form{padding:14px}
+.hr-compliance-section>.hr-table-wrap{width:calc(100% - 32px)}
+
+@media(min-width:1201px){.sb-main-content .hr-workspace .hr-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(min-width:641px) and (max-width:1200px){.sb-main-content .hr-workspace .hr-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:640px){.sb-main-content .hr-workspace .hr-grid{grid-template-columns:1fr}}
+
+
+/* Keep HR section navigation visually distinct from primary action buttons. */
+.hr-workspace .hr-nav .hr-tabs button,
+.hr-workspace .hr-nav .hr-tabs button:not(.active) {
+  background: transparent;
+  color: var(--text, #2d363d);
+  box-shadow: none;
+}
+.hr-workspace .hr-nav .hr-tabs button:hover {
+  background: #f6f7f8;
+  color: #33628c;
+}
+.hr-workspace .hr-nav .hr-tabs button.active {
+  background: #f0f1f2;
+  color: #33628c;
+  box-shadow: inset 3px 0 #437fb3;
+}
+
+
+/* Compact, horizontally scrollable HR section tabs. */
+.hr-workspace .hr-nav{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width:0;
+  max-width:100%;
+  padding:7px 9px;
+  overflow-x:auto;
+  overscroll-behavior-inline:contain;
+  scrollbar-width:thin;
+}
+.hr-workspace .hr-nav-group{
+  display:flex;
+  flex:0 0 auto;
+  align-items:center;
+  flex-direction:row;
+  gap:5px;
+  min-width:max-content;
+}
+.hr-workspace .hr-nav-group>span{display:none}
+.hr-workspace .hr-nav-group .hr-tabs{
+  display:flex;
+  flex-wrap:nowrap;
+  gap:4px;
+  width:auto;
+  overflow:visible;
+  white-space:nowrap;
+}
+.hr-workspace .hr-nav-group .hr-tabs button,
+.hr-workspace .hr-nav-group .hr-tabs button:not(.active){
+  flex:0 0 auto;
+  width:auto;
+  min-height:30px;
+  padding:5px 10px;
+  border:1px solid transparent;
+  border-radius:7px;
+  background:transparent;
+  color:var(--text,#2d363d);
+  font-size:11px;
+  font-weight:650;
+  line-height:1.2;
+  white-space:nowrap;
+  text-align:center;
+  box-shadow:none;
+}
+.hr-workspace .hr-nav-group .hr-tabs button:hover{background:#f6f7f8;color:#33628c}
+.hr-workspace .hr-nav-group .hr-tabs button.active{
+  background:#f0f1f2;
+  color:#33628c;
+  border-color:#d5e3f0;
+  box-shadow:inset 0 -2px #437fb3;
+}
+@media(max-width:640px){
+  .hr-workspace .hr-nav{display:flex;flex-wrap:nowrap;gap:5px;padding:6px}
+  .hr-workspace .hr-nav-group{flex:0 0 auto;flex-direction:row;align-items:center}
+  .hr-workspace .hr-nav-group .hr-tabs{width:auto;flex-wrap:nowrap}
+  .hr-workspace .hr-nav-group .hr-tabs button{flex:0 0 auto;width:auto;min-height:29px;padding:5px 9px;font-size:10px}
+}
+
+.hr-organisation{align-items:center;text-align:center;gap:14px}
+.hr-organisation>div:first-child{width:100%;text-align:left}
+.hr-organisation-intro,.hr-org-governance{margin:6px 0 0;color:var(--muted,#737b82);font-size:13px;line-height:1.6}
+.hr-org-ceo{display:flex;flex-direction:column;gap:4px;min-width:220px;padding:16px 26px;border:2px solid #477da8;border-radius:13px;background:#f4f8fb}
+.hr-org-ceo strong{font-size:20px;color:#2f5f87}
+.hr-org-ceo span,.hr-org-role span{font-size:12px;color:var(--muted,#737b82)}
+.hr-org-connect{width:2px;height:22px;background:#9bb2c5}
+.hr-org-reports{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;width:100%;position:relative}
+.hr-org-role{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0;padding:15px 9px;border:1px solid var(--border,#dfe5ea);border-radius:12px;background:var(--surface,#fff)}
+.hr-org-role strong{font-size:17px;color:#315f86}
+.hr-org-role small{font-size:11px;font-weight:700;color:#64717c}
+.hr-org-departments{width:100%;text-align:left;padding-top:12px;border-top:1px solid var(--border,#e3e8ed)}
+.hr-org-departments h3{margin:0 0 10px;font-size:15px}
+.hr-org-department-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:9px}
+.hr-org-department-list article{display:flex;flex-direction:column;gap:4px;padding:12px;border:1px solid var(--border,#e3e8ed);border-radius:10px}
+.hr-org-department-list strong{font-size:13px}
+.hr-org-department-list span,.hr-org-department-list small{font-size:11px;color:var(--muted,#737b82)}
+.hr-org-governance{width:100%;padding:12px;border-radius:10px;background:#f5f6f7;text-align:left}
+@media(max-width:900px){.hr-org-reports{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:560px){.hr-org-reports{grid-template-columns:repeat(2,minmax(0,1fr))}.hr-org-ceo{min-width:180px}}
