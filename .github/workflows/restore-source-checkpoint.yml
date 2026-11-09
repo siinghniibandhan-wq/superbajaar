@@ -1,6 +1,11 @@
 name: Restore approved source checkpoint
 
 on:
+  push:
+    branches:
+      - feature/superbajaar-source-audit-remediation
+    paths:
+      - restore-source.zip
   workflow_dispatch:
     inputs:
       archive_path:
