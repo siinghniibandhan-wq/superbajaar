@@ -1,0 +1,51 @@
+/* Launch responsive layer: loaded after storefront.css so it wins without rewriting older rules. */
+.sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+html{-webkit-text-size-adjust:100%}
+img,svg,video{max-width:100%}
+.storefront{overflow-x:clip}
+.storefront-hero h1 em{text-shadow:none!important}
+.storefront :focus-visible{outline:3px solid #ff8a24;outline-offset:2px}
+.storefront button,.storefront a{-webkit-tap-highlight-color:transparent}
+.storefront input,.storefront textarea,.storefront select{font-size:16px;max-width:100%}
+
+/* My Orders */
+.storefront-order-list{display:grid;gap:12px;margin-top:16px}
+.storefront-order-card{display:grid;grid-template-columns:1.4fr .6fr 1fr 1fr;gap:12px;align-items:center;text-align:left;width:100%;padding:16px;border:1px solid #e9e1f5;border-radius:16px;background:#fff;cursor:pointer;font:inherit;color:inherit}
+.storefront-order-card:hover{border-color:#8c45e8;box-shadow:0 8px 22px #5928c81a}
+.storefront-order-card small,.storefront-order-detail small{display:block;color:#736b80;font-size:12px}
+.storefront-status-pill{display:inline-block;padding:4px 10px;border-radius:999px;background:#efe9f8;color:#35116f;font-size:12px;text-transform:capitalize}
+.storefront-status-pill.status-delivered{background:#dff6e8;color:#116b3a}
+.storefront-status-pill.status-cancelled{background:#fde4e4;color:#9b1c1c}
+.storefront-order-detail{margin-top:16px;padding:18px;border:1px solid #e9e1f5;border-radius:16px;background:#fff}
+.storefront-order-detail h4{margin:18px 0 6px}
+.storefront-order-lines>div{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid #f0eaf6}
+.storefront-order-total{font-size:17px}
+
+/* Tablet */
+@media (max-width:900px){
+  .storefront-header{flex-wrap:wrap;gap:12px;padding:12px 20px}
+  .storefront-header-search{order:3;flex:1 1 100%;min-width:0}
+  .storefront-header-search input{width:100%}
+  .storefront-account-layout{grid-template-columns:1fr!important}
+  .storefront-account-nav{display:flex!important;overflow-x:auto;gap:8px;padding-bottom:6px}
+  .storefront-account-nav button{flex:0 0 auto;white-space:nowrap}
+}
+/* Phone */
+@media (max-width:640px){
+  .storefront-department-nav{overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .storefront-department-nav::-webkit-scrollbar{display:none}
+  .storefront-actions{margin-left:auto}
+  .storefront-icon-action,.storefront-account-button,.storefront-delivery{min-height:44px;min-width:44px}
+  .storefront-account-button span{display:none}
+  .storefront-order-card{grid-template-columns:1fr 1fr}
+  .storefront-basket-line{display:grid!important;grid-template-columns:1fr auto;gap:8px}
+  .storefront-checkout-form,.storefront-checkout-page{max-width:100%}
+  .storefront-checkout-page{padding-left:16px;padding-right:16px}
+  .storefront-add,.storefront-primary{min-height:44px}
+  .storefront-footer-bottom{flex-direction:column;align-items:flex-start;gap:10px}
+  .storefront-carousel-controls{display:none}
+}
+@media (max-width:360px){.storefront-category-grid{grid-template-columns:1fr 1fr!important;gap:12px 8px!important}.storefront-hero h1{font-size:38px}}
+@supports (padding:max(0px)){.storefront-footer{padding-bottom:max(20px,env(safe-area-inset-bottom))}}
+@media (prefers-reduced-motion:reduce){.storefront *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+@media print{.storefront-promo,.storefront-header,.storefront-department-nav,.storefront-footer{display:none}}
