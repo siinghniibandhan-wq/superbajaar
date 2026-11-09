@@ -1,0 +1,119 @@
+name: Restore approved source checkpoint
+
+on:
+  workflow_dispatch:
+    inputs:
+      archive_path:
+        description: "Path in this branch to the uploaded checkpoint ZIP"
+        required: true
+        default: "restore-source.zip"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: source-checkpoint-restore
+  cancel-in-progress: false
+
+jobs:
+  restore:
+    if: startsWith(github.ref, 'refs/heads/feature/superbajaar-source-audit-remediation')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out restoration branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Validate and extract checkpoint
+        env:
+          ARCHIVE_PATH: ${{ inputs.archive_path }}
+        run: |
+          python - <<'PY'
+          import os, pathlib, shutil, zipfile
+
+          archive = pathlib.Path(os.environ["ARCHIVE_PATH"])
+          if not archive.is_file() or archive.suffix.lower() != ".zip":
+              raise SystemExit(f"Checkpoint ZIP not found: {archive}")
+
+          root = pathlib.Path(".").resolve()
+          staging = pathlib.Path(".checkpoint-staging")
+          if staging.exists():
+              shutil.rmtree(staging)
+          staging.mkdir()
+
+          with zipfile.ZipFile(archive) as z:
+              bad = z.testzip()
+              if bad:
+                  raise SystemExit(f"ZIP integrity failure: {bad}")
+              members = [i for i in z.infolist() if not i.is_dir()]
+              if not members:
+                  raise SystemExit("ZIP contains no files")
+              for item in members:
+                  name = pathlib.PurePosixPath(item.filename)
+                  if name.is_absolute() or ".." in name.parts:
+                      raise SystemExit(f"Unsafe ZIP member path: {item.filename}")
+                  parts = list(name.parts)
+                  if parts and parts[0] == "superbajaar-main":
+                      parts = parts[1:]
+                  if not parts:
+                      continue
+                  rel = pathlib.PurePosixPath(*parts)
+                  rel_text = rel.as_posix()
+                  if rel_text == ".git" or rel_text.startswith(".git/"):
+                      continue
+                  if ".pytest_cache" in parts or "__pycache__" in parts:
+                      continue
+                  if rel.suffix == ".pyc":
+                      continue
+                  if rel_text == "frontend/.env.production":
+                      continue
+                  # Preserve existing deployment workflows and the already hash-verified
+                  # 30-file backend schema directory. Do not replace these from the ZIP.
+                  if rel_text.startswith(".github/workflows/"):
+                      continue
+                  if rel_text.startswith("backend/schema/"):
+                      continue
+
+                  target = staging.joinpath(*rel.parts)
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  data = z.read(item)
+                  target.write_bytes(data)
+
+          copied = [p for p in staging.rglob("*") if p.is_file()]
+          if not copied:
+              raise SystemExit("No safe source files were extracted")
+          for source in copied:
+              rel = source.relative_to(staging)
+              dest = root.joinpath(*rel.parts)
+              dest.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copy2(source, dest)
+
+          # Do not leave the uploaded checkpoint or staging directory in the repository.
+          archive.unlink()
+          shutil.rmtree(staging)
+          print(f"Restored {len(copied)} source files from {archive.name}")
+          PY
+
+      - name: Verify critical source directories
+        run: |
+          test -f frontend/package.json
+          test -f backend/main.py
+          test -f backend/schema_required.txt
+          test -f backend/scripts/apply_schema.sh
+          test -f database/schema.sql
+          test -f src/App.jsx
+          test "$(find backend/schema -maxdepth 1 -type f -name '*.sql' | wc -l)" -eq 30
+          echo "Critical source files and all 30 existing backend schema files are present."
+
+      - name: Commit restored source to this branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No source changes to commit."
+            exit 0
+          fi
+          git commit -m "chore: restore approved Super Bajaar source checkpoint"
+          git push origin HEAD:${{ github.ref_name }}
