@@ -18,5 +18,6 @@ CREATE TABLE IF NOT EXISTS app_user_sessions (
   revoked_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS idx_app_users_active_email ON app_users(email) WHEREŠÆœ¶+ŞMÂÔ‘PUHS‘VQˆ“ÕVTÕÈYØ\ÜÙ\ÜÚ[Ûœ×İ\Ù\—Ù^\HÓˆ\İ\Ù\—ÜÙ\ÜÚ[ÛœÊ\Ù\—ÚY^\™\×Ø]
-NÂÓÓSRUÂ
+CREATE INDEX IF NOT EXISTS idx_app_users_active_email ON app_users(email) WHERE is_active=TRUE;
+CREATE INDEX IF NOT EXISTS idx_app_sessions_user_expiry ON app_user_sessions(user_id, expires_at);
+COMMIT;
