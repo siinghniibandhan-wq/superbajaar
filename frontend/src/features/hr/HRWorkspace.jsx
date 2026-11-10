@@ -36,6 +36,8 @@ export default function HRWorkspace({onBack,currentUser}) {
   const [attendanceEdit,setAttendanceEdit]=useState({});
   const [salaryEmployeeId,setSalaryEmployeeId]=useState(null),[salaryRevisions,setSalaryRevisions]=useState([]);
   const [salaryDraft,setSalaryDraft]=useState({effective_from:today(),effective_to:"",basic_salary:"0",hra:"0",special_allowance:"0",other_allowance:"0",reason:""});
+  const [earningAdjustments,setEarningAdjustments]=useState([]);
+  const [earningDraft,setEarningDraft]=useState({employee_id:"",earning_type:"overtime",amount:"",hours:"",hourly_rate:"",reason:""});
   const [emp,setEmp]=useState({user_id:"",employee_code:"",first_name:"",last_name:"",email:"",phone:"",department_id:"",designation:"",employment_type:"full_time",status:"active",joining_date:today(),exit_date:"",basic_salary:"0",hra:"0",special_allowance:"0",other_allowance:"0"});
   const [leave,setLeave]=useState({leave_type:"annual",start_date:today(),end_date:today(),days:"1",reason:""});
   const [expense,setExpense]=useState({category:"travel",amount:"",expense_date:today(),description:"",receipt_reference:""});
@@ -50,8 +52,12 @@ export default function HRWorkspace({onBack,currentUser}) {
       setEmployees(results[0].items||[]);setDepartments(results[1].items||[]);setLeaves(results[2].items||[]);setExpenses(results[3].items||[]);
       if(manager){
         const last=new Date(Number(month.slice(0,4)),Number(month.slice(5,7)),0).getDate();
-        const a=await apiRequest("/hr/attendance/register?start_date="+month+"-01&end_date="+month+"-"+String(last).padStart(2,"0"));
-        const r=await apiRequest("/hr/payroll/runs");setAttendance(a.items||[]);setRuns(r.items||[]);
+        const [a,r,earnings]=await Promise.all([
+          apiRequest("/hr/attendance/register?start_date="+month+"-01&end_date="+month+"-"+String(last).padStart(2,"0")),
+          apiRequest("/hr/payroll/runs"),
+          apiRequest("/hr/payroll/earning-adjustments"),
+        ]);
+        setAttendance(a.items||[]);setRuns(r.items||[]);setEarningAdjustments(earnings.items||[]);
       }else{
         const a=await apiRequest("/hr/attendance/me?month="+month);const p=await apiRequest("/hr/payroll/me/payslips");
         setAttendance(a.items||[]);setPayslips(p.items||[]);
