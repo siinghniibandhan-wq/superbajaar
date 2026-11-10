@@ -329,9 +329,16 @@ def list_employees(request: Request, limit: int = Query(100, ge=1, le=500), offs
                 rows = conn.execute(
                     "SELECT e.id,e.user_id,e.employee_code,e.first_name,e.last_name,e.email,e.phone,"
                     "e.department_id,d.name AS department_name,e.designation,e.reports_to_employee_id,"
-                    "e.employment_type,e.status,e.joining_date,e.exit_date,e.basic_salary,e.hra,"
-                    "e.special_allowance,e.other_allowance,e.created_at,e.updated_at "
+                    "e.employment_type,e.status,e.joining_date,e.exit_date,"
+                    "COALESCE(sv.basic_salary,e.basic_salary) AS basic_salary,"
+                    "COALESCE(sv.hra,e.hra) AS hra,"
+                    "COALESCE(sv.special_allowance,e.special_allowance) AS special_allowance,"
+                    "COALESCE(sv.other_allowance,e.other_allowance) AS other_allowance,e.created_at,e.updated_at "
                     "FROM hr_employees e LEFT JOIN hr_departments d ON d.id=e.department_id "
+                    "LEFT JOIN LATERAL (SELECT v.basic_salary,v.hra,v.special_allowance,v.other_allowance "
+                    "FROM hr_employee_salary_versions v WHERE v.employee_id=e.id AND v.status='approved' "
+                    "AND v.effective_from<=CURRENT_DATE AND (v.effective_to IS NULL OR v.effective_to>=CURRENT_DATE) "
+                    "ORDER BY v.effective_from DESC LIMIT 1) sv ON true "
                     "ORDER BY e.employee_code LIMIT %s OFFSET %s", (limit, offset)
                 ).fetchall()
             else:
@@ -816,7 +823,7 @@ def calculate_payroll(payload: PayrollRunInput, request: Request):
                 "ORDER BY v.effective_from DESC LIMIT 1) sv ON true "
                 "WHERE e.status IN ('active','probation','notice_period') "
                 "AND e.joining_date<=%s AND (e.exit_date IS NULL OR e.exit_date>=%s) "
-                "ORDER BY e.id FOR SHARE",
+                "ORDER BY e.id FOR SHARE OF e",
                 (payload.period_end,payload.period_end,payload.period_end,payload.period_start),
             ).fetchall()
             if not employees:
