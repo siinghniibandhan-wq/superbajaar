@@ -663,6 +663,9 @@ test("HR staff can view their own payslips in employee self-service", async ({ p
   await page.getByRole("button", { name: "Export CSV" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe("my-payslips.csv");
+  await page.getByRole("button", { name: "Print / Save PDF" }).click();
+  await page.waitForFunction(() => window.__sbPrintCalled === true);
+  await expect(page.locator(".hr-print-payslip")).toContainText("Super Bajaar");
 });
 
 
