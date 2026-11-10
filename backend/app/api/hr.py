@@ -1160,8 +1160,10 @@ def my_payslips(request:Request):
         with _hr_connection() as conn:
             employee=_employee(conn,actor)
             return {"items":conn.execute(
-                "SELECT p.*,r.period_start,r.period_end,r.status AS payroll_status "
+                "SELECT p.*,r.period_start,r.period_end,r.status AS payroll_status,"
+                "e.employee_code,e.first_name,e.last_name "
                 "FROM hr_payslips p JOIN hr_payroll_runs r ON r.id=p.payroll_run_id "
+                "JOIN hr_employees e ON e.id=p.employee_id "
                 "WHERE p.employee_id=%s AND r.status IN ('approved','paid') ORDER BY r.period_start DESC",
                 (employee["id"],)
             ).fetchall()}
