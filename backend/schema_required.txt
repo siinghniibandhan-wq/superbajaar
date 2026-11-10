@@ -37,3 +37,4 @@
 038_hr_variable_payroll_earnings.sql
 039_hr_multi_establishment_payroll_accruals.sql
 040_hr_final_settlement_earning_types.sql
+041_portal_access_foundation.sql
