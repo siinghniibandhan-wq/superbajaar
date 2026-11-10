@@ -17,9 +17,12 @@ const MODULE_KEYS = Object.freeze({
   settings: "user_management",
 });
 
-export function canReadModule(moduleId, permissions) {
-  const moduleKey = MODULE_KEYS[moduleId];
+export function canReadPermission(moduleKey, permissions) {
   return Boolean(moduleKey && permissions?.[moduleKey]?.read === true);
+}
+
+export function canReadModule(moduleId, permissions) {
+  return canReadPermission(MODULE_KEYS[moduleId], permissions);
 }
 
 export function filterNavigationGroups(groups, permissions) {
