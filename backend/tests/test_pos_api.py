@@ -42,7 +42,8 @@ def test_pos_summary_separates_captured_and_pending(monkeypatch):
     assert result["orders"]["order_value"] == 900
     assert result["payments"]["captured_amount"] == 200
     assert result["payments"]["pending_amount"] == 700
-    assert "status='captured'" in conn.queries[1][0]
+    assert "p.status='captured'" in conn.queries[1][0]
+    assert "p.status IN ('pending','authorized')" in conn.queries[1][0]
 
 
 def test_pos_sale_not_found_is_404(monkeypatch):
@@ -72,4 +73,6 @@ def test_pos_sales_aggregates_payments_before_joining_order_lines(monkeypatch):
     assert result["items"][0]["captured_amount"] == 250
     query = conn.queries[0][0]
     assert "SELECT order_id, count(*) AS line_count" in query
-    assert "SELECT order_id," in query and "sum(amount) FILTER (WHERE status='captured')" in query
+    assert "SELECT order_id," in query and "sum(amount) FILTER (WHERE p.status='captured')" in query
+    assert "FROM payments p GROUP BY order_id" in query
+    assert "string_agg(DISTINCT p.status" in query

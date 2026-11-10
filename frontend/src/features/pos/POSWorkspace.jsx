@@ -144,7 +144,7 @@ export default function POSWorkspace({ onBack }) {
         <div className="sb-data-heading"><h2>Catalogue</h2><button type="button" onClick={load} disabled={loading}>{loading ? "Loading…" : "Refresh"}</button></div>
         <label>Search product or SKU<input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search catalogue…" /></label>
         {loading ? <p className="sb-empty">Loading variants…</p> : <div className="sb-pos-products">{groupedVisible.map(group => <article className="sb-pos-product" key={group.productId}><strong>{group.productName}</strong>{group.variants.length > 1 ? <label>Variant<select aria-label={"Variant for " + group.productName} value={String(group.selected.id)} onChange={e => setSelectedVariantByProduct(old => ({ ...old, [String(group.productId)]: e.target.value }))}>{group.variants.map(v => <option key={v.id} value={v.id}>{variantLabel(v)}</option>)}</select></label> : <small>{variantLabel(group.selected)}</small>}<span>{money(group.selected.selling_price)}</span><button type="button" className="sb-primary" onClick={() => add(group.selected)}>Add to sale</button></article>)}</div>}
-        {!loading && !visible.length && <p className="sb-empty">No matching active products. Create a product in Catalogue first.</p>}
+        {!loading && !visible.length && <p className="sb-empty">No active saleable variants are available. Add or activate a product and its variant in Catalogue.</p>}
       </div>
       <div className="sb-data-card">
         <h2>Current sale ({cart.reduce((sum, line) => sum + line.quantity, 0)} items)</h2>
@@ -159,7 +159,7 @@ export default function POSWorkspace({ onBack }) {
           <label>Payment method<select value={method} onChange={e => setMethod(e.target.value)}><option value="upi">UPI</option><option value="card">Card</option><option value="netbanking">Net banking</option><option value="cod">Cash (pending confirmation)</option><option value="wallet">Wallet</option><option value="bank_transfer">Bank transfer</option></select></label>
           <p className="sb-muted">Order and pending tender are saved in one transaction. Cash must be confirmed by an authorised cashier; electronic tender remains pending until verified provider confirmation. Register shifts and cash-drawer reconciliation require the approved POS register controls.</p>
           <button className="sb-primary" type="submit" disabled={saving || !cart.length || !locationId}>{saving ? "Creating sale…" : "Create sale & pending tender"}</button>
-          {!locations.length && !loading && <small>No active stock locations are available. Configure one before creating a POS order.</small>}
+          {!locations.length && !loading && <small>No active stock locations are available. Create or activate a store or warehouse in Inventory before checkout.</small>}
         </form>
       </div>
     </div>
