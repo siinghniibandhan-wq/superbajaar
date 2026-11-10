@@ -24,11 +24,6 @@ test("purchasing workspace creates and submits a requisition through its API", a
     if (url.pathname === "/api/purchasing/suppliers") return route.fulfill({ json: { items: [supplier] } });
     if (url.pathname === "/api/inventory/locations") return route.fulfill({ json: { items: [location] } });
     if (url.pathname === "/api/purchasing/orders") return route.fulfill({ json: { items: [] } });
-    if (url.pathname === "/api/purchasing/orders/81" && method === "GET") return route.fulfill({ json: {
-      id: 81, purchase_number: "PO-81", status: "draft", supplier_id: 5,
-      supplier_name: supplier.name, location_id: 3, location_name: location.name,
-      lines: [], total_amount: "2150.00", approval_required: true,
-    } });
     if (url.pathname === "/api/catalogue/variants") return route.fulfill({ json: { items: [variant] } });
     if (url.pathname === "/api/purchasing/requisitions" && method === "GET") return route.fulfill({ json: { items: requisitionStatus === "draft" ? [{ id: 41, requisition_number: "PR-TEST-41", requester_email: "owner@superbajaar.test", location_id: 3, location_name: location.name, department: "Operations", status: "draft", line_count: 1 }] : [{ id: 41, requisition_number: "PR-TEST-41", requester_email: "owner@superbajaar.test", location_id: 3, location_name: location.name, department: "Operations", status: requisitionStatus, line_count: 1 }] } });
     if (url.pathname === "/api/purchasing/rfqs") return route.fulfill({ json: { items: [] } });
@@ -81,6 +76,11 @@ test("approved requisition can be sourced through RFQ, quotation and draft PO aw
     if (url.pathname === "/api/purchasing/suppliers") return route.fulfill({ json: { items: [supplier] } });
     if (url.pathname === "/api/inventory/locations") return route.fulfill({ json: { items: [location] } });
     if (url.pathname === "/api/purchasing/orders") return route.fulfill({ json: { items: [] } });
+    if (url.pathname === "/api/purchasing/orders/81" && method === "GET") return route.fulfill({ json: {
+      id: 81, purchase_number: "PO-81", status: "draft", supplier_id: 5,
+      supplier_name: supplier.name, location_id: 3, location_name: location.name,
+      lines: [], total_amount: "2150.00", approval_required: true,
+    } });
     if (url.pathname === "/api/catalogue/variants") return route.fulfill({ json: { items: [variant] } });
     if (url.pathname === "/api/purchasing/requisitions") return route.fulfill({ json: { items: [{ id: 51, requisition_number: "PR-APPROVED-51", requester_email: "buyer@superbajaar.test", location_id: 3, location_name: location.name, department: "Procurement", status: "approved", line_count: 1 }] } });
     if (url.pathname === "/api/purchasing/rfqs" && method === "GET") return route.fulfill({ json: { items: rfqStatus === "draft" ? [] : [{ id: 61, rfq_number: "RFQ-TEST-61", requisition_id: 51, status: rfqStatus, supplier_count: 1, quotation_count: quotationRecorded ? 1 : 0 }] } });
