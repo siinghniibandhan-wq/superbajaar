@@ -1277,10 +1277,21 @@ def approve_payroll(run_id:int,payload:PayrollApprovalInput,request:Request):
                 ).fetchone()
             else:
                 run = conn.execute(
-                    "SELECT id,status FROM hr_payroll_runs WHERE id=%s FOR UPDATE", (run_id,)
+                    "SELECT id,status,period_start,period_end FROM hr_payroll_runs WHERE id=%s FOR UPDATE", (run_id,)
                 ).fetchone()
                 if run is None or run["status"] != "calculated":
                     raise HTTPException(409, "Payroll run is not in a reviewable calculated state")
+                pending_earnings = conn.execute(
+                    "SELECT count(*) AS total FROM hr_payroll_earning_adjustments "
+                    "WHERE period_start=%s AND period_end=%s AND status='pending'",
+                    (run["period_start"],run["period_end"]),
+                ).fetchone()["total"]
+                if pending_earnings:
+                    raise HTTPException(
+                        409,
+                        f"Payroll approval blocked: {pending_earnings} overtime, incentive or bonus item(s) "
+                        "are still awaiting review for this period."
+                    )
                 incomplete = conn.execute(
                     "SELECT e.employee_code, count(s.id) AS snapshot_count "
                     "FROM hr_payslips p JOIN hr_employees e ON e.id=p.employee_id "
