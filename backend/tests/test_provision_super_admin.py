@@ -44,7 +44,7 @@ class FakeSsm:
 
     def get_parameter(self, *, Name, WithDecryption):
         assert WithDecryption is True
-        return {"Parameter": {"Value": self.password}}
+        return {"Parameter": {"Type": "SecureString", "Value": self.password}}
 
     def delete_parameter(self, *, Name):
         self.deleted_parameters.append(Name)
