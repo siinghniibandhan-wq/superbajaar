@@ -54,7 +54,7 @@ export default function PortalWorkspace({ portal }) {
     apiRequest("/auth/me").then(result => setUser(result.user)).catch(() => {
       try { window.localStorage.removeItem("superbajaar.access_token"); } catch {}
       setUser(null);
-    });
+    }).finally(() => setLoading(false));
   }, []);
 
   useEffect(() => { if (user) load(); }, [user, load]);
