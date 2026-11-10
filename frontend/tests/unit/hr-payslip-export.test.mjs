@@ -22,7 +22,7 @@ test("exports an employee's payslip with earnings and statutory breakdown", () =
 
   assert.match(csv, /^\uFEFFPay period start,Pay period end,/);
   assert.match(csv, /2026-10-01,2026-10-31,42000\.00,1500\.00,3500\.00,2400\.00,40000\.00/);
-  assert.match(csv, /30000\.00,12000\.00,,,500\.00,Approved salary advance recovery,1800\.00,1800\.00/);
+  assert.match(csv, /30000\.00,12000\.00,,,\[\],500\.00,Approved salary advance recovery,1800\.00,1800\.00/);
 });
 
 test("includes employee identifiers only for manager exports", () => {
