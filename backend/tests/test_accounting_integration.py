@@ -27,7 +27,7 @@ TODAY = accounting._today()
 
 @pytest.fixture()
 def api(monkeypatch):
-    role = {"value": "owner"}
+    role = {"value": "super_admin"}
 
     async def fake_session(request: Request):
         request.state.role = role["value"]
@@ -154,13 +154,13 @@ def test_full_accounting_cycle(api):
             conn.execute("UPDATE accounting_voucher_lines SET debit=debit+1 WHERE voucher_id=%s AND line_no=1", (opening["id"],))
 
 
-def test_lock_date_and_owner_only_lock(api):
+def test_lock_date_and_super_admin_only_lock(api):
     cash, capital = acct(api, "1000"), acct(api, "3000")
     settings = ok(api.get("/api/accounting/settings"))
     body = {"business_name": settings["business_name"], "default_supply": "intra", "lock_date": str(TODAY - timedelta(days=2))}
     api.role["value"] = "admin"
     assert api.put("/api/accounting/settings", json=body).status_code == 403
-    api.role["value"] = "owner"
+    api.role["value"] = "super_admin"
     ok(api.put("/api/accounting/settings", json=body))
     locked = api.post("/api/accounting/vouchers", json={
         "voucher_type": "journal", "voucher_date": str(TODAY - timedelta(days=3)),
