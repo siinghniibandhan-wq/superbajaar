@@ -509,3 +509,45 @@ test("inventory workspace exposes its Overview section with live stock and contr
   await expect(page.locator(".inventory-analytics-metrics article").filter({ hasText: "Pending approvals" }).locator("strong")).toHaveText("1");
   await expect(page.getByText("Main Warehouse")).toBeVisible();
 });
+
+
+test("HR staff can view their own payslips in employee self-service", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("superbajaar.access_token", "employee-test-token");
+  });
+  await page.route("**/api/**", async route => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/auth/me") {
+      return route.fulfill({ json: { user: {
+        id: 88,
+        full_name: "HR Employee",
+        email: "employee@example.test",
+        role: "staff",
+      } } });
+    }
+    if (url.pathname === "/api/health") {
+      return route.fulfill({ json: { status: "ok", database: "connected" } });
+    }
+    if (url.pathname === "/api/hr/payroll/me/payslips") {
+      return route.fulfill({ json: { items: [{
+        id: 901,
+        period_start: "2026-10-01",
+        period_end: "2026-10-31",
+        gross_earnings: "42000.00",
+        reimbursements: "1500.00",
+        deductions: "3500.00",
+        employer_contributions: "2400.00",
+        net_pay: "40000.00",
+      }] } });
+    }
+    return route.fulfill({ json: { items: [] } });
+  });
+
+  await page.goto("/admin");
+  await expect(page.getByRole("heading", { name: "HR & Payroll" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Payslips", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Payslips", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "My payslips", exact: true })).toBeVisible();
+  await expect(page.getByText("2026-10-01 – 2026-10-31")).toBeVisible();
+  await expect(page.getByText("₹40,000.00")).toBeVisible();
+});
