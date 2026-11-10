@@ -108,3 +108,37 @@ def test_super_coins_permissions_migration_is_required_and_least_privilege():
     assert "on all sequences" not in sql
     assert "drop table" not in sql
     assert "truncate " not in sql
+
+
+def test_admin_can_update_partner_enquiry_status(monkeypatch):
+    from starlette.requests import Request
+    from app.api import loyalty
+
+    class Result:
+        def fetchone(self):
+            return {"id": 12, "status": "reviewing", "updated_at": "2026-11-11T00:00:00Z"}
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def execute(self, query, params):
+            assert "UPDATE partner_enquiries SET status=%s" in query
+            assert params == ("reviewing", 12)
+            return Result()
+
+    monkeypatch.setattr(loyalty, "_admin", lambda _request: None)
+    monkeypatch.setattr(loyalty, "_connection", lambda: Connection())
+    request = Request({
+        "type": "http", "method": "PATCH",
+        "path": "/api/loyalty/admin/partner-enquiries/12",
+        "headers": [], "query_string": b"",
+    })
+    response = loyalty.update_partner_enquiry_status(
+        12, loyalty.PartnerEnquiryStatus(status="reviewing"), request
+    )
+    assert response["id"] == 12
+    assert response["status"] == "reviewing"
