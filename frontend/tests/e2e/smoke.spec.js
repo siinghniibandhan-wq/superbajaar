@@ -259,7 +259,7 @@ test("HR manager reviews overtime and it is included as an approved variable ear
 
   await page.goto("/admin");
   await page.getByRole("button", { name: "Payroll", exact: true }).click();
-  await page.getByLabel("Employee").selectOption("11");
+  await page.locator(".hr-variable-pay").getByLabel("Employee").selectOption("11");
   await page.getByLabel("Overtime hours").fill("10");
   await page.getByLabel("Hourly rate (₹)").fill("150");
   await page.getByLabel("Reason").fill("Approved weekend store coverage");
