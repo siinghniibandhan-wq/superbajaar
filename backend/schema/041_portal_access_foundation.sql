@@ -46,7 +46,8 @@ DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='superbajaar_user') THEN
         GRANT SELECT,INSERT,UPDATE,DELETE ON public.portal_invitations,public.vendor_portal_users TO superbajaar_user;
-        GRANT USAGE,SELECT ON SEQUENCE public.portal_invitations_id_seq,public.vendor_portal_users_id_seq TO superbajaar_user;
+        GRANT USAGE,SELECT ON SEQUENCE public.portal_invitations_id_seq,public.vendor_portal_users_id_seq,public.vendor_purchase_order_responses_id_seq TO superbajaar_user;
+        GRANT SELECT,INSERT ON public.vendor_purchase_order_responses TO superbajaar_user;
     END IF;
 END $$;
 
