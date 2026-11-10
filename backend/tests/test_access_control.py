@@ -43,3 +43,24 @@ def test_super_admin_is_the_only_role_that_can_manage_privileged_roles():
 def test_product_deletion_is_not_allowed_for_manager_staff_or_viewer():
     for role in ("manager", "staff", "viewer"):
         assert not _role_can_write(role, "/api/catalogue/products/42")
+
+
+def test_super_admin_has_accounting_read_access():
+    from app.api.accounting import READ_ROLES
+
+    assert "super_admin" in READ_ROLES
+
+
+def test_super_admin_has_hr_management_access():
+    from types import SimpleNamespace
+    from app.api.hr import _manager
+
+    assert _manager(SimpleNamespace(state=SimpleNamespace(user_id=1, role="super_admin"))) == 1
+
+
+def test_super_admin_has_organisation_policy_administration_access():
+    from types import SimpleNamespace
+    from app.api.organisation_policies import _policy_admin
+
+    request = SimpleNamespace(state=SimpleNamespace(user_id=1, user_email="root@example.test", role="super_admin"))
+    assert _policy_admin(request) == (1, "root@example.test", "super_admin")
