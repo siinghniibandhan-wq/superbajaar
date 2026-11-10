@@ -371,3 +371,33 @@
 .sb-report-chart-empty{position:relative;display:grid;min-height:145px;place-items:center;overflow:hidden;border-radius:10px;background:repeating-linear-gradient(to bottom,transparent 0,transparent 35px,#edf1f5 36px),#fbfcfd}
 .sb-report-chart-empty p{z-index:1;max-width:280px;padding:12px;text-align:center;color:#84909a;font-size:11px;line-height:1.6;background:#ffffffdc}
 @media(max-width:650px){.sb-report-actions{justify-content:flex-start}.sb-report-chart-grid{grid-template-columns:1fr}.sb-report-bar-row{grid-template-columns:75px minmax(50px,1fr) auto}}
+
+/* Loyalty operations workspace */
+.sb-loyalty{color:#273343}
+.sb-loyalty-heading{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin:12px 0 22px}
+.sb-loyalty-heading h1{margin:5px 0;font:900 clamp(28px,4vw,38px) Lato,sans-serif;letter-spacing:-1px}
+.sb-loyalty-heading p:last-child{margin:7px 0 0;color:#74808c;font-size:13px}
+.sb-loyalty-heading>button,.sb-loyalty-form button,.sb-loyalty-overview-grid button{border:0;border-radius:10px;padding:11px 15px;background:#285f91;color:#fff;font-weight:700;cursor:pointer}
+.sb-loyalty-heading>button:disabled,.sb-loyalty-form button:disabled{opacity:.55;cursor:wait}
+.sb-loyalty-tabs{display:flex;gap:7px;overflow-x:auto;padding:5px 0 14px;margin-bottom:16px;border-bottom:1px solid #e7edf2}
+.sb-loyalty-tabs button{white-space:nowrap;border:1px solid #e1e8ef;border-radius:10px;background:#fff;color:#647383;padding:10px 14px;font-size:12px;font-weight:700;cursor:pointer}
+.sb-loyalty-tabs button.active{background:#eaf3fb;border-color:#b9d2e6;color:#285f91}
+.sb-loyalty-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px;margin:18px 0}
+.sb-loyalty-kpis article{display:flex;flex-direction:column;gap:7px;padding:18px;border:1px solid #e7edf2;border-radius:15px;background:#fff}
+.sb-loyalty-kpis small{font-size:11px;color:#7b8791}.sb-loyalty-kpis strong{font:900 25px Lato,sans-serif;color:#273d52}.sb-loyalty-kpis span{font-size:10px;color:#8b969f}
+.sb-loyalty-overview-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.sb-loyalty-overview-grid .sb-data-card{padding:20px}.sb-loyalty-overview-grid p,.sb-loyalty-overview-grid li{color:#74808c;font-size:12px;line-height:1.7}
+.sb-loyalty-overview-grid ul{padding-left:18px}.sb-loyalty-overview-grid button{margin-top:8px}
+.sb-loyalty-overview-grid .sb-loyalty-danger{background:#fff2ed;color:#a4472e;border:1px solid #f1c7b9}
+.sb-loyalty-notice{padding:12px 15px;border:1px solid #b9dfd0;border-radius:10px;background:#f0faf5;color:#27684e;font-size:12px}
+.sb-loyalty-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px;align-items:end;padding:18px;margin:14px 0 20px;border:1px solid #e6edf2;border-radius:15px;background:#fff}
+.sb-loyalty-form label{display:flex;flex-direction:column;gap:7px;color:#667483;font-size:11px;font-weight:700}
+.sb-loyalty-form input,.sb-loyalty-form select,.sb-data-heading input{min-width:0;min-height:40px;border:1px solid #dce5ec;border-radius:9px;padding:9px 11px;background:#fff;color:#293746;font:inherit}
+.sb-loyalty-form .sb-loyalty-check{flex-direction:row;align-items:center;min-height:40px}.sb-loyalty-form .sb-loyalty-check input{min-height:auto}
+.sb-loyalty-form .wide{grid-column:span 2}
+.sb-loyalty-link{border:0;background:none;color:#2d6d9e;font-weight:700;cursor:pointer}
+.sb-loyalty-ledger{margin-top:18px;padding:18px}.sb-loyalty-ledger>p{color:#788590;font-size:12px}
+.sb-loyalty-status{display:inline-block;padding:5px 8px;border-radius:20px;background:#f0f2f4;color:#697784;font-size:10px;font-weight:700}
+.sb-loyalty-status.active{background:#e9f7ef;color:#28734d}
+@media(max-width:760px){.sb-loyalty-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.sb-loyalty-form{grid-template-columns:repeat(2,minmax(0,1fr))}.sb-loyalty-overview-grid{grid-template-columns:1fr}}
+@media(max-width:480px){.sb-loyalty-heading{align-items:flex-start;flex-direction:column}.sb-loyalty-kpis{gap:8px}.sb-loyalty-kpis article{padding:13px}.sb-loyalty-kpis strong{font-size:21px}.sb-loyalty-form{grid-template-columns:1fr}.sb-loyalty-form .wide{grid-column:auto}}
