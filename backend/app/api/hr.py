@@ -483,6 +483,20 @@ def review_salary_revision(employee_id: int, revision_id: int, payload: PayrollA
                     (payload.note,actor,revision_id),
                 ).fetchone()
 
+            period_start = revision["effective_from"].replace(day=1)
+            period_end = date(
+                revision["effective_from"].year,
+                revision["effective_from"].month,
+                monthrange(revision["effective_from"].year,revision["effective_from"].month)[1],
+            )
+            closed_payroll = conn.execute(
+                "SELECT id,status FROM hr_payroll_runs WHERE period_start=%s AND period_end=%s "
+                "AND status IN ('approved','paid') LIMIT 1",
+                (period_start,period_end),
+            ).fetchone()
+            if closed_payroll:
+                raise HTTPException(409, "Salary revision cannot change a month whose payroll is already approved or paid")
+
             latest = conn.execute(
                 "SELECT id,effective_from,effective_to FROM hr_employee_salary_versions "
                 "WHERE employee_id=%s AND status='approved' ORDER BY effective_from DESC LIMIT 1 FOR UPDATE",
