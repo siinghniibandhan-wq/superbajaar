@@ -291,3 +291,107 @@ def update_user(user_id: int, payload: UserUpdate, user=Depends(current_user)):
         raise
     except psycopg.Error as exc:
         raise HTTPException(503, "Unable to update user; verify the required authentication schema") from exc
+
+
+def _effective_permissions(conn, user_id: int, role: str) -> dict:
+    rows = conn.execute(
+        """
+        SELECT m.module_key, p.action_key,
+               COALESCE(up.allowed, rp.allowed, false) AS allowed
+        FROM app_modules m CROSS JOIN app_permissions p
+        JOIN app_roles r ON r.name = %s AND r.is_active = TRUE
+        LEFT JOIN app_role_permissions rp
+          ON rp.role_id = r.id AND rp.module_id = m.id AND rp.permission_id = p.id
+        LEFT JOIN app_user_module_permissions up
+          ON up.user_id = %s AND up.module_id = m.id AND up.permission_id = p.id
+        WHERE m.is_active = TRUE
+        ORDER BY m.module_key, p.action_key
+        """,
+        (role, user_id),
+    ).fetchall()
+    result = {}
+    for row in rows:
+        result.setdefault(row["module_key"], {})[row["action_key"]] = bool(row["allowed"])
+    return result
+
+
+def _save_user_permissions(conn, target_user_id: int, grants: dict, actor_id: int):
+    for module, actions in grants.items():
+        if not isinstance(actions, dict):
+            raise HTTPException(422, f"Invalid permissions for module {module}")
+        for action, allowed in actions.items():
+            if action not in {"read", "create", "edit", "delete", "approve", "export", "configure"} or not isinstance(allowed, bool):
+                raise HTTPException(422, "Invalid permission action or value")
+            exists = conn.execute(
+                "SELECT 1 FROM app_modules m CROSS JOIN app_permissions p WHERE m.module_key=%s AND p.action_key=%s AND m.is_active=TRUE",
+                (module, action),
+            ).fetchone()
+            if not exists:
+                raise HTTPException(422, f"Unknown module/action: {module}.{action}")
+            conn.execute(
+                """
+                INSERT INTO app_user_module_permissions(user_id,module_id,permission_id,allowed,updated_by_user_id,updated_at)
+                SELECT %s,m.id,p.id,%s,%s,now()
+                FROM app_modules m CROSS JOIN app_permissions p
+                WHERE m.module_key=%s AND p.action_key=%s
+                ON CONFLICT(user_id,module_id,permission_id) DO UPDATE
+                SET allowed=EXCLUDED.allowed,updated_by_user_id=EXCLUDED.updated_by_user_id,updated_at=now()
+                """,
+                (target_user_id, allowed, actor_id, module, action),
+            )
+
+
+@router.get("/permissions")
+def list_permission_catalogue(user=Depends(current_user)):
+    _require_user_admin(user)
+    try:
+        with _connect() as conn:
+            modules = conn.execute("SELECT module_key,label FROM app_modules WHERE is_active=TRUE ORDER BY label").fetchall()
+            actions = conn.execute("SELECT action_key,label FROM app_permissions ORDER BY id").fetchall()
+            authority = _effective_permissions(conn, user["id"], user["role"])
+        return {"modules": modules, "actions": actions, "authority": authority}
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Permission catalogue unavailable; apply migration 036") from exc
+
+
+@router.get("/users/{user_id}/permissions")
+def get_user_permissions(user_id: int, user=Depends(current_user)):
+    _require_user_admin(user)
+    try:
+        with _connect() as conn:
+            target = conn.execute("SELECT id,role FROM app_users WHERE id=%s", (user_id,)).fetchone()
+            if target is None:
+                raise HTTPException(404, "User not found")
+            if target["role"] == "super_admin" and user["role"] != "super_admin":
+                raise HTTPException(403, "Only Super Admin can inspect Super Admin permissions")
+            return {"permissions": _effective_permissions(conn, user_id, target["role"])}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Unable to load user permissions") from exc
+
+
+class UserPermissionsUpdate(BaseModel):
+    permissions: dict[str, dict[str, bool]]
+
+
+@router.put("/users/{user_id}/permissions")
+def update_user_permissions(user_id: int, payload: UserPermissionsUpdate, user=Depends(current_user)):
+    _require_user_admin(user)
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                target = conn.execute("SELECT id,role FROM app_users WHERE id=%s FOR UPDATE", (user_id,)).fetchone()
+                if target is None:
+                    raise HTTPException(404, "User not found")
+                if target["role"] == "super_admin" and user["role"] != "super_admin":
+                    raise HTTPException(403, "Only Super Admin can change Super Admin permissions")
+                authority = _effective_permissions(conn, user["id"], user["role"])
+                if not can_manage_all_permissions(user["role"]) and not permissions_within_authority(payload.permissions, authority):
+                    raise HTTPException(403, "You cannot grant permissions you do not hold")
+                _save_user_permissions(conn, user_id, payload.permissions, user["id"])
+                return {"permissions": _effective_permissions(conn, user_id, target["role"])}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Unable to save user permissions; verify migration 036") from exc
