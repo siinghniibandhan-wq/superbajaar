@@ -240,11 +240,27 @@ def vendor_order_detail(purchase_order_id: int, request: Request):
                 "JOIN products p ON p.id=v.product_id WHERE pol.purchase_order_id=%s ORDER BY pol.id",
                 (purchase_order_id,),
             ).fetchall()
+            invoiceable_lines = conn.execute(
+                "SELECT grl.id AS goods_receipt_line_id,grl.purchase_order_line_id,grl.variant_id,v.sku,"
+                "p.name AS product_name,grl.accepted_quantity,pol.unit_cost,"
+                "COALESCE(sum(il.quantity) FILTER (WHERE si.id IS NOT NULL),0) AS invoiced_quantity,"
+                "(grl.accepted_quantity-COALESCE(sum(il.quantity) FILTER (WHERE si.id IS NOT NULL),0)) AS available_quantity "
+                "FROM goods_receipt_lines grl JOIN goods_receipts gr ON gr.id=grl.goods_receipt_id "
+                "JOIN purchase_order_lines pol ON pol.id=grl.purchase_order_line_id "
+                "JOIN product_variants v ON v.id=grl.variant_id JOIN products p ON p.id=v.product_id "
+                "LEFT JOIN supplier_invoice_lines il ON il.goods_receipt_line_id=grl.id "
+                "LEFT JOIN supplier_invoices si ON si.id=il.supplier_invoice_id AND si.match_status<>'rejected' "
+                "WHERE gr.purchase_order_id=%s AND gr.supplier_id=%s AND gr.status='accepted' "
+                "GROUP BY grl.id,grl.purchase_order_line_id,grl.variant_id,v.sku,p.name,grl.accepted_quantity,pol.unit_cost "
+                "HAVING grl.accepted_quantity-COALESCE(sum(il.quantity) FILTER (WHERE si.id IS NOT NULL),0)>0 "
+                "ORDER BY grl.id",
+                (purchase_order_id,vendor["supplier_id"]),
+            ).fetchall()
             response = conn.execute(
                 "SELECT response,note,responded_at FROM vendor_purchase_order_responses WHERE purchase_order_id=%s",
                 (purchase_order_id,),
             ).fetchone()
-        return {**order, "lines": lines, "vendor_response": response}
+        return {**order, "lines": lines, "invoiceable_lines": invoiceable_lines, "vendor_response": response}
     except HTTPException:
         raise
     except psycopg.Error as exc:
