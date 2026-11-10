@@ -1,0 +1,182 @@
+# Database migrations and operations
+
+This document is the operational reference for PostgreSQL schema changes in Super Bajaar. It describes the committed migration runner and the production arrangement reported and verified by the project owner on 10 November 2026. It does not authorize a production migration.
+
+## 1. Production database identity
+
+The production database is a self-managed PostgreSQL instance on the Super Bajaar EC2 host. It is **not Amazon RDS**.
+
+| Setting | Production value |
+|---|---|
+| Database | `superbajaar` |
+| Application role | `superbajaar_app` |
+| PostgreSQL port | `5432` |
+| Database host | `127.0.0.1` (localhost only) |
+| Repository checkout | `/opt/superbajaar/source` |
+| Schema directory | `/opt/superbajaar/source/backend/schema` |
+| Migration runner | `/opt/superbajaar/source/backend/scripts/apply_schema.sh` |
+| Required migration list | `/opt/superbajaar/source/backend/schema_required.txt` |
+
+The runner defaults to `SB_DB=sb_app` if `SB_DB` is omitted. That historical default is **not** the production database. Always set `SB_DB=superbajaar` explicitly for production commands. Never infer the target database from the runner default.
+
+The PostgreSQL service is local to the EC2 host. Keep it private; do not expose port 5432 publicly or replace this arrangement with RDS as part of a migration task.
+
+## 2. Automatic status check versus manual application
+
+The production schema systemd service and timer are configured for **status-only checks**. The timer runs every two minutes. The service invokes the runner with `--status`; it must not run the runner in its default apply mode.
+
+Production service configuration supplied by the project owner:
+
+- Unit: `/etc/systemd/system/superbajaar-schema.service`
+- Drop-in: `/etc/systemd/system/superbajaar-schema.service.d/override.conf`
+- Timer: `/etc/systemd/system/superbajaar-schema.timer`
+- Effective runner invocation must end with:
+  `/opt/superbajaar/source/backend/scripts/apply_schema.sh /opt/superbajaar/source/backend/schema --status`
+- Explicit environment includes `SB_DB=superbajaar`, `SB_PSQL=/usr/local/bin/sb-psql`, `SB_BACKUP_DIR=/var/lib/superbajaar/backups`, and `SB_LOG=/var/log/superbajaar/schema.log`.
+
+The service's `SuccessExitStatus=0 10` treats status code 10 as a successful systemd oneshot execution, because code 10 means the status check found migration attention is required. It does **not** mean the schema is fully up to date. Inspect the service output and log to understand the reported state.
+
+Do not remove `--status` from the effective `ExecStart`. The runner's default mode (no option) applies pending SQL. A timer running without `--status` can therefore make database changes automatically.
+
+Useful server-side checks:
+
+```bash
+sudo systemctl cat superbajaar-schema.service
+sudo systemctl cat superbajaar-schema.timer
+sudo systemctl status superbajaar-schema.timer
+sudo systemctl list-timers --all | grep superbajaar-schema
+sudo systemctl status superbajaar-schema.service
+sudo journalctl -u superbajaar-schema.service --since "24 hours ago"
+sudo tail -n 200 /var/log/superbajaar/schema.log
+```
+
+Confirm that the effective service command includes `--status`. A base unit alone is not sufficient evidence when a drop-in override exists; inspect the merged unit with `systemctl cat`.
+
+## 3. Controlled manual migration procedure
+
+A migration is a separately approved database operation. A Git commit, CI run, timer tick or status report does not authorize applying SQL to production.
+
+Before any production apply:
+
+1. Review the complete SQL diff and its dependencies.
+2. Confirm the migration filename is unique and follows the numbering rules below.
+3. Confirm the migration is included in `backend/schema_required.txt` if the release depends on it.
+4. Verify the current migration status against the intended production database.
+5. Run the dry-run and review its output.
+6. Confirm a fresh, verified backup and a recovery plan.
+7. Obtain explicit approval for the production apply.
+
+Run these commands on the production host from the approved checkout. They explicitly identify the production database and the configured client, backup and log paths.
+
+Check status:
+
+```bash
+sudo env SB_DB=superbajaar SB_PSQL=/usr/local/bin/sb-psql SB_BACKUP_DIR=/var/lib/superbajaar/backups SB_LOG=/var/log/superbajaar/schema.log \
+  /bin/bash /opt/superbajaar/source/backend/scripts/apply_schema.sh /opt/superbajaar/source/backend/schema --status
+```
+
+Preview pending work without applying:
+
+```bash
+sudo env SB_DB=superbajaar SB_PSQL=/usr/local/bin/sb-psql SB_BACKUP_DIR=/var/lib/superbajaar/backups SB_LOG=/var/log/superbajaar/schema.log \
+  /bin/bash /opt/superbajaar/source/backend/scripts/apply_schema.sh /opt/superbajaar/source/backend/schema --dry-run
+```
+
+Only after the review, backup verification and explicit approval, apply:
+
+```bash
+sudo env SB_DB=superbajaar SB_PSQL=/usr/local/bin/sb-psql SB_BACKUP_DIR=/var/lib/superbajaar/backups SB_LOG=/var/log/superbajaar/schema.log \
+  /bin/bash /opt/superbajaar/source/backend/scripts/apply_schema.sh /opt/superbajaar/source/backend/schema
+```
+
+The apply command intentionally has no mode flag: no option is the runner's apply mode. Never put that invocation in the automatic timer.
+
+After an approved apply, run `--status`, inspect the migration log and service health, and confirm the expected ledger entries and schema state. Do not claim success solely because the command returned or the service timer ran.
+
+## 4. Runner safeguards and migration ledger
+
+The runner is `backend/scripts/apply_schema.sh`. Its current implementation provides these safeguards:
+
+- Checks database connectivity, schema directory, migration filenames and duplicate three-digit prefixes before applying.
+- Uses a lock to prevent concurrent runner executions.
+- Refuses to guess when a populated database has no migration ledger or when the ledger shape is unexpected.
+- Checks `backend/schema_required.txt` against files in the schema directory.
+- Creates a custom-format `pg_dump` backup before applying pending SQL and verifies it with `pg_restore --list`. If backup verification fails, it exits without applying SQL.
+- Applies each pending SQL file in its own transaction.
+- Records successful files and SHA-256 checksums in `schema_migrations`.
+- Records failed attempts in `schema_migration_failures`.
+- Detects an applied migration whose contents have changed and does not silently reapply it.
+- Does not automatically retry an unchanged known failure unless the explicit retry mode is used.
+
+The migration ledger is evidence of what was applied to that particular database. It is not a list to be edited to make production resemble a fresh installation. Never invent, delete, rewrite or manually insert migration history to resolve a filename conflict.
+
+### Runner exit codes
+
+| Code | Meaning |
+|---:|---|
+| 0 | All schema files are applied; no issues reported |
+| 10 | Status/dry-run attention, or problems with no required-list configuration; inspect output |
+| 11 | Problems exist, but every required migration is applied |
+| 20 | A required migration is not applied; release must be blocked |
+| 30 | Backup failed; no migration was applied |
+| 50 | Setup, connection, filename, ledger or other preflight problem |
+| 60 | Another migration runner holds the lock |
+
+The script's comments state that deployment should continue only on 0 or 11. In production, treat 20, 30, 50 and 60 as stop conditions. A status-mode exit code 10 indicates attention is needed; it is not an apply failure and does not itself mean the required release gate is missing.
+
+## 5. Migration filename and immutability rules
+
+All versioned application schema SQL files belong in `backend/schema/`. The filename format is:
+
+```text
+NNN_lowercase_description.sql
+```
+
+Rules:
+
+- Inspect the full schema directory and target-branch history before choosing a prefix.
+- Every three-digit prefix must be unique. Never create two files with the same prefix.
+- Do not renumber to fill historical gaps. The sequence is versioned, not required to be gap-free.
+- Never edit, rename, move or delete a migration that has been applied or released as part of the migration history.
+- A correction to an already-applied migration must be a new, unused numbered migration, after reviewing the database state and obtaining approval.
+- Keep SQL files limited to database schema/data changes. Do not put shell scripts, systemd configuration, CI workflows or deployment tooling in SQL files.
+- Test migrations against disposable PostgreSQL databases before proposing production use.
+
+The CI migration governance workflow and `docs/SCHEMA_MIGRATION_CRITICAL_RULE.md` provide additional repository-side controls. CI checks must actually run and pass; a workflow file existing in Git is not proof that branch protection enforces it.
+
+## 6. Historical duplicate-036 reconciliation (10 November 2026)
+
+Two different migration files historically used prefix `036`:
+
+- `036_super_admin_role.sql` — a historical migration that was applied in production at 11:24 UTC and later removed from the repository.
+- `036_configurable_rbac.sql` — the current canonical migration retained in `backend/schema/`, applied in production at 16:02:07 UTC.
+
+The project owner confirmed a production backup named `superbajaar-pre-migration-20261110T160206Z.dump`, created at 16:02:06 UTC before the second migration ran. The owner confirmed that `pg_restore --list` could read the backup.
+
+The repository reconciliation is:
+
+- Keep `036_configurable_rbac.sql` as the only current repository file with prefix `036`.
+- Do not restore `036_super_admin_role.sql` to the current schema directory.
+- Do not edit or rename `036_configurable_rbac.sql`.
+- Do not create a replacement `037` migration merely to erase the historical duplicate.
+- Preserve both historical production ledger records as historical facts. Do not delete or fabricate ledger entries.
+- Fresh installations use the current repository migration set; production retains its actual migration history. The two ledgers may therefore differ historically even though the current repository has only one `036` filename.
+
+This is a documented historical migration-history exception, not a reason to alter applied SQL or production ledger records. The current `backend/schema_required.txt` list does not include `036_configurable_rbac.sql`; do not silently change that release-gate policy as part of documenting this incident. Any future decision to make it release-required must be reviewed as a separate change.
+
+## 7. Backup and recovery discipline
+
+Before any approved production migration, confirm the backup destination has sufficient space and that the resulting dump is non-empty and readable by `pg_restore --list`. Retain the exact backup identifier and timestamp in the change record.
+
+If a migration fails, stop and inspect the runner log, failure ledger, database state and backup. Each migration runs in its own transaction, but do not assume that this makes every multi-file release automatically reversible. A restore is a database-owner operation and must use a reviewed recovery plan. Do not restore an older dump over production without explicit authorization and an impact assessment.
+
+The confirmed 10 November backup above is historical evidence for that migration event; it is not proof that a current backup exists for a future change.
+
+## 8. Related files
+
+- `backend/schema/` — versioned PostgreSQL schema SQL.
+- `backend/schema_required.txt` — release-critical subset of migrations.
+- `backend/scripts/apply_schema.sh` — migration runner and modes.
+- `backend/scripts/tests/test_apply_schema.sh` — runner tests.
+- `docs/SCHEMA_MIGRATION_CRITICAL_RULE.md` — immutable migration filename rule.
+- `README.md` — repository overview and migration entry point.
