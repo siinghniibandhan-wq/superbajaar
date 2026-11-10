@@ -35,7 +35,7 @@ def _actor(request: Request) -> tuple[int, str, str]:
 
 def _policy_admin(request: Request) -> tuple[int, str, str]:
     actor = _actor(request)
-    if actor[2] not in {"owner", "admin"}:
+    if actor[2] not in {"super_admin", "owner", "admin"}:
         raise HTTPException(403, "Organisation policy administration permission is required")
     return actor
 
@@ -84,7 +84,7 @@ def list_policies(
                 "FROM organisation_policy_versions p JOIN hr_establishments e ON e.id=p.establishment_id "
                 "WHERE (%s::bigint IS NULL OR p.establishment_id=%s::bigint) "
                 "AND (%s::text IS NULL OR p.domain=%s::text) "
-                "AND (%s IN ('owner','admin') OR p.establishment_id IN ("
+                "AND (%s IN ('super_admin','owner','admin') OR p.establishment_id IN ("
                 "SELECT esp.establishment_id FROM hr_employees he "
                 "JOIN hr_employee_statutory_profiles esp ON esp.employee_id=he.id WHERE he.user_id=%s)) "
                 "ORDER BY p.establishment_id,p.domain,p.created_at DESC",
@@ -211,7 +211,7 @@ def policy_history(policy_id: int, request: Request):
             ).fetchone()
             if not policy:
                 raise HTTPException(404,"Policy version not found")
-            if actor_role not in {"owner","admin"}:
+            if actor_role not in {"super_admin","owner","admin"}:
                 membership=conn.execute(
                     "SELECT EXISTS(SELECT 1 FROM hr_employees he "
                     "JOIN hr_employee_statutory_profiles esp ON esp.employee_id=he.id "
