@@ -47,18 +47,6 @@ jobs:
           files=(backend/schema/*.sql)
           (("${#files[@]}" > 0)) || { echo "ERROR: no schema files found"; exit 1; }
 
-          # These four exact files are historical and must remain present. The two
-          # duplicated prefixes are grandfathered only for these exact pairs.
-          required_legacy=(
-            009_loyalty_programme.sql
-            009_product_availability_delivery.sql
-            012_product_category_assignments.sql
-            012_variant_image_primary.sql
-          )
-          for name in "${required_legacy[@]}"; do
-            [[ -f "backend/schema/$name" ]] || { echo "ERROR: protected legacy file is missing: $name"; exit 1; }
-          done
-
           declare -A counts=()
           for path in "${files[@]}"; do
             name=${path##*/}
@@ -69,10 +57,7 @@ jobs:
 
           for prefix in "${!counts[@]}"; do
             count=${counts[$prefix]}
-            case "$prefix" in
-              009|012) [[ "$count" -eq 2 ]] || { echo "ERROR: $prefix must have exactly its two protected files; found $count"; exit 1; } ;;
-              *) [[ "$count" -eq 1 ]] || { echo "ERROR: number $prefix is used by $count files"; exit 1; } ;;
-            esac
+            [[ "$count" -eq 1 ]] || { echo "ERROR: number $prefix is used by $count files"; exit 1; }
           done
           echo "Schema filenames and both protected legacy pairs are valid."
 

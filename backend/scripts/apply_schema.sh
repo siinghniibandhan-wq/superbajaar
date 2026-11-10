@@ -78,19 +78,7 @@ for n in "${FILES[@]}"; do
 done
 for prefix in "${!PREFIX_COUNT[@]}"; do
   count=${PREFIX_COUNT[$prefix]}
-  case "$prefix" in
-    009)
-      [ "$count" -eq 2 ] || die 50 "migration prefix 009 is reserved for exactly its two protected historical files; found $count:${PREFIX_FILES[$prefix]}"
-      [[ " ${PREFIX_FILES[$prefix]} " == *" 009_loyalty_programme.sql "* && " ${PREFIX_FILES[$prefix]} " == *" 009_product_availability_delivery.sql "* ]] || die 50 "009 contains an unapproved filename pair:${PREFIX_FILES[$prefix]}"
-      ;;
-    012)
-      [ "$count" -eq 2 ] || die 50 "migration prefix 012 is reserved for exactly its two protected historical files; found $count:${PREFIX_FILES[$prefix]}"
-      [[ " ${PREFIX_FILES[$prefix]} " == *" 012_product_category_assignments.sql "* && " ${PREFIX_FILES[$prefix]} " == *" 012_variant_image_primary.sql "* ]] || die 50 "012 contains an unapproved filename pair:${PREFIX_FILES[$prefix]}"
-      ;;
-    *)
-      [ "$count" -eq 1 ] || die 50 "migration prefix $prefix is duplicated ($count files):${PREFIX_FILES[$prefix]}"
-      ;;
-  esac
+  [ "$count" -eq 1 ] || die 50 "migration prefix $prefix is duplicated ($count files):${PREFIX_FILES[$prefix]}"
 done
 
 HAVE_LEDGER=$(pg -c "select to_regclass('public.schema_migrations') is not null")

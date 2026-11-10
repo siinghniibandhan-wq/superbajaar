@@ -6,10 +6,10 @@
 # 011 is not listed on purpose: the app checks duplicate mobile numbers itself,
 # so a problem with that index must not block a deploy.
 000_baseline_schema.sql
-009_loyalty_programme.sql
+001_loyalty_programme.sql
 009_product_availability_delivery.sql
 010_customer_accounts_referrals.sql
-012_product_category_assignments.sql
+008_product_category_assignments.sql
 012_variant_image_primary.sql
 013_product_deletion_audit.sql
 014_attribute_display_type.sql

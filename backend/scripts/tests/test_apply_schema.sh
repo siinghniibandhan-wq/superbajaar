@@ -129,23 +129,23 @@ check "duplicate prefix exit 50" "$(run "$T/s17")" 50
 check "duplicate prefix creates no backup" "$(dumps)" 0
 grep -q "migration prefix 001 is duplicated" "$T/out" && ok "duplicate prefix reason shown" || bad "duplicate prefix reason missing"
 
-echo "T18 third historical 009 file is rejected"
+echo "T18 duplicate 001 numbering is rejected"
 mkdir -p "$T/s18"
-printf "SELECT 1;\\n" > "$T/s18/009_loyalty_programme.sql"
-printf "SELECT 1;\\n" > "$T/s18/009_product_availability_delivery.sql"
-printf "SELECT 1;\\n" > "$T/s18/009_third_file.sql"
+printf "SELECT 1;\\n" > "$T/s18/001_loyalty_programme.sql"
+printf "SELECT 1;\\n" > "$T/s18/001_duplicate.sql"
 newdb
-check "third 009 exit 50" "$(run "$T/s18")" 50
-check "third 009 creates no backup" "$(dumps)" 0
+check "duplicate 001 exit 50" "$(run "$T/s18")" 50
+check "duplicate 001 creates no backup" "$(dumps)" 0
+grep -q "migration prefix 001 is duplicated" "$T/out" && ok "duplicate 001 reason shown" || bad "duplicate 001 reason missing"
 
-echo "T20 third historical 012 file is rejected"
+echo "T20 duplicate 008 numbering is rejected"
 mkdir -p "$T/s20"
-printf "SELECT 1;\\n" > "$T/s20/012_product_category_assignments.sql"
-printf "SELECT 1;\\n" > "$T/s20/012_variant_image_primary.sql"
-printf "SELECT 1;\\n" > "$T/s20/012_third_file.sql"
+printf "SELECT 1;\\n" > "$T/s20/008_product_category_assignments.sql"
+printf "SELECT 1;\\n" > "$T/s20/008_duplicate.sql"
 newdb
-check "third 012 exit 50" "$(run "$T/s20")" 50
-check "third 012 creates no backup" "$(dumps)" 0
+check "duplicate 008 exit 50" "$(run "$T/s20")" 50
+check "duplicate 008 creates no backup" "$(dumps)" 0
+grep -q "migration prefix 008 is duplicated" "$T/out" && ok "duplicate 008 reason shown" || bad "duplicate 008 reason missing"
 
 
 echo "T19 duplicate table names across schemas are rejected"
