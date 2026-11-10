@@ -70,7 +70,7 @@ sudo systemd-run --wait --pipe --collect --unit=sb-super-admin-provision \
   -p User=ubuntu \
   -p WorkingDirectory=/opt/superbajaar/source/backend \
   -p EnvironmentFile=/etc/superbajaar/backend.env \
-  /opt/superbajaar/backend/venv/bin/python scripts/provision_super_admin.py
+  /opt/superbajaar/source/backend/venv/bin/python scripts/provision_super_admin.py
 ```
 
 The command prints only the provisioned email and user ID, never the password.

@@ -36,7 +36,7 @@ The following values were returned by inspection of `superbajaar-backend.service
 | Service group | `ubuntu` |
 | Working directory | `/opt/superbajaar/source/backend` |
 | Environment file | `/etc/superbajaar/backend.env` |
-| Application executable | `/opt/superbajaar/backend/venv/bin/gunicorn` |
+| Application executable | `/opt/superbajaar/source/backend/venv/bin/gunicorn` |
 | ASGI application | `app.main:app` |
 | Worker class | `uvicorn.workers.UvicornWorker` |
 | Workers | `1` |
