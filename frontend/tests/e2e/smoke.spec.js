@@ -267,7 +267,7 @@ test("HR manager reviews overtime and it is included as an approved variable ear
   await expect(page.getByText("pending", { exact: true })).toBeVisible();
   expect(submitted).toMatchObject({
     earning_type: "overtime",
-    amount: 1500,
+    amount: "1500.00",
     hours: 10,
     hourly_rate: 150,
   });
