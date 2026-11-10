@@ -576,7 +576,7 @@ def get_return(return_id: int):
                 "AND (cl.expiry_date IS NULL OR cl.expiry_date>=CURRENT_DATE)),0) AS quarantine_releasable_quantity,"
                 "COALESCE((SELECT sum(m.quantity) FROM inventory_movements m "
                 "WHERE m.reference_type='fulfilment_return_quarantine_release' AND m.movement_type='transfer_out' "
-                "AND m.reference_id LIKE l.id::text || ':%'),0) AS quarantine_released_quantity "
+                "AND m.reference_id LIKE l.id::text || ':%%'),0) AS quarantine_released_quantity "
                 "FROM fulfilment_return_lines l JOIN product_variants v ON v.id=l.variant_id "
                 "JOIN products p ON p.id=v.product_id WHERE l.return_id=%s ORDER BY l.id",
                 (return_id,),
