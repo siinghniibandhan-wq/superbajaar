@@ -28,13 +28,15 @@ def permission_granted(permissions: dict, module: str, action: str) -> bool:
     return bool(permissions.get(module, {}).get(action, False))
 
 
-def _module_for_path(path: str) -> str | None:
-    segments = path.strip("/").split("/")
-    if len(segments) < 2 or segments[0] != "api":
+def _module_for_path(path: str, prefix: str = "/api") -> str | None:
+    """Resolve every staff API router using the configured API prefix."""
+    normalized_prefix = prefix.rstrip("/")
+    if not path.startswith(normalized_prefix + "/"):
         return None
-    route = segments[1]
+    remainder = path[len(normalized_prefix) + 1:]
+    route = remainder.split("/", 1)[0]
     aliases = {
-        "catalogue": "catalogue", "inventory": "inventory", "purchasing": "purchasing",
+        "catalogue": "catalogue", "inventory": "inventory", "inventory-locations": "inventory", "purchasing": "purchasing", "purchasing-lifecycle": "purchasing",
         "pos": "pos", "customers": "crm", "orders": "orders", "payments": "payments",
         "razorpay": "payments", "fulfilment": "fulfillment", "delivery": "delivery",
         "pricing": "pricing", "loyalty": "loyalty", "hr": "hr_payroll",
@@ -44,6 +46,11 @@ def _module_for_path(path: str) -> str | None:
 
 
 def _action_for_request(method: str, path: str) -> str:
+    """Translate workflow endpoints to granular actions before HTTP defaults."""
+    segments = path.rstrip("/").lower().split("/")
+    workflow_actions = {"approve": "approve", "award": "approve", "post": "approve", "dispatch": "approve", "credit": "approve", "export": "export", "configure": "configure", "settings": "configure"}
+    if any(segment in workflow_actions for segment in segments):
+        return next(workflow_actions[segment] for segment in reversed(segments) if segment in workflow_actions)
     if method in {"GET", "HEAD"}:
         return "read"
     if method == "DELETE":
@@ -195,13 +202,11 @@ async def require_active_session(request: Request) -> None:
     request.state.user_id = row["id"]
     request.state.user_email = row["email"]
 
-    module_key = _module_for_path(path)
+    module_key = _module_for_path(path, prefix)
     if module_key is None:
-        # Preserve the existing role policy for routes not yet represented in the
-        # permission catalogue. Map these routes before making them configurable.
-        if request.method not in {"GET", "HEAD"} and not _role_can_write(role, path):
-            raise HTTPException(status_code=403, detail="Your role does not have permission to change this resource")
-        return
+        # Every staff router must be represented in the permission catalogue.
+        # Unknown routes fail closed instead of inheriting broad role permissions.
+        raise HTTPException(status_code=403, detail="This API route has no configured permission mapping")
     action_key = _action_for_request(request.method, path)
     try:
         with psycopg.connect(settings.database_url, row_factory=dict_row, connect_timeout=3) as conn:
