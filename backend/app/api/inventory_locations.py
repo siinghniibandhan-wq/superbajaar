@@ -25,7 +25,7 @@ def _connect():
 
 def _require_inventory_admin(request: Request):
     role = getattr(request.state, "role", None)
-    if role not in {"owner", "admin", "manager"}:
+    if role not in {"super_admin", "admin", "manager"}:
         raise HTTPException(403, "Inventory manager permission is required")
 
 
