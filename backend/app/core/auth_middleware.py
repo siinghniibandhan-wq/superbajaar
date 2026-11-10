@@ -213,6 +213,11 @@ async def require_active_session(request: Request) -> None:
     if is_self_service_auth_route(request.method, path, prefix):
         return
 
+    # Portal routers perform their own supplier/employee row-level authorization.
+    # Authentication and active-session checks above still apply to every request.
+    if path.startswith((prefix + "/vendor-portal/", prefix + "/employee-portal/")):
+        return
+
     module_key = _module_for_path(path, prefix)
     if module_key is None:
         # Every staff router must be represented in the permission catalogue.
