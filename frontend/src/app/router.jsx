@@ -20,6 +20,7 @@ import ModuleDataOverview from "../features/shared/ModuleDataOverview.jsx";
 import { apiRequest, healthApi } from "../services/api.js";
 import LoginScreen from "./LoginScreen.jsx";
 import Storefront from "./Storefront.jsx";
+import { filterNavigationGroups } from "./moduleAccess.js";
 
 const groups = [
   { title: "Commerce", items: [
@@ -49,10 +50,11 @@ const groups = [
 ];
 const allItems = groups.flatMap(group => group.items);
 
-function ModuleLauncher({ onOpen }) {
+function ModuleLauncher({ onOpen, groups: visibleGroups }) {
   return <section className="sb-launcher">
     <div className="sb-intro"><p className="sb-eyebrow">SUPER BAJAAR · OPERATIONS</p><h1>Workspaces</h1><p>Each business function has its own workspace. Open only the module you need.</p></div>
-    {groups.map((group, index) => <section className="sb-module-group" key={group.title}>
+    {!visibleGroups.length && <p className="sb-empty">No workspaces have been assigned to this account yet. Ask your Super Admin to grant module access.</p>}
+    {visibleGroups.map((group, index) => <section className="sb-module-group" key={group.title}>
       <div className="sb-group-heading"><h2>{group.title}</h2><span>{group.items.length} modules</span></div>
       <div className="sb-grid">{group.items.map((item, i) => <button className="sb-tile" key={item.id} type="button" onClick={() => onOpen(item)}>
         <span className={`sb-tile-icon sb-tone-${(index + i) % 5}`}>{item.label.slice(0,1)}</span>
@@ -72,7 +74,7 @@ function UnavailableWorkspace({ item, onBack }) {
 }
 
 const workspaceRoutes = {
-  dashboard: ({ onOpen }) => <DashboardWorkspace onOpen={onOpen} />,
+  dashboard: ({ onOpen, permissions }) => <DashboardWorkspace onOpen={onOpen} permissions={permissions} />,
   catalogue: ({ onBack, currentUser }) => <><ModuleDataOverview moduleId="catalogue" /><CatalogueWorkspace onBack={onBack} currentUser={currentUser} /></>,
   pricing: ({ onBack }) => <PricingWorkspace onBack={onBack} />,
   orders: ({ onBack }) => <><ModuleDataOverview moduleId="orders" /><OrdersWorkspace onBack={onBack} /></>,
@@ -84,10 +86,10 @@ const workspaceRoutes = {
   pos: ({ onBack }) => <POSWorkspace onBack={onBack} />,
   customers: ({ onBack }) => <><ModuleDataOverview moduleId="customers" /><CustomersWorkspace onBack={onBack} /></>,
   loyalty: ({ onBack }) => <><ModuleDataOverview moduleId="loyalty" /><LoyaltyWorkspace onBack={onBack} /></>,
-  accounting: ({ onBack }) => <AccountingWorkspace onBack={onBack} />,
+  accounting: ({ onBack, currentUser }) => <AccountingWorkspace onBack={onBack} currentUser={currentUser} />,
   hr: ({ onBack, currentUser }) => <HRWorkspace onBack={onBack} currentUser={currentUser} />,
   reports: ({ onBack }) => <ReportsWorkspace onBack={onBack} />,
-  settings: ({ onBack, currentUser }) => <SettingsWorkspace onBack={onBack} currentUser={currentUser} />,
+  settings: ({ onBack, currentUser, permissions }) => <SettingsWorkspace onBack={onBack} currentUser={currentUser} permissions={permissions} />,
 };
 
 function AppShell() {
@@ -95,6 +97,9 @@ function AppShell() {
   const [apiStatus, setApiStatus] = useState("checking");
   const [user, setUser] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
+  const [permissions, setPermissions] = useState(null);
+  const [permissionsLoaded, setPermissionsLoaded] = useState(false);
+  const [permissionError, setPermissionError] = useState("");
   useEffect(() => {
     let active = true;
     healthApi.check().then(result => { if (active) setApiStatus(result?.status === "ok" ? "online" : "offline"); })
@@ -112,11 +117,30 @@ function AppShell() {
     }).finally(() => { if (active) setAuthChecked(true); });
     return () => { active = false; };
   }, []);
+  useEffect(() => {
+    if (!user?.id) {
+      setPermissions(null);
+      setPermissionsLoaded(false);
+      setPermissionError("");
+      return;
+    }
+    let active = true;
+    setPermissionsLoaded(false);
+    setPermissionError("");
+    apiRequest("/auth/my-permissions")
+      .then(result => { if (active) setPermissions(result.permissions || {}); })
+      .catch(error => { if (active) setPermissionError(error.message || "Unable to load module permissions."); })
+      .finally(() => { if (active) setPermissionsLoaded(true); });
+    return () => { active = false; };
+  }, [user?.id]);
   const statusText = { checking: "Checking API…", online: "Backend connected", offline: "Backend unavailable" };
-  const open = item => setSelected(item);
+  const visibleGroups = filterNavigationGroups(groups, permissions || {});
+  const visibleItems = visibleGroups.flatMap(group => group.items);
+  const visibleIds = new Set(visibleItems.map(item => item.id));
+  const open = item => { if (visibleIds.has(item.id)) setSelected(item); };
   const back = () => setSelected(null);
   const activeModule = selected?.id;
-  const openById = id => { const found = allItems.find(item => item.id === id); if (found) setSelected(found); };
+  const openById = id => { const found = visibleItems.find(item => item.id === id); if (found) setSelected(found); };
   const signOut = async () => {
     try { await apiRequest("/auth/logout", { method: "POST" }); } catch {}
     try { window.localStorage.removeItem("superbajaar.access_token"); } catch {}
@@ -125,13 +149,8 @@ function AppShell() {
   };
   if (!authChecked) return <main className="sb-login-page"><p>Checking sign-in…</p></main>;
   if (!user) return <LoginScreen onSignedIn={setUser} />;
-  const role = String(user.role || "").toLowerCase();
-  if (role === "manager") return <main className="sb-shell">
-    <header className="sb-header"><div className="sb-brand"><span className="sb-mark">S</span><span><strong>Super Bajaar</strong><small>HR Manager Workspace</small></span></div><div className="sb-header-actions"><span className="sb-user-label">{user.full_name || user.email}</span><button className="sb-signout" type="button" onClick={signOut}>Sign out</button></div></header>
-    <div className="sb-main-content"><HRWorkspace onBack={signOut} currentUser={user} /></div>
-    <footer>Super Bajaar · HR Manager Workspace · Backend port 8001 · PostgreSQL port 5432</footer>
-  </main>;
-  if (!["super_admin", "owner", "admin"].includes(role)) return <main className="sb-login-page"><section className="sb-login-card"><div className="sb-login-mark">S</div><p className="sb-eyebrow">SUPER BAJAAR · ACCESS CONTROL</p><h1>Admin access required</h1><p>Your account does not have permission to open the Admin Console.</p><button className="sb-primary" type="button" onClick={() => { window.location.assign("/"); }}>Return to storefront</button></section></main>;
+  if (!permissionsLoaded) return <main className="sb-login-page"><p>Loading your module access…</p></main>;
+  if (permissionError) return <main className="sb-login-page"><section className="sb-login-card" role="alert"><h1>Module access unavailable</h1><p>{permissionError}</p><button className="sb-primary" type="button" onClick={() => { setPermissionsLoaded(false); apiRequest("/auth/my-permissions").then(result => { setPermissions(result.permissions || {}); setPermissionError(""); }).catch(error => setPermissionError(error.message || "Unable to load module permissions.")).finally(() => setPermissionsLoaded(true)); }}>Retry</button><button type="button" onClick={signOut}>Sign out</button></section></main>;
   return <main className="sb-shell">
     <header className="sb-header">
       <button className="sb-brand" type="button" onClick={back} aria-label="Back to workspaces"><span className="sb-mark">S</span><span><strong>Super Bajaar</strong><small>Commerce & ERP</small></span></button>
@@ -140,13 +159,13 @@ function AppShell() {
     <div className="sb-app-layout">
       <aside className="sb-sidebar" aria-label="Module navigation">
         <button className={`sb-nav-home ${!selected ? "is-active" : ""}`} type="button" onClick={back}>⌂ <span>All workspaces</span></button>
-        {groups.map(group => <div className="sb-nav-group" key={group.title}><p>{group.title}</p>{group.items.map(item => <button key={item.id} type="button" className={`sb-nav-item ${activeModule === item.id ? "is-active" : ""}`} onClick={() => open(item)}><span>{item.label}</span></button>)}</div>)}
+        {visibleGroups.map(group => <div className="sb-nav-group" key={group.title}><p>{group.title}</p>{group.items.map(item => <button key={item.id} type="button" className={`sb-nav-item ${activeModule === item.id ? "is-active" : ""}`} onClick={() => open(item)}><span>{item.label}</span></button>)}</div>)}
       </aside>
       <div className="sb-main-content">
-        {selected ? (workspaceRoutes[selected.id]
-          ? workspaceRoutes[selected.id]({ item: selected, onBack: back, onOpen: openById, currentUser: user })
+        {selected && visibleIds.has(selected.id) ? (workspaceRoutes[selected.id]
+          ? workspaceRoutes[selected.id]({ item: selected, onBack: back, onOpen: openById, currentUser: user, permissions })
           : <UnavailableWorkspace item={selected} onBack={back} />)
-          : <ModuleLauncher onOpen={open} />}
+          : <ModuleLauncher onOpen={open} groups={visibleGroups} />}
       </div>
     </div>
     <footer>Super Bajaar · Separate module workspaces · Backend port 8001 · PostgreSQL port 5432</footer>

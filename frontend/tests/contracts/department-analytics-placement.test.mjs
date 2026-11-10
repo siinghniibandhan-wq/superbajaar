@@ -20,7 +20,7 @@ test('Inventory, CRM, POS, Accounting and HR expose analytics within their own w
 
 test('Master Dashboard remains a separate cross-module overview', () => {
   const dashboard = read('features/dashboard/DashboardWorkspace.jsx');
-  assert.match(router, /dashboard: \(\{ onOpen \}\) => <DashboardWorkspace/);
+  assert.match(router, /dashboard: \(\{ onOpen, permissions \}\) => <DashboardWorkspace onOpen=\{onOpen\} permissions=\{permissions\}/);
   assert.match(dashboard, /Department and module health/);
   assert.match(dashboard, /14 business modules/);
 });

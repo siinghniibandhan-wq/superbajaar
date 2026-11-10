@@ -310,7 +310,7 @@ def _effective_permissions(conn, user_id: int, role: str) -> dict:
     rows = conn.execute(
         """
         SELECT m.module_key, p.action_key,
-               COALESCE(up.allowed, rp.allowed, false) AS allowed
+               CASE WHEN r.name = 'super_admin' THEN true ELSE COALESCE(up.allowed, rp.allowed, false) END AS allowed
         FROM app_modules m CROSS JOIN app_permissions p
         JOIN app_roles r ON r.name = %s AND r.is_active = TRUE
         LEFT JOIN app_role_permissions rp
@@ -411,3 +411,14 @@ def update_user_permissions(user_id: int, payload: UserPermissionsUpdate, user=D
         raise
     except psycopg.Error as exc:
         raise HTTPException(503, "Unable to save user permissions; verify migration 036") from exc
+
+
+@router.get("/my-permissions")
+def my_permissions(user=Depends(current_user)):
+    """Return only the signed-in user's effective module grants for UI navigation."""
+    try:
+        with _connect() as conn:
+            permissions = _effective_permissions(conn, user["id"], user["role"])
+        return {"permissions": permissions}
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Unable to load your module permissions; verify migration 036") from exc

@@ -64,3 +64,27 @@ def test_admin_cannot_manage_admin_or_super_admin_accounts():
     assert not _can_manage_target_user("admin", "super_admin")
     assert _can_manage_target_user("super_admin", "admin")
     assert _can_manage_target_user("super_admin", "super_admin")
+
+
+def test_self_profile_and_permission_routes_are_available_without_user_management_grant():
+    from app.core.auth_middleware import is_self_service_auth_route
+
+    assert is_self_service_auth_route("GET", "/api/auth/me", "/api")
+    assert is_self_service_auth_route("GET", "/api/auth/my-permissions", "/api")
+    assert not is_self_service_auth_route("GET", "/api/auth/users", "/api")
+
+
+def test_my_permissions_returns_effective_grants_for_signed_in_user(monkeypatch):
+    from app.api import auth
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    monkeypatch.setattr(auth, "_connect", lambda: FakeConnection())
+    monkeypatch.setattr(auth, "_effective_permissions", lambda _conn, _user_id, _role: {"inventory": {"read": True}})
+    result = auth.my_permissions({"id": 1, "role": "super_admin"})
+    assert result == {"permissions": {"inventory": {"read": True}}}
