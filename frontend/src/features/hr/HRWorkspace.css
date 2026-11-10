@@ -225,3 +225,5 @@
 @media(max-width:560px){.hr-org-reports{grid-template-columns:repeat(2,minmax(0,1fr))}.hr-org-ceo{min-width:180px}}
 
 .hr-payslips-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.hr-payslips-heading h2{margin:0;font:700 19px Lato,sans-serif;letter-spacing:-.35px}
+
+.hr-salary-history{margin-top:18px}.hr-salary-history>p{color:var(--muted,#667085);font-size:13px;line-height:1.5}.hr-salary-history .hr-form label.hr-span-all{grid-column:1/-1}.hr-salary-history .hr-form textarea{min-height:84px;resize:vertical}.hr-salary-history .hr-payslips-heading{margin-bottom:10px}
