@@ -58,6 +58,15 @@ class DispatchNoticeInput(BaseModel):
     notes: str | None = Field(default=None, max_length=1000)
 
 
+def _matches_document_signature(content_type: str, content: bytes) -> bool:
+    signatures = {
+        "application/pdf": content.startswith(b"%PDF-"),
+        "image/jpeg": content.startswith(bytes((0xFF, 0xD8, 0xFF))),
+        "image/png": content.startswith(bytes((0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A))),
+    }
+    return signatures.get(content_type, False)
+
+
 class InvoiceInput(BaseModel):
     purchase_order_id: int = Field(gt=0)
     supplier_gstin: str | None = Field(default=None, min_length=15, max_length=15)
@@ -112,12 +121,7 @@ async def upload_vendor_document(request: Request, file: UploadFile = File(...))
         content = await file.read(10 * 1024 * 1024 + 1)
         if not content or len(content) > 10 * 1024 * 1024:
             raise HTTPException(413, "Document must be between 1 byte and 10 MB")
-        signatures = {
-            "application/pdf": content.startswith(b"%PDF-"),
-            "image/jpeg": content.startswith(b"\\xff\\xd8\\xff"),
-            "image/png": content.startswith(b"\\x89PNG\\r\\n\\x1a\\n"),
-        }
-        if not signatures.get(file.content_type, False):
+        if not _matches_document_signature(file.content_type, content):
             raise HTTPException(415, "The uploaded file content does not match its declared document type")
         extension = {"application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png"}[file.content_type]
         key = f"vendor-invoices/{vendor['supplier_id']}/{uuid.uuid4().hex}.{extension}"
