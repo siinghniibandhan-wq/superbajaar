@@ -1,0 +1,35 @@
+# Database files this release of the code REQUIRES.
+# The deploy may go ahead even if other schema files failed, but never if one of these is missing.
+# Claude is the default author; scoped owner-authorized exceptions must be recorded in the PR.
+# Rule: when application code starts using a table or column
+# from a schema file, that file is added here in the same pull request.
+# 011 is not listed on purpose: the app checks duplicate mobile numbers itself,
+# so a problem with that index must not block a deploy.
+000_baseline_schema.sql
+009_loyalty_programme.sql
+009_product_availability_delivery.sql
+010_customer_accounts_referrals.sql
+012_product_category_assignments.sql
+012_variant_image_primary.sql
+013_product_deletion_audit.sql
+014_attribute_display_type.sql
+015_accounting_ledger.sql
+016_product_attribute_custom_options.sql
+017_purchasing_lifecycle.sql
+018_inventory_cost_layers.sql
+019_inventory_batch_provenance.sql
+020_hr_workforce_payroll.sql
+021_crm_support_workspace.sql
+022_hr_statutory_payroll_policies.sql
+023_accounting_event_mapping_registry.sql
+024_hr_payroll_accounting_accrual_link.sql
+025_organisation_policy_foundation.sql
+026_inventory_event_approvals.sql
+027_inventory_approval_immutability.sql
+028_super_coins_checkout_redemption.sql
+030_super_coins_loyalty_permissions.sql
+031_warehouse_fulfilment_operations.sql
+032_fulfilment_returns_and_split_dispatch.sql
+033_razorpay_webhook_inbox.sql
+034_hr_scheduling_leave_lifecycle.sql
+035_inventory_facility_internal_locations.sql
