@@ -8,7 +8,8 @@
     "build": "vite build && node scripts/generate-seo-assets.mjs",
     "preview": "vite preview --host 0.0.0.0 --port 4173",
     "test:e2e": "playwright test",
-    "test:routes": "node scripts/check-admin-routes.mjs"
+    "test:routes": "node scripts/check-admin-routes.mjs",
+    "test:unit": "node --test tests/unit tests/contracts"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

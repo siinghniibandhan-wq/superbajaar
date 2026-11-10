@@ -70,6 +70,27 @@ jobs:
           PYTHONDONTWRITEBYTECODE: '1'
         run: python -m pytest tests/test_*.py -q --strict-markers --strict-config
 
+  frontend-tests:
+    name: Frontend unit and contract tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Run unit and contract tests
+        run: npm run test:unit
+      - name: Verify admin navigation routes
+        run: npm run test:routes
+
   frontend-builds:
     name: Frontend build (${{ matrix.directory }})
     runs-on: ubuntu-24.04

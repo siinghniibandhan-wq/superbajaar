@@ -133,3 +133,23 @@ def test_tds_rejects_missing_or_incomplete_slab_schedule():
         calculate_component("tds", policy("tds", {"enabled": True, "regimes": {"new": {"months_remaining": 12, "slabs": []}}}), {"gross": "100000", "tds_regime": "new"})
     with pytest.raises(StatutoryPolicyError, match="do not cover"):
         calculate_component("tds", policy("tds", {"enabled": True, "regimes": {"new": {"months_remaining": 12, "slabs": [{"lower_limit": "0", "upper_limit": "500000", "rate": "5"}]}}}), {"gross": "100000", "tds_regime": "new"})
+
+def test_readiness_ignores_draft_future_and_expired_policy_versions():
+    from app.services.hr_statutory_payroll import assess_policy_readiness
+    policies = [
+        policy("pf", {"enabled": False}, effective_from=date(2026, 1, 1), effective_to=date(2026, 9, 30)),
+        policy("esi", {"enabled": False}, status="draft"),
+        policy("pt", {"enabled": False}, effective_from=date(2026, 12, 1)),
+        policy("tds", {"enabled": False}),
+    ]
+    result = assess_policy_readiness(policies, date(2026, 11, 1))
+    assert result["ready"] is False
+    assert result["missing_components"] == ["pf", "esi", "pt"]
+    assert result["duplicate_components"] == []
+
+
+def test_readiness_accepts_one_effective_disabled_policy_per_component():
+    from app.services.hr_statutory_payroll import assess_policy_readiness
+    policies = [policy(component, {"enabled": False}) for component in ("pf", "esi", "pt", "tds")]
+    result = assess_policy_readiness(policies, date(2026, 11, 1))
+    assert result == {"ready": True, "missing_components": [], "duplicate_components": []}

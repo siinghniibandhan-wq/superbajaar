@@ -177,4 +177,41 @@ def calculate_statutory_payroll(policies: list[dict[str, Any]], employee_inputs:
             duplicates.append(component)
             continue
         results.append(calculate_component(component, matches[0], employee_inputs))
-    return {"components": results, "missing_components": missing, "duplicate_components": duplicates}
+    employee_total = money(sum((item["employee_amount"] for item in results), Decimal("0")))
+    employer_total = money(sum((item["employer_amount"] for item in results), Decimal("0")))
+    return {
+        "components": results,
+        "missing_components": missing,
+        "duplicate_components": duplicates,
+        "employee_deductions_total": employee_total,
+        "employer_contributions_total": employer_total,
+    }
+
+
+def assess_policy_readiness(policies: list[dict[str, Any]], as_of: date) -> dict[str, Any]:
+    """Check that each statutory component has exactly one approved effective policy.
+
+    Disabled policies count as configured: a business may explicitly configure a
+    component as disabled. Missing, draft, future, expired, or overlapping policy
+    versions never count as ready.
+    """
+    missing: list[str] = []
+    duplicates: list[str] = []
+    for component in COMPONENTS:
+        matches = [
+            policy for policy in policies
+            if policy.get("component") == component
+            and policy.get("status") == "approved"
+            and policy.get("effective_from") is not None
+            and policy["effective_from"] <= as_of
+            and (policy.get("effective_to") is None or policy["effective_to"] >= as_of)
+        ]
+        if not matches:
+            missing.append(component)
+        elif len(matches) > 1:
+            duplicates.append(component)
+    return {
+        "ready": not missing and not duplicates,
+        "missing_components": missing,
+        "duplicate_components": duplicates,
+    }
