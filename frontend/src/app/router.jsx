@@ -131,7 +131,7 @@ function AppShell() {
     <div className="sb-main-content"><HRWorkspace onBack={signOut} currentUser={user} /></div>
     <footer>Super Bajaar · HR Manager Workspace · Backend port 8001 · PostgreSQL port 5432</footer>
   </main>;
-  if (!["owner", "admin"].includes(role)) return <main className="sb-login-page"><section className="sb-login-card"><div className="sb-login-mark">S</div><p className="sb-eyebrow">SUPER BAJAAR · ACCESS CONTROL</p><h1>Admin access required</h1><p>Your account does not have permission to open the Admin Console.</p><button className="sb-primary" type="button" onClick={() => { window.location.assign("/"); }}>Return to storefront</button></section></main>;
+  if (!["super_admin", "owner", "admin"].includes(role)) return <main className="sb-login-page"><section className="sb-login-card"><div className="sb-login-mark">S</div><p className="sb-eyebrow">SUPER BAJAAR · ACCESS CONTROL</p><h1>Admin access required</h1><p>Your account does not have permission to open the Admin Console.</p><button className="sb-primary" type="button" onClick={() => { window.location.assign("/"); }}>Return to storefront</button></section></main>;
   return <main className="sb-shell">
     <header className="sb-header">
       <button className="sb-brand" type="button" onClick={back} aria-label="Back to workspaces"><span className="sb-mark">S</span><span><strong>Super Bajaar</strong><small>Commerce & ERP</small></span></button>
