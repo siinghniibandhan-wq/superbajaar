@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from app.api.hr import EmployeeInput, LeaveInput, PayrollRunInput, ReviewInput
+from app.api.hr import EmployeeInput, LeaveInput, PayrollRunInput, ReviewInput, SalaryRevisionInput
 from app.main import app
 
 client = TestClient(app)
@@ -132,4 +132,27 @@ def test_hr_shift_assignment_requires_timezone_aware_ordered_timestamps():
             employee_id=1,shift_definition_id=1,work_date="2026-11-01",
             planned_start_at="2026-11-01T18:00:00+05:30",
             planned_end_at="2026-11-01T09:00:00+05:30"
+        )
+
+
+def test_hr_salary_revision_requires_a_reason_and_valid_effective_range():
+    with pytest.raises(ValidationError, match="Salary revision reason"):
+        SalaryRevisionInput(
+            effective_from="2026-12-01", basic_salary=30000, hra=12000,
+            special_allowance=5000, other_allowance=1000, reason="  "
+        )
+
+    with pytest.raises(ValidationError, match="Salary revision end date"):
+        SalaryRevisionInput(
+            effective_from="2026-12-01", effective_to="2026-11-30",
+            basic_salary=30000, hra=12000, special_allowance=5000,
+            other_allowance=1000, reason="Annual revision"
+        )
+
+
+def test_hr_salary_revision_rejects_negative_components():
+    with pytest.raises(ValidationError):
+        SalaryRevisionInput(
+            effective_from="2026-12-01", basic_salary=-1, hra=0,
+            special_allowance=0, other_allowance=0, reason="Annual revision"
         )
