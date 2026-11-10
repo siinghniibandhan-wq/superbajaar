@@ -1,6 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiRequest } from "../../services/api.js";
 import { todayHRDate } from "./hrDateTime.js";
+import { exportStatutoryRemittancesCsv } from "./hrStatutoryExport.js";
+
+function downloadRemittanceRegister(items) {
+  const blob = new Blob([exportStatutoryRemittancesCsv(items)], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "hr-statutory-remittance-register.csv";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
 
 const emptyEstablishment = {code:"",legal_name:"",display_name:"",state_code:"",address:{},registrations:{}};
 const emptyPolicy = {establishment_id:"",component:"pf",version_label:"",effective_from:todayHRDate(),effective_to:"",review_due_on:"",policy_config:'{"enabled":false}',source_references:"[]"};
@@ -137,7 +150,8 @@ export default function HRStatutoryPolicies() {
     <p>Employee-level applicability overrides are explicit and audited. Keep declarations and previous-employer figures current for the applicable tax year; only fields supported by the approved policy calculation are used in payroll.</p>
     </details>
     <details id="hr-compliance-remittances" className="hr-compliance-section" open><summary>Remittances & challans</summary>
-    <p>Generate remittance obligations from approved payroll snapshots, link the exact posted payment voucher, then record the challan reference after filing.</p>
+    <p>Generate remittance obligations from approved payroll snapshots, link the exact posted payment voucher, then record the challan reference after filing. This register is a reconciliation aid, not a substitute for the prescribed portal return or challan.</p>
+    <button type="button" className="secondary" disabled={!remittances.length} onClick={()=>downloadRemittanceRegister(remittances)}>Export remittance register CSV</button>
     <div className="hr-table-wrap"><table><thead><tr><th>Payroll period</th><th>Component</th><th>Establishment</th><th>Employee / employer</th><th>Total</th><th>Status</th><th>Action</th></tr></thead><tbody>
       {remittances.map(r=><tr key={r.id}><td>{r.period_start} – {r.period_end}</td><td>{r.component.toUpperCase()}</td><td>{r.display_name} · {r.state_code}</td><td>{r.employee_amount} / {r.employer_amount}</td><td>{r.total_amount}</td><td>{r.status}{r.challan_reference&&<small>Challan: {r.challan_reference}</small>}</td><td>
         {r.status==="pending"&&<><input aria-label={"Payment voucher for remittance "+r.id} type="number" placeholder="Posted payment voucher ID" value={voucherIds[r.id]||""} onChange={e=>setVoucherIds({...voucherIds,[r.id]:e.target.value})}/><button disabled={busy||!voucherIds[r.id]} onClick={()=>act(()=>post("/hr/statutory/remittances/"+r.id+"/pay",{accounting_voucher_id:Number(voucherIds[r.id])}),"Remittance payment linked.")}>Mark paid</button></>}
