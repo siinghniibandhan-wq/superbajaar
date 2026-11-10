@@ -17,6 +17,8 @@ test("inventory releases only inspected quarantined GRN quantity through the con
     if (["/api/inventory/balances", "/api/inventory/movements", "/api/inventory/cost-layers", "/api/inventory/cost-layer-reconciliation", "/api/inventory/approval-requests"].includes(url.pathname)) return route.fulfill({ json: { items: [] } });
     if (url.pathname === "/api/inventory/overview") return route.fulfill({ json: { totals: {}, movement_groups: [], stock_by_location: [] } });
     if (url.pathname === "/api/hr/establishments") return route.fulfill({ json: { items: [{ id: 4, display_name: "Super Bajaar Bihar", code: "SB-BR" }] } });
+    if (url.pathname === "/api/inventory/internal-locations") return route.fulfill({ json: { items: [] } });
+    if (url.pathname === "/api/inventory/expired-stock") return route.fulfill({ json: { items: [] } });
     if (url.pathname === "/api/fulfilment/returns") return route.fulfill({ json: { items: [] } });
     if (url.pathname === "/api/purchasing/grns" && url.searchParams.get("quarantined_only") === "true") return route.fulfill({ json: { items: quarantineQuantity === "0.000" ? [] : [{ id: 33, grn_number: "GRN-33", purchase_number: "PO-33", supplier_name: "North Star Supplies", status: "partially_accepted", quarantined_quantity: quarantineQuantity }] } });
     if (url.pathname === "/api/purchasing/grns/33" && method === "GET") return route.fulfill({ json: { id: 33, grn_number: "GRN-33", status: "partially_accepted", lines: [{ id: 44, product_name: "Wheat Flour 5kg", sku: "WF-5KG", received_quantity: "6.000", accepted_quantity: acceptedQuantity, quarantined_quantity: quarantineQuantity, damaged_quantity: "0.000", rejected_quantity: "0.000", batch_code: "B-33", expiry_date: "2027-12-31", unit_cost: "210.00" }] } });

@@ -117,6 +117,7 @@ test("approved requisition can be sourced through RFQ, quotation and draft PO aw
   await page.getByLabel("Unit price ₹").fill("205");
   await page.getByRole("button", { name: "Record quotation" }).click();
   await expect(page.getByText("Q-71 · North Star Supplies")).toBeVisible();
+  page.once("dialog", dialog => dialog.accept());
   await page.getByRole("button", { name: "Award & create draft PO" }).click();
   await expect(page.getByText(/Quotation awarded\. Draft PO PO-81 created and still requires purchase approval\./)).toBeVisible();
   expect(writes.find(write => write.path === "/api/purchasing/rfqs" && write.method === "POST")?.body).toMatchObject({ requisition_id: 51, supplier_ids: [5] });

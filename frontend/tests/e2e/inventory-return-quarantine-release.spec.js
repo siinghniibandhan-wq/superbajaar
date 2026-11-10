@@ -20,6 +20,8 @@ test("inventory releases inspected customer-return quarantine stock to a same-es
     if (["/api/inventory/balances", "/api/inventory/movements", "/api/inventory/cost-layers", "/api/inventory/cost-layer-reconciliation", "/api/inventory/approval-requests"].includes(url.pathname)) return route.fulfill({ json: { items: [] } });
     if (url.pathname === "/api/inventory/overview") return route.fulfill({ json: { totals: {}, movement_groups: [], stock_by_location: [] } });
     if (url.pathname === "/api/hr/establishments") return route.fulfill({ json: { items: [{ id: 4, display_name: "Super Bajaar Bihar", code: "SB-BR" }] } });
+    if (url.pathname === "/api/inventory/internal-locations") return route.fulfill({ json: { items: [] } });
+    if (url.pathname === "/api/inventory/expired-stock") return route.fulfill({ json: { items: [] } });
     if (url.pathname === "/api/fulfilment/returns") return route.fulfill({ json: { items: [{ id: 22, return_number: "RET-22", order_number: "SB-ORDER-22", shipment_reference: "SHP-22", line_count: 1, status: "closed" }] } });
     if (url.pathname === "/api/purchasing/grns") return route.fulfill({ json: { items: [] } });
     if (url.pathname === "/api/fulfilment/returns/22" && method === "GET") return route.fulfill({ json: {

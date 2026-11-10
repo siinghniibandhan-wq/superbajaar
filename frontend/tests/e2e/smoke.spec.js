@@ -371,6 +371,7 @@ test("management analytics dashboard renders real module summaries and section v
     if (path === "/api/catalogue/products") return route.fulfill({ json: { items: [{ id: 1, name: "Rice", status: "active" }] } });
     if (path === "/api/catalogue/variants") return route.fulfill({ json: { items: [{ id: 1, sku: "RICE-1" }] } });
     if (path === "/api/inventory/balances") return route.fulfill({ json: { items: [{ id: 1, location_id: 2, location_name: "Main Warehouse", on_hand: 12 }] } });
+    if (path === "/api/reports/overview") return route.fulfill({ json: { orders: { order_count: 1, active_order_value: 1200 }, payments: { captured_count: 1, captured_amount: 1200 }, catalogue: { active_products: 1 }, order_statuses: [{ status: "confirmed", count: 1 }] } });
     if (path === "/api/orders") return route.fulfill({ json: { items: [{ id: 9, order_number: "SB-9", status: "confirmed", total: 1200, created_at: new Date().toISOString() }] } });
     if (path === "/api/payments") return route.fulfill({ json: { items: [{ id: 3, amount: 1200, status: "captured", created_at: new Date().toISOString() }] } });
     if (path === "/api/customers") return route.fulfill({ json: { items: [{ id: 5, name: "Test Customer", is_active: true }] } });
@@ -491,6 +492,7 @@ test("inventory workspace exposes its Overview section with live stock and contr
     if (path === "/api/inventory/cost-layers") return route.fulfill({ json: { items: [{ id: 1 }, { id: 2 }] } });
     if (path === "/api/inventory/cost-layer-reconciliation") return route.fulfill({ json: { items: [{ id: 1, status: "mismatch" }] } });
     if (path === "/api/inventory/approval-requests") return route.fulfill({ json: { items: [{ id: 1, status: "pending" }, { id: 2, status: "approved" }] } });
+    if (path === "/api/inventory/overview") return route.fulfill({ json: { totals: { on_hand: 17, reserved: 3, available: 14, movements: 3, pending_approvals: 1, active_cost_layers: 2 }, movement_groups: [{ movement_type: "receipt", total: 1 }, { movement_type: "issue", total: 1 }, { movement_type: "transfer", total: 1 }], stock_by_location: [{ location_id: 1, location_name: "Main Warehouse", on_hand: 12 }, { location_id: 2, location_name: "Dark Store", on_hand: 5 }] } });
     return route.fulfill({ json: { items: [] } });
   });
 
