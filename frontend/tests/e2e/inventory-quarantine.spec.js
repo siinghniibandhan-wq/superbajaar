@@ -44,5 +44,5 @@ test("inventory releases only inspected quarantined GRN quantity through the con
   await expect(page.getByText(/Quarantined quantity released to saleable stock/)).toBeVisible();
   expect(writes[0].body.lines).toEqual([{ goods_receipt_line_id: 44, quantity: 1.5, reason: "QC verified and released" }]);
   expect(writes[0].body.idempotency_key).toBeTruthy();
-  await expect(page.getByText("2.500", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Quarantined 2\.500/)).toBeVisible();
 });

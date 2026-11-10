@@ -371,6 +371,7 @@ test("management analytics dashboard renders real module summaries and section v
     if (path === "/api/catalogue/products") return route.fulfill({ json: { items: [{ id: 1, name: "Rice", status: "active" }] } });
     if (path === "/api/catalogue/variants") return route.fulfill({ json: { items: [{ id: 1, sku: "RICE-1" }] } });
     if (path === "/api/inventory/balances") return route.fulfill({ json: { items: [{ id: 1, location_id: 2, location_name: "Main Warehouse", on_hand: 12 }] } });
+    if (path === "/api/inventory/overview") return route.fulfill({ json: { totals: { on_hand: 12, low_stock_rows: 0, out_of_stock_rows: 0 }, stock_by_location: [{ location_id: 2, location_name: "Main Warehouse", on_hand: 12 }], movement_groups: [] } });
     if (path === "/api/reports/overview") return route.fulfill({ json: { orders: { order_count: 1, active_order_value: 1200 }, payments: { captured_count: 1, captured_amount: 1200 }, catalogue: { active_products: 1 }, order_statuses: [{ status: "confirmed", count: 1 }] } });
     if (path === "/api/orders") return route.fulfill({ json: { items: [{ id: 9, order_number: "SB-9", status: "confirmed", total: 1200, created_at: new Date().toISOString() }] } });
     if (path === "/api/payments") return route.fulfill({ json: { items: [{ id: 3, amount: 1200, status: "captured", created_at: new Date().toISOString() }] } });
