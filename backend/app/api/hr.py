@@ -821,6 +821,83 @@ def review_expense(expense_id:int,payload:ReviewInput,request:Request):
         raise _db_error(exc) from exc
 
 
+@router.get("/payroll/earning-adjustments")
+def list_payroll_earning_adjustments(request: Request, limit: int = Query(250, ge=1, le=1000)):
+    _manager(request)
+    try:
+        with _hr_connection() as conn:
+            return {"items": conn.execute(
+                "SELECT a.*,e.employee_code,e.first_name,e.last_name FROM hr_payroll_earning_adjustments a "
+                "JOIN hr_employees e ON e.id=a.employee_id "
+                "ORDER BY a.period_start DESC,e.employee_code,a.created_at DESC LIMIT %s", (limit,)
+            ).fetchall()}
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.post("/employees/{employee_id}/earning-adjustments", status_code=201)
+def create_payroll_earning_adjustment(employee_id: int, payload: PayrollEarningInput, request: Request):
+    actor = _manager(request)
+    try:
+        with _hr_connection() as conn:
+            employee = conn.execute("SELECT id FROM hr_employees WHERE id=%s FOR UPDATE", (employee_id,)).fetchone()
+            if employee is None:
+                raise HTTPException(404, "Employee not found")
+            closed = conn.execute(
+                "SELECT id FROM hr_payroll_runs WHERE period_start=%s AND period_end=%s "
+                "AND status IN ('approved','paid') LIMIT 1",
+                (payload.period_start,payload.period_end),
+            ).fetchone()
+            if closed:
+                raise HTTPException(409, "Earnings cannot be added after the period payroll is approved or paid")
+            return conn.execute(
+                "INSERT INTO hr_payroll_earning_adjustments(employee_id,earning_type,period_start,period_end,"
+                "amount,hours,hourly_rate,reason,created_by_user_id) "
+                "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                "RETURNING id,employee_id,earning_type,period_start,period_end,amount,hours,hourly_rate,reason,status,created_at",
+                (employee_id,payload.earning_type,payload.period_start,payload.period_end,payload.amount,
+                 payload.hours,payload.hourly_rate,payload.reason,actor),
+            ).fetchone()
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.post("/payroll/earning-adjustments/{adjustment_id}/review")
+def review_payroll_earning_adjustment(adjustment_id: int, payload: PayrollApprovalInput, request: Request):
+    actor = _manager(request)
+    try:
+        with _hr_connection() as conn:
+            adjustment = conn.execute(
+                "SELECT * FROM hr_payroll_earning_adjustments WHERE id=%s FOR UPDATE",
+                (adjustment_id,),
+            ).fetchone()
+            if adjustment is None:
+                raise HTTPException(404, "Payroll earning adjustment not found")
+            if adjustment["status"] != "pending":
+                raise HTTPException(409, "Only pending payroll earning adjustments can be reviewed")
+            closed = conn.execute(
+                "SELECT id FROM hr_payroll_runs WHERE period_start=%s AND period_end=%s "
+                "AND status IN ('approved','paid') LIMIT 1",
+                (adjustment["period_start"],adjustment["period_end"]),
+            ).fetchone()
+            if closed:
+                raise HTTPException(409, "The period payroll is already approved or paid")
+            status = "approved" if payload.decision == "approved" else "rejected"
+            return conn.execute(
+                "UPDATE hr_payroll_earning_adjustments SET status=%s,review_note=%s,"
+                "reviewed_by_user_id=%s,reviewed_at=now(),updated_at=now() WHERE id=%s "
+                "RETURNING id,employee_id,earning_type,period_start,period_end,amount,hours,hourly_rate,"
+                "reason,status,review_note,reviewed_by_user_id,reviewed_at",
+                (status,payload.note,actor,adjustment_id),
+            ).fetchone()
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
 @router.get("/payroll/runs")
 def list_payroll_runs(request: Request):
     _manager(request)
