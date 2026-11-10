@@ -276,6 +276,8 @@ def update_user(user_id: int, payload: UserUpdate, user=Depends(current_user)):
                 target = conn.execute("SELECT id,role,is_active FROM app_users WHERE id=%s FOR UPDATE", (user_id,)).fetchone()
                 if target is None:
                     raise HTTPException(404, "User not found")
+                if target["role"] in {"super_admin", "admin"} and user["role"] != "super_admin":
+                    raise HTTPException(403, "Only Super Admin can modify Admin or Super Admin accounts")
                 next_role = payload.role if payload.role is not None else target["role"]
                 next_active = payload.is_active if payload.is_active is not None else target["is_active"]
                 if target["role"] == "super_admin" and (next_role != target["role"] or not next_active):
@@ -395,6 +397,9 @@ def update_user_permissions(user_id: int, payload: UserPermissionsUpdate, user=D
                 authority = _effective_permissions(conn, user["id"], user["role"])
                 if not can_manage_all_permissions(user["role"]) and not permissions_within_authority(payload.permissions, authority):
                     raise HTTPException(403, "You cannot grant permissions you do not hold")
+                # PUT replaces the complete set of user overrides; omitted grants
+                # revert to the target role's defaults instead of lingering silently.
+                conn.execute("DELETE FROM app_user_module_permissions WHERE user_id=%s", (user_id,))
                 _save_user_permissions(conn, user_id, payload.permissions, user["id"])
                 return {"permissions": _effective_permissions(conn, user_id, target["role"])}
     except HTTPException:
