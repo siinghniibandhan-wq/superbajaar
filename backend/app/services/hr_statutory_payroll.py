@@ -180,7 +180,7 @@ def calculate_statutory_payroll(policies: list[dict[str, Any]], employee_inputs:
     employee_total = money(sum((item["employee_amount"] for item in results), Decimal("0")))
     employer_total = money(sum((item["employer_amount"] for item in results), Decimal("0")))
     return {
-        "components": results,
+        "components": {item["component"]: item for item in results},
         "missing_components": missing,
         "duplicate_components": duplicates,
         "employee_deductions_total": employee_total,

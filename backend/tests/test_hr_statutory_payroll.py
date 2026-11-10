@@ -153,3 +153,15 @@ def test_readiness_accepts_one_effective_disabled_policy_per_component():
     policies = [policy(component, {"enabled": False}) for component in ("pf", "esi", "pt", "tds")]
     result = assess_policy_readiness(policies, date(2026, 11, 1))
     assert result == {"ready": True, "missing_components": [], "duplicate_components": []}
+
+
+def test_calculation_components_are_keyed_by_component_for_api_contract():
+    policies = [
+        policy("pf", {"enabled": False}),
+        policy("esi", {"enabled": False}),
+        policy("pt", {"enabled": False}),
+        policy("tds", {"enabled": False}),
+    ]
+    result = calculate_statutory_payroll(policies, {}, date(2026, 11, 1))
+    assert set(result["components"]) == {"pf", "esi", "pt", "tds"}
+    assert result["components"]["pf"]["enabled"] is False

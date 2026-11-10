@@ -310,6 +310,8 @@ def _signed_in_customer_email(conn, request: Request) -> str:
 @router.get("/orders")
 def my_orders(request: Request, limit: int = 50, offset: int = 0):
     """Orders placed by the signed-in customer only (matched on the verified account email)."""
+    if not getattr(request.state, "customer_id", None):
+        raise HTTPException(status_code=401, detail="Customer sign-in required")
     limit = max(1, min(int(limit), 100))
     offset = max(0, int(offset))
     try:
@@ -333,6 +335,8 @@ def my_orders(request: Request, limit: int = 50, offset: int = 0):
 @router.get("/orders/{order_number}")
 def my_order_detail(order_number: str, request: Request):
     """One order with its items and delivery progress, only if it belongs to the signed-in customer."""
+    if not getattr(request.state, "customer_id", None):
+        raise HTTPException(status_code=401, detail="Customer sign-in required")
     try:
         with _connect() as conn:
             email = _signed_in_customer_email(conn, request)
