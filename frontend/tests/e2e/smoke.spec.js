@@ -617,6 +617,7 @@ test("inventory workspace exposes its Overview section with live stock and contr
 test("HR staff can view their own payslips in employee self-service", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("superbajaar.access_token", "employee-test-token");
+    window.print = () => { window.__sbPrintCalled = true; };
   });
   await page.route("**/api/**", async route => {
     const url = new URL(route.request().url());
