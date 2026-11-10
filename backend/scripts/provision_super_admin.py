@@ -1,20 +1,94 @@
 """Secure, operator-run provisioning of the first Super Admin.
 
-Run from backend/ after applying required schema:
+Interactive use:
     python scripts/provision_super_admin.py
 
-The email is read from SB_SUPER_ADMIN_EMAIL; the password is entered
-interactively and is never accepted from command-line arguments or logged.
+Non-interactive AWS SSM Run Command use:
+    Set SB_SUPER_ADMIN_FULL_NAME and SB_SUPER_ADMIN_PASSWORD_PARAMETER.
+    The parameter must be an AWS Systems Manager Parameter Store SecureString.
+    The EC2 instance role needs ssm:GetParameter and ssm:DeleteParameter.
+    The one-time parameter is deleted only after the database transaction commits.
+
+The password is never accepted in command-line arguments, environment variables,
+or logs. In non-interactive execution it is retrieved directly from Parameter
+Store with decryption enabled.
 """
 import getpass
 import os
 import re
 import sys
 
+import boto3
 import psycopg
+from botocore.exceptions import BotoCoreError, ClientError
 from psycopg.rows import dict_row
 
 from app.api.auth import _password_hash
+
+
+class ProvisioningInputError(Exception):
+    """Raised when secure operator input is unavailable or invalid."""
+
+
+def _read_full_name() -> str:
+    full_name = os.environ.get("SB_SUPER_ADMIN_FULL_NAME", "").strip()
+    if full_name:
+        return full_name
+    if not sys.stdin.isatty():
+        raise ProvisioningInputError(
+            "Non-interactive provisioning requires SB_SUPER_ADMIN_FULL_NAME."
+        )
+    try:
+        return input("Super Admin full name: ").strip()
+    except EOFError as exc:
+        raise ProvisioningInputError(
+            "No interactive input is available. Set SB_SUPER_ADMIN_FULL_NAME."
+        ) from exc
+
+
+def _read_password() -> tuple[str, object | None, str | None]:
+    parameter_name = os.environ.get("SB_SUPER_ADMIN_PASSWORD_PARAMETER", "").strip()
+    if parameter_name:
+        try:
+            ssm = boto3.client("ssm")
+            response = ssm.get_parameter(Name=parameter_name, WithDecryption=True)
+        except (BotoCoreError, ClientError) as exc:
+            raise ProvisioningInputError(
+                "Unable to retrieve the Super Admin password from Parameter Store. "
+                "Check the parameter name, AWS region, and EC2 role permissions."
+            ) from exc
+
+        parameter = response.get("Parameter", {})
+        if parameter.get("Type") != "SecureString":
+            raise ProvisioningInputError(
+                "SB_SUPER_ADMIN_PASSWORD_PARAMETER must reference a SecureString parameter."
+            )
+        password = parameter.get("Value", "")
+        if len(password) < 12:
+            raise ProvisioningInputError(
+                "The SecureString password must contain at least 12 characters."
+            )
+        return password, ssm, parameter_name
+
+    if not sys.stdin.isatty():
+        raise ProvisioningInputError(
+            "Non-interactive provisioning requires SB_SUPER_ADMIN_PASSWORD_PARAMETER "
+            "to reference an AWS Systems Manager Parameter Store SecureString. "
+            "The EC2 role needs ssm:GetParameter and ssm:DeleteParameter."
+        )
+
+    try:
+        password = getpass.getpass("New Super Admin password (minimum 12 characters): ")
+        confirmation = getpass.getpass("Confirm password: ")
+    except EOFError as exc:
+        raise ProvisioningInputError(
+            "The terminal did not provide interactive password input. "
+            "Use a Parameter Store SecureString for non-interactive provisioning."
+        ) from exc
+
+    if password != confirmation:
+        raise ProvisioningInputError("Passwords do not match.")
+    return password, None, None
 
 
 def main() -> int:
@@ -27,11 +101,18 @@ def main() -> int:
         print("ERROR: Set SB_SUPER_ADMIN_EMAIL to the intended Super Admin email.", file=sys.stderr)
         return 2
 
-    full_name = input("Super Admin full name: ").strip()
-    password = getpass.getpass("New Super Admin password (minimum 12 characters): ")
-    confirmation = getpass.getpass("Confirm password: ")
-    if not full_name or len(password) < 12 or password != confirmation:
-        print("ERROR: Name is required; passwords must match and contain at least 12 characters.", file=sys.stderr)
+    try:
+        full_name = _read_full_name()
+        password, ssm, parameter_name = _read_password()
+    except ProvisioningInputError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    if not full_name or len(password) < 12:
+        print(
+            "ERROR: Name is required; password must contain at least 12 characters.",
+            file=sys.stderr,
+        )
         return 2
 
     password_hash = _password_hash(password)
@@ -43,7 +124,10 @@ def main() -> int:
                 "SELECT id FROM app_users WHERE role='super_admin' LIMIT 1 FOR UPDATE"
             ).fetchone()
             if existing_admin:
-                print("REFUSED: A Super Admin already exists. Use normal user/password management.", file=sys.stderr)
+                print(
+                    "REFUSED: A Super Admin already exists. Use normal user/password management.",
+                    file=sys.stderr,
+                )
                 return 3
 
             existing_user = conn.execute(
@@ -66,6 +150,17 @@ def main() -> int:
                     "VALUES(%s,%s,%s,'super_admin',TRUE) RETURNING id,email",
                     (email, full_name, password_hash),
                 ).fetchone()
+
+    if ssm is not None and parameter_name:
+        try:
+            ssm.delete_parameter(Name=parameter_name)
+        except (BotoCoreError, ClientError):
+            print(
+                "WARNING: Super Admin was provisioned, but the one-time SecureString "
+                "could not be deleted. Remove that parameter manually from Parameter Store.",
+                file=sys.stderr,
+            )
+            return 4
 
     print(f"Super Admin provisioned for {row['email']} (user ID {row['id']}).")
     print("Sign in through the normal Super Bajaar login screen.")
