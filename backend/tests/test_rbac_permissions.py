@@ -31,3 +31,26 @@ def test_super_admin_can_manage_all_permissions():
 
     assert can_manage_all_permissions("super_admin")
     assert not can_manage_all_permissions("admin")
+
+
+def test_module_mapping_uses_configured_prefix_and_covers_split_routers():
+    from app.core.auth_middleware import _module_for_path
+
+    assert _module_for_path("/v2/inventory-locations/warehouses", "/v2") == "inventory"
+    assert _module_for_path("/v2/purchasing-lifecycle/rfqs/1/award", "/v2") == "purchasing"
+    assert _module_for_path("/api/orders", "/v2") is None
+
+
+def test_unmapped_routes_do_not_receive_legacy_role_fallback():
+    from app.core.auth_middleware import _module_for_path
+
+    assert _module_for_path("/api/unregistered-admin-route", "/api") is None
+
+
+def test_workflow_endpoints_use_approve_and_export_actions():
+    from app.core.auth_middleware import _action_for_request
+
+    assert _action_for_request("POST", "/api/purchasing/rfqs/12/award") == "approve"
+    assert _action_for_request("POST", "/api/accounting/vouchers/12/post") == "approve"
+    assert _action_for_request("GET", "/api/reports/orders/export") == "export"
+    assert _action_for_request("POST", "/api/orders") == "create"
