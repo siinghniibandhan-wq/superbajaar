@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiRequest } from "../../services/api.js";
 import { dashboardMetrics } from "./dashboardMetrics.js";
+import { canReadPermission } from "../../app/moduleAccess.js";
 
 const money = value => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(Number(value || 0));
 const count = value => Number(value || 0).toLocaleString("en-IN");
@@ -23,7 +24,7 @@ function Panel({ title, note, children, action }) {
   return <section className="an-panel"><header><div><h2>{title}</h2>{note && <p>{note}</p>}</div>{action}</header>{children}</section>;
 }
 
-export default function DashboardWorkspace({ onOpen }) {
+export default function DashboardWorkspace({ onOpen, permissions = {} }) {
   const [tab, setTab] = useState("overview");
   const [period, setPeriod] = useState("month");
   const [data, setData] = useState({});
@@ -58,9 +59,22 @@ export default function DashboardWorkspace({ onOpen }) {
       loyaltyAccounts: () => apiRequest("/loyalty/admin/accounts?limit=200"),
       loyaltyRules: () => apiRequest("/loyalty/admin/rules"),
     };
-    const entries = Object.entries(requests);
+    const requestModules = {
+      products: "catalogue", variants: "catalogue",
+      balances: "inventory", inventoryOverview: "inventory",
+      reportSummary: "dashboard", orders: "orders", payments: "payments",
+      customers: "crm", cases: "crm",
+      employees: "hr_payroll", attendance: "hr_payroll", payroll: "hr_payroll", expenses: "hr_payroll",
+      finance: "accounting", purchases: "purchasing", pos: "pos", pricing: "pricing",
+      shipments: "delivery", pickTasks: "fulfillment", fulfilmentReturns: "fulfillment",
+      loyaltyAccounts: "loyalty", loyaltyRules: "loyalty",
+    };
+    const entries = Object.entries(requests).filter(([key]) => canReadPermission(requestModules[key], permissions));
+    const denied = Object.fromEntries(Object.entries(requestModules)
+      .filter(([, moduleKey]) => !canReadPermission(moduleKey, permissions))
+      .map(([key]) => [key, "Read permission not granted"]));
     const results = await Promise.allSettled(entries.map(([, request]) => request()));
-    const next = {}; const failed = {};
+    const next = {}; const failed = { ...denied };
     results.forEach((result, index) => {
       const key = entries[index][0];
       if (result.status === "fulfilled") next[key] = ["finance", "pos", "pricing", "inventoryOverview", "reportSummary"].includes(key) ? result.value : rows(result.value);
