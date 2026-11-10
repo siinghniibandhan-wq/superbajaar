@@ -23,6 +23,38 @@ def _is_public_catalogue_read(method: str, path: str, prefix: str) -> bool:
     }
 
 
+def permission_granted(permissions: dict, module: str, action: str) -> bool:
+    """Return an explicit effective grant; missing module/action is deny-by-default."""
+    return bool(permissions.get(module, {}).get(action, False))
+
+
+def _module_for_path(path: str) -> str | None:
+    segments = path.strip("/").split("/")
+    if len(segments) < 2 or segments[0] != "api":
+        return None
+    route = segments[1]
+    aliases = {
+        "catalogue": "catalogue", "inventory": "inventory", "purchasing": "purchasing",
+        "pos": "pos", "customers": "crm", "orders": "orders", "payments": "payments",
+        "razorpay": "payments", "fulfilment": "fulfillment", "delivery": "delivery",
+        "pricing": "pricing", "loyalty": "loyalty", "hr": "hr_payroll",
+        "accounting": "accounting", "reports": "dashboard",
+    }
+    return aliases.get(route)
+
+
+def _action_for_request(method: str, path: str) -> str:
+    if method in {"GET", "HEAD"}:
+        return "read"
+    if method == "DELETE":
+        return "delete"
+    if method == "POST":
+        return "create"
+    if method in {"PUT", "PATCH"}:
+        return "edit"
+    return "configure"
+
+
 def _role_can_write(role: str, path: str) -> bool:
     if role in {"super_admin", "owner", "admin"}:
         return True
@@ -159,10 +191,33 @@ async def require_active_session(request: Request) -> None:
         raise HTTPException(status_code=401, detail="Session is no longer active")
 
     role = row["role"]
-    if path.startswith(prefix + "/customers/") and "/account-link" in path and role not in {"super_admin", "owner", "admin"}:
-        raise HTTPException(status_code=403, detail="Only a Super Admin, owner or admin can link a customer account")
     request.state.role = role
     request.state.user_id = row["id"]
     request.state.user_email = row["email"]
-    if request.method not in {"GET", "HEAD"} and not _role_can_write(role, path):
-        raise HTTPException(status_code=403, detail="Your role does not have permission to change this resource")
+
+    module_key = _module_for_path(path)
+    if module_key is None:
+        # Authenticated API routes must be explicitly mapped before they can be used.
+        raise HTTPException(status_code=403, detail="No module permission is configured for this resource")
+    action_key = _action_for_request(request.method, path)
+    try:
+        with psycopg.connect(settings.database_url, row_factory=dict_row, connect_timeout=3) as conn:
+            rows = conn.execute(
+                """
+                SELECT p.action_key, COALESCE(up.allowed, rp.allowed, false) AS allowed
+                FROM app_modules m
+                CROSS JOIN app_permissions p
+                JOIN app_roles r ON r.name = %s AND r.is_active = TRUE
+                LEFT JOIN app_role_permissions rp
+                  ON rp.role_id = r.id AND rp.module_id = m.id AND rp.permission_id = p.id
+                LEFT JOIN app_user_module_permissions up
+                  ON up.user_id = %s AND up.module_id = m.id AND up.permission_id = p.id
+                WHERE m.module_key = %s AND m.is_active = TRUE
+                """,
+                (role, row["id"], module_key),
+            ).fetchall()
+    except psycopg.Error as exc:
+        raise HTTPException(status_code=503, detail="Permission storage unavailable; apply the configurable RBAC schema") from exc
+    effective = {item["action_key"]: item["allowed"] for item in rows}
+    if not effective.get(action_key, False):
+        raise HTTPException(status_code=403, detail=f"Missing {action_key} permission for {module_key}")
