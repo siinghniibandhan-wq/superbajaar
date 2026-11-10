@@ -15,7 +15,7 @@ function points(values, maxValue) {
 
 export default function MonthlyTrendChart({ monthly = [] }) {
   const chart = buildMonthlyTrend(monthly);
-  if (!chart.labels.length) return <p className="an-empty">No monthly accounting data is available for this period.</p>;
+  if (!chart.labels.length) return <div className="an-trend-chart an-trend-chart-empty"><div className="an-trend-legend"><span><i className="income" /> Income</span><span><i className="expense" /> Expenses</span></div><svg viewBox="0 0 720 224" role="img" aria-label="Monthly income and expenses chart; no accounting entries are available for this period"><text x="360" y="94" textAnchor="middle" fill="#74808b" fontSize="15">No monthly accounting entries</text><text x="360" y="119" textAnchor="middle" fill="#929ca4" fontSize="11">The chart will populate when posted ledger data is available.</text>{[18,58,98,138,176].map(y => <line key={y} x1="54" x2="690" y1={y} y2={y} stroke="#e8edf2" strokeDasharray="4 5" />)}</svg></div>;
   const incomePoints = points(chart.income, chart.maxValue);
   const expensePoints = points(chart.expenses, chart.maxValue);
   const polyline = values => values.map(([x, y]) => x + "," + y).join(" ");
