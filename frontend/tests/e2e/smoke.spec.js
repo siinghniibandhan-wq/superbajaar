@@ -556,6 +556,10 @@ test("HR staff can view their own payslips in employee self-service", async ({ p
   await expect(page.getByText("Basic", { exact: true })).toBeVisible();
   await expect(page.getByText("Approved salary advance recovery")).toBeVisible();
   await expect(page.getByText(/PF: Employee/)).toBeVisible();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export CSV" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe("my-payslips.csv");
 });
 
 
