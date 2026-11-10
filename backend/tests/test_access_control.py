@@ -27,9 +27,17 @@ def test_manager_can_manage_operations_but_not_users_or_catalogue():
 
 
 def test_admin_and_owner_can_write_all_modules():
-    for role in ("owner", "admin"):
+    for role in ("owner", "admin", "super_admin"):
         assert _role_can_write(role, "/api/catalogue/products")
         assert _role_can_write(role, "/api/auth/users")
+
+
+def test_super_admin_is_the_only_role_that_can_manage_privileged_roles():
+    from app.api.auth import _can_manage_privileged_roles
+
+    assert _can_manage_privileged_roles("super_admin")
+    assert not _can_manage_privileged_roles("owner")
+    assert not _can_manage_privileged_roles("admin")
 
 
 def test_product_deletion_is_not_allowed_for_manager_staff_or_viewer():

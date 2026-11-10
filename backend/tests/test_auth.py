@@ -37,3 +37,18 @@ def test_protected_api_returns_service_unavailable_when_jwt_secret_missing(monke
         headers={"Authorization": "Bearer invalid"},
     )
     assert response.status_code == 503
+
+
+def test_super_admin_role_is_supported_but_owner_remains_legacy_role():
+    from app.api.auth import USER_ROLES
+
+    assert "super_admin" in USER_ROLES
+    assert "owner" in USER_ROLES
+
+
+def test_only_super_admin_can_create_or_assign_super_admin_role():
+    from app.api.auth import _can_manage_privileged_roles
+
+    assert _can_manage_privileged_roles("super_admin")
+    assert not _can_manage_privileged_roles("owner")
+    assert not _can_manage_privileged_roles("admin")

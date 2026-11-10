@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS public.app_users (
  created_at timestamp with time zone DEFAULT now() NOT NULL, updated_at timestamp with time zone DEFAULT now() NOT NULL,
  CONSTRAINT app_users_pkey PRIMARY KEY (id), CONSTRAINT app_users_email_key UNIQUE (email),
  CONSTRAINT app_users_full_name_check CHECK (length(TRIM(BOTH FROM full_name)) > 0),
- CONSTRAINT app_users_role_check CHECK (role = ANY (ARRAY['owner'::text,'admin'::text,'manager'::text,'staff'::text,'viewer'::text]))
+ CONSTRAINT app_users_role_check CHECK (role = ANY (ARRAY['super_admin'::text,'owner'::text,'admin'::text,'manager'::text,'staff'::text,'viewer'::text]))
 );
 
 CREATE TABLE IF NOT EXISTS public.categories (

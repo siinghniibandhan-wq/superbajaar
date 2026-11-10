@@ -24,7 +24,7 @@ def _is_public_catalogue_read(method: str, path: str, prefix: str) -> bool:
 
 
 def _role_can_write(role: str, path: str) -> bool:
-    if role in {"owner", "admin"}:
+    if role in {"super_admin", "owner", "admin"}:
         return True
     if role == "viewer":
         return False
@@ -153,14 +153,14 @@ async def require_active_session(request: Request) -> None:
     except psycopg.Error as exc:
         raise HTTPException(
             status_code=503,
-            detail="Authentication storage unavailable; verify database connectivity and migration 007",
+            detail="Authentication storage unavailable; verify database connectivity and the required authentication schema",
         ) from exc
     if row is None:
         raise HTTPException(status_code=401, detail="Session is no longer active")
 
     role = row["role"]
-    if path.startswith(prefix + "/customers/") and "/account-link" in path and role not in {"owner", "admin"}:
-        raise HTTPException(status_code=403, detail="Only an owner or admin can link a customer account")
+    if path.startswith(prefix + "/customers/") and "/account-link" in path and role not in {"super_admin", "owner", "admin"}:
+        raise HTTPException(status_code=403, detail="Only a Super Admin, owner or admin can link a customer account")
     request.state.role = role
     request.state.user_id = row["id"]
     request.state.user_email = row["email"]

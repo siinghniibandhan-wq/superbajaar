@@ -48,7 +48,6 @@ export default function LoginScreen({ onSignedIn }) {
       <label>Email address<input type="email" autoComplete="username" required maxLength={254} value={email} onChange={event => setEmail(event.target.value)} /></label>
       <label>Password<input type="password" autoComplete="current-password" required maxLength={1024} value={password} onChange={event => setPassword(event.target.value)} /></label>
       <button className="sb-primary" type="submit" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
-      <small>Initial owner access must be created using the backend bootstrap command after the access-control migration is reviewed and applied.</small>
     </form>
   </main>;
 }
