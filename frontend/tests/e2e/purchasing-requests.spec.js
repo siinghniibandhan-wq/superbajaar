@@ -15,6 +15,15 @@ test("purchasing workspace creates and submits a requisition through its API", a
   const writes = [];
   let requisitionStatus = "draft";
   await page.route("**/api/**", async route => {
+    const permissionRequest = route.request();
+    if (new URL(permissionRequest.url()).pathname === "/api/auth/my-permissions") {
+      const token = permissionRequest.headers().authorization || "";
+      const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
+      const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
+      const permissions = Object.fromEntries(allowedKeys.map(key => [key, { read: true }]));
+      return route.fulfill({ json: { permissions } });
+    }
+
     const request = route.request();
     const url = new URL(request.url());
     const method = request.method();
@@ -67,6 +76,15 @@ test("approved requisition can be sourced through RFQ, quotation and draft PO aw
   let rfqStatus = "draft";
   let quotationRecorded = false;
   await page.route("**/api/**", async route => {
+    const permissionRequest = route.request();
+    if (new URL(permissionRequest.url()).pathname === "/api/auth/my-permissions") {
+      const token = permissionRequest.headers().authorization || "";
+      const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
+      const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
+      const permissions = Object.fromEntries(allowedKeys.map(key => [key, { read: true }]));
+      return route.fulfill({ json: { permissions } });
+    }
+
     const request = route.request();
     const url = new URL(request.url());
     const method = request.method();
