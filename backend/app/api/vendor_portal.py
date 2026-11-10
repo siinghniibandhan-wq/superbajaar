@@ -71,7 +71,7 @@ class InvoiceInput(BaseModel):
     freight_amount: Decimal = Field(default=Decimal("0"), ge=0, max_digits=16, decimal_places=2)
     discount_amount: Decimal = Field(default=Decimal("0"), ge=0, max_digits=16, decimal_places=2)
     invoice_total: Decimal = Field(gt=0, max_digits=16, decimal_places=2)
-    source_document_uri: str | None = Field(default=None, max_length=1000)
+    source_document_uri: str = Field(min_length=1, max_length=1000)
 
     @model_validator(mode="after")
     def invoice_total_matches_components(self):
@@ -353,6 +353,10 @@ def submit_invoice(payload: InvoiceInput, request: Request):
                     raise HTTPException(404, "Purchase order not found")
                 if order["status"] not in {"ordered", "partially_received", "received"}:
                     raise HTTPException(409, "Invoices can be submitted only against an issued purchase order")
+                bucket = os.getenv("SB_PRIVATE_DOCUMENT_BUCKET", "").strip()
+                expected_prefix = f"s3://{bucket}/vendor-invoices/{vendor['supplier_id']}/" if bucket else ""
+                if not expected_prefix or not payload.source_document_uri.startswith(expected_prefix):
+                    raise HTTPException(422, "Upload the invoice document through the private vendor document upload first")
                 row = conn.execute(
                     "INSERT INTO supplier_invoices(supplier_id,purchase_order_id,supplier_gstin,invoice_number,invoice_date,due_date,"
                     "taxable_value,cgst_amount,sgst_amount,igst_amount,cess_amount,freight_amount,discount_amount,invoice_total,"
