@@ -15,3 +15,8 @@ assert.ok(source.includes("function UnavailableWorkspace"), "unknown IDs must ha
 assert.ok(!source.includes("This module is not implemented yet"), "old unfinished-workspace fallback must be removed");
 assert.ok(source.includes('["super_admin", "owner", "admin"].includes(role)'), "Super Admin, owner, and admin must be allowed into the Admin Console");
 console.log(`Admin route map OK: ${ids.length} unique navigation modules are registered.`);
+
+const settingsSource = readFileSync(new URL("../src/features/settings/SettingsWorkspace.jsx", import.meta.url), "utf8");
+assert.ok(settingsSource.includes('currentUser?.role === "super_admin"'), "Super Admin must see elevated role assignment options");
+assert.ok(settingsSource.includes('<option value="super_admin">Super Admin</option>'), "Super Admin must be assignable by a Super Admin");
+assert.ok(settingsSource.includes('currentUser?.role === "owner" || currentUser?.role === "super_admin"'), "Owner and Super Admin must see owner/admin assignment options");
