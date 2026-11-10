@@ -42,6 +42,20 @@ The backend registers API routers for health, catalogue, inventory, inventory lo
 
 A directory, screen, API router or migration existing in Git does **not** prove that its business workflow is complete. Readiness must be established with API, database, permission and end-to-end evidence. In particular, test cross-module flows rather than marking a module complete from its UI alone.
 
+### HR & Payroll implementation notes
+
+The current HR workspace includes employee self-service routing for staff, itemised payslips, CSV payslip registers, browser print-to-PDF payslips, effective-dated salary revisions with manager review, approved overtime/incentive/bonus and arrears/final-settlement earning components, establishment-scoped payroll accrual journals, and a statutory remittance reconciliation CSV.
+
+Important boundaries:
+
+- Salary revisions and payroll earnings use approval workflows; variable earnings are included only after approval.
+- The current payroll engine works on full calendar-month periods. Salary revisions and variable earning entries are therefore aligned to month boundaries.
+- Gratuity, leave encashment, notice pay and other final-settlement amounts are manager-entered, reasoned and approved components. The application does **not** assume a legal eligibility test or calculate a statutory gratuity/leave-encashment formula automatically. HR/CA review remains necessary.
+- Multi-establishment accruals are posted separately per legal establishment. Each establishment still needs approved Accounting event-to-account mappings; missing mappings are recorded as posting exceptions and must be corrected/retried.
+- The statutory CSV is a reconciliation register, not a prescribed EPFO/ESIC/state portal return or filing confirmation.
+- Employee bank-payment exports and employee document uploads are not enabled yet. They require encrypted sensitive-data storage, audited access and bank-specific payment-file specifications; do not add plaintext bank/PAN/Aadhaar data to ordinary employee records.
+- Migrations 037 through 040 are committed and required by this application code. Their presence in Git does not mean they have been applied to production.
+
 ## Architecture
 
 ```text
@@ -260,9 +274,14 @@ Examples from the current schema directory:
 ...
 034_hr_scheduling_leave_lifecycle.sql
 035_inventory_facility_internal_locations.sql
+036_configurable_rbac.sql
+037_hr_salary_revision_history.sql
+038_hr_variable_payroll_earnings.sql
+039_hr_multi_establishment_payroll_accruals.sql
+040_hr_final_settlement_earning_types.sql
 ```
 
-The current committed schema directory contains **30 SQL files**, with unique three-digit numeric prefixes. The numbering is not required to be consecutive: gaps are intentional historical/versioning space and must not be filled by renumbering existing files.
+The current committed schema directory contains **35 SQL files**, with unique three-digit numeric prefixes. The numbering is not required to be consecutive: gaps are intentional historical/versioning space and must not be filled by renumbering existing files.
 
 The previous duplicate-prefix problem has been addressed in the current migration set. Duplicate numbering is also actively rejected by the migration tooling and CI:
 
@@ -274,7 +293,7 @@ The previous duplicate-prefix problem has been addressed in the current migratio
 **When adding a migration:**
 
 - Inspect the complete current `backend/schema/` directory and the history on the target branch first.
-- Select a new, unused three-digit prefix. The current highest committed prefix is `035`; `036` is only the next candidate if it is still unused when the change is prepared and reviewed.
+- Select a new, unused three-digit prefix. The current highest committed prefix is `040`; `041` is only the next candidate if it is still unused when the change is prepared and reviewed.
 - Never reuse a prefix, rename or renumber an already-applied migration, or edit an applied migration to change its effect. Create a new numbered migration for a later correction.
 - Use lowercase letters, digits and underscores after the prefix.
 - Keep SQL files focused on database schema/data changes. Do not put shell commands, deployment tooling, CI configuration or service-management changes inside SQL.
