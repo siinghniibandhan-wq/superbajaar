@@ -65,4 +65,3 @@ def test_customer_return_quarantine_release_fails_when_all_remaining_layers_are_
     ])
     assert releasable == []
     assert expired_quantity == Decimal("1.500")
-}
