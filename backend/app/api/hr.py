@@ -934,6 +934,7 @@ def calculate_payroll(payload: PayrollRunInput, request: Request):
             if existing:
                 run_id = existing["id"]
                 conn.execute("UPDATE hr_expenses SET reimbursed_in_payroll_id=NULL WHERE reimbursed_in_payroll_id=%s", (run_id,))
+                conn.execute("UPDATE hr_payroll_earning_adjustments SET payroll_run_id=NULL WHERE payroll_run_id=%s", (run_id,))
                 conn.execute("DELETE FROM hr_payroll_statutory_snapshots WHERE payroll_run_id=%s", (run_id,))
                 conn.execute("DELETE FROM hr_payslips WHERE payroll_run_id=%s", (run_id,))
             else:
@@ -984,7 +985,18 @@ def calculate_payroll(payload: PayrollRunInput, request: Request):
                 hra = (Decimal(str(employee["hra"])) * factor).quantize(Decimal("0.01"))
                 special = (Decimal(str(employee["special_allowance"])) * factor).quantize(Decimal("0.01"))
                 other = (Decimal(str(employee["other_allowance"])) * factor).quantize(Decimal("0.01"))
-                gross = basic + hra + special + other
+                fixed_gross = basic + hra + special + other
+                earning_rows = conn.execute(
+                    "SELECT id,earning_type,amount,hours,hourly_rate,reason "
+                    "FROM hr_payroll_earning_adjustments WHERE employee_id=%s AND period_start=%s "
+                    "AND period_end=%s AND status='approved' AND payroll_run_id IS NULL "
+                    "ORDER BY id FOR UPDATE",
+                    (employee["id"],payload.period_start,payload.period_end),
+                ).fetchall()
+                variable_earnings_total = sum(
+                    (Decimal(str(item["amount"])) for item in earning_rows), Decimal("0")
+                )
+                gross = fixed_gross + variable_earnings_total
 
                 profile = conn.execute(
                     "SELECT * FROM hr_employee_statutory_profiles WHERE employee_id=%s "
@@ -1070,6 +1082,12 @@ def calculate_payroll(payload: PayrollRunInput, request: Request):
                 earnings_breakdown = {
                     "basic": str(basic), "hra": str(hra),
                     "special_allowance": str(special), "other_allowance": str(other),
+                    "variable_earnings": [{
+                        "type": item["earning_type"], "amount": str(item["amount"]),
+                        "hours": str(item["hours"]) if item["hours"] is not None else None,
+                        "hourly_rate": str(item["hourly_rate"]) if item["hourly_rate"] is not None else None,
+                        "reason": item["reason"],
+                    } for item in earning_rows],
                 }
                 conn.execute(
                     "INSERT INTO hr_payslips(payroll_run_id,employee_id,basic_salary,hra,special_allowance,"
@@ -1080,6 +1098,11 @@ def calculate_payroll(payload: PayrollRunInput, request: Request):
                      statutory_employer, __import__("json").dumps(deduction_breakdown),
                      __import__("json").dumps(earnings_breakdown)),
                 )
+                if earning_rows:
+                    conn.execute(
+                        "UPDATE hr_payroll_earning_adjustments SET payroll_run_id=%s WHERE id=ANY(%s)",
+                        (run_id,[item["id"] for item in earning_rows]),
+                    )
                 conn.execute(
                     "UPDATE hr_expenses SET reimbursed_in_payroll_id=%s WHERE employee_id=%s AND status='approved' "
                     "AND expense_date BETWEEN %s AND %s AND reimbursed_in_payroll_id IS NULL",
