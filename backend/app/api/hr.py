@@ -234,7 +234,7 @@ class SalaryRevisionInput(BaseModel):
     hra: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
     special_allowance: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
     other_allowance: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
-    reason: str = Field(min_length=5, max_length=500)
+    reason: str = Field(max_length=500)
 
     @field_validator("reason")
     @classmethod
