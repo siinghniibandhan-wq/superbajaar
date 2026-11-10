@@ -56,7 +56,7 @@ def _actor(request: Request) -> int:
 
 def _manager(request: Request) -> int:
     actor = _actor(request)
-    if getattr(request.state, "role", "") not in {"owner", "admin", "manager"}:
+    if getattr(request.state, "role", "") not in {"super_admin", "owner", "admin", "manager"}:
         raise HTTPException(403, "HR manager permission is required")
     return actor
 
@@ -299,7 +299,7 @@ def list_employees(request: Request, limit: int = Query(100, ge=1, le=500), offs
     role = getattr(request.state, "role", "")
     try:
         with _hr_connection() as conn:
-            if role in {"owner", "admin", "manager"}:
+            if role in {"super_admin", "owner", "admin", "manager"}:
                 rows = conn.execute(
                     "SELECT e.id,e.user_id,e.employee_code,e.first_name,e.last_name,e.email,e.phone,"
                     "e.department_id,d.name AS department_name,e.designation,e.reports_to_employee_id,"
@@ -483,7 +483,7 @@ def list_leave(request: Request):
     role = getattr(request.state, "role", "")
     try:
         with _hr_connection() as conn:
-            if role in {"owner","admin","manager"}:
+            if role in {"super_admin","owner","admin","manager"}:
                 rows = conn.execute(
                     "SELECT l.*,e.employee_code,e.first_name,e.last_name FROM hr_leave_requests l "
                     "JOIN hr_employees e ON e.id=l.employee_id ORDER BY l.created_at DESC"
@@ -574,7 +574,7 @@ def list_expenses(request: Request):
     role = getattr(request.state,"role","")
     try:
         with _hr_connection() as conn:
-            if role in {"owner","admin","manager"}:
+            if role in {"super_admin","owner","admin","manager"}:
                 rows=conn.execute(
                     "SELECT x.*,e.employee_code,e.first_name,e.last_name FROM hr_expenses x "
                     "JOIN hr_employees e ON e.id=x.employee_id ORDER BY x.created_at DESC"
@@ -1686,7 +1686,7 @@ def list_shift_assignments(request: Request, start_date: date, end_date: date):
         raise HTTPException(422,"Roster range must be ordered and no longer than 93 days")
     role = getattr(request.state,"role","")
     with _hr_connection() as conn:
-        if role in {"owner","admin","manager"}:
+        if role in {"super_admin","owner","admin","manager"}:
             rows = conn.execute(
                 "SELECT a.*,e.employee_code,e.first_name,e.last_name,s.name AS shift_name "
                 "FROM hr_shift_assignments a JOIN hr_employees e ON e.id=a.employee_id "
@@ -1881,7 +1881,7 @@ def list_leave_balances(request: Request, employee_id: int | None = Query(defaul
     actor = _actor(request)
     role = getattr(request.state,"role","")
     with _hr_connection() as conn:
-        if role in {"owner","admin","manager"}:
+        if role in {"super_admin","owner","admin","manager"}:
             rows = conn.execute(
                 "SELECT b.*,b.closing_days+COALESCE((SELECT sum(l.quantity_days) FROM hr_leave_ledger l "
                 "WHERE l.employee_id=b.employee_id AND l.leave_type=b.leave_type AND l.created_at>b.calculated_at),0) "
@@ -2098,7 +2098,7 @@ def list_leave_ledger(request: Request, employee_id: int | None = Query(default=
     actor = _actor(request)
     role = getattr(request.state,"role","")
     with _hr_connection() as conn:
-        if role in {"owner","admin","manager"}:
+        if role in {"super_admin","owner","admin","manager"}:
             rows = conn.execute(
                 "SELECT l.*,e.employee_code,e.first_name,e.last_name FROM hr_leave_ledger l "
                 "JOIN hr_employees e ON e.id=l.employee_id WHERE (%s::bigint IS NULL OR l.employee_id=%s) "
@@ -2195,7 +2195,7 @@ def list_lifecycle_tasks(request: Request, employee_id: int | None = Query(defau
     actor = _actor(request)
     role = getattr(request.state,"role","")
     with _hr_connection() as conn:
-        if role in {"owner","admin","manager"}:
+        if role in {"super_admin","owner","admin","manager"}:
             rows = conn.execute(
                 "SELECT t.*,e.employee_code,e.first_name,e.last_name FROM hr_employee_lifecycle_tasks t "
                 "JOIN hr_employees e ON e.id=t.employee_id WHERE (%s::bigint IS NULL OR t.employee_id=%s) "
@@ -2221,7 +2221,7 @@ def update_lifecycle_task(task_id: int, payload: LifecycleTaskUpdateInput, reque
         task = conn.execute("SELECT * FROM hr_employee_lifecycle_tasks WHERE id=%s FOR UPDATE",(task_id,)).fetchone()
         if not task:
             raise HTTPException(404,"Lifecycle task not found")
-        if role not in {"owner","admin","manager"}:
+        if role not in {"super_admin","owner","admin","manager"}:
             employee = _employee(conn,actor)
             if not (task["owner_user_id"] == actor or (task["employee_id"] == employee["id"] and task["owner_role"] == "employee")):
                 raise HTTPException(403,"You cannot update this lifecycle task")
@@ -2231,7 +2231,7 @@ def update_lifecycle_task(task_id: int, payload: LifecycleTaskUpdateInput, reque
                 raise HTTPException(409,"Only a manager may reopen a completed lifecycle task")
         if payload.status == "completed" and not (payload.completion_note or payload.evidence_reference):
             raise HTTPException(422,"A completion note or evidence reference is required")
-        is_manager = role in {"owner","admin","manager"}
+        is_manager = role in {"super_admin","owner","admin","manager"}
         owner_user_id = (
             payload.owner_user_id if is_manager and "owner_user_id" in payload.model_fields_set
             else task["owner_user_id"]
@@ -2328,7 +2328,7 @@ def list_lifecycle_task_events(task_id: int, request: Request):
         task = conn.execute("SELECT employee_id,owner_user_id,owner_role FROM hr_employee_lifecycle_tasks WHERE id=%s",(task_id,)).fetchone()
         if not task:
             raise HTTPException(404,"Lifecycle task not found")
-        if role not in {"owner","admin","manager"}:
+        if role not in {"super_admin","owner","admin","manager"}:
             employee = _employee(conn,actor)
             if not (task["owner_user_id"] == actor or (task["employee_id"] == employee["id"] and task["owner_role"] == "employee")):
                 raise HTTPException(403,"You cannot view this lifecycle task history")
