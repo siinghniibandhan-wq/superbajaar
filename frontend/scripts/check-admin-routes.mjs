@@ -16,4 +16,5 @@ assert.ok(!source.includes("This module is not implemented yet"), "old unfinishe
 assert.ok(!source.includes('["super_admin", "owner", "admin"].includes(role)'), "Owner must not be an Admin Console role");
 assert.ok(!source.includes('role === "manager"'), "Manager access must be driven by module permissions, not a hardcoded HR-only shell");
 assert.ok(source.includes("my-permissions"), "Admin shell must load the signed-in user effective module permissions");
+assert.ok(source.includes("groups={visibleGroups}"), "The launcher must render only the filtered module groups");
 console.log(`Admin route map OK: ${ids.length} unique navigation modules are registered.`);
