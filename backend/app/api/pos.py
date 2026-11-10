@@ -36,10 +36,10 @@ def pos_summary():
             ).fetchone()
             payments = conn.execute(
                 """SELECT count(*) AS payment_count,
-                          count(*) FILTER (WHERE status='captured') AS captured_count,
-                          COALESCE(sum(amount) FILTER (WHERE status='captured'), 0) AS captured_amount,
-                          count(*) FILTER (WHERE status IN ('pending','authorized')) AS pending_count,
-                          COALESCE(sum(amount) FILTER (WHERE status IN ('pending','authorized')), 0) AS pending_amount
+                          count(*) FILTER (WHERE p.status='captured') AS captured_count,
+                          COALESCE(sum(amount) FILTER (WHERE p.status='captured'), 0) AS captured_amount,
+                          count(*) FILTER (WHERE p.status IN ('pending','authorized')) AS pending_count,
+                          COALESCE(sum(amount) FILTER (WHERE p.status IN ('pending','authorized')), 0) AS pending_amount
                    FROM payments p JOIN orders o ON o.id=p.order_id WHERE o.channel='pos'"""
             ).fetchone()
         return {"source": "postgresql", "orders": orders, "payments": payments}
@@ -75,8 +75,8 @@ def list_pos_sales(
                     ) l ON l.order_id=o.id
                     LEFT JOIN (
                       SELECT order_id,
-                             sum(amount) FILTER (WHERE status='captured') AS captured_amount,
-                             sum(amount) FILTER (WHERE status IN ('pending','authorized')) AS pending_amount,
+                             sum(amount) FILTER (WHERE p.status='captured') AS captured_amount,
+                             sum(amount) FILTER (WHERE p.status IN ('pending','authorized')) AS pending_amount,
                              string_agg(DISTINCT status, ', ') AS payment_statuses
                       FROM payments GROUP BY order_id
                     ) p ON p.order_id=o.id
