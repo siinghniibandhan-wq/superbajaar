@@ -64,3 +64,11 @@ def test_admin_cannot_manage_admin_or_super_admin_accounts():
     assert not _can_manage_target_user("admin", "super_admin")
     assert _can_manage_target_user("super_admin", "admin")
     assert _can_manage_target_user("super_admin", "super_admin")
+
+
+def test_self_profile_and_permission_routes_are_available_without_user_management_grant():
+    from app.core.auth_middleware import is_self_service_auth_route
+
+    assert is_self_service_auth_route("GET", "/api/auth/me", "/api")
+    assert is_self_service_auth_route("GET", "/api/auth/my-permissions", "/api")
+    assert not is_self_service_auth_route("GET", "/api/auth/users", "/api")
