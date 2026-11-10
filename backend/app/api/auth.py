@@ -177,6 +177,11 @@ def _require_user_admin(user: dict):
     return user
 
 
+def _can_manage_target_user(actor_role: str, target_role: str) -> bool:
+    """Admins may manage ordinary users, never peer Admins or Super Admins."""
+    return actor_role == "super_admin" or target_role not in {"super_admin", "admin"}
+
+
 class UserCreate(BaseModel):
     email: str = Field(min_length=3, max_length=254)
     full_name: str = Field(min_length=1, max_length=200)
@@ -370,8 +375,8 @@ def get_user_permissions(user_id: int, user=Depends(current_user)):
             target = conn.execute("SELECT id,role FROM app_users WHERE id=%s", (user_id,)).fetchone()
             if target is None:
                 raise HTTPException(404, "User not found")
-            if target["role"] == "super_admin" and user["role"] != "super_admin":
-                raise HTTPException(403, "Only Super Admin can inspect Super Admin permissions")
+            if not _can_manage_target_user(user["role"], target["role"]):
+                raise HTTPException(403, "Only Super Admin can inspect Admin or Super Admin permissions")
             return {"permissions": _effective_permissions(conn, user_id, target["role"])}
     except HTTPException:
         raise
@@ -392,8 +397,8 @@ def update_user_permissions(user_id: int, payload: UserPermissionsUpdate, user=D
                 target = conn.execute("SELECT id,role FROM app_users WHERE id=%s FOR UPDATE", (user_id,)).fetchone()
                 if target is None:
                     raise HTTPException(404, "User not found")
-                if target["role"] == "super_admin" and user["role"] != "super_admin":
-                    raise HTTPException(403, "Only Super Admin can change Super Admin permissions")
+                if not _can_manage_target_user(user["role"], target["role"]):
+                    raise HTTPException(403, "Only Super Admin can change Admin or Super Admin permissions")
                 authority = _effective_permissions(conn, user["id"], user["role"])
                 if not can_manage_all_permissions(user["role"]) and not permissions_within_authority(payload.permissions, authority):
                     raise HTTPException(403, "You cannot grant permissions you do not hold")
