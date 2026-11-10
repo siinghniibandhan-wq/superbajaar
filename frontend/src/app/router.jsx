@@ -74,7 +74,7 @@ function UnavailableWorkspace({ item, onBack }) {
 }
 
 const workspaceRoutes = {
-  dashboard: ({ onOpen }) => <DashboardWorkspace onOpen={onOpen} />,
+  dashboard: ({ onOpen, permissions }) => <DashboardWorkspace onOpen={onOpen} permissions={permissions} />,
   catalogue: ({ onBack, currentUser }) => <><ModuleDataOverview moduleId="catalogue" /><CatalogueWorkspace onBack={onBack} currentUser={currentUser} /></>,
   pricing: ({ onBack }) => <PricingWorkspace onBack={onBack} />,
   orders: ({ onBack }) => <><ModuleDataOverview moduleId="orders" /><OrdersWorkspace onBack={onBack} /></>,
