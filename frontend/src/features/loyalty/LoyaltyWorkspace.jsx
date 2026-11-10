@@ -72,7 +72,20 @@ export default function LoyaltyWorkspace({ onBack }) {
     finally { setBusy(false); }
   };
 
-  const updateEnquiry = async (id, status) => {\n    setBusy(true); setError(""); setNotice("");\n    try { await apiRequest("/loyalty/admin/partner-enquiries/" + id, { method: "PATCH", body: JSON.stringify({ status }) }); setEnquiries(rows => rows.map(row => row.id === id ? { ...row, status } : row)); setNotice("Partner enquiry status updated."); }\n    catch (e) { setError(e.message || "Unable to update partner enquiry."); }\n    finally { setBusy(false); }\n  };\n\n  const expire = async () => {
+  const updateEnquiry = async (id, status) => {
+    setBusy(true); setError(""); setNotice("");
+    try {
+      await apiRequest("/loyalty/admin/partner-enquiries/" + id, { method: "PATCH", body: JSON.stringify({ status }) });
+      setEnquiries(rows => rows.map(row => row.id === id ? { ...row, status } : row));
+      setNotice("Partner enquiry status updated.");
+    } catch (e) {
+      setError(e.message || "Unable to update partner enquiry.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const expire = async () => {
     if (!window.confirm("Expire all currently due Super Coins lots in the next processing batch? Accounting postings will be created.")) return;
     setBusy(true); setError(""); setNotice("");
     try {
