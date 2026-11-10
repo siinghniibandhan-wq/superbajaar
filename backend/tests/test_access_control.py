@@ -64,3 +64,12 @@ def test_super_admin_has_organisation_policy_administration_access():
 
     request = SimpleNamespace(state=SimpleNamespace(user_id=1, user_email="root@example.test", role="super_admin"))
     assert _policy_admin(request) == (1, "root@example.test", "super_admin")
+
+
+def test_super_admin_has_loyalty_administration_access():
+    from types import SimpleNamespace
+    from app.api.loyalty import _admin
+
+    # Super Admin must be able to use the same admin loyalty endpoints
+    # exposed in Settings & Access.
+    assert _admin(SimpleNamespace(state=SimpleNamespace(role="super_admin"))) is None
