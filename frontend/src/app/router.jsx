@@ -22,6 +22,7 @@ import LoginScreen from "./LoginScreen.jsx";
 import Storefront from "./Storefront.jsx";
 import { filterNavigationGroups } from "./moduleAccess.js";
 import PortalWorkspace, { PortalActivation } from "../features/portals/PortalWorkspace.jsx";
+import PortalAccessWorkspace from "../features/portals/PortalAccessWorkspace.jsx";
 
 const groups = [
   { title: "Commerce", items: [
@@ -91,6 +92,7 @@ const workspaceRoutes = {
   hr: ({ onBack, currentUser }) => <HRWorkspace onBack={onBack} currentUser={currentUser} />,
   reports: ({ onBack }) => <ReportsWorkspace onBack={onBack} />,
   settings: ({ onBack, currentUser, permissions }) => <SettingsWorkspace onBack={onBack} currentUser={currentUser} permissions={permissions} />,
+  portalAccess: () => <PortalAccessWorkspace />,
 };
 
 function AppShell() {
@@ -164,7 +166,7 @@ function AppShell() {
   return <main className="sb-shell">
     <header className="sb-header">
       <button className="sb-brand" type="button" onClick={back} aria-label="Back to workspaces"><span className="sb-mark">S</span><span><strong>Super Bajaar</strong><small>Commerce & ERP</small></span></button>
-      <div className="sb-header-actions"><span className={`sb-status sb-status-${apiStatus}`} role="status"><i />{statusText[apiStatus]}</span><span className="sb-user-label">{user.full_name || user.email}</span><button className="sb-signout" type="button" onClick={signOut}>Sign out</button></div>
+      <div className="sb-header-actions">{["super_admin","admin"].includes(user.role) && <button className="sb-signout" type="button" onClick={() => setSelected({ id: "portalAccess", label: "Portals & Access" })}>Portals & Access</button>}<span className={`sb-status sb-status-${apiStatus}`} role="status"><i />{statusText[apiStatus]}</span><span className="sb-user-label">{user.full_name || user.email}</span><button className="sb-signout" type="button" onClick={signOut}>Sign out</button></div>
     </header>
     <div className="sb-app-layout">
       <aside className="sb-sidebar" aria-label="Module navigation">
@@ -172,7 +174,7 @@ function AppShell() {
         {visibleGroups.map(group => <div className="sb-nav-group" key={group.title}><p>{group.title}</p>{group.items.map(item => <button key={item.id} type="button" className={`sb-nav-item ${activeModule === item.id ? "is-active" : ""}`} onClick={() => open(item)}><span>{item.label}</span></button>)}</div>)}
       </aside>
       <div className="sb-main-content">
-        {selected && visibleIds.has(selected.id) ? (workspaceRoutes[selected.id]
+        {selected && (visibleIds.has(selected.id) || selected.id === "portalAccess") ? (workspaceRoutes[selected.id]
           ? workspaceRoutes[selected.id]({ item: selected, onBack: back, onOpen: openById, currentUser: user, permissions })
           : <UnavailableWorkspace item={selected} onBack={back} />)
           : <ModuleLauncher onOpen={open} groups={visibleGroups} />}
