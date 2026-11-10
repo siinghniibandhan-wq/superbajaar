@@ -5,6 +5,7 @@ balances, reservations, movements, cost layers or accounting. Dispatch remains
 an Inventory-owned stock issue and is exposed separately.
 """
 from decimal import Decimal
+import logging
 import hashlib
 import json
 import uuid
@@ -16,6 +17,8 @@ from psycopg.rows import dict_row
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/fulfilment", tags=["fulfilment"])
 
@@ -38,6 +41,11 @@ def _actor(request: Request):
 
 
 def _db_error(exc):
+    logger.error(
+        "Fulfilment database operation failed (SQLSTATE=%s): %s",
+        getattr(exc, "sqlstate", None),
+        getattr(getattr(exc, "diag", None), "message_primary", "database error"),
+    )
     if getattr(exc, "sqlstate", None) == "23503":
         return HTTPException(status_code=422, detail="Referenced shipment, order or product line does not exist")
     if getattr(exc, "sqlstate", None) == "23505":
