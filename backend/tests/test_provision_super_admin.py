@@ -27,6 +27,8 @@ class FakeConnection:
         return nullcontext()
 
     def execute(self, query, params=None):
+        if "pg_advisory_xact_lock" in query:
+            return FakeCursor(None)
         if "WHERE role='super_admin'" in query:
             return FakeCursor(self.existing_admin)
         if "WHERE lower(email)=lower(%s)" in query:
