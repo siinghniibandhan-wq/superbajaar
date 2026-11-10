@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS public.portal_invitations (
 CREATE UNIQUE INDEX IF NOT EXISTS portal_invitations_one_pending_email_idx
     ON public.portal_invitations(lower(email))
     WHERE accepted_at IS NULL AND revoked_at IS NULL;
-\nCREATE INDEX IF NOT EXISTS portal_invitations_email_idx
+
+CREATE INDEX IF NOT EXISTS portal_invitations_email_idx
     ON public.portal_invitations(portal_type,lower(email),created_at DESC);
 CREATE INDEX IF NOT EXISTS portal_invitations_supplier_idx
     ON public.portal_invitations(supplier_id,created_at DESC)
