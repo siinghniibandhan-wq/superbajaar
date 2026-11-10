@@ -155,6 +155,22 @@ def _can_manage_privileged_roles(role: str) -> bool:
     return role == "super_admin"
 
 
+def can_manage_all_permissions(role: str) -> bool:
+    """Only the Super Admin has unrestricted permission-management authority."""
+    return role == "super_admin"
+
+
+def permissions_within_authority(granted: dict, authority: dict) -> bool:
+    """Reject any requested positive grant not held by the assigning administrator."""
+    for module, actions in granted.items():
+        if not isinstance(actions, dict):
+            return False
+        for action, allowed in actions.items():
+            if allowed is True and not authority.get(module, {}).get(action, False):
+                return False
+    return True
+
+
 def _require_user_admin(user: dict):
     if user.get("role") not in {"super_admin", "admin"}:
         raise HTTPException(403, "Super Admin or Admin permission is required")
