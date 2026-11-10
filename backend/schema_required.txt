@@ -33,3 +33,7 @@
 033_razorpay_webhook_inbox.sql
 034_hr_scheduling_leave_lifecycle.sql
 035_inventory_facility_internal_locations.sql
+037_hr_salary_revision_history.sql
+038_hr_variable_payroll_earnings.sql
+039_hr_multi_establishment_payroll_accruals.sql
+040_hr_final_settlement_earning_types.sql
