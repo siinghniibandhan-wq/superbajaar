@@ -11,6 +11,7 @@ import VouchersTab, { VoucherRow, VoucherSheet } from "./VouchersTab.jsx";
 import AccountingReports from "./AccountingReports.jsx";
 import { AccountsTab, BankTab, GstTab, PartiesTab, SettingsTab } from "./AccountingTools.jsx";
 import { buildEventMappingPayload } from "./accountingMapping.js";
+import { canWriteAccounting, isAccountingSchemaUnavailableError } from "./accountingPermissions.js";
 
 const TABS = [
   { key: "overview", label: "Overview", icon: Home },
@@ -35,8 +36,8 @@ const PERIODS = [
 
 export default function AccountingWorkspace({ onBack, currentUser }) {
   const role = String(currentUser?.role || "").toLowerCase();
-  // Writes are owner/admin only (enforced by the backend middleware); managers get read-only screens.
-  const canWrite = role === "owner" || role === "admin";
+  // Super Admin and Admin can post/reverse; Manager, Staff and Viewer are read-only.
+  const canWrite = canWriteAccounting(role);
   const [tab, setTab] = useState("overview");
   const [periodKey, setPeriodKey] = useState("fy");
   const [period, setPeriod] = useState(() => presetRange("fy"));
@@ -66,7 +67,7 @@ export default function AccountingWorkspace({ onBack, currentUser }) {
     if (voucher?.id) setOpenVoucher(voucher.id);
   };
   const current = TABS.find((t) => t.key === tab);
-  const schemaMissing = /accounting|relation|migration 015|does not exist/i.test(settingsState.error || "");
+  const schemaMissing = isAccountingSchemaUnavailableError(settingsState.error);
 
   return (
     <section className="sb-acc">
@@ -103,8 +104,8 @@ export default function AccountingWorkspace({ onBack, currentUser }) {
         </div>
       )}
 
-      {schemaMissing && <Alert tone="warn">Accounting tables are not available yet. The owner needs to apply database migration 015 before this workspace can be used.</Alert>}
-      {!canWrite && <Alert tone="info">You have read-only access. Only the owner or an admin can post or reverse entries.</Alert>}
+      {schemaMissing && <Alert tone="warn">Accounting storage is not ready. Verify that database migration 015_accounting_ledger.sql has been applied.</Alert>}
+      {!canWrite && <Alert tone="info">You have read-only access. Only the Super Admin or an Admin can post or reverse entries.</Alert>}
 
       {tab === "overview" && <Overview period={period} refreshKey={refreshKey} settings={settings} canWrite={canWrite} onOpen={setOpenVoucher} onTab={setTab} onNewEntry={setEntryType} />}
       {tab === "vouchers" && <VouchersTab period={period} onOpen={setOpenVoucher} refreshKey={refreshKey} />}
