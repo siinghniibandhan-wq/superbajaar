@@ -194,15 +194,15 @@ test("HR manager can submit and approve an effective-dated salary revision", asy
         special_allowance: "5000", other_allowance: "1000",
       }] } });
     }
-    if (url.pathname === "/api/hr/employees/11/salary-revisions" && request.method === "GET") {
+    if (url.pathname === "/api/hr/employees/11/salary-revisions" && request.method() === "GET") {
       return route.fulfill({ json: { items: revisions } });
     }
-    if (url.pathname === "/api/hr/employees/11/salary-revisions" && request.method === "POST") {
+    if (url.pathname === "/api/hr/employees/11/salary-revisions" && request.method() === "POST") {
       const body = request.postDataJSON();
       revisions.unshift({ id: 901, employee_id: 11, ...body, status: "draft" });
       return route.fulfill({ status: 201, json: revisions[0] });
     }
-    if (url.pathname === "/api/hr/employees/11/salary-revisions/901/review" && request.method === "POST") {
+    if (url.pathname === "/api/hr/employees/11/salary-revisions/901/review" && request.method() === "POST") {
       revisions[0].status = request.postDataJSON().decision;
       return route.fulfill({ json: revisions[0] });
     }
@@ -242,15 +242,15 @@ test("HR manager reviews overtime and it is included as an approved variable ear
         special_allowance: "5000", other_allowance: "1000",
       }] } });
     }
-    if (url.pathname === "/api/hr/payroll/earning-adjustments" && request.method === "GET") {
+    if (url.pathname === "/api/hr/payroll/earning-adjustments" && request.method() === "GET") {
       return route.fulfill({ json: { items: adjustments } });
     }
-    if (url.pathname === "/api/hr/employees/11/earning-adjustments" && request.method === "POST") {
+    if (url.pathname === "/api/hr/employees/11/earning-adjustments" && request.method() === "POST") {
       submitted = request.postDataJSON();
       adjustments.unshift({ id: 901, employee_code: "SB-0011", first_name: "Asha", ...submitted, status: "pending" });
       return route.fulfill({ status: 201, json: adjustments[0] });
     }
-    if (url.pathname === "/api/hr/payroll/earning-adjustments/901/review" && request.method === "POST") {
+    if (url.pathname === "/api/hr/payroll/earning-adjustments/901/review" && request.method() === "POST") {
       adjustments[0].status = request.postDataJSON().decision;
       return route.fulfill({ json: adjustments[0] });
     }
@@ -657,7 +657,7 @@ test("HR staff can view their own payslips in employee self-service", async ({ p
   await expect(page.getByText("2026-10-01 – 2026-10-31")).toBeVisible();
   await expect(page.getByText("₹40,000.00")).toBeVisible();
   await page.getByText("View breakdown").click();
-  await expect(page.getByText("Basic", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Basic:/)).toBeVisible();
   await expect(page.getByText("Approved salary advance recovery")).toBeVisible();
   await expect(page.getByText(/PF: Employee/)).toBeVisible();
   const downloadPromise = page.waitForEvent("download");
