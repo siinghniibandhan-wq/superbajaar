@@ -258,6 +258,41 @@ class SalaryRevisionInput(BaseModel):
 
 
 
+class PayrollEarningInput(BaseModel):
+    earning_type: str = Field(pattern="^(overtime|incentive|bonus)$")
+    period_start: date
+    period_end: date
+    amount: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
+    hours: Decimal | None = Field(default=None, gt=0, max_digits=8, decimal_places=2)
+    hourly_rate: Decimal | None = Field(default=None, gt=0, max_digits=14, decimal_places=2)
+    reason: str = Field(max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def earning_reason_required(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 5:
+            raise ValueError("Payroll earning reason must contain at least 5 characters")
+        return value
+
+    @model_validator(mode="after")
+    def validate_earning_period_and_overtime(self):
+        if self.period_start.day != 1:
+            raise ValueError("Payroll earning period must cover a full calendar month")
+        last_day = monthrange(self.period_start.year, self.period_start.month)[1]
+        if self.period_end != date(self.period_start.year,self.period_start.month,last_day):
+            raise ValueError("Payroll earning period must cover a full calendar month")
+        if self.earning_type == "overtime":
+            if self.hours is None or self.hourly_rate is None:
+                raise ValueError("Overtime requires both hours and hourly rate")
+            expected = (self.hours * self.hourly_rate).quantize(Decimal("0.01"))
+            if expected != self.amount:
+                raise ValueError("Overtime amount must equal hours multiplied by hourly rate")
+        elif self.hours is not None or self.hourly_rate is not None:
+            raise ValueError("Hours and hourly rate are only accepted for overtime")
+        return self
+
+
 
 @router.get("/departments")
 def list_departments(request: Request):
