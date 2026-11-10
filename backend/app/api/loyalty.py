@@ -29,7 +29,7 @@ def _connection():
 
 
 def _admin(request: Request):
-    if getattr(request.state, "role", "") not in {"super_admin", "owner", "admin"}:
+    if getattr(request.state, "role", "") not in {"super_admin", "super_admin", "admin"}:
         raise HTTPException(status_code=403, detail="Administrator access required")
 
 

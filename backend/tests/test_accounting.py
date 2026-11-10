@@ -41,7 +41,7 @@ def test_reader_dependency_blocks_staff_and_viewer(monkeypatch):
         with pytest.raises(HTTPException) as caught:
             accounting.require_accounting_reader(SimpleNamespace(state=SimpleNamespace(role=role)), None)
         assert caught.value.status_code == 403
-    for role in ("owner", "admin", "manager"):
+    for role in ("super_admin", "admin", "manager"):
         accounting.require_accounting_reader(SimpleNamespace(state=SimpleNamespace(role=role)), None)
 
 

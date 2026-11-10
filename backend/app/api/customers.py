@@ -47,8 +47,8 @@ def _error(exc):
     return HTTPException(503,"Customer storage unavailable; verify customer migration")
 
 def _require_crm_admin(request: Request):
-    if getattr(request.state, "role", None) not in {"owner", "admin"}:
-        raise HTTPException(403, "Only an owner or admin can manage support SLA policies")
+    if getattr(request.state, "role", None) not in {"super_admin", "admin"}:
+        raise HTTPException(403, "Only an Super Admin or Admin can manage support SLA policies")
 
 class CustomerIn(BaseModel):
     name:str=Field(min_length=1,max_length=200)
@@ -429,8 +429,8 @@ def reply_to_customer_support_ticket(case_number:str,payload:SupportMessageIn,re
 
 @router.get("/customer-accounts")
 def search_customer_accounts(request:Request,search:str=Query(min_length=3,max_length=254)):
-    if getattr(request.state,"role",None) not in {"owner","admin"}:
-        raise HTTPException(403,"Only an owner or admin can search website accounts for verified linking")
+    if getattr(request.state,"role",None) not in {"super_admin","admin"}:
+        raise HTTPException(403,"Only an Super Admin or Admin can search website accounts for verified linking")
     term="%"+search.strip().lower()+"%"
     try:
         with _connect() as conn:

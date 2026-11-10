@@ -897,7 +897,7 @@ def submit_goods_receipt_qc(grn_id: int, payload: QCSubmit, request: Request):
                 ).fetchone()
                 if not grn:
                     raise HTTPException(404, "Goods receipt not found")
-                if actor_role not in {"owner", "admin"}:
+                if actor_role not in {"super_admin", "admin"}:
                     establishment = conn.execute(
                         "SELECT establishment_id FROM stock_locations WHERE id=%s",
                         (grn["location_id"],),
@@ -1068,7 +1068,7 @@ class QuarantineReleaseInput(BaseModel):
 def release_goods_receipt_quarantine(grn_id: int, payload: QuarantineReleaseInput, request: Request):
     """Release inspected supplier stock from quarantine into saleable inventory atomically."""
     actor_id, actor_email, actor_role = _actor(request)
-    if actor_role not in {"owner", "admin", "manager"}:
+    if actor_role not in {"super_admin", "admin", "manager"}:
         raise HTTPException(403, "Inventory manager permission is required to release quarantined stock")
     from app.services.inventory_quarantine import calculate_quarantine_release
     from app.services.inventory_costing import create_cost_layer, money
@@ -1678,8 +1678,8 @@ def approve_supplier_invoice(invoice_id: int, request: Request):
 @router.post("/supplier-invoices/{invoice_id}/resolve-variance")
 def resolve_supplier_invoice_variance(invoice_id: int, payload: SupplierInvoiceReviewReason, request: Request):
     actor_id, actor_email, actor_role = _actor(request)
-    if actor_role not in {"owner", "admin"}:
-        raise HTTPException(403, "Owner or admin permission is required to resolve supplier invoice variances")
+    if actor_role not in {"super_admin", "admin"}:
+        raise HTTPException(403, "Super Admin or Admin permission is required to resolve supplier invoice variances")
     try:
         with _connect() as conn:
             with conn.transaction():
@@ -1728,8 +1728,8 @@ def resolve_supplier_invoice_variance(invoice_id: int, payload: SupplierInvoiceR
 @router.post("/supplier-invoices/{invoice_id}/reject")
 def reject_supplier_invoice(invoice_id: int, payload: SupplierInvoiceReviewReason, request: Request):
     actor_id, actor_email, actor_role = _actor(request)
-    if actor_role not in {"owner", "admin"}:
-        raise HTTPException(403, "Owner or admin permission is required to reject supplier invoices")
+    if actor_role not in {"super_admin", "admin"}:
+        raise HTTPException(403, "Super Admin or Admin permission is required to reject supplier invoices")
     try:
         with _connect() as conn:
             with conn.transaction():
@@ -2326,8 +2326,8 @@ def award_rfq_quotation(rfq_id: int, payload: RFQAwardInput, request: Request):
     commercial-terms columns.
     """
     actor_id, actor_email, actor_role = _actor(request)
-    if actor_role not in {"owner", "admin"}:
-        raise HTTPException(403, "Owner or admin permission is required to award an RFQ")
+    if actor_role not in {"super_admin", "admin"}:
+        raise HTTPException(403, "Super Admin or Admin permission is required to award an RFQ")
 
     try:
         with _connect() as conn:

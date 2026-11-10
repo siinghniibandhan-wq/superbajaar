@@ -2,9 +2,9 @@
 bank reconciliation, period lock and automatic posting of operational records.
 
 Requires backend/schema/015_accounting_ledger.sql. Posted vouchers are immutable;
-corrections are made with reversal vouchers. Read access: Super Admin, owner, admin, manager.
-Write access: Super Admin, owner and admin (enforced by the auth middleware). Changing the
-period lock date is Super Admin/owner-only.
+corrections are made with reversal vouchers. Read access: Super Admin, Admin, manager.
+Write access: Super Admin and Admin (enforced by the auth middleware). Changing the
+period lock date is Super Admin-only.
 
 GST figures are bookkeeping aids for return preparation. They are not a filed
 GSTR-1/GSTR-3B and must be reviewed by the business's tax professional.
@@ -27,7 +27,7 @@ from app.core.config import settings
 IST = ZoneInfo("Asia/Kolkata")
 ZERO = Decimal("0.00")
 CENT = Decimal("0.01")
-READ_ROLES = {"super_admin", "owner", "admin", "manager"}
+READ_ROLES = {"super_admin", "admin", "manager"}
 
 ACCOUNT_TYPES = {"asset", "liability", "equity", "income", "expense"}
 SUB_TYPES = {
@@ -66,7 +66,7 @@ ORDER_POSTABLE = ("placed", "confirmed", "processing", "ready_for_dispatch", "di
 
 
 def require_accounting_reader(request: Request, _session: None = Depends(require_active_session)) -> None:
-    """Accounting data is financial; restrict reads to owner/admin/manager.
+    """Accounting data is financial; restrict reads to Super Admin/Admin/manager.
 
     Depends on the session dependency explicitly so the role is always resolved first
     (FastAPI caches it, so the session check still runs once per request).
@@ -75,7 +75,7 @@ def require_accounting_reader(request: Request, _session: None = Depends(require
         return  # handlers return their explicit 503 when storage is not configured
     role = getattr(request.state, "role", None)
     if role not in READ_ROLES:
-        raise HTTPException(403, "Accounting is restricted to owner, admin and manager roles")
+        raise HTTPException(403, "Accounting is restricted to Super Admin, Admin and manager roles")
 
 
 router = APIRouter(prefix="/accounting", tags=["accounting"], dependencies=[Depends(require_accounting_reader)])
@@ -170,7 +170,7 @@ def _accounts_by_code(conn, codes) -> dict[str, dict]:
 def _check_unlocked(conn, voucher_date: date) -> None:
     lock = _settings_row(conn).get("lock_date")
     if lock and voucher_date <= lock:
-        raise HTTPException(409, f"Books are locked up to {lock.isoformat()}; choose a later date or ask the owner to change the lock date")
+        raise HTTPException(409, f"Books are locked up to {lock.isoformat()}; choose a later date or ask the Super Admin to change the lock date")
 
 
 def _next_number(conn, voucher_type: str, voucher_date: date) -> str:
@@ -553,8 +553,8 @@ def update_settings(payload: SettingsUpdate, request: Request):
                 current = conn.execute("SELECT lock_date FROM accounting_settings WHERE id=1 FOR UPDATE").fetchone()
                 if current is None:
                     raise HTTPException(503, "Accounting settings row is missing; verify migration 015")
-                if current["lock_date"] != payload.lock_date and getattr(request.state, "role", None) not in {"super_admin", "owner"}:
-                    raise HTTPException(403, "Only the Super Admin or owner can change the books lock date")
+                if current["lock_date"] != payload.lock_date and getattr(request.state, "role", None) != "super_admin":
+                    raise HTTPException(403, "Only the Super Admin can change the books lock date")
                 return conn.execute(
                     "UPDATE accounting_settings SET business_name=%s, gstin=%s, state_code=%s, default_supply=%s, lock_date=%s, "
                     "updated_by_email=%s, updated_at=now() WHERE id=1 RETURNING business_name, gstin, state_code, default_supply, "

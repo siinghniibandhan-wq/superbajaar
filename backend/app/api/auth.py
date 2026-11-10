@@ -147,7 +147,7 @@ def logout(credentials: HTTPAuthorizationCredentials | None = Depends(bearer), u
         raise HTTPException(503, "Unable to revoke session") from exc
 
 
-USER_ROLES = {"super_admin", "owner", "admin", "manager", "staff", "viewer"}
+USER_ROLES = {"super_admin", "admin", "manager", "staff", "viewer"}
 
 
 def _can_manage_privileged_roles(role: str) -> bool:
@@ -155,10 +155,31 @@ def _can_manage_privileged_roles(role: str) -> bool:
     return role == "super_admin"
 
 
+def can_manage_all_permissions(role: str) -> bool:
+    """Only the Super Admin has unrestricted permission-management authority."""
+    return role == "super_admin"
+
+
+def permissions_within_authority(granted: dict, authority: dict) -> bool:
+    """Reject any requested positive grant not held by the assigning administrator."""
+    for module, actions in granted.items():
+        if not isinstance(actions, dict):
+            return False
+        for action, allowed in actions.items():
+            if allowed is True and not authority.get(module, {}).get(action, False):
+                return False
+    return True
+
+
 def _require_user_admin(user: dict):
-    if user.get("role") not in {"super_admin", "owner", "admin"}:
-        raise HTTPException(403, "Owner or admin permission is required")
+    if user.get("role") not in {"super_admin", "admin"}:
+        raise HTTPException(403, "Super Admin or Admin permission is required")
     return user
+
+
+def _can_manage_target_user(actor_role: str, target_role: str) -> bool:
+    """Admins may manage ordinary users, never peer Admins or Super Admins."""
+    return actor_role == "super_admin" or target_role not in {"super_admin", "admin"}
 
 
 class UserCreate(BaseModel):
@@ -166,6 +187,7 @@ class UserCreate(BaseModel):
     full_name: str = Field(min_length=1, max_length=200)
     password: str = Field(min_length=12, max_length=1024)
     role: str = "staff"
+    permissions: dict[str, dict[str, bool]] = Field(default_factory=dict)
 
     @field_validator("email")
     @classmethod
@@ -221,15 +243,20 @@ def create_user(payload: UserCreate, user=Depends(current_user)):
     _require_user_admin(user)
     if payload.role == "super_admin" and not _can_manage_privileged_roles(user["role"]):
         raise HTTPException(403, "Only a Super Admin can create Super Admin accounts")
-    if payload.role in {"owner", "admin"} and user["role"] not in {"super_admin", "owner"}:
-        raise HTTPException(403, "Only a Super Admin or legacy owner can create owner or admin accounts")
+    if payload.role == "admin" and user["role"] != "super_admin":
+        raise HTTPException(403, "Only a Super Admin can create Admin accounts")
     try:
         with _connect() as conn:
-            row = conn.execute(
-                "INSERT INTO app_users(email,full_name,password_hash,role) VALUES(%s,%s,%s,%s) "
-                "RETURNING id,email,full_name,role,is_active,created_at,updated_at",
-                (payload.email, payload.full_name, _password_hash(payload.password), payload.role),
-            ).fetchone()
+            with conn.transaction():
+                authority = _effective_permissions(conn, user["id"], user["role"])
+                if not can_manage_all_permissions(user["role"]) and not permissions_within_authority(payload.permissions, authority):
+                    raise HTTPException(403, "You cannot grant permissions you do not hold")
+                row = conn.execute(
+                    "INSERT INTO app_users(email,full_name,password_hash,role) VALUES(%s,%s,%s,%s) "
+                    "RETURNING id,email,full_name,role,is_active,created_at,updated_at",
+                    (payload.email, payload.full_name, _password_hash(payload.password), payload.role),
+                ).fetchone()
+                _save_user_permissions(conn, row["id"], payload.permissions, user["id"])
         return row
     except psycopg.Error as exc:
         if getattr(exc, "sqlstate", None) == "23505":
@@ -244,8 +271,8 @@ def update_user(user_id: int, payload: UserUpdate, user=Depends(current_user)):
         raise HTTPException(422, "Provide role or is_active")
     if payload.role == "super_admin" and not _can_manage_privileged_roles(user["role"]):
         raise HTTPException(403, "Only a Super Admin can assign the Super Admin role")
-    if payload.role in {"owner", "admin"} and user["role"] not in {"super_admin", "owner"}:
-        raise HTTPException(403, "Only a Super Admin or legacy owner can assign owner or admin roles")
+    if payload.role == "admin" and user["role"] != "super_admin":
+        raise HTTPException(403, "Only a Super Admin can assign the Admin role")
     if user_id == user["id"] and payload.is_active is False:
         raise HTTPException(409, "You cannot deactivate your own account")
     try:
@@ -254,16 +281,17 @@ def update_user(user_id: int, payload: UserUpdate, user=Depends(current_user)):
                 target = conn.execute("SELECT id,role,is_active FROM app_users WHERE id=%s FOR UPDATE", (user_id,)).fetchone()
                 if target is None:
                     raise HTTPException(404, "User not found")
+                if target["role"] in {"super_admin", "admin"} and user["role"] != "super_admin":
+                    raise HTTPException(403, "Only Super Admin can modify Admin or Super Admin accounts")
                 next_role = payload.role if payload.role is not None else target["role"]
                 next_active = payload.is_active if payload.is_active is not None else target["is_active"]
-                if target["role"] in {"super_admin", "owner"} and (next_role != target["role"] or not next_active):
+                if target["role"] == "super_admin" and (next_role != target["role"] or not next_active):
                     remaining = conn.execute(
                         "SELECT count(*) AS n FROM app_users WHERE role=%s AND is_active=TRUE AND id<>%s",
                         (target["role"], user_id),
                     ).fetchone()["n"]
                     if remaining == 0:
-                        label = "Super Admin" if target["role"] == "super_admin" else "legacy owner"
-                        raise HTTPException(409, f"The last active {label} cannot be demoted or deactivated")
+                        raise HTTPException(409, "The last active Super Admin cannot be demoted or deactivated")
                 row = conn.execute(
                     "UPDATE app_users SET role=%s,is_active=%s,updated_at=now() WHERE id=%s "
                     "RETURNING id,email,full_name,role,is_active,created_at,updated_at",
@@ -276,3 +304,110 @@ def update_user(user_id: int, payload: UserUpdate, user=Depends(current_user)):
         raise
     except psycopg.Error as exc:
         raise HTTPException(503, "Unable to update user; verify the required authentication schema") from exc
+
+
+def _effective_permissions(conn, user_id: int, role: str) -> dict:
+    rows = conn.execute(
+        """
+        SELECT m.module_key, p.action_key,
+               COALESCE(up.allowed, rp.allowed, false) AS allowed
+        FROM app_modules m CROSS JOIN app_permissions p
+        JOIN app_roles r ON r.name = %s AND r.is_active = TRUE
+        LEFT JOIN app_role_permissions rp
+          ON rp.role_id = r.id AND rp.module_id = m.id AND rp.permission_id = p.id
+        LEFT JOIN app_user_module_permissions up
+          ON up.user_id = %s AND up.module_id = m.id AND up.permission_id = p.id
+        WHERE m.is_active = TRUE
+        ORDER BY m.module_key, p.action_key
+        """,
+        (role, user_id),
+    ).fetchall()
+    result = {}
+    for row in rows:
+        result.setdefault(row["module_key"], {})[row["action_key"]] = bool(row["allowed"])
+    return result
+
+
+def _save_user_permissions(conn, target_user_id: int, grants: dict, actor_id: int):
+    for module, actions in grants.items():
+        if not isinstance(actions, dict):
+            raise HTTPException(422, f"Invalid permissions for module {module}")
+        for action, allowed in actions.items():
+            if action not in {"read", "create", "edit", "delete", "approve", "export", "configure"} or not isinstance(allowed, bool):
+                raise HTTPException(422, "Invalid permission action or value")
+            exists = conn.execute(
+                "SELECT 1 FROM app_modules m CROSS JOIN app_permissions p WHERE m.module_key=%s AND p.action_key=%s AND m.is_active=TRUE",
+                (module, action),
+            ).fetchone()
+            if not exists:
+                raise HTTPException(422, f"Unknown module/action: {module}.{action}")
+            conn.execute(
+                """
+                INSERT INTO app_user_module_permissions(user_id,module_id,permission_id,allowed,updated_by_user_id,updated_at)
+                SELECT %s,m.id,p.id,%s,%s,now()
+                FROM app_modules m CROSS JOIN app_permissions p
+                WHERE m.module_key=%s AND p.action_key=%s
+                ON CONFLICT(user_id,module_id,permission_id) DO UPDATE
+                SET allowed=EXCLUDED.allowed,updated_by_user_id=EXCLUDED.updated_by_user_id,updated_at=now()
+                """,
+                (target_user_id, allowed, actor_id, module, action),
+            )
+
+
+@router.get("/permissions")
+def list_permission_catalogue(user=Depends(current_user)):
+    _require_user_admin(user)
+    try:
+        with _connect() as conn:
+            modules = conn.execute("SELECT module_key,label FROM app_modules WHERE is_active=TRUE ORDER BY label").fetchall()
+            actions = conn.execute("SELECT action_key,label FROM app_permissions ORDER BY id").fetchall()
+            authority = _effective_permissions(conn, user["id"], user["role"])
+        return {"modules": modules, "actions": actions, "authority": authority}
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Permission catalogue unavailable; apply migration 036") from exc
+
+
+@router.get("/users/{user_id}/permissions")
+def get_user_permissions(user_id: int, user=Depends(current_user)):
+    _require_user_admin(user)
+    try:
+        with _connect() as conn:
+            target = conn.execute("SELECT id,role FROM app_users WHERE id=%s", (user_id,)).fetchone()
+            if target is None:
+                raise HTTPException(404, "User not found")
+            if not _can_manage_target_user(user["role"], target["role"]):
+                raise HTTPException(403, "Only Super Admin can inspect Admin or Super Admin permissions")
+            return {"permissions": _effective_permissions(conn, user_id, target["role"])}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Unable to load user permissions") from exc
+
+
+class UserPermissionsUpdate(BaseModel):
+    permissions: dict[str, dict[str, bool]]
+
+
+@router.put("/users/{user_id}/permissions")
+def update_user_permissions(user_id: int, payload: UserPermissionsUpdate, user=Depends(current_user)):
+    _require_user_admin(user)
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                target = conn.execute("SELECT id,role FROM app_users WHERE id=%s FOR UPDATE", (user_id,)).fetchone()
+                if target is None:
+                    raise HTTPException(404, "User not found")
+                if not _can_manage_target_user(user["role"], target["role"]):
+                    raise HTTPException(403, "Only Super Admin can change Admin or Super Admin permissions")
+                authority = _effective_permissions(conn, user["id"], user["role"])
+                if not can_manage_all_permissions(user["role"]) and not permissions_within_authority(payload.permissions, authority):
+                    raise HTTPException(403, "You cannot grant permissions you do not hold")
+                # PUT replaces the complete set of user overrides; omitted grants
+                # revert to the target role's defaults instead of lingering silently.
+                conn.execute("DELETE FROM app_user_module_permissions WHERE user_id=%s", (user_id,))
+                _save_user_permissions(conn, user_id, payload.permissions, user["id"])
+                return {"permissions": _effective_permissions(conn, user_id, target["role"])}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Unable to save user permissions; verify migration 036") from exc

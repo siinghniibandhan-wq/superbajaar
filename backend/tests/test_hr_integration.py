@@ -23,10 +23,10 @@ def api(monkeypatch):
     suffix=uuid.uuid4().hex[:10]
     with psycopg.connect(TEST_DB) as conn:
         user_id=conn.execute(
-            "INSERT INTO app_users(email,full_name,password_hash,role) VALUES(%s,%s,%s,'owner') RETURNING id",
+            "INSERT INTO app_users(email,full_name,password_hash,role) VALUES(%s,%s,%s,'super_admin') RETURNING id",
             (f"hr-{suffix}@test.local","HR Integration Test","test-hash"),
         ).fetchone()[0]
-    role={"value":"owner"}
+    role={"value":"super_admin"}
     async def fake_session(request:Request):
         request.state.role=role["value"]
         request.state.user_id=user_id
@@ -92,7 +92,7 @@ def test_hr_employee_attendance_expense_payroll_accounting_cycle(api):
         "category":"travel","amount":"1250","expense_date":"2026-10-15",
         "description":"Approved local travel reimbursement"
     }),201)
-    api.role["value"]="owner"
+    api.role["value"]="super_admin"
     ok(api.patch("/api/hr/leave/"+str(leave["id"])+"/review",json={"decision":"approved"}))
     ok(api.patch("/api/hr/expenses/"+str(expense["id"])+"/review",json={"decision":"approved"}))
 
@@ -190,7 +190,7 @@ def test_hr_admin_can_manage_departments_establishments_and_attendance(api):
 
     api.role["value"]="staff"
     punch=ok(api.post("/api/hr/attendance/punch",json={"punch_type":"clock_in"}),201)
-    api.role["value"]="owner"
+    api.role["value"]="super_admin"
     adjusted=ok(api.patch("/api/hr/attendance/sessions/"+str(punch["id"]),json={
         "clock_in_at":"2026-11-02T09:00:00+05:30",
         "clock_out_at":"2026-11-02T18:00:00+05:30",
@@ -261,7 +261,7 @@ def test_hr_self_service_leave_and_expense_rejections_require_reason(api):
         "category":"travel","amount":"250","expense_date":"2026-11-12",
         "description":"Local travel"
     }),201)
-    api.role["value"]="owner"
+    api.role["value"]="super_admin"
     leave_rejected=api.patch("/api/hr/leave/"+str(leave["id"])+"/review",json={"decision":"rejected"})
     expense_rejected=api.patch("/api/hr/expenses/"+str(expense["id"])+"/review",json={"decision":"rejected","note":" "})
     assert leave_rejected.status_code==422
@@ -306,7 +306,7 @@ def test_hr_shift_roster_publish_cancel_and_staff_visibility(api):
     api.role["value"]="staff"
     schedule=ok(api.get("/api/hr/shift-assignments?start_date=2026-11-01&end_date=2026-11-30"))
     assert [x["id"] for x in schedule["items"]]==[assignment["id"]]
-    api.role["value"]="owner"
+    api.role["value"]="super_admin"
     cancelled=ok(api.post("/api/hr/shift-assignments/"+str(assignment["id"])+"/cancel",json={
         "decision":"rejected","note":"Store opening hours changed"
     }))
@@ -375,14 +375,14 @@ def test_hr_leave_policy_accrual_is_idempotent_and_adjustments_are_ledgered(api)
         "leave_type":"annual","start_date":"2026-11-30","end_date":"2026-11-30",
         "days":"1","reason":"Planned annual leave"
     }),201)
-    api.role["value"]="owner"
+    api.role["value"]="super_admin"
     ok(api.patch("/api/hr/leave/"+str(request["id"])+"/review",json={"decision":"approved"}))
     api.role["value"]="staff"
     cancelled=ok(api.post("/api/hr/leave/"+str(request["id"])+"/cancel",json={
         "reason":"Leave plan changed after approval"
     }))
     assert cancelled["status"]=="cancelled"
-    api.role["value"]="owner"
+    api.role["value"]="super_admin"
     ledger=ok(api.get("/api/hr/leave-ledger?employee_id="+str(employee["id"])))
     assert sum(Decimal(str(x["quantity_days"])) for x in ledger["items"])==Decimal("3.00")
     ok(api.post("/api/hr/leave-balances/adjust",json={
@@ -448,7 +448,7 @@ def test_hr_lifecycle_template_generates_tasks_once_and_audits_completion(api):
         "status":"in_progress"
     })
     assert cannot_reopen.status_code==409
-    api.role["value"]="owner"
+    api.role["value"]="super_admin"
     events=ok(api.get("/api/hr/lifecycle/tasks/"+str(task["id"])+"/events"))
     assert [x["event_type"] for x in events["items"]]==["created","started","completed"]
 
@@ -505,7 +505,7 @@ def test_hr_leave_overlap_blocks_pending_and_approved_but_not_rejected(api):
         "days":"2","reason":"Overlapping leave request"
     })
     assert pending_overlap.status_code==409
-    api.role["value"]="owner"
+    api.role["value"]="super_admin"
     ok(api.patch("/api/hr/leave/"+str(first["id"])+"/review",json={
         "decision":"rejected","note":"Rejected for this test"
     }))
@@ -514,7 +514,7 @@ def test_hr_leave_overlap_blocks_pending_and_approved_but_not_rejected(api):
         "leave_type":"annual","start_date":"2026-12-10","end_date":"2026-12-12",
         "days":"3","reason":"Resubmitted after rejection"
     }),201)
-    api.role["value"]="owner"
+    api.role["value"]="super_admin"
     ok(api.patch("/api/hr/leave/"+str(replacement["id"])+"/review",json={"decision":"approved"}))
     approved_overlap=api.post("/api/hr/leave",json={
         "leave_type":"casual","start_date":"2026-12-11","end_date":"2026-12-11",

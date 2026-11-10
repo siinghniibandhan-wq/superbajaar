@@ -26,17 +26,15 @@ def test_manager_can_manage_operations_but_not_users_or_catalogue():
     assert not _role_can_write("manager", "/api/auth/users")
 
 
-def test_admin_and_owner_can_write_all_modules():
-    for role in ("owner", "admin", "super_admin"):
+def test_admin_and_super_admin_can_write_all_modules():
+    for role in ("admin", "super_admin"):
         assert _role_can_write(role, "/api/catalogue/products")
         assert _role_can_write(role, "/api/auth/users")
 
 
 def test_super_admin_is_the_only_role_that_can_manage_privileged_roles():
     from app.api.auth import _can_manage_privileged_roles
-
     assert _can_manage_privileged_roles("super_admin")
-    assert not _can_manage_privileged_roles("owner")
     assert not _can_manage_privileged_roles("admin")
 
 
@@ -47,21 +45,18 @@ def test_product_deletion_is_not_allowed_for_manager_staff_or_viewer():
 
 def test_super_admin_has_accounting_read_access():
     from app.api.accounting import READ_ROLES
-
     assert "super_admin" in READ_ROLES
 
 
 def test_super_admin_has_hr_management_access():
     from types import SimpleNamespace
     from app.api.hr import _manager
-
     assert _manager(SimpleNamespace(state=SimpleNamespace(user_id=1, role="super_admin"))) == 1
 
 
 def test_super_admin_has_organisation_policy_administration_access():
     from types import SimpleNamespace
     from app.api.organisation_policies import _policy_admin
-
     request = SimpleNamespace(state=SimpleNamespace(user_id=1, user_email="root@example.test", role="super_admin"))
     assert _policy_admin(request) == (1, "root@example.test", "super_admin")
 
@@ -69,5 +64,4 @@ def test_super_admin_has_organisation_policy_administration_access():
 def test_super_admin_has_loyalty_administration_access():
     from types import SimpleNamespace
     from app.api.loyalty import _admin
-
     assert _admin(SimpleNamespace(state=SimpleNamespace(role="super_admin"))) is None

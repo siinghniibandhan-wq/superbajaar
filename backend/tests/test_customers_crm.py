@@ -299,7 +299,7 @@ def test_customer_storage_errors_are_logged_with_original_exception(monkeypatch,
 
 
 
-def test_owner_and_admin_can_create_sla_policies_for_every_priority(monkeypatch):
+def test_super_admin_and_admin_can_create_sla_policies_for_every_priority(monkeypatch):
     from types import SimpleNamespace
     from app.api import customers
 
@@ -325,7 +325,7 @@ def test_owner_and_admin_can_create_sla_policies_for_every_priority(monkeypatch)
             self.calls.append((query, params))
             return Cursor(self.row)
 
-    for role in ("owner", "admin"):
+    for role in ("super_admin", "admin"):
         for priority in ("urgent", "high", "normal", "low"):
             row = {
                 "id": 1,

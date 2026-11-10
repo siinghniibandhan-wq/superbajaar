@@ -235,7 +235,7 @@ def _inventory_actor(request: Request):
 
 
 def _require_inventory_establishment_scope(conn, actor_id: int, actor_role: str, establishment_id: int | None):
-    if actor_role in {"owner", "admin"}:
+    if actor_role in {"super_admin", "admin"}:
         return
     if establishment_id is None:
         raise HTTPException(403, "This stock location is not assigned to a legal establishment")
@@ -259,7 +259,7 @@ def list_inventory_approval_requests(request: Request, status: str | None = Quer
                 "FROM inventory_event_approval_requests r JOIN stock_locations l ON l.id=r.location_id "
                 "JOIN organisation_policy_versions p ON p.id=r.policy_version_id "
                 "WHERE (%s::text IS NULL OR r.status=%s::text) AND ("
-                "%s IN ('owner','admin') OR r.created_by_user_id=%s OR ("
+                "%s IN ('super_admin','admin') OR r.created_by_user_id=%s OR ("
                 "r.establishment_id IN (SELECT esp.establishment_id FROM hr_employees he "
                 "JOIN hr_employee_statutory_profiles esp ON esp.employee_id=he.id WHERE he.user_id=%s) "
                 "AND EXISTS (SELECT 1 FROM jsonb_array_elements("
@@ -282,7 +282,7 @@ def list_inventory_approval_requests(request: Request, status: str | None = Quer
                 stages=sorted(event_policy.get("stages",[]),key=lambda stage:int(stage["sequence"]))
                 completed={int(d["stage_sequence"]) for d in decisions if d["decision"]=="approved"}
                 next_stage=next((stage for stage in stages if int(stage["sequence"]) not in completed),None)
-                is_member = actor_role in {"owner","admin"}
+                is_member = actor_role in {"super_admin","admin"}
                 if not is_member:
                     membership=conn.execute(
                         "SELECT EXISTS(SELECT 1 FROM hr_employees he "
@@ -341,7 +341,7 @@ def create_inventory_approval_request(payload: InventoryApprovalRequestCreate, r
                     raise HTTPException(404,"Active stock location not found")
                 if location["establishment_id"] is None:
                     raise HTTPException(409,"Assign the stock location to an active legal establishment first")
-                if role not in {"owner","admin"}:
+                if role not in {"super_admin","admin"}:
                     membership=conn.execute(
                         "SELECT EXISTS(SELECT 1 FROM hr_employees he "
                         "JOIN hr_employee_statutory_profiles esp ON esp.employee_id=he.id "
@@ -400,7 +400,7 @@ def decide_inventory_approval_request(request_id: int, payload: InventoryApprova
                 ).fetchone()
                 if not policy:
                     raise HTTPException(409,"The request's bound Inventory policy version is unavailable")
-                if role not in {"owner","admin"}:
+                if role not in {"super_admin","admin"}:
                     membership=conn.execute(
                         "SELECT EXISTS(SELECT 1 FROM hr_employees he "
                         "JOIN hr_employee_statutory_profiles esp ON esp.employee_id=he.id "
@@ -532,8 +532,8 @@ def _db_error(exc: psycopg.Error) -> HTTPException:
 
 @router.post("/locations", status_code=201)
 def create_location(payload: StockLocationCreate, request: Request):
-    if (payload.establishment_id is not None or not payload.is_fulfillable) and getattr(request.state, "role", None) not in {"owner", "admin"}:
-        raise HTTPException(status_code=403, detail="Only owner/admin can assign a stock location to a legal establishment")
+    if (payload.establishment_id is not None or not payload.is_fulfillable) and getattr(request.state, "role", None) not in {"super_admin", "admin"}:
+        raise HTTPException(status_code=403, detail="Only Super Admin/Admin can assign a stock location to a legal establishment")
     try:
         with _connect() as conn:
             if payload.establishment_id is not None:
@@ -561,8 +561,8 @@ def create_location(payload: StockLocationCreate, request: Request):
 
 @router.put("/locations/{location_id}/establishment")
 def assign_location_establishment(location_id: int, payload: EstablishmentAssignment, request: Request):
-    if getattr(request.state, "role", None) not in {"owner", "admin"}:
-        raise HTTPException(status_code=403, detail="Only owner/admin can assign a stock location to a legal establishment")
+    if getattr(request.state, "role", None) not in {"super_admin", "admin"}:
+        raise HTTPException(status_code=403, detail="Only Super Admin/Admin can assign a stock location to a legal establishment")
     try:
         with _connect() as conn:
             with conn.transaction():
@@ -697,7 +697,7 @@ def list_expired_stock(request: Request, limit: int = Query(default=100, ge=1, l
     try:
         with _connect() as conn:
             allowed_establishments = None
-            if actor_role not in {"owner", "admin"}:
+            if actor_role not in {"super_admin", "admin"}:
                 allowed_establishments = [row["establishment_id"] for row in conn.execute(
                     "SELECT esp.establishment_id FROM hr_employees he "
                     "JOIN hr_employee_statutory_profiles esp ON esp.employee_id=he.id WHERE he.user_id=%s",
@@ -732,8 +732,8 @@ def list_expired_stock(request: Request, limit: int = Query(default=100, ge=1, l
 @router.post("/quarantine-expired")
 def quarantine_expired_stock(payload: ExpiredStockQuarantineRequest, request: Request):
     actor_id, _, actor_role = _inventory_actor(request)
-    if actor_role not in {"owner", "admin", "manager"}:
-        raise HTTPException(403, "Only owner, admin or manager may quarantine expired inventory")
+    if actor_role not in {"super_admin", "admin", "manager"}:
+        raise HTTPException(403, "Only Super Admin, Admin or manager may quarantine expired inventory")
     from app.services.inventory_quarantine import plan_quarantine_transfer
 
     reference_id = str(payload.idempotency_key)

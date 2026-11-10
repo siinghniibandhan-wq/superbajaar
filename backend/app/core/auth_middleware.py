@@ -23,8 +23,47 @@ def _is_public_catalogue_read(method: str, path: str, prefix: str) -> bool:
     }
 
 
+def permission_granted(permissions: dict, module: str, action: str) -> bool:
+    """Return an explicit effective grant; missing module/action is deny-by-default."""
+    return bool(permissions.get(module, {}).get(action, False))
+
+
+def _module_for_path(path: str, prefix: str = "/api") -> str | None:
+    """Resolve every staff API router using the configured API prefix."""
+    normalized_prefix = prefix.rstrip("/")
+    if not path.startswith(normalized_prefix + "/"):
+        return None
+    remainder = path[len(normalized_prefix) + 1:]
+    route = remainder.split("/", 1)[0]
+    aliases = {
+        "catalogue": "catalogue", "inventory": "inventory", "inventory-locations": "inventory", "purchasing": "purchasing", "purchasing-lifecycle": "purchasing",
+        "pos": "pos", "customers": "crm", "orders": "orders", "payments": "payments",
+        "razorpay": "payments", "fulfilment": "fulfillment", "delivery": "delivery",
+        "pricing": "pricing", "loyalty": "loyalty", "hr": "hr_payroll",
+        "accounting": "accounting", "reports": "dashboard", "auth": "user_management", "organisation-policies": "dashboard",
+    }
+    return aliases.get(route)
+
+
+def _action_for_request(method: str, path: str) -> str:
+    """Translate workflow endpoints to granular actions before HTTP defaults."""
+    segments = path.rstrip("/").lower().split("/")
+    workflow_actions = {"approve": "approve", "award": "approve", "post": "approve", "dispatch": "approve", "credit": "approve", "export": "export", "configure": "configure", "settings": "configure"}
+    if any(segment in workflow_actions for segment in segments):
+        return next(workflow_actions[segment] for segment in reversed(segments) if segment in workflow_actions)
+    if method in {"GET", "HEAD"}:
+        return "read"
+    if method == "DELETE":
+        return "delete"
+    if method == "POST":
+        return "create"
+    if method in {"PUT", "PATCH"}:
+        return "edit"
+    return "configure"
+
+
 def _role_can_write(role: str, path: str) -> bool:
-    if role in {"super_admin", "owner", "admin"}:
+    if role in {"super_admin", "admin"}:
         return True
     if role == "viewer":
         return False
@@ -159,10 +198,34 @@ async def require_active_session(request: Request) -> None:
         raise HTTPException(status_code=401, detail="Session is no longer active")
 
     role = row["role"]
-    if path.startswith(prefix + "/customers/") and "/account-link" in path and role not in {"super_admin", "owner", "admin"}:
-        raise HTTPException(status_code=403, detail="Only a Super Admin, owner or admin can link a customer account")
     request.state.role = role
     request.state.user_id = row["id"]
     request.state.user_email = row["email"]
-    if request.method not in {"GET", "HEAD"} and not _role_can_write(role, path):
-        raise HTTPException(status_code=403, detail="Your role does not have permission to change this resource")
+
+    module_key = _module_for_path(path, prefix)
+    if module_key is None:
+        # Every staff router must be represented in the permission catalogue.
+        # Unknown routes fail closed instead of inheriting broad role permissions.
+        raise HTTPException(status_code=403, detail="This API route has no configured permission mapping")
+    action_key = _action_for_request(request.method, path)
+    try:
+        with psycopg.connect(settings.database_url, row_factory=dict_row, connect_timeout=3) as conn:
+            rows = conn.execute(
+                """
+                SELECT p.action_key, COALESCE(up.allowed, rp.allowed, false) AS allowed
+                FROM app_modules m
+                CROSS JOIN app_permissions p
+                JOIN app_roles r ON r.name = %s AND r.is_active = TRUE
+                LEFT JOIN app_role_permissions rp
+                  ON rp.role_id = r.id AND rp.module_id = m.id AND rp.permission_id = p.id
+                LEFT JOIN app_user_module_permissions up
+                  ON up.user_id = %s AND up.module_id = m.id AND up.permission_id = p.id
+                WHERE m.module_key = %s AND m.is_active = TRUE
+                """,
+                (role, row["id"], module_key),
+            ).fetchall()
+    except psycopg.Error as exc:
+        raise HTTPException(status_code=503, detail="Permission storage unavailable; apply the configurable RBAC schema") from exc
+    effective = {item["action_key"]: item["allowed"] for item in rows}
+    if not effective.get(action_key, False):
+        raise HTTPException(status_code=403, detail=f"Missing {action_key} permission for {module_key}")
