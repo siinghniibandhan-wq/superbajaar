@@ -152,7 +152,7 @@ class EmployeeInput(BaseModel):
 class AttendanceAdjustmentInput(BaseModel):
     clock_in_at: Any
     clock_out_at: Any | None = None
-    reason: str = Field(min_length=5, max_length=500)
+    reason: str = Field(max_length=500)
 
 
 class PunchInput(BaseModel):
@@ -246,8 +246,14 @@ class SalaryRevisionInput(BaseModel):
 
     @model_validator(mode="after")
     def ordered_salary_period(self):
-        if self.effective_to and self.effective_to < self.effective_from:
-            raise ValueError("Salary revision end date cannot precede its effective date")
+        if self.effective_from.day != 1:
+            raise ValueError("Salary revision must start on the first day of a calendar month")
+        if self.effective_to:
+            last_day = monthrange(self.effective_to.year, self.effective_to.month)[1]
+            if self.effective_to < self.effective_from:
+                raise ValueError("Salary revision end date cannot precede its effective date")
+            if self.effective_to.day != last_day:
+                raise ValueError("Salary revision must end on the last day of a calendar month")
         return self
 
 
