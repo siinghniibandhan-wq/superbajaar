@@ -13,4 +13,5 @@ assert.equal(new Set(ids).size, ids.length, "navigation module IDs must be uniqu
 assert.deepEqual([...ids].sort(), [...routeIds].sort(), "every navigable module must have exactly one registered route");
 assert.ok(source.includes("function UnavailableWorkspace"), "unknown IDs must have an explicit unavailable state");
 assert.ok(!source.includes("This module is not implemented yet"), "old unfinished-workspace fallback must be removed");
+assert.ok(source.includes('["super_admin", "owner", "admin"].includes(role)'), "Super Admin, owner, and admin must be allowed into the Admin Console");
 console.log(`Admin route map OK: ${ids.length} unique navigation modules are registered.`);
