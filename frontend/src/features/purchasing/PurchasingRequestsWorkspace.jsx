@@ -210,8 +210,11 @@ export default function PurchasingRequestsWorkspace({ suppliers = [], locations 
         method: "POST", body: JSON.stringify({ quotation_id: quotation.id }),
       });
       await loadLists(); await openRfq(selectedRfq.id);
-      if (onPurchaseOrderCreated) onPurchaseOrderCreated(po.id);
-      setNotice(`Quotation awarded. Draft PO ${po.purchase_number} created and still requires purchase approval.`);
+      if (onPurchaseOrderCreated) {
+        await onPurchaseOrderCreated(po);
+      } else {
+        setNotice(`Quotation awarded. Draft PO ${po.purchase_number} created and still requires purchase approval.`);
+      }
     } catch (err) { setError(err.message || "Unable to award quotation."); }
     finally { setSaving(false); }
   }
