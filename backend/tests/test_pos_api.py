@@ -73,4 +73,4 @@ def test_pos_sales_aggregates_payments_before_joining_order_lines(monkeypatch):
     assert result["items"][0]["captured_amount"] == 250
     query = conn.queries[0][0]
     assert "SELECT order_id, count(*) AS line_count" in query
-    assert "SELECT order_id," in query and "sum(amount) FILTER (WHERE status='captured')" in query
+    assert "SELECT order_id," in query and "sum(amount) FILTER (WHERE p.status='captured')" in query
