@@ -128,3 +128,40 @@ export default function PortalWorkspace({ portal }) {
     <footer className="portal-footer">Super Bajaar · {isVendor?"Vendor Portal":"Employee Portal"} · Your information is protected by account-level access controls.</footer>
   </main>;
 }
+
+
+export function PortalActivation({ portal }) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [done, setDone] = useState(false);
+  const token = new URLSearchParams(window.location.search).get("token") || "";
+  async function submit(event) {
+    event.preventDefault(); setError("");
+    if (password !== confirm) { setError("Your passwords do not match."); return; }
+    setBusy(true);
+    try {
+      await apiRequest("/portal-invitations/accept", {
+        method: "POST", skipAuth: true,
+        body: JSON.stringify({ token, password }),
+      });
+      setDone(true);
+    } catch (reason) { setError(reason.message || "This invitation could not be activated."); }
+    finally { setBusy(false); }
+  }
+  return <main className="portal-login-wrap">
+    <div className="portal-login-heading"><span className="portal-brand-mark">S</span><p>SUPER BAJAAR · {portal.toUpperCase()} PORTAL</p><h1>Make this space yours.</h1><span>Set a password to activate your invited account.</span></div>
+    <form className="sb-login-card" onSubmit={submit}>
+      <p className="sb-eyebrow">SECURE ACCOUNT ACTIVATION</p>
+      {done ? <><h1>You're all set.</h1><p>Your account is active. Sign in to continue to your {portal} workspace.</p><a className="sb-primary" href={portal === "vendor" ? "/vendor" : "/employee"}>Continue to sign in</a></> : <>
+        <h1>Activate your account</h1><p>Choose a strong password to get started.</p>
+        {!token && <p className="sb-alert" role="alert">The invitation link is missing its token. Ask your administrator for a fresh invitation.</p>}
+        {error && <p className="sb-alert" role="alert">{error}</p>}
+        <label>Password<input type="password" autoComplete="new-password" minLength={12} maxLength={1024} required value={password} onChange={event=>setPassword(event.target.value)}/></label>
+        <label>Confirm password<input type="password" autoComplete="new-password" minLength={12} maxLength={1024} required value={confirm} onChange={event=>setConfirm(event.target.value)}/></label>
+        <button className="sb-primary" type="submit" disabled={busy || !token}>{busy ? "Activating…" : "Activate account"}</button>
+      </>}
+    </form>
+  </main>;
+}
