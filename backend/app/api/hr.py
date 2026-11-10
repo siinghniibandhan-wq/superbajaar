@@ -1027,7 +1027,11 @@ def calculate_payroll(payload: PayrollRunInput, request: Request):
                         inputs = {
                             "basic": basic, "hra": hra, "special_allowance": special,
                             "other_allowance": other, "gross": gross,
-                            "annualized_gross": Decimal(str(employee["basic_salary"])) + Decimal(str(employee["hra"])) + Decimal(str(employee["special_allowance"])) + Decimal(str(employee["other_allowance"])),
+                            "annualized_gross": (
+                                Decimal(str(employee["basic_salary"])) + Decimal(str(employee["hra"]))
+                                + Decimal(str(employee["special_allowance"])) + Decimal(str(employee["other_allowance"]))
+                                + variable_earnings_total / Decimal("12")
+                            ),
                             "tds_regime": profile["tds_regime"],
                             "projected_annual_taxable_income": (profile["declarations"] or {}).get("projected_annual_taxable_income"),
                             "applicability": {"pf": profile["pf_applicable_override"], "esi": profile["esi_applicable_override"], "pt": profile["pt_applicable_override"]},
