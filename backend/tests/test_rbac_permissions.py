@@ -54,3 +54,13 @@ def test_workflow_endpoints_use_approve_and_export_actions():
     assert _action_for_request("POST", "/api/accounting/vouchers/12/post") == "approve"
     assert _action_for_request("GET", "/api/reports/orders/export") == "export"
     assert _action_for_request("POST", "/api/orders") == "create"
+
+
+def test_admin_cannot_manage_admin_or_super_admin_accounts():
+    from app.api.auth import _can_manage_target_user
+
+    assert _can_manage_target_user("admin", "staff")
+    assert not _can_manage_target_user("admin", "admin")
+    assert not _can_manage_target_user("admin", "super_admin")
+    assert _can_manage_target_user("super_admin", "admin")
+    assert _can_manage_target_user("super_admin", "super_admin")
