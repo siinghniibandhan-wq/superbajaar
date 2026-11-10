@@ -227,6 +227,32 @@ class PayrollPaymentInput(BaseModel):
     accounting_voucher_id: int = Field(gt=0)
 
 
+class SalaryRevisionInput(BaseModel):
+    effective_from: date
+    effective_to: date | None = None
+    basic_salary: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
+    hra: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
+    special_allowance: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
+    other_allowance: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
+    reason: str = Field(min_length=5, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def salary_revision_reason_required(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 5:
+            raise ValueError("Salary revision reason must contain at least 5 characters")
+        return value
+
+    @model_validator(mode="after")
+    def ordered_salary_period(self):
+        if self.effective_to and self.effective_to < self.effective_from:
+            raise ValueError("Salary revision end date cannot precede its effective date")
+        return self
+
+
+
+
 @router.get("/departments")
 def list_departments(request: Request):
     _actor(request)
