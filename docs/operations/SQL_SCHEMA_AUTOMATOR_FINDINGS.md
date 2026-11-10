@@ -291,3 +291,101 @@ This workstream does not include:
 The SQL Schema Automator is complete only when its target database and execution identity are correct, all migration files and dependencies have been reviewed, backup and restore safeguards have been verified, the two-minute systemd timer is installed, and real timer/service runs are observable and behave correctly.
 
 **Current state:** Existing runner discovered and status inspected; 30 migrations pending; timer not configured or verified; no production migrations applied during this investigation.
+
+
+---
+
+## 13. Production verification update — 10 November 2026
+
+**This section supersedes conflicting operational-status statements in Sections 7, 8, 9 and 10 above where they describe the production migration as pending, the timer as not configured, or the production database as empty.** Those sections remain as the historical discovery record; the later production verification below is authoritative for the state observed on 10 November 2026.
+
+### Verified production state
+
+The production database is `superbajaar`, owned by `superbajaar_app`, on PostgreSQL 18.6. The runner's `sb_app` fallback was not used; all verification and migration commands explicitly set `SB_DB=superbajaar`.
+
+| Check | Verified result |
+|---|---|
+| Database before migration | Empty: 0 tables in `public` |
+| Baseline migration | 29 real `CREATE TABLE` statements; applied successfully |
+| Full rehearsal | All 30 files applied to a throwaway database; exit 0; 118 tables |
+| Production migration | All 30 files applied; exit 0; 0 failures; 118 tables |
+| Ownership | All 118 tables owned by `superbajaar_app` |
+| Pre-migration backup | `superbajaar-pre-migration-20261110T104754Z.dump` |
+| Backup integrity | `pg_restore --list` succeeded; 1,146 entries |
+| Restore test | Restored to a temporary database; exit 0; 118 tables; temporary database removed |
+| No-pending run | Exit 0; no new files applied and no new backup created |
+| Failure handling | Failed migration rolled back and logged; prior successful migration remained applied; exit 10 |
+| Required-file gate | Missing/failed required migration blocked deployment; exit 20 |
+| Required files applied, non-required failure | Exit 11 |
+| Concurrency | Concurrent run rejected with exit 60 |
+| Setup validation | Incorrect database ownership rejected with exit 50; nothing applied |
+| Timer | Timer fired without manual invocation |
+| Backend health | `superbajaar-backend` remained active; HTTP 200 at `127.0.0.1:8001/` |
+
+### Production ownership correction
+
+The runner's default `sudo -n -u postgres psql` created tables owned by `postgres`, leaving `superbajaar_app` without table access. This was corrected without editing the repository runner by installing a server-local wrapper at `/usr/local/bin/sb-psql`:
+
+```bash
+#!/bin/bash
+exec sudo -n -u postgres env PGOPTIONS="-c role=superbajaar_app" psql "$@"
+```
+
+The verified invocation sets `SB_PSQL=/usr/local/bin/sb-psql`. The wrapper is server-local and is not stored in the repository. After correction, all 118 tables were owned by `superbajaar_app` and `has_table_privilege` returned true.
+
+### Actual production paths and timer mode
+
+| Setting | Verified value |
+|---|---|
+| EC2 instance | `i-08814a9225c19ee91` |
+| Region | `us-east-1` |
+| Operating system | Ubuntu 26.04 |
+| Schema directory | `/opt/superbajaar/source/backend/schema` |
+| Required manifest | `/opt/superbajaar/source/backend/schema_required.txt` |
+| Backup directory | `/var/lib/superbajaar/backups` |
+| Log file | `/var/log/superbajaar/schema.log` |
+| Service | `superbajaar-schema.service` (oneshot, user `ubuntu`) |
+| Timer | `superbajaar-schema.timer`, every 2 minutes |
+| Timer mode | `--status` only |
+
+The timer is active and reports migration state, but **does not automatically apply new migrations**. New migrations remain a manual, reviewed operation. The backend is not restarted by this timer. The runner script itself was not edited; its default paths under `/home/ec2-user` are overridden using `SB_BACKUP_DIR` and `SB_LOG`.
+
+### Operational commands
+
+Read-only status check:
+
+```bash
+cd /opt/superbajaar/source/backend
+SB_PSQL=/usr/local/bin/sb-psql SB_DB=superbajaar SB_BACKUP_DIR=/var/lib/superbajaar/backups \
+SB_LOG=/var/log/superbajaar/schema.log bash scripts/apply_schema.sh \
+/opt/superbajaar/source/backend/schema --status
+```
+
+A manual apply uses the same environment and command without `--status`; the runner takes and verifies a backup before applying changes.
+
+Timer and service inspection:
+
+```bash
+systemctl list-timers superbajaar-schema.timer
+journalctl -u superbajaar-schema.service -n 50
+systemctl --failed
+```
+
+The runner lock is shared across databases. If a manual run receives exit 60, wait for the active run to finish and retry.
+
+### Remaining verification and documentation work
+
+The following are not yet verified or completed:
+
+1. Confirm the backend's `DATABASE_URL` can perform a real database-backed login or data request. An HTTP 200 from the root endpoint alone does not prove database connectivity.
+2. Review all 30 SQL files line by line for schema and application compatibility.
+3. Confirm whether `app_users.role` needs the `super_admin` value; the baseline check does not list it.
+4. Repeat a restore test once real application data exists.
+5. Simulate backup failure (exit 30).
+6. Commit this verification record and the updated findings document to GitHub.
+
+### Scope and safety
+
+The successful production migration is complete and verified for the checks listed above. This does not mean future migrations are automatically applied. The timer remains status-only, and future SQL changes require review and an explicit manual apply. No application code change, backend restart, or automatic migration-apply behaviour is part of this verification.
+
+**Authoritative production status as of 10 November 2026:** 30 migrations applied; 118 tables present and owned by `superbajaar_app`; backup and structure-only restore verified; status-only timer active; real backend database request and full SQL line-by-line review remain outstanding.
