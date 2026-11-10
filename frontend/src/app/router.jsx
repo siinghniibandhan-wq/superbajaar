@@ -165,7 +165,7 @@ function AppShell() {
         {selected && visibleIds.has(selected.id) ? (workspaceRoutes[selected.id]
           ? workspaceRoutes[selected.id]({ item: selected, onBack: back, onOpen: openById, currentUser: user })
           : <UnavailableWorkspace item={selected} onBack={back} />)
-          : <ModuleLauncher onOpen={open} />}
+          : <ModuleLauncher onOpen={open} groups={visibleGroups} />}
       </div>
     </div>
     <footer>Super Bajaar · Separate module workspaces · Backend port 8001 · PostgreSQL port 5432</footer>
