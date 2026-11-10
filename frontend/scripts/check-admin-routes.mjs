@@ -18,5 +18,5 @@ console.log(`Admin route map OK: ${ids.length} unique navigation modules are reg
 
 const settingsSource = readFileSync(new URL("../src/features/settings/SettingsWorkspace.jsx", import.meta.url), "utf8");
 assert.ok(settingsSource.includes('currentUser?.role === "super_admin"'), "Super Admin must see elevated role assignment options");
-assert.ok(settingsSource.includes('<option value="super_admin">Super Admin</option>'), "Super Admin must be assignable by a Super Admin");
-assert.ok(settingsSource.includes('currentUser?.role === "owner" || currentUser?.role === "super_admin"'), "Owner and Super Admin must see owner/admin assignment options");
+assert.ok(settingsSource.includes('const roles = ["super_admin", "owner", "admin", "manager", "staff", "viewer"];'), "The Settings role list must include every supported role");
+assert.ok(settingsSource.includes('if (currentRole === "owner") return ["owner", "admin", "manager", "staff", "viewer"];'), "Owners must retain their existing role-grant permissions");
