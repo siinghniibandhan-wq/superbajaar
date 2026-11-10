@@ -352,7 +352,7 @@ def create_employee(payload: EmployeeInput, request: Request):
     actor = _manager(request)
     try:
         with _hr_connection() as conn:
-            return conn.execute(
+            row = conn.execute(
                 "INSERT INTO hr_employees(user_id,employee_code,first_name,last_name,email,phone,department_id,"
                 "designation,reports_to_employee_id,employment_type,status,joining_date,exit_date,basic_salary,"
                 "hra,special_allowance,other_allowance,created_by_user_id) "
@@ -365,6 +365,14 @@ def create_employee(payload: EmployeeInput, request: Request):
                  payload.exit_date,payload.basic_salary,payload.hra,payload.special_allowance,
                  payload.other_allowance,actor),
             ).fetchone()
+            conn.execute(
+                "INSERT INTO hr_employee_salary_versions(employee_id,effective_from,basic_salary,hra,"
+                "special_allowance,other_allowance,status,reason,created_by_user_id,reviewed_by_user_id,reviewed_at) "
+                "VALUES(%s,%s,%s,%s,%s,%s,'approved','Opening salary profile approved when employee was created',%s,%s,now())",
+                (row["id"],payload.joining_date,payload.basic_salary,payload.hra,
+                 payload.special_allowance,payload.other_allowance,actor,actor),
+            )
+            return row
     except psycopg.Error as exc:
         raise _db_error(exc) from exc
 
@@ -378,17 +386,117 @@ def update_employee(employee_id: int, payload: EmployeeInput, request: Request):
             row = conn.execute(
                 "UPDATE hr_employees SET user_id=%s,employee_code=%s,first_name=%s,last_name=%s,email=%s,phone=%s,"
                 "department_id=%s,designation=%s,reports_to_employee_id=%s,employment_type=%s,status=%s,"
-                "joining_date=%s,exit_date=%s,basic_salary=%s,hra=%s,special_allowance=%s,other_allowance=%s,"
-                "updated_at=now() WHERE id=%s RETURNING id,employee_code,first_name,last_name,email,status,updated_at",
+                "joining_date=%s,exit_date=%s,updated_at=now() "
+                "WHERE id=%s RETURNING id,employee_code,first_name,last_name,email,status,updated_at",
                 (payload.user_id,payload.employee_code.strip(),payload.first_name.strip(),payload.last_name.strip(),
                  payload.email,payload.phone.strip(),payload.department_id,payload.designation.strip(),
                  payload.reports_to_employee_id,payload.employment_type,payload.status,payload.joining_date,
-                 payload.exit_date,payload.basic_salary,payload.hra,payload.special_allowance,
-                 payload.other_allowance,employee_id),
+                 payload.exit_date,employee_id),
             ).fetchone()
             if row is None:
                 raise HTTPException(404, "Employee not found")
             return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.get("/employees/{employee_id}/salary-revisions")
+def list_salary_revisions(employee_id: int, request: Request):
+    _manager(request)
+    try:
+        with _hr_connection() as conn:
+            employee = conn.execute("SELECT id FROM hr_employees WHERE id=%s", (employee_id,)).fetchone()
+            if employee is None:
+                raise HTTPException(404, "Employee not found")
+            return {"items": conn.execute(
+                "SELECT id,employee_id,effective_from,effective_to,basic_salary,hra,special_allowance,"
+                "other_allowance,status,reason,review_note,created_by_user_id,reviewed_by_user_id,"
+                "reviewed_at,created_at FROM hr_employee_salary_versions "
+                "WHERE employee_id=%s ORDER BY effective_from DESC,id DESC", (employee_id,)
+            ).fetchall()}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.post("/employees/{employee_id}/salary-revisions", status_code=201)
+def create_salary_revision(employee_id: int, payload: SalaryRevisionInput, request: Request):
+    actor = _manager(request)
+    try:
+        with _hr_connection() as conn:
+            employee = conn.execute("SELECT id FROM hr_employees WHERE id=%s FOR UPDATE", (employee_id,)).fetchone()
+            if employee is None:
+                raise HTTPException(404, "Employee not found")
+            row = conn.execute(
+                "INSERT INTO hr_employee_salary_versions(employee_id,effective_from,effective_to,basic_salary,"
+                "hra,special_allowance,other_allowance,reason,created_by_user_id) "
+                "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                "RETURNING id,employee_id,effective_from,effective_to,basic_salary,hra,special_allowance,"
+                "other_allowance,status,reason,created_at",
+                (employee_id,payload.effective_from,payload.effective_to,payload.basic_salary,payload.hra,
+                 payload.special_allowance,payload.other_allowance,payload.reason,actor),
+            ).fetchone()
+            return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.post("/employees/{employee_id}/salary-revisions/{revision_id}/review")
+def review_salary_revision(employee_id: int, revision_id: int, payload: PayrollApprovalInput, request: Request):
+    actor = _manager(request)
+    try:
+        with _hr_connection() as conn:
+            employee = conn.execute("SELECT id FROM hr_employees WHERE id=%s FOR UPDATE", (employee_id,)).fetchone()
+            if employee is None:
+                raise HTTPException(404, "Employee not found")
+            revision = conn.execute(
+                "SELECT * FROM hr_employee_salary_versions WHERE id=%s AND employee_id=%s FOR UPDATE",
+                (revision_id,employee_id),
+            ).fetchone()
+            if revision is None:
+                raise HTTPException(404, "Salary revision not found")
+            if revision["status"] != "draft":
+                raise HTTPException(409, "Only draft salary revisions can be reviewed")
+            if payload.decision == "rejected":
+                return conn.execute(
+                    "UPDATE hr_employee_salary_versions SET status='rejected',review_note=%s,"
+                    "reviewed_by_user_id=%s,reviewed_at=now(),updated_at=now() WHERE id=%s "
+                    "RETURNING id,status,review_note,reviewed_by_user_id,reviewed_at",
+                    (payload.note,actor,revision_id),
+                ).fetchone()
+
+            latest = conn.execute(
+                "SELECT id,effective_from,effective_to FROM hr_employee_salary_versions "
+                "WHERE employee_id=%s AND status='approved' ORDER BY effective_from DESC LIMIT 1 FOR UPDATE",
+                (employee_id,),
+            ).fetchone()
+            if latest and revision["effective_from"] <= latest["effective_from"]:
+                raise HTTPException(409, "A salary revision must take effect after the latest approved revision")
+            if latest and latest["effective_to"] is None:
+                conn.execute(
+                    "UPDATE hr_employee_salary_versions SET effective_to=%s,updated_at=now() WHERE id=%s",
+                    (revision["effective_from"] - __import__("datetime").timedelta(days=1),latest["id"]),
+                )
+            approved = conn.execute(
+                "UPDATE hr_employee_salary_versions SET status='approved',review_note=%s,"
+                "reviewed_by_user_id=%s,reviewed_at=now(),updated_at=now() WHERE id=%s "
+                "RETURNING id,status,effective_from,effective_to,basic_salary,hra,special_allowance,"
+                "other_allowance,review_note,reviewed_by_user_id,reviewed_at",
+                (payload.note,actor,revision_id),
+            ).fetchone()
+            if revision["effective_from"] <= date.today():
+                conn.execute(
+                    "UPDATE hr_employees SET basic_salary=%s,hra=%s,special_allowance=%s,other_allowance=%s,"
+                    "updated_at=now() WHERE id=%s",
+                    (revision["basic_salary"],revision["hra"],revision["special_allowance"],
+                     revision["other_allowance"],employee_id),
+                )
+            return approved
     except HTTPException:
         raise
     except psycopg.Error as exc:
@@ -697,11 +805,19 @@ def calculate_payroll(payload: PayrollRunInput, request: Request):
                 ).fetchone()["id"]
 
             employees = conn.execute(
-                "SELECT id,basic_salary,hra,special_allowance,other_allowance,joining_date,exit_date "
-                "FROM hr_employees WHERE status IN ('active','probation','notice_period') "
+                "SELECT e.id,COALESCE(sv.basic_salary,e.basic_salary) AS basic_salary,"
+                "COALESCE(sv.hra,e.hra) AS hra,"
+                "COALESCE(sv.special_allowance,e.special_allowance) AS special_allowance,"
+                "COALESCE(sv.other_allowance,e.other_allowance) AS other_allowance,"
+                "e.joining_date,e.exit_date FROM hr_employees e "
+                "LEFT JOIN LATERAL (SELECT v.basic_salary,v.hra,v.special_allowance,v.other_allowance "
+                "FROM hr_employee_salary_versions v WHERE v.employee_id=e.id AND v.status='approved' "
+                "AND v.effective_from<=%s AND (v.effective_to IS NULL OR v.effective_to>=%s) "
+                "ORDER BY v.effective_from DESC LIMIT 1) sv ON true "
+                "WHERE e.status IN ('active','probation','notice_period') "
                 "AND joining_date<=%s AND (exit_date IS NULL OR exit_date>=%s) "
                 "ORDER BY id FOR SHARE",
-                (payload.period_end, payload.period_start),
+                (payload.period_end,payload.period_end,payload.period_start),
             ).fetchall()
             if not employees:
                 raise HTTPException(409, "No active employees are eligible for this payroll period")
