@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Super Bajaar GitHub main every two minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=2min
+AccuracySec=15s
+Unit=superbajaar-github-sync.service
+
+[Install]
+WantedBy=timers.target
