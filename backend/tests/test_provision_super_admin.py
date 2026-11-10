@@ -112,3 +112,24 @@ def test_existing_super_admin_refuses_provisioning_and_keeps_secret(monkeypatch)
     assert result == 3
     assert ssm.deleted_parameters == []
     assert connection.inserted is False
+
+
+def test_interactive_provisioning_remains_supported(monkeypatch):
+    import builtins
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://test")
+    monkeypatch.setenv("SB_SUPER_ADMIN_EMAIL", "admin@example.com")
+    monkeypatch.delenv("SB_SUPER_ADMIN_FULL_NAME", raising=False)
+    monkeypatch.delenv("SB_SUPER_ADMIN_PASSWORD_PARAMETER", raising=False)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(builtins, "input", lambda prompt: "Test Admin")
+    passwords = iter(["a-test-password-that-is-long-enough", "a-test-password-that-is-long-enough"])
+    monkeypatch.setattr(provisioner.getpass, "getpass", lambda prompt: next(passwords))
+    connection = FakeConnection()
+    monkeypatch.setattr(provisioner.psycopg, "connect", lambda *args, **kwargs: connection)
+    monkeypatch.setattr(provisioner, "_password_hash", lambda password: "hashed-password")
+
+    result = provisioner.main()
+
+    assert result == 0
+    assert connection.inserted is True
