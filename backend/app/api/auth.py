@@ -1,4 +1,4 @@
-"""Authentication endpoints. Requires migration 007 and a strong JWT_SECRET_KEY."""
+"""Staff authentication endpoints. Requires the baseline schema and a strong JWT_SECRET_KEY."""
 from datetime import datetime, timedelta, timezone
 import base64
 import hashlib
@@ -107,7 +107,7 @@ def current_user(credentials: HTTPAuthorizationCredentials | None = Depends(bear
             raise HTTPException(401, "Session is no longer active")
         return row
     except psycopg.Error as exc:
-        raise HTTPException(503, "Authentication storage unavailable; verify migration 007") from exc
+        raise HTTPException(503, "Authentication storage unavailable; verify the required authentication schema") from exc
 
 
 @router.post("/login")
@@ -147,11 +147,16 @@ def logout(credentials: HTTPAuthorizationCredentials | None = Depends(bearer), u
         raise HTTPException(503, "Unable to revoke session") from exc
 
 
-USER_ROLES = {"owner", "admin", "manager", "staff", "viewer"}
+USER_ROLES = {"super_admin", "owner", "admin", "manager", "staff", "viewer"}
+
+
+def _can_manage_privileged_roles(role: str) -> bool:
+    """Only Super Admin can grant or revoke elevated administrator roles."""
+    return role == "super_admin"
 
 
 def _require_user_admin(user: dict):
-    if user.get("role") not in {"owner", "admin"}:
+    if user.get("role") not in {"super_admin", "owner", "admin"}:
         raise HTTPException(403, "Owner or admin permission is required")
     return user
 
@@ -214,8 +219,10 @@ def list_users(user=Depends(current_user)):
 @router.post("/users", status_code=201)
 def create_user(payload: UserCreate, user=Depends(current_user)):
     _require_user_admin(user)
-    if payload.role in {"owner", "admin"} and user["role"] != "owner":
-        raise HTTPException(403, "Only an owner can create owner or admin accounts")
+    if payload.role == "super_admin" and not _can_manage_privileged_roles(user["role"]):
+        raise HTTPException(403, "Only a Super Admin can create Super Admin accounts")
+    if payload.role in {"owner", "admin"} and user["role"] not in {"super_admin", "owner"}:
+        raise HTTPException(403, "Only a Super Admin or legacy owner can create owner or admin accounts")
     try:
         with _connect() as conn:
             row = conn.execute(
@@ -235,8 +242,10 @@ def update_user(user_id: int, payload: UserUpdate, user=Depends(current_user)):
     _require_user_admin(user)
     if payload.role is None and payload.is_active is None:
         raise HTTPException(422, "Provide role or is_active")
-    if payload.role in {"owner", "admin"} and user["role"] != "owner":
-        raise HTTPException(403, "Only an owner can assign owner or admin roles")
+    if payload.role == "super_admin" and not _can_manage_privileged_roles(user["role"]):
+        raise HTTPException(403, "Only a Super Admin can assign the Super Admin role")
+    if payload.role in {"owner", "admin"} and user["role"] not in {"super_admin", "owner"}:
+        raise HTTPException(403, "Only a Super Admin or legacy owner can assign owner or admin roles")
     if user_id == user["id"] and payload.is_active is False:
         raise HTTPException(409, "You cannot deactivate your own account")
     try:
@@ -247,10 +256,14 @@ def update_user(user_id: int, payload: UserUpdate, user=Depends(current_user)):
                     raise HTTPException(404, "User not found")
                 next_role = payload.role if payload.role is not None else target["role"]
                 next_active = payload.is_active if payload.is_active is not None else target["is_active"]
-                if target["role"] == "owner" and (next_role != "owner" or not next_active):
-                    owners = conn.execute("SELECT count(*) AS n FROM app_users WHERE role='owner' AND is_active=TRUE").fetchone()["n"]
-                    if owners <= 1:
-                        raise HTTPException(409, "The last active owner cannot be demoted or deactivated")
+                if target["role"] in {"super_admin", "owner"} and (next_role != target["role"] or not next_active):
+                    remaining = conn.execute(
+                        "SELECT count(*) AS n FROM app_users WHERE role=%s AND is_active=TRUE AND id<>%s",
+                        (target["role"], user_id),
+                    ).fetchone()["n"]
+                    if remaining == 0:
+                        label = "Super Admin" if target["role"] == "super_admin" else "legacy owner"
+                        raise HTTPException(409, f"The last active {label} cannot be demoted or deactivated")
                 row = conn.execute(
                     "UPDATE app_users SET role=%s,is_active=%s,updated_at=now() WHERE id=%s "
                     "RETURNING id,email,full_name,role,is_active,created_at,updated_at",
