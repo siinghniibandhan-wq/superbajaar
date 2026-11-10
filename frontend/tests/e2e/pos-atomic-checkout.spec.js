@@ -6,7 +6,7 @@ test("POS creates order and pending tender atomically with a retry-safe checkout
   await page.addInitScript(() => localStorage.setItem("superbajaar.access_token", "owner-pos-checkout-token"));
   await page.route("**/api/**", async route => {
     const permissionRequest = route.request();
-    if (new URL(permissionRequest.url()).pathname.endsWith("/auth/my-permissions")) {
+    if (new URL(permissionRequest.url()).pathname.includes("/auth/my-permissions")) {
       const token = permissionRequest.headers().authorization || "";
       const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
       const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
@@ -60,7 +60,7 @@ test("POS workspace stacks its catalogue and checkout panels at tablet and phone
   await page.addInitScript(() => localStorage.setItem("superbajaar.access_token", "owner-pos-layout-token"));
   await page.route("**/api/**", async route => {
     const permissionRequest = route.request();
-    if (new URL(permissionRequest.url()).pathname.endsWith("/auth/my-permissions")) {
+    if (new URL(permissionRequest.url()).pathname.includes("/auth/my-permissions")) {
       const token = permissionRequest.headers().authorization || "";
       const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
       const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
