@@ -62,6 +62,10 @@ class LoyaltyAdjustment(BaseModel):
     idempotency_key: str = Field(min_length=8, max_length=100)
 
 
+class PartnerEnquiryStatus(BaseModel):
+    status: str = Field(pattern=r"^(new|reviewing|contacted|accepted|declined|closed)$")
+
+
 class PartnerEnquiry(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     business_name: str = Field(min_length=1, max_length=160)
@@ -438,3 +442,24 @@ def list_partner_enquiries(request: Request, limit: int = Query(default=50, ge=1
         return {"items": rows, "limit": limit, "offset": offset}
     except psycopg.Error as exc:
         raise HTTPException(status_code=503, detail="Could not load partnership enquiries") from exc
+
+
+
+@router.patch("/admin/partner-enquiries/{enquiry_id}")
+def update_partner_enquiry_status(enquiry_id: int, payload: PartnerEnquiryStatus, request: Request):
+    """Admin-only lifecycle update for a partner enquiry."""
+    _admin(request)
+    try:
+        with _connection() as conn:
+            row = conn.execute(
+                "UPDATE partner_enquiries SET status=%s, updated_at=now() WHERE id=%s "
+                "RETURNING id, status, updated_at",
+                (payload.status, enquiry_id),
+            ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Partner enquiry not found")
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(status_code=503, detail="Could not update partner enquiry") from exc
