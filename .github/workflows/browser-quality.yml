@@ -67,6 +67,16 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         run: npm run build
+      - name: Install Chromium for Lighthouse
+        working-directory: frontend
+        run: |
+          npx playwright install --with-deps chromium
+          CHROME_PATH="$(find "$HOME/.cache/ms-playwright" -type f -name chrome -perm -u+x | head -n 1)"
+          if [ -z "$CHROME_PATH" ]; then
+            echo "Playwright Chromium executable was not found" >&2
+            exit 1
+          fi
+          echo "CHROME_PATH=$CHROME_PATH" >> "$GITHUB_ENV"
       - name: Start frontend preview
         working-directory: frontend
         run: |
@@ -81,7 +91,7 @@ jobs:
         run: |
           npx --yes lighthouse@12.8.2 http://127.0.0.1:4173/ \
             --only-categories=performance,accessibility,best-practices,seo \
-            --chrome-flags="--headless --no-sandbox" \
+            --chrome-flags="--headless=new --no-sandbox --disable-dev-shm-usage --disable-gpu" \
             --output=json --output=html \
             --output-path=./lighthouse-report
       - name: Upload Lighthouse reports
