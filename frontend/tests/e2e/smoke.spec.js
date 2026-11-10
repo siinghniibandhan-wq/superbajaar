@@ -3,7 +3,7 @@ import { test, expect } from "@playwright/test";
 
 test("storefront route renders a non-empty application root", async ({ page }) => {
   await page.goto("/");
-  await expect(page).toHaveTitle("Super Bajaar");
+  await expect(page).toHaveTitle("Super Bajaar - Your Everyday Super Store");
   await expect(page.locator("#root")).not.toBeEmpty();
 });
 
@@ -424,6 +424,7 @@ test("inventory workspace separates locations, stock operations, approvals, valu
   await page.getByRole("button", { name: "Inventory", exact: true }).click();
   const navigation = page.getByRole("navigation", { name: "Inventory sections" });
   await expect(navigation).toBeVisible();
+  await navigation.getByRole("button", { name: "Locations", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Add stock location" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Value or add stock" })).toHaveCount(0);
 
@@ -469,7 +470,7 @@ test("HR section tabs stay compact and scroll horizontally on mobile", async ({ 
 });
 
 
-test("inventory workspace exposes an analytics section with live stock and control metrics", async ({ page }) => {
+test("inventory workspace exposes its Overview section with live stock and control metrics", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("superbajaar.access_token", "owner-inventory-analytics-token"));
   await page.route("**/api/**", async route => {
     const url = new URL(route.request().url());
@@ -496,8 +497,8 @@ test("inventory workspace exposes an analytics section with live stock and contr
   await page.goto("/admin");
   await page.getByRole("button", { name: "Inventory", exact: true }).click();
   const navigation = page.getByRole("navigation", { name: "Inventory sections" });
-  await expect(navigation.getByRole("button", { name: "Analytics" })).toBeVisible();
-  await navigation.getByRole("button", { name: "Analytics" }).click();
+  await expect(navigation.getByRole("button", { name: "Overview", exact: true })).toBeVisible();
+  await navigation.getByRole("button", { name: "Overview", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Inventory analytics" })).toBeVisible();
   await expect(page.locator(".inventory-analytics-metrics article").filter({ hasText: "Units on hand" }).locator("strong")).toHaveText("17");
   await expect(page.locator(".inventory-analytics-metrics article").filter({ hasText: "Reserved units" }).locator("strong")).toHaveText("3");

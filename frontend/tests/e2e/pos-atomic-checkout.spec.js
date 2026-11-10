@@ -30,7 +30,7 @@ test("POS creates order and pending tender atomically with a retry-safe checkout
   });
 
   await page.goto("/admin");
-  await page.getByRole("button", { name: "POS", exact: true }).click();
+  await page.getByRole("button", { name: "POS & Stores", exact: true }).click();
   await page.getByRole("button", { name: "Add to sale" }).click();
   await page.getByLabel("Stock location").selectOption("9");
   await page.getByRole("button", { name: "Create sale & pending tender" }).click();

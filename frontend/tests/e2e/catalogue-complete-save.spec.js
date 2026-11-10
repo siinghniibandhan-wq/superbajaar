@@ -38,7 +38,7 @@ test("catalogue saves product, attributes, variants and availability through one
   await page.getByRole("button", { name: "Continue to Delivery" }).click();
   await page.getByRole("button", { name: "Continue to Images" }).click();
   await page.getByRole("button", { name: "Continue to Review & Save" }).click();
-  await page.getByRole("button", { name: "Save product and variants" }).click();
+  await page.getByRole("button", { name: "Save product and variants" }).last().click();
   await expect(page.getByText("Wheat Flour", { exact: true })).toBeVisible();
   expect(writes).toHaveLength(1);
   expect(writes[0].body).toMatchObject({

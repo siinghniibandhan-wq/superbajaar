@@ -33,7 +33,9 @@ test("inventory releases only inspected quarantined GRN quantity through the con
   await page.goto("/admin");
   await page.getByRole("button", { name: "Inventory", exact: true }).click();
   await page.getByRole("button", { name: "Returns & quarantine" }).click();
-  await page.getByRole("button", { name: /GRN-33/ }).click();
+  const grnRow = page.getByRole("button", { name: /GRN-33/ });
+  await expect(grnRow).toBeVisible();
+  await grnRow.click();
   await page.getByLabel("Release quantity").fill("1.500");
   await page.getByLabel("Inspection / release reason").fill("QC verified and released");
   await page.getByRole("button", { name: "Release selected quarantined stock" }).click();
