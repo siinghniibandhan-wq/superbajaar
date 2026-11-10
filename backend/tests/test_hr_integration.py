@@ -532,3 +532,104 @@ def test_hr_payroll_rejects_partial_or_cross_month_periods(api):
     })
     assert partial_month.status_code==422
     assert cross_month.status_code==422
+
+
+def test_hr_salary_revisions_and_overtime_flow_into_payroll_once(api):
+    employee=ok(api.post("/api/hr/employees",json={
+        "employee_code":"SAL-"+api.suffix,"first_name":"Salary","last_name":"Revision",
+        "email":"salary-"+api.suffix+"@test.local","designation":"Associate",
+        "joining_date":"2026-01-01","basic_salary":"30000","hra":"12000",
+        "special_allowance":"5000","other_allowance":"1000"
+    }),201)
+    history=ok(api.get(f"/api/hr/employees/{employee['id']}/salary-revisions"))
+    assert len(history["items"])==1
+    revision=ok(api.post(f"/api/hr/employees/{employee['id']}/salary-revisions",json={
+        "effective_from":"2026-12-01","basic_salary":"33000","hra":"12000",
+        "special_allowance":"5000","other_allowance":"1000","reason":"Annual performance revision"
+    }),201)
+    assert revision["status"]=="draft"
+    approved=ok(api.post(
+        f"/api/hr/employees/{employee['id']}/salary-revisions/{revision['id']}/review",
+        json={"decision":"approved"}
+    ))
+    assert approved["status"]=="approved"
+    history=ok(api.get(f"/api/hr/employees/{employee['id']}/salary-revisions"))
+    opening=next(x for x in history["items"] if x["status"]=="approved" and x["effective_from"]==date(2026,1,1))
+    assert opening["effective_to"]==date(2026,11,30)
+
+    overtime=ok(api.post(f"/api/hr/employees/{employee['id']}/earning-adjustments",json={
+        "earning_type":"overtime","period_start":"2026-12-01","period_end":"2026-12-31",
+        "amount":"1500.00","hours":"10","hourly_rate":"150",
+        "reason":"Approved weekend store coverage"
+    }),201)
+    ok(api.post(f"/api/hr/payroll/earning-adjustments/{overtime['id']}/review",json={"decision":"approved"}))
+    payroll=ok(api.post("/api/hr/payroll/runs",json={
+        "period_start":"2026-12-01","period_end":"2026-12-31"
+    }),201)
+    assert Decimal(str(payroll["total_gross"]))==Decimal("52500.00")
+    payslips=ok(api.get(f"/api/hr/payroll/runs/{payroll['id']}/payslips"))["items"]
+    assert len(payslips)==1
+    assert payslips[0]["earnings_breakdown"]["variable_earnings"][0]["type"]=="overtime"
+    assert payslips[0]["earnings_breakdown"]["variable_earnings"][0]["reason"]=="Approved weekend store coverage"
+
+    recalculated=ok(api.post("/api/hr/payroll/runs",json={
+        "period_start":"2026-12-01","period_end":"2026-12-31"
+    }),201)
+    assert Decimal(str(recalculated["total_gross"]))==Decimal("52500.00")
+    linked=ok(api.get("/api/hr/payroll/earning-adjustments"))["items"]
+    assert next(x for x in linked if x["id"]==overtime["id"])["payroll_run_id"]==payroll["id"]
+
+    pending=ok(api.post(f"/api/hr/employees/{employee['id']}/earning-adjustments",json={
+        "earning_type":"incentive","period_start":"2026-12-01","period_end":"2026-12-31",
+        "amount":"2000.00","reason":"Pending monthly sales incentive"
+    }),201)
+    blocked=api.post(f"/api/hr/payroll/runs/{payroll['id']}/approve",json={"decision":"approved"})
+    assert blocked.status_code==409
+    assert "awaiting review" in blocked.text
+    ok(api.post(f"/api/hr/payroll/earning-adjustments/{pending['id']}/review",json={
+        "decision":"rejected","note":"Sales target evidence was not approved"
+    }))
+
+
+def test_hr_multi_establishment_payroll_accruals_are_tracked_per_entity(api):
+    employees=[]
+    for index,state in enumerate(("BR","JH"),start=1):
+        employee=ok(api.post("/api/hr/employees",json={
+            "employee_code":f"MULTI-{index}-"+api.suffix,
+            "first_name":f"Entity{index}","last_name":"Worker",
+            "email":f"multi{index}-"+api.suffix+"@test.local","designation":"Associate",
+            "joining_date":"2026-01-01","basic_salary":"20000"
+        }),201)
+        establishment=ok(api.post("/api/hr/establishments",json={
+            "code":f"MULTI-{index}-"+api.suffix,
+            "legal_name":f"Multi Legal {index} "+api.suffix,
+            "display_name":f"Multi Office {index} "+api.suffix,
+            "state_code":state
+        }),201)
+        ok(api.put(f"/api/hr/employees/{employee['id']}/statutory-profile",json={
+            "establishment_id":establishment["id"],"effective_from":"2026-01-01","tds_regime":"new"
+        }))
+        for component in ("pf","esi","pt","tds"):
+            policy=ok(api.post("/api/hr/statutory/policies",json={
+                "establishment_id":establishment["id"],"component":component,
+                "version_label":f"Multi {index} {component}","effective_from":"2026-01-01",
+                "policy_config":{"enabled":False}
+            }),201)
+            ok(api.post(f"/api/hr/statutory/policies/{policy['id']}/submit"))
+            ok(api.post(f"/api/hr/statutory/policies/{policy['id']}/approve"))
+        employees.append((employee,establishment))
+
+    payroll=ok(api.post("/api/hr/payroll/runs",json={
+        "period_start":"2026-12-01","period_end":"2026-12-31"
+    }),201)
+    assert payroll["employee_count"]==2
+    approved=ok(api.post(f"/api/hr/payroll/runs/{payroll['id']}/approve",json={"decision":"approved"}))
+    posting=approved["accounting_accrual"]
+    assert posting["status"]=="exception"
+    assert len(posting["errors"])==2
+    assert {item["legal_entity_code"] for item in posting["errors"]}=={
+        employees[0][1]["code"],employees[1][1]["code"]
+    }
+    runs=ok(api.get("/api/hr/payroll/runs"))["items"]
+    run=next(item for item in runs if item["id"]==payroll["id"])
+    assert run["accounting_accrual_postings"]==[]
