@@ -1,0 +1,17 @@
+name: Automations
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # every 15 min (UTC)
+  workflow_dispatch:          # manual Run button
+
+permissions:
+  contents: write
+
+jobs:
+  automations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run automation
+        run: echo "Automation ran at $(date)"
