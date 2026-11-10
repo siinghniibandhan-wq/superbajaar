@@ -151,6 +151,15 @@ function AppShell() {
   if (!user) return <LoginScreen onSignedIn={setUser} />;
   if (!permissionsLoaded) return <main className="sb-login-page"><p>Loading your module access…</p></main>;
   if (permissionError) return <main className="sb-login-page"><section className="sb-login-card" role="alert"><h1>Module access unavailable</h1><p>{permissionError}</p><button className="sb-primary" type="button" onClick={() => { setPermissionsLoaded(false); apiRequest("/auth/my-permissions").then(result => { setPermissions(result.permissions || {}); setPermissionError(""); }).catch(error => setPermissionError(error.message || "Unable to load module permissions.")).finally(() => setPermissionsLoaded(true)); }}>Retry</button><button type="button" onClick={signOut}>Sign out</button></section></main>;
+  // HR-only accounts (including employee self-service) should land in their
+  // assigned workspace directly instead of an otherwise empty module launcher.
+  if (visibleItems.length === 1 && visibleItems[0].id === "hr") return <main className="sb-shell">
+    <header className="sb-header">
+      <span className="sb-brand"><span className="sb-mark">S</span><span><strong>Super Bajaar</strong><small>HR & Payroll</small></span></span>
+      <div className="sb-header-actions"><span className="sb-user-label">{user.full_name || user.email}</span><button className="sb-signout" type="button" onClick={signOut}>Sign out</button></div>
+    </header>
+    <div className="sb-main-content"><HRWorkspace currentUser={user} /></div>
+  </main>;
   return <main className="sb-shell">
     <header className="sb-header">
       <button className="sb-brand" type="button" onClick={back} aria-label="Back to workspaces"><span className="sb-mark">S</span><span><strong>Super Bajaar</strong><small>Commerce & ERP</small></span></button>
