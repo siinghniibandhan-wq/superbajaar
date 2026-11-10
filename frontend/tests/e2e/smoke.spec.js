@@ -551,3 +551,35 @@ test("HR staff can view their own payslips in employee self-service", async ({ p
   await expect(page.getByText("2026-10-01 – 2026-10-31")).toBeVisible();
   await expect(page.getByText("₹40,000.00")).toBeVisible();
 });
+
+
+test("HR payroll calculation sends employee-specific manual deduction reasons", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("superbajaar.access_token", "manager-test-token");
+  });
+  let payrollPayload;
+  await page.route("**/api/**", async route => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/auth/me") {
+      return route.fulfill({ json: { user: { id: 77, full_name: "HR Manager", role: "manager" } } });
+    }
+    if (url.pathname === "/api/health") {
+      return route.fulfill({ json: { status: "ok", database: "connected" } });
+    }
+    if (url.pathname === "/api/hr/payroll/runs" && route.request().method() === "POST") {
+      payrollPayload = route.request().postDataJSON();
+      return route.fulfill({ status: 201, json: { id: 44, status: "calculated" } });
+    }
+    return route.fulfill({ json: { items: [] } });
+  });
+
+  await page.goto("/admin");
+  await page.getByRole("button", { name: "Payroll", exact: true }).click();
+  await page.getByLabel("Manual payroll deductions by employee ID").fill('{"123": 500}');
+  await page.getByLabel("Manual deduction notes by employee ID").fill('{"123": "Approved salary advance recovery"}');
+  await page.getByRole("button", { name: "Calculate payroll" }).click();
+  await expect.poll(() => payrollPayload).toMatchObject({
+    deductions_by_employee: { "123": 500 },
+    deduction_notes: { "123": "Approved salary advance recovery" },
+  });
+});
