@@ -92,3 +92,52 @@ Exit 30 (backup failure) was not triggered in testing.
 ### Other changes made to the server during this work
 
 `apt upgrade` and one reboot; swap file already present (1 GB); packages git, python3-venv, nginx, postgresql-client installed. After the reboot nginx, PostgreSQL and the backend all came back up.
+
+
+---
+
+## Post-verification operational recheck — 10 November 2026, 13:04 UTC
+
+The earlier successful migration and restore-test results above are historical verification results. A later live EC2 recheck found that the currently installed automation services are **not healthy**. This addendum supersedes the earlier statement that the current timer/service configuration is verified and healthy.
+
+### Current observations from EC2
+
+| Component | Observed result |
+|---|---|
+| `superbajaar-schema.timer` | Enabled and active; scheduled every 2 minutes |
+| `superbajaar-github-sync.timer` | Enabled and active |
+| Schema service | Fails with exit code 20 |
+| GitHub sync service | Fails with exit code 1 |
+| Schema database connectivity | Successful queries against `superbajaar` |
+| Schema runner report | `missing_required=000_baseline_schema.sql` |
+| Git fetch | Fails because the service cannot write to `.git/objects` |
+
+### Schema service configuration drift
+
+The base unit contains an `ExecStart` ending in `--status`, but the active drop-in at `/etc/systemd/system/superbajaar-schema.service.d/override.conf` clears and replaces that command without `--status`. The effective service therefore invokes the runner in its default apply mode. The runner currently reports no new files to apply, then blocks with exit code 20 because the required baseline is not considered applied.
+
+Restore the status-only argument in the effective systemd command before treating the timer as a read-only monitor. Do not execute the runner in apply mode as a workaround.
+
+### Baseline ledger discrepancy
+
+The required manifest includes `000_baseline_schema.sql`. The runner's current output says that this required migration is not applied. The earlier production record states that 30 migrations were successfully applied, including the baseline. The cause of this discrepancy has **not yet been established**: the live ledger row, its stored SHA-256, the current file SHA-256 and the preserved baseline backup must be compared. Do not replay the baseline, fabricate a ledger entry, or overwrite its checksum until the database owner has reconciled the historical file and actual schema.
+
+### GitHub sync filesystem failure
+
+The sync service fails during `git fetch` with:
+
+```text
+error: insufficient permission for adding an object to repository database .git/objects
+fatal: failed to write object
+fatal: unpack-objects failed
+```
+
+This establishes a repository filesystem write-permission problem for the service execution identity. The exact ownership/permission correction must be based on the unit's configured user and the repository's current ownership; do not apply broad recursive permission changes blindly.
+
+### Current disposition
+
+- Timers are scheduled and active, but both triggered services are failing.
+- No claim is made that current GitHub synchronization or schema status automation is healthy.
+- The baseline discrepancy remains unresolved pending read-only ledger/checksum inspection.
+- No production migration replay, ledger mutation, or broad ownership change is authorized by this record.
+- Re-verify both services and the database status after corrections before marking automation operational.
