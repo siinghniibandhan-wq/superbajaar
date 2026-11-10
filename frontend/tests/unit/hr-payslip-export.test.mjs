@@ -50,3 +50,23 @@ test("escapes CSV delimiters and neutralises spreadsheet formula prefixes", () =
 
   assert.match(csv, /"'=HYPERLINK\(""https:\/\/bad\.example"",""click""\)"/);
 });
+
+
+test("exports approved overtime and incentive details in the payslip register", () => {
+  const csv = exportPayslipsCsv([{
+    period_start: "2026-12-01",
+    period_end: "2026-12-31",
+    earnings_breakdown: {
+      variable_earnings: [{
+        type: "overtime",
+        amount: "1500.00",
+        hours: "10.00",
+        hourly_rate: "150.00",
+        reason: "Approved weekend coverage",
+      }],
+    },
+  }]);
+  assert.match(csv, /Overtime \/ incentives \/ bonuses/);
+  assert.match(csv, /overtime/);
+  assert.match(csv, /Approved weekend coverage/);
+});
