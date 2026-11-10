@@ -75,7 +75,7 @@ def require_accounting_reader(request: Request, _session: None = Depends(require
         return  # handlers return their explicit 503 when storage is not configured
     role = getattr(request.state, "role", None)
     if role not in READ_ROLES:
-        raise HTTPException(403, "Accounting is restricted to owner, admin and manager roles")
+        raise HTTPException(403, "Accounting is restricted to Super Admin, owner, admin and manager roles")
 
 
 router = APIRouter(prefix="/accounting", tags=["accounting"], dependencies=[Depends(require_accounting_reader)])
