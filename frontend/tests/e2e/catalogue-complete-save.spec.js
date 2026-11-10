@@ -6,7 +6,7 @@ test("catalogue saves product, attributes, variants and availability through one
   await page.addInitScript(() => localStorage.setItem("superbajaar.access_token", "owner-catalogue-save-token"));
   await page.route("**/api/**", async route => {
     const permissionRequest = route.request();
-    if (new URL(permissionRequest.url()).pathname.endsWith("/auth/my-permissions")) {
+    if (new URL(permissionRequest.url()).pathname.includes("/auth/my-permissions")) {
       const token = permissionRequest.headers().authorization || "";
       const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
       const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
