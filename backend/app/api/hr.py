@@ -908,7 +908,12 @@ def list_payroll_runs(request: Request):
                 "(SELECT count(*) FROM hr_payroll_statutory_snapshots s WHERE s.payroll_run_id=r.id) AS statutory_snapshot_count,"
                 "((SELECT count(*) FROM hr_payslips p WHERE p.payroll_run_id=r.id)>0 AND "
                 "(SELECT count(*) FROM hr_payroll_statutory_snapshots s WHERE s.payroll_run_id=r.id)="
-                "4*(SELECT count(*) FROM hr_payslips p WHERE p.payroll_run_id=r.id)) AS statutory_ready "
+                "4*(SELECT count(*) FROM hr_payslips p WHERE p.payroll_run_id=r.id)) AS statutory_ready,"
+                "(SELECT COALESCE(json_agg(json_build_object('establishment_id',ap.establishment_id,"
+                "'legal_entity_code',e.code,'voucher_id',ap.accounting_voucher_id,'total_amount',ap.total_amount) "
+                "ORDER BY e.code),'[]'::json) FROM hr_payroll_accrual_postings ap "
+                "JOIN hr_establishments e ON e.id=ap.establishment_id WHERE ap.payroll_run_id=r.id) "
+                "AS accounting_accrual_postings "
                 "FROM hr_payroll_runs r ORDER BY r.period_start DESC"
             ).fetchall()}
     except psycopg.Error as exc:
