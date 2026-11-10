@@ -3,6 +3,7 @@ import { apiRequest } from "../../services/api.js";
 import { dashboardMetrics } from "./dashboardMetrics.js";
 import { canReadPermission } from "../../app/moduleAccess.js";
 import MonthlyTrendChart from "./MonthlyTrendChart.jsx";
+import ReportActions from "../reports/ReportActions.jsx";
 
 const money = value => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(Number(value || 0));
 const count = value => Number(value || 0).toLocaleString("en-IN");
@@ -125,6 +126,7 @@ export default function DashboardWorkspace({ onOpen, permissions = {} }) {
   const metricValue = (key, value, format = count) => loading ? "—" : errors[key] ? "Unavailable" : format(value);
   const metricNote = key => errors[key] ? "Source unavailable" : "Live API data";
   const go = id => onOpen?.(id);
+  const dashboardExportRows = [["Section", "Metric", "Value"], ["Period", "From", from + " to " + to], ["Orders", "Order count", aggregate.orderCount], ["Orders", "Active order value (INR)", aggregate.activeOrderValue], ["Payments", "Captured amount (INR)", aggregate.capturedAmount], ["Inventory", "Stock on hand", stockUnits], ["Customers", "Customer records", customerCount], ["Finance", "Net profit/loss (INR)", finance.net_profit], ...monthly.flatMap(item => [["Finance", item.month + " income (INR)", item.income], ["Finance", item.month + " expenses (INR)", item.expense]])];
 
   return <section className="sb-workspace sb-dashboard an-dashboard">
     <div className="an-heading"><div><p className="sb-eyebrow">SUPER BAJAAR · MANAGEMENT INTELLIGENCE</p><h1>Business analytics</h1><p>One view of trading, stock, customers, finance and workforce performance.</p></div><button className="an-refresh" type="button" onClick={refresh} disabled={loading}>{loading ? "Updating…" : "↻ Refresh data"}</button></div>
