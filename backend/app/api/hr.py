@@ -259,7 +259,7 @@ class SalaryRevisionInput(BaseModel):
 
 
 class PayrollEarningInput(BaseModel):
-    earning_type: str = Field(pattern="^(overtime|incentive|bonus)$")
+    earning_type: str = Field(pattern="^(overtime|incentive|bonus|arrears|leave_encashment|gratuity|notice_pay|final_settlement)$")
     period_start: date
     period_end: date
     amount: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
