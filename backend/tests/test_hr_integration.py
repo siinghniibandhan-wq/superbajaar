@@ -623,6 +623,15 @@ def test_hr_multi_establishment_payroll_accruals_are_tracked_per_entity(api):
             ok(api.post(f"/api/hr/statutory/policies/{policy['id']}/approve"))
         employees.append((employee,establishment))
 
+    # The integration database is shared across HR tests; isolate this payroll
+    # to the two deliberately configured establishments.
+    with psycopg.connect(TEST_DB) as conn:
+        conn.execute(
+            "UPDATE hr_employees SET status='terminated',exit_date='2026-12-31' "
+            "WHERE id NOT IN (%s,%s)",
+            (employees[0][0]["id"],employees[1][0]["id"]),
+        )
+
     payroll=ok(api.post("/api/hr/payroll/runs",json={
         "period_start":"2027-01-01","period_end":"2027-01-31"
     }),201)
