@@ -55,6 +55,15 @@ test("customer checkout completes a mocked Razorpay payment", async ({ page }) =
     };
   });
   await page.route("**/api/**", async route => {
+    const permissionRequest = route.request();
+    if (new URL(permissionRequest.url()).pathname === "/api/auth/my-permissions") {
+      const token = permissionRequest.headers().authorization || "";
+      const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
+      const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
+      const permissions = Object.fromEntries(allowedKeys.map(key => [key, { read: true }]));
+      return route.fulfill({ json: { permissions } });
+    }
+
     const request = route.request();
     const url = new URL(request.url());
     const method = request.method();
@@ -123,6 +132,15 @@ test("HR manager can access the HR workspace without admin-wide module access", 
     localStorage.setItem("superbajaar.access_token", "manager-test-token");
   });
   await page.route("**/api/**", async route => {
+    const permissionRequest = route.request();
+    if (new URL(permissionRequest.url()).pathname === "/api/auth/my-permissions") {
+      const token = permissionRequest.headers().authorization || "";
+      const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
+      const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
+      const permissions = Object.fromEntries(allowedKeys.map(key => [key, { read: true }]));
+      return route.fulfill({ json: { permissions } });
+    }
+
     const url = new URL(route.request().url());
     if (url.pathname === "/api/auth/me") {
       return route.fulfill({ json: { user: {
@@ -180,6 +198,15 @@ test("HR manager can submit and approve an effective-dated salary revision", asy
   });
   const revisions = [];
   await page.route("**/api/**", async route => {
+    const permissionRequest = route.request();
+    if (new URL(permissionRequest.url()).pathname === "/api/auth/my-permissions") {
+      const token = permissionRequest.headers().authorization || "";
+      const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
+      const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
+      const permissions = Object.fromEntries(allowedKeys.map(key => [key, { read: true }]));
+      return route.fulfill({ json: { permissions } });
+    }
+
     const request = route.request();
     const url = new URL(request.url());
     if (url.pathname === "/api/auth/me") {
@@ -229,6 +256,15 @@ test("HR manager reviews overtime and it is included as an approved variable ear
   const adjustments = [];
   let submitted;
   await page.route("**/api/**", async route => {
+    const permissionRequest = route.request();
+    if (new URL(permissionRequest.url()).pathname === "/api/auth/my-permissions") {
+      const token = permissionRequest.headers().authorization || "";
+      const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
+      const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
+      const permissions = Object.fromEntries(allowedKeys.map(key => [key, { read: true }]));
+      return route.fulfill({ json: { permissions } });
+    }
+
     const request = route.request();
     const url = new URL(request.url());
     if (url.pathname === "/api/auth/me") {
@@ -282,6 +318,15 @@ test("HR attendance register formats Unix-second timestamps as real dates", asyn
     localStorage.setItem("superbajaar.access_token", "manager-test-token");
   });
   await page.route("**/api/**", async route => {
+    const permissionRequest = route.request();
+    if (new URL(permissionRequest.url()).pathname === "/api/auth/my-permissions") {
+      const token = permissionRequest.headers().authorization || "";
+      const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
+      const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
+      const permissions = Object.fromEntries(allowedKeys.map(key => [key, { read: true }]));
+      return route.fulfill({ json: { permissions } });
+    }
+
     const url = new URL(route.request().url());
     if (url.pathname === "/api/auth/me") {
       return route.fulfill({ json: { user: { id: 77, full_name: "HR Manager", role: "manager" } } });
@@ -306,6 +351,15 @@ test("HR attendance register formats Unix-second timestamps as real dates", asyn
 test("HR workspace adapts its navigation and employee form across desktop and mobile", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("superbajaar.access_token", "manager-test-token"));
   await page.route("**/api/**", async route => {
+    const permissionRequest = route.request();
+    if (new URL(permissionRequest.url()).pathname === "/api/auth/my-permissions") {
+      const token = permissionRequest.headers().authorization || "";
+      const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
+      const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
+      const permissions = Object.fromEntries(allowedKeys.map(key => [key, { read: true }]));
+      return route.fulfill({ json: { permissions } });
+    }
+
     const url = new URL(route.request().url());
     if (url.pathname === "/api/auth/me") return route.fulfill({ json: { user: { id: 77, full_name: "HR Manager", role: "manager" } } });
     if (url.pathname === "/api/health") return route.fulfill({ json: { status: "ok", database: "connected" } });
@@ -356,6 +410,15 @@ test("HR establishment edits preserve existing address and registration details"
   let savedBody;
   await page.addInitScript(() => localStorage.setItem("superbajaar.access_token", "manager-test-token"));
   await page.route("**/api/**", async route => {
+    const permissionRequest = route.request();
+    if (new URL(permissionRequest.url()).pathname === "/api/auth/my-permissions") {
+      const token = permissionRequest.headers().authorization || "";
+      const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
+      const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
+      const permissions = Object.fromEntries(allowedKeys.map(key => [key, { read: true }]));
+      return route.fulfill({ json: { permissions } });
+    }
+
     const request = route.request();
     const url = new URL(request.url());
     if (url.pathname === "/api/auth/me") {
@@ -398,6 +461,15 @@ test("HR planning defaults use the employee's local calendar date, not the UTC d
     localStorage.setItem("superbajaar.access_token", "manager-test-token");
   });
   await page.route("**/api/**", async route => {
+    const permissionRequest = route.request();
+    if (new URL(permissionRequest.url()).pathname === "/api/auth/my-permissions") {
+      const token = permissionRequest.headers().authorization || "";
+      const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
+      const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
+      const permissions = Object.fromEntries(allowedKeys.map(key => [key, { read: true }]));
+      return route.fulfill({ json: { permissions } });
+    }
+
     const url = new URL(route.request().url());
     if (url.pathname === "/api/auth/me") {
       return route.fulfill({ json: { user: { id: 77, full_name: "HR Manager", role: "manager" } } });
@@ -417,6 +489,15 @@ test("HR planning defaults use the employee's local calendar date, not the UTC d
 test("HR planning surfaces workforce API failures instead of silently showing empty records", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("superbajaar.access_token", "manager-test-token"));
   await page.route("**/api/**", async route => {
+    const permissionRequest = route.request();
+    if (new URL(permissionRequest.url()).pathname === "/api/auth/my-permissions") {
+      const token = permissionRequest.headers().authorization || "";
+      const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
+      const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
+      const permissions = Object.fromEntries(allowedKeys.map(key => [key, { read: true }]));
+      return route.fulfill({ json: { permissions } });
+    }
+
     const url = new URL(route.request().url());
     if (url.pathname === "/api/auth/me") {
       return route.fulfill({ json: { user: { id: 77, full_name: "HR Manager", role: "manager" } } });
@@ -437,6 +518,15 @@ test("HR planning surfaces workforce API failures instead of silently showing em
 test("HR establishment form retains entered details when the save request fails", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("superbajaar.access_token", "manager-test-token"));
   await page.route("**/api/**", async route => {
+    const permissionRequest = route.request();
+    if (new URL(permissionRequest.url()).pathname === "/api/auth/my-permissions") {
+      const token = permissionRequest.headers().authorization || "";
+      const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
+      const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
+      const permissions = Object.fromEntries(allowedKeys.map(key => [key, { read: true }]));
+      return route.fulfill({ json: { permissions } });
+    }
+
     const request = route.request();
     const url = new URL(request.url());
     if (url.pathname === "/api/auth/me") {
@@ -467,6 +557,15 @@ test("HR establishment form retains entered details when the save request fails"
 test("management analytics dashboard renders real module summaries and section views", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("superbajaar.access_token", "owner-analytics-token"));
   await page.route("**/api/**", async route => {
+    const permissionRequest = route.request();
+    if (new URL(permissionRequest.url()).pathname === "/api/auth/my-permissions") {
+      const token = permissionRequest.headers().authorization || "";
+      const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
+      const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
+      const permissions = Object.fromEntries(allowedKeys.map(key => [key, { read: true }]));
+      return route.fulfill({ json: { permissions } });
+    }
+
     const url = new URL(route.request().url());
     const path = url.pathname;
     if (path === "/api/auth/me") return route.fulfill({ json: { user: { id: 1, full_name: "Owner", role: "owner" } } });
@@ -519,6 +618,15 @@ test("management analytics dashboard renders real module summaries and section v
 test("inventory workspace separates locations, stock operations, approvals, valuation and policy into tabs", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("superbajaar.access_token", "owner-inventory-token"));
   await page.route("**/api/**", async route => {
+    const permissionRequest = route.request();
+    if (new URL(permissionRequest.url()).pathname === "/api/auth/my-permissions") {
+      const token = permissionRequest.headers().authorization || "";
+      const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
+      const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
+      const permissions = Object.fromEntries(allowedKeys.map(key => [key, { read: true }]));
+      return route.fulfill({ json: { permissions } });
+    }
+
     const url = new URL(route.request().url());
     if (url.pathname === "/api/auth/me") return route.fulfill({ json: { user: { id: 1, full_name: "Owner", role: "owner" } } });
     if (url.pathname === "/api/health") return route.fulfill({ json: { status: "ok", database: "connected" } });
@@ -553,6 +661,15 @@ test("inventory workspace separates locations, stock operations, approvals, valu
 test("HR section tabs stay compact and scroll horizontally on mobile", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("superbajaar.access_token", "manager-test-token"));
   await page.route("**/api/**", async route => {
+    const permissionRequest = route.request();
+    if (new URL(permissionRequest.url()).pathname === "/api/auth/my-permissions") {
+      const token = permissionRequest.headers().authorization || "";
+      const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
+      const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
+      const permissions = Object.fromEntries(allowedKeys.map(key => [key, { read: true }]));
+      return route.fulfill({ json: { permissions } });
+    }
+
     const url = new URL(route.request().url());
     if (url.pathname === "/api/auth/me") return route.fulfill({ json: { user: { id: 77, full_name: "HR Manager", role: "manager" } } });
     if (url.pathname === "/api/health") return route.fulfill({ json: { status: "ok", database: "connected" } });
@@ -578,6 +695,15 @@ test("HR section tabs stay compact and scroll horizontally on mobile", async ({ 
 test("inventory workspace exposes its Overview section with live stock and control metrics", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("superbajaar.access_token", "owner-inventory-analytics-token"));
   await page.route("**/api/**", async route => {
+    const permissionRequest = route.request();
+    if (new URL(permissionRequest.url()).pathname === "/api/auth/my-permissions") {
+      const token = permissionRequest.headers().authorization || "";
+      const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
+      const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
+      const permissions = Object.fromEntries(allowedKeys.map(key => [key, { read: true }]));
+      return route.fulfill({ json: { permissions } });
+    }
+
     const url = new URL(route.request().url());
     const path = url.pathname;
     if (path === "/api/auth/me") return route.fulfill({ json: { user: { id: 1, full_name: "Owner", role: "owner" } } });
@@ -620,6 +746,15 @@ test("HR staff can view their own payslips in employee self-service", async ({ p
     window.print = () => { window.__sbPrintCalled = true; };
   });
   await page.route("**/api/**", async route => {
+    const permissionRequest = route.request();
+    if (new URL(permissionRequest.url()).pathname === "/api/auth/my-permissions") {
+      const token = permissionRequest.headers().authorization || "";
+      const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
+      const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
+      const permissions = Object.fromEntries(allowedKeys.map(key => [key, { read: true }]));
+      return route.fulfill({ json: { permissions } });
+    }
+
     const url = new URL(route.request().url());
     if (url.pathname === "/api/auth/me") {
       return route.fulfill({ json: { user: {
@@ -676,6 +811,15 @@ test("HR payroll calculation sends employee-specific manual deduction reasons", 
   });
   let payrollPayload;
   await page.route("**/api/**", async route => {
+    const permissionRequest = route.request();
+    if (new URL(permissionRequest.url()).pathname === "/api/auth/my-permissions") {
+      const token = permissionRequest.headers().authorization || "";
+      const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
+      const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
+      const permissions = Object.fromEntries(allowedKeys.map(key => [key, { read: true }]));
+      return route.fulfill({ json: { permissions } });
+    }
+
     const url = new URL(route.request().url());
     if (url.pathname === "/api/auth/me") {
       return route.fulfill({ json: { user: { id: 77, full_name: "HR Manager", role: "manager" } } });
