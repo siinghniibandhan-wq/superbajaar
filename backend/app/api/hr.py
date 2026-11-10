@@ -815,9 +815,9 @@ def calculate_payroll(payload: PayrollRunInput, request: Request):
                 "AND v.effective_from<=%s AND (v.effective_to IS NULL OR v.effective_to>=%s) "
                 "ORDER BY v.effective_from DESC LIMIT 1) sv ON true "
                 "WHERE e.status IN ('active','probation','notice_period') "
-                "AND joining_date<=%s AND (exit_date IS NULL OR exit_date>=%s) "
-                "ORDER BY id FOR SHARE",
-                (payload.period_end,payload.period_end,payload.period_start),
+                "AND e.joining_date<=%s AND (e.exit_date IS NULL OR e.exit_date>=%s) "
+                "ORDER BY e.id FOR SHARE",
+                (payload.period_end,payload.period_end,payload.period_end,payload.period_start),
             ).fetchall()
             if not employees:
                 raise HTTPException(409, "No active employees are eligible for this payroll period")
