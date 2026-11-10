@@ -195,3 +195,12 @@ def test_hr_incentive_earning_requires_a_full_calendar_month():
             earning_type="incentive", period_start="2026-12-02", period_end="2026-12-31",
             amount="1000.00", reason="Monthly sales incentive"
         )
+
+
+def test_hr_final_settlement_earning_types_are_supported_with_manual_amounts():
+    for earning_type in ("arrears", "leave_encashment", "gratuity", "notice_pay", "final_settlement"):
+        earning = PayrollEarningInput(
+            earning_type=earning_type, period_start="2026-12-01", period_end="2026-12-31",
+            amount="2500.00", reason="Approved final settlement component"
+        )
+        assert earning.earning_type == earning_type
