@@ -28,6 +28,14 @@ def permission_granted(permissions: dict, module: str, action: str) -> bool:
     return bool(permissions.get(module, {}).get(action, False))
 
 
+def is_self_service_auth_route(method: str, path: str, prefix: str = "/api") -> bool:
+    """Allow authenticated users to read their own profile and effective permissions."""
+    return method == "GET" and path in {
+        prefix.rstrip("/") + "/auth/me",
+        prefix.rstrip("/") + "/auth/my-permissions",
+    }
+
+
 def _module_for_path(path: str, prefix: str = "/api") -> str | None:
     """Resolve every staff API router using the configured API prefix."""
     normalized_prefix = prefix.rstrip("/")
@@ -202,6 +210,9 @@ async def require_active_session(request: Request) -> None:
     request.state.user_id = row["id"]
     request.state.user_email = row["email"]
 
+    if is_self_service_auth_route(request.method, path, prefix):
+        return
+
     module_key = _module_for_path(path, prefix)
     if module_key is None:
         # Every staff router must be represented in the permission catalogue.
@@ -212,7 +223,8 @@ async def require_active_session(request: Request) -> None:
         with psycopg.connect(settings.database_url, row_factory=dict_row, connect_timeout=3) as conn:
             rows = conn.execute(
                 """
-                SELECT p.action_key, COALESCE(up.allowed, rp.allowed, false) AS allowed
+                SELECT p.action_key,
+                       CASE WHEN r.name = 'super_admin' THEN true ELSE COALESCE(up.allowed, rp.allowed, false) END AS allowed
                 FROM app_modules m
                 CROSS JOIN app_permissions p
                 JOIN app_roles r ON r.name = %s AND r.is_active = TRUE
