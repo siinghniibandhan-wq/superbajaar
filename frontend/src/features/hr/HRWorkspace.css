@@ -223,3 +223,5 @@
 .hr-org-governance{width:100%;padding:12px;border-radius:10px;background:#f5f6f7;text-align:left}
 @media(max-width:900px){.hr-org-reports{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:560px){.hr-org-reports{grid-template-columns:repeat(2,minmax(0,1fr))}.hr-org-ceo{min-width:180px}}
+
+.hr-payslips-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.hr-payslips-heading h2{margin:0;font:700 19px Lato,sans-serif;letter-spacing:-.35px}
