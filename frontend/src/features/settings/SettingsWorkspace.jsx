@@ -9,6 +9,9 @@ export default function SettingsWorkspace({ onBack, currentUser }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [permissionCatalog, setPermissionCatalog] = useState({ modules: [], actions: [], authority: {} });
+  const [editingPermissions, setEditingPermissions] = useState(null);
+  const [permissionDraft, setPermissionDraft] = useState({});
   const [loyaltyRules, setLoyaltyRules] = useState([]);
   const [loyaltyAccounts, setLoyaltyAccounts] = useState([]);
   const [loyaltyLedger, setLoyaltyLedger] = useState(null);
@@ -20,6 +23,7 @@ export default function SettingsWorkspace({ onBack, currentUser }) {
     finally { setLoading(false); }
   }, []);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { apiRequest("/auth/permissions").then(setPermissionCatalog).catch(e => setError(e.message || "Unable to load permission catalogue.")); }, []);
   useEffect(() => {
     apiRequest("/loyalty/admin/rules").then(result => setLoyaltyRules(result.items || [])).catch(e => setError(e.message || "Unable to load loyalty rules."));
     apiRequest("/loyalty/admin/accounts").then(result => setLoyaltyAccounts(result.items || [])).catch(e => setError(e.message || "Unable to load loyalty accounts."));
@@ -39,6 +43,23 @@ export default function SettingsWorkspace({ onBack, currentUser }) {
     try { await apiRequest("/auth/users/" + id, { method: "PATCH", body: JSON.stringify(payload) }); setNotice("User access updated."); await load(); }
     catch (e) { setError(e.message || "Unable to update user access."); }
     finally { setSaving(false); }
+  }
+  async function openPermissions(account) {
+    setError(""); setEditingPermissions(account);
+    try { const result = await apiRequest("/auth/users/" + account.id + "/permissions"); setPermissionDraft(result.permissions || {}); }
+    catch (e) { setEditingPermissions(null); setError(e.message || "Unable to load permissions."); }
+  }
+  async function savePermissions() {
+    if (!editingPermissions) return;
+    setSaving(true); setError(""); setNotice("");
+    try {
+      await apiRequest("/auth/users/" + editingPermissions.id + "/permissions", { method: "PUT", body: JSON.stringify({ permissions: permissionDraft }) });
+      setNotice("Module permissions saved."); setEditingPermissions(null); await load();
+    } catch (e) { setError(e.message || "Unable to save permissions."); }
+    finally { setSaving(false); }
+  }
+  function setPermission(module, action, allowed) {
+    setPermissionDraft(current => ({ ...current, [module]: { ...(current[module] || {}), [action]: allowed } }));
   }
   async function loadLoyaltyLedger(accountId) {
     setError(""); setLoyaltyLedger(null);
@@ -69,8 +90,17 @@ export default function SettingsWorkspace({ onBack, currentUser }) {
       </div><button className="sb-primary" type="submit" disabled={saving}>{saving ? "Saving…" : "Create account"}</button>
     </form>
     <div className="sb-data-card"><div className="sb-data-heading"><h2>Accounts ({users.length})</h2><button type="button" onClick={load} disabled={loading}>{loading ? "Loading…" : "Refresh"}</button></div>
-      {loading ? <p className="sb-empty">Loading user accounts…</p> : users.length ? <div className="sb-table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead><tbody>{users.map(u=><tr key={u.id}><td>{u.full_name}</td><td>{u.email}</td><td>{u.role}</td><td>{u.is_active ? "Active" : "Inactive"}</td><td><div className="sb-access-actions"><select aria-label={"Role for "+u.email} value={u.role} disabled={saving || (u.role === "super_admin" && currentUser?.role !== "super_admin")} onChange={e=>update(u.id,{role:e.target.value})}><option value="super_admin" disabled={currentUser?.role !== "super_admin"}>Super Admin</option><option value="admin" disabled={currentUser?.role !== "super_admin"}>Admin</option>{roles.filter(r=>r!=="admin").map(r=><option key={r} value={r}>{r}</option>)}</select><button type="button" disabled={saving || u.id === currentUser?.id} onClick={()=>update(u.id,{is_active:!u.is_active})}>{u.is_active ? "Deactivate" : "Activate"}</button></div></td></tr>)}</tbody></table></div> : <p className="sb-empty">No user accounts found.</p>}
+      {loading ? <p className="sb-empty">Loading user accounts…</p> : users.length ? <div className="sb-table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead><tbody>{users.map(u=><tr key={u.id}><td>{u.full_name}</td><td>{u.email}</td><td>{u.role}</td><td>{u.is_active ? "Active" : "Inactive"}</td><td><div className="sb-access-actions"><select aria-label={"Role for "+u.email} value={u.role} disabled={saving || (u.role === "super_admin" && currentUser?.role !== "super_admin")} onChange={e=>update(u.id,{role:e.target.value})}><option value="super_admin" disabled={currentUser?.role !== "super_admin"}>Super Admin</option><option value="admin" disabled={currentUser?.role !== "super_admin"}>Admin</option>{roles.filter(r=>r!=="admin").map(r=><option key={r} value={r}>{r}</option>)}</select><button type="button" disabled={saving || u.id === currentUser?.id} onClick={()=>update(u.id,{is_active:!u.is_active})}>{u.is_active ? "Deactivate" : "Activate"}</button><button type="button" disabled={saving || (u.role === "super_admin" && currentUser?.role !== "super_admin")} onClick={()=>openPermissions(u)}>Permissions</button></div></td></tr>)}</tbody></table></div> : <p className="sb-empty">No user accounts found.</p>}
     </div>
+    {editingPermissions && <section className="sb-form">
+      <h2>Module permissions: {editingPermissions.full_name}</h2>
+      <p>Only permissions within your own authority can be granted. Unchecked actions are denied.</p>
+      <div className="sb-table-wrap"><table><thead><tr><th>Module</th>{permissionCatalog.actions.map(a=><th key={a.action_key}>{a.label}</th>)}</tr></thead><tbody>
+        {permissionCatalog.modules.map(m=><tr key={m.module_key}><td>{m.label}</td>{permissionCatalog.actions.map(a=>{const allowed=Boolean(permissionCatalog.authority?.[m.module_key]?.[a.action_key]);const checked=permissionDraft[m.module_key]?.[a.action_key] ?? false;return <td key={a.action_key}><input type="checkbox" aria-label={m.label+" "+a.label} checked={checked} disabled={saving || (currentUser?.role !== "super_admin" && !allowed)} onChange={e=>setPermission(m.module_key,a.action_key,e.target.checked)}/></td>;})}</tr>)}
+      </tbody></table></div>
+      <button className="sb-primary" type="button" disabled={saving} onClick={savePermissions}>{saving ? "Saving…" : "Save permissions"}</button>
+      <button type="button" disabled={saving} onClick={()=>setEditingPermissions(null)}>Cancel</button>
+    </section>}
     <form className="sb-form" onSubmit={saveLoyaltyRule}>
       <h2>Loyalty rewards rules</h2>
       <p>Set the default Super Coins rate or override it for a product/category. Default: 1 coin per ₹100 eligible spend. Coins expire one year after credit.</p>
