@@ -68,7 +68,10 @@ PostgreSQL
 
 - **Frontend:** React 18, Vite 6 and `lucide-react`.
 - **Backend:** Python FastAPI, Pydantic Settings and Psycopg.
-- **Database:** PostgreSQL.
+- **Database engine:** PostgreSQL.
+- **Live production database (observed 10 November 2026):** database name `superbajaar`, host `127.0.0.1`, port `5432`, application role `superbajaar_app`. This is the database configured by the live backend service at the time of verification; confirm the server configuration before any future infrastructure change.
+- **Historical name only:** `sb_app` appears in older repository/default configuration and as the source database named in the baseline SQL's provenance comments. It is **not** the confirmed live production database.
+- **Migration runner safety:** `backend/scripts/apply_schema.sh` currently defaults to `sb_app` when `SB_DB` is unset. Every production invocation or scheduled service must explicitly set `SB_DB=superbajaar`. Never rely on the runner default.
 - **Backend ASGI entry point:** `backend/app/main.py`.
 - **Compatibility ASGI entry point:** `backend/main.py` imports and exposes the canonical `app.main:app`.
 - **API prefix:** `/api` by default.
@@ -283,9 +286,12 @@ The previous duplicate-prefix problem has been addressed in the current migratio
 Use the existing runner and its documented modes:
 
 ```bash
-backend/scripts/apply_schema.sh backend/schema --dry-run
-backend/scripts/apply_schema.sh backend/schema --status
+# Production target (use only when explicitly authorized):
+SB_DB=superbajaar backend/scripts/apply_schema.sh backend/schema --dry-run
+SB_DB=superbajaar backend/scripts/apply_schema.sh backend/schema --status
 ```
+
+For local development or testing, set `SB_DB` to the explicitly provisioned disposable/local database name instead; do not copy the production value blindly.
 
 The runner is designed to:
 
