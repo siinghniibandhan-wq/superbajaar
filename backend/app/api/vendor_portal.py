@@ -9,7 +9,7 @@ import boto3
 import psycopg
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from psycopg.rows import dict_row
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.config import settings
 
@@ -72,6 +72,15 @@ class InvoiceInput(BaseModel):
     discount_amount: Decimal = Field(default=Decimal("0"), ge=0, max_digits=16, decimal_places=2)
     invoice_total: Decimal = Field(gt=0, max_digits=16, decimal_places=2)
     source_document_uri: str = Field(min_length=1, max_length=1000)
+
+    @field_validator("supplier_gstin")
+    @classmethod
+    def valid_supplier_gstin(cls, value):
+        if value:
+            value = value.strip().upper()
+            if len(value) != 15 or not value[:2].isdigit() or not value[2:7].isalpha() or not value[7:11].isdigit() or not value[11].isalpha() or not value[12].isdigit() or not value[13].isalnum() or value[14] not in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+                raise ValueError("Enter a GSTIN in the expected 15-character format")
+        return value
 
     @model_validator(mode="after")
     def invoice_total_matches_components(self):
