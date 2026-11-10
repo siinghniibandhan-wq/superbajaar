@@ -174,6 +174,56 @@ test("HR manager can access the HR workspace without admin-wide module access", 
 });
 
 
+test("HR manager can submit and approve an effective-dated salary revision", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("superbajaar.access_token", "manager-test-token");
+  });
+  const revisions = [];
+  await page.route("**/api/**", async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.pathname === "/api/auth/me") {
+      return route.fulfill({ json: { user: { id: 77, full_name: "HR Manager", role: "manager" } } });
+    }
+    if (url.pathname === "/api/health") return route.fulfill({ json: { status: "ok", database: "connected" } });
+    if (url.pathname === "/api/hr/employees") {
+      return route.fulfill({ json: { items: [{
+        id: 11, employee_code: "SB-0011", first_name: "Asha", last_name: "Singh",
+        email: "asha@example.test", designation: "Associate", status: "active",
+        joining_date: "2025-01-01", basic_salary: "30000", hra: "12000",
+        special_allowance: "5000", other_allowance: "1000",
+      }] } });
+    }
+    if (url.pathname === "/api/hr/employees/11/salary-revisions" && request.method === "GET") {
+      return route.fulfill({ json: { items: revisions } });
+    }
+    if (url.pathname === "/api/hr/employees/11/salary-revisions" && request.method === "POST") {
+      const body = request.postDataJSON();
+      revisions.unshift({ id: 901, employee_id: 11, ...body, status: "draft" });
+      return route.fulfill({ status: 201, json: revisions[0] });
+    }
+    if (url.pathname === "/api/hr/employees/11/salary-revisions/901/review" && request.method === "POST") {
+      revisions[0].status = request.postDataJSON().decision;
+      return route.fulfill({ json: revisions[0] });
+    }
+    return route.fulfill({ json: { items: [] } });
+  });
+
+  await page.goto("/admin");
+  await page.getByRole("button", { name: "People directory" }).click();
+  await page.getByRole("button", { name: "Salary history" }).click();
+  await expect(page.getByRole("heading", { name: /Salary history — SB-0011/ })).toBeVisible();
+  await page.getByLabel("Effective from").fill("2026-12-01");
+  await page.getByLabel("Basic salary (₹ / month)").fill("33000");
+  await page.getByLabel("Reason for revision").fill("Annual performance revision");
+  await page.getByRole("button", { name: "Submit salary revision" }).click();
+  await expect(page.getByText("draft", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Approve" }).click();
+  await expect(page.getByText("approved", { exact: true })).toBeVisible();
+  expect(revisions[0].status).toBe("approved");
+});
+
+
 test("HR attendance register formats Unix-second timestamps as real dates", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("superbajaar.access_token", "manager-test-token");
