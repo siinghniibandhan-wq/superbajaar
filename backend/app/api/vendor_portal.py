@@ -1,10 +1,13 @@
 """Supplier-scoped vendor portal APIs. Every query derives supplier identity from the session."""
 from datetime import date
 from decimal import Decimal
+import os
 import uuid
 
+import boto3
+
 import psycopg
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from psycopg.rows import dict_row
 from pydantic import BaseModel, Field, model_validator
 
@@ -82,6 +85,66 @@ class InvoiceInput(BaseModel):
         if self.due_date and self.due_date < self.invoice_date:
             raise ValueError("Invoice due date cannot precede invoice date")
         return self
+
+
+@router.post("/documents", status_code=201)
+async def upload_vendor_document(request: Request, file: UploadFile = File(...)):
+    """Upload an invoice attachment to a private, server-side-encrypted S3 bucket."""
+    if file.content_type not in {"application/pdf", "image/jpeg", "image/png"}:
+        raise HTTPException(415, "Upload a PDF, JPEG or PNG document")
+    bucket = os.getenv("SB_PRIVATE_DOCUMENT_BUCKET", "").strip()
+    if not bucket:
+        raise HTTPException(503, "Private document storage is not configured")
+    try:
+        with _connect() as conn:
+            vendor = _vendor_user(conn, request)
+        content = await file.read(10 * 1024 * 1024 + 1)
+        if not content or len(content) > 10 * 1024 * 1024:
+            raise HTTPException(413, "Document must be between 1 byte and 10 MB")
+        extension = {"application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png"}[file.content_type]
+        key = f"vendor-invoices/{vendor['supplier_id']}/{uuid.uuid4().hex}.{extension}"
+        client = boto3.client("s3", region_name=os.getenv("AWS_REGION") or None)
+        client.put_object(
+            Bucket=bucket, Key=key, Body=content, ContentType=file.content_type,
+            ServerSideEncryption="AES256",
+            Metadata={"supplier-id": str(vendor["supplier_id"])},
+        )
+        return {"document_uri": f"s3://{bucket}/{key}", "file_name": file.filename, "content_type": file.content_type}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(503, "Private document upload failed; verify storage configuration and permissions") from exc
+    finally:
+        await file.close()
+
+
+@router.get("/invoices/{invoice_id}/document")
+def vendor_invoice_document(invoice_id: int, request: Request):
+    bucket = os.getenv("SB_PRIVATE_DOCUMENT_BUCKET", "").strip()
+    if not bucket:
+        raise HTTPException(503, "Private document storage is not configured")
+    try:
+        with _connect() as conn:
+            vendor = _vendor_user(conn, request)
+            row = conn.execute(
+                "SELECT source_document_uri FROM supplier_invoices WHERE id=%s AND supplier_id=%s",
+                (invoice_id, vendor["supplier_id"]),
+            ).fetchone()
+            if not row or not row["source_document_uri"]:
+                raise HTTPException(404, "Invoice document not found")
+            prefix = f"s3://{bucket}/vendor-invoices/{vendor['supplier_id']}/"
+            if not row["source_document_uri"].startswith(prefix):
+                raise HTTPException(403, "Invoice document is outside this supplier account")
+            key = row["source_document_uri"][len(f"s3://{bucket}/"):]
+        client = boto3.client("s3", region_name=os.getenv("AWS_REGION") or None)
+        url = client.generate_presigned_url(
+            "get_object", Params={"Bucket": bucket, "Key": key}, ExpiresIn=300
+        )
+        return {"download_url": url, "expires_in": 300}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(503, "Unable to create a secure invoice document link") from exc
 
 
 @router.get("/me")
