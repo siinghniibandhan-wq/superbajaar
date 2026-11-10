@@ -554,7 +554,7 @@ def test_hr_salary_revisions_and_overtime_flow_into_payroll_once(api):
     ))
     assert approved["status"]=="approved"
     history=ok(api.get(f"/api/hr/employees/{employee['id']}/salary-revisions"))
-    opening=next(x for x in history["items"] if x["status"]=="approved" and x["effective_from"]==date(2026,1,1))
+    opening=next(x for x in history["items"] if x["status"]=="approved" and str(x["effective_from"])=="2026-01-01")
     assert str(opening["effective_to"])=="2026-11-30"
 
     overtime=ok(api.post(f"/api/hr/employees/{employee['id']}/earning-adjustments",json={
