@@ -555,7 +555,7 @@ def test_hr_salary_revisions_and_overtime_flow_into_payroll_once(api):
     assert approved["status"]=="approved"
     history=ok(api.get(f"/api/hr/employees/{employee['id']}/salary-revisions"))
     opening=next(x for x in history["items"] if x["status"]=="approved" and x["effective_from"]==date(2026,1,1))
-    assert opening["effective_to"]==date(2026,11,30)
+    assert str(opening["effective_to"])=="2026-11-30"
 
     overtime=ok(api.post(f"/api/hr/employees/{employee['id']}/earning-adjustments",json={
         "earning_type":"overtime","period_start":"2026-12-01","period_end":"2026-12-31",
@@ -620,7 +620,7 @@ def test_hr_multi_establishment_payroll_accruals_are_tracked_per_entity(api):
         employees.append((employee,establishment))
 
     payroll=ok(api.post("/api/hr/payroll/runs",json={
-        "period_start":"2026-12-01","period_end":"2026-12-31"
+        "period_start":"2027-01-01","period_end":"2027-01-31"
     }),201)
     assert payroll["employee_count"]==2
     approved=ok(api.post(f"/api/hr/payroll/runs/{payroll['id']}/approve",json={"decision":"approved"}))
