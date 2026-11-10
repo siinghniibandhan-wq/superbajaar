@@ -12,6 +12,7 @@ import re
 import sys
 
 import psycopg
+from psycopg.rows import dict_row
 
 from app.api.auth import _password_hash
 
@@ -34,7 +35,7 @@ def main() -> int:
         return 2
 
     password_hash = _password_hash(password)
-    with psycopg.connect(dsn) as conn:
+    with psycopg.connect(dsn, row_factory=dict_row) as conn:
         with conn.transaction():
             # Serialize provisioning attempts, including when the table is empty.
             conn.execute("SELECT pg_advisory_xact_lock(hashtext('superbajaar:first-super-admin'))")
