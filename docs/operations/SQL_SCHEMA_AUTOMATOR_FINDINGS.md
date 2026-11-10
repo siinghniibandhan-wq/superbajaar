@@ -69,6 +69,8 @@ DB="${SB_DB:-sb_app}"
 
 The live backend's configured database is `superbajaar`, not the runner's fallback `sb_app`. Therefore every scheduled invocation must explicitly set `SB_DB=superbajaar`. Do not rely on the runner's default.
 
+The repository README has also been corrected to state this distinction: `superbajaar` is the confirmed live production target; `sb_app` is retained only as a historical baseline-source reference and the runner's unsafe fallback. Production command examples now explicitly set `SB_DB=superbajaar`.
+
 The successful status inspection was invoked with `SB_DB=superbajaar`.
 
 ## 4. Migration runner and schema paths
