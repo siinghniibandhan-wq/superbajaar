@@ -126,6 +126,11 @@ function AppShell() {
   if (!authChecked) return <main className="sb-login-page"><p>Checking sign-in…</p></main>;
   if (!user) return <LoginScreen onSignedIn={setUser} />;
   const role = String(user.role || "").toLowerCase();
+  if (role === "staff") return <main className="sb-shell">
+    <header className="sb-header"><div className="sb-brand"><span className="sb-mark">S</span><span><strong>Super Bajaar</strong><small>Employee Self-Service</small></span></div><div className="sb-header-actions"><span className="sb-user-label">{user.full_name || user.email}</span><button className="sb-signout" type="button" onClick={signOut}>Sign out</button></div></header>
+    <div className="sb-main-content"><HRWorkspace onBack={signOut} currentUser={user} /></div>
+    <footer>Super Bajaar · Employee Self-Service · Backend port 8001 · PostgreSQL port 5432</footer>
+  </main>;
   if (role === "manager") return <main className="sb-shell">
     <header className="sb-header"><div className="sb-brand"><span className="sb-mark">S</span><span><strong>Super Bajaar</strong><small>HR Manager Workspace</small></span></div><div className="sb-header-actions"><span className="sb-user-label">{user.full_name || user.email}</span><button className="sb-signout" type="button" onClick={signOut}>Sign out</button></div></header>
     <div className="sb-main-content"><HRWorkspace onBack={signOut} currentUser={user} /></div>
