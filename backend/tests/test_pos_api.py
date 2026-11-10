@@ -74,3 +74,5 @@ def test_pos_sales_aggregates_payments_before_joining_order_lines(monkeypatch):
     query = conn.queries[0][0]
     assert "SELECT order_id, count(*) AS line_count" in query
     assert "SELECT order_id," in query and "sum(amount) FILTER (WHERE p.status='captured')" in query
+    assert "FROM payments p GROUP BY order_id" in query
+    assert "string_agg(DISTINCT p.status" in query
