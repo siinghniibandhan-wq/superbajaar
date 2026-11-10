@@ -21,6 +21,7 @@ import { apiRequest, healthApi } from "../services/api.js";
 import LoginScreen from "./LoginScreen.jsx";
 import Storefront from "./Storefront.jsx";
 import { filterNavigationGroups } from "./moduleAccess.js";
+import PortalWorkspace, { PortalActivation } from "../features/portals/PortalWorkspace.jsx";
 
 const groups = [
   { title: "Commerce", items: [
@@ -185,5 +186,9 @@ function AdminApp() { return <AppProviders><AppShell /></AppProviders>; }
 export function Router() {
   const path = window.location.pathname.replace(/\/+$/, "") || "/";
   if (path === "/admin" || path.startsWith("/admin/")) return <AdminApp />;
+  if (path === "/vendor/activate") return <PortalActivation portal="vendor" />;
+  if (path === "/employee/activate") return <PortalActivation portal="employee" />;
+  if (path === "/vendor" || path.startsWith("/vendor/")) return <PortalWorkspace portal="vendor" />;
+  if (path === "/employee" || path.startsWith("/employee/")) return <PortalWorkspace portal="employee" />;
   return <Storefront />;
 }
