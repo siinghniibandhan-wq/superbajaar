@@ -254,6 +254,10 @@ def update_user(user_id: int, payload: UserUpdate, user=Depends(current_user)):
                 target = conn.execute("SELECT id,role,is_active FROM app_users WHERE id=%s FOR UPDATE", (user_id,)).fetchone()
                 if target is None:
                     raise HTTPException(404, "User not found")
+                if target["role"] == "super_admin" and user["role"] != "super_admin":
+                    raise HTTPException(403, "Only a Super Admin can change or deactivate a Super Admin account")
+                if target["role"] == "owner" and user["role"] not in {"super_admin", "owner"}:
+                    raise HTTPException(403, "Only a Super Admin or Owner can change or deactivate an Owner account")
                 next_role = payload.role if payload.role is not None else target["role"]
                 next_active = payload.is_active if payload.is_active is not None else target["is_active"]
                 if target["role"] in {"super_admin", "owner"} and (next_role != target["role"] or not next_active):
