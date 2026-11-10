@@ -72,3 +72,19 @@ def test_self_profile_and_permission_routes_are_available_without_user_managemen
     assert is_self_service_auth_route("GET", "/api/auth/me", "/api")
     assert is_self_service_auth_route("GET", "/api/auth/my-permissions", "/api")
     assert not is_self_service_auth_route("GET", "/api/auth/users", "/api")
+
+
+def test_super_admin_permission_resolution_cannot_be_restricted_by_user_override(monkeypatch):
+    from app.api import auth
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    monkeypatch.setattr(auth, "_connect", lambda: FakeConnection())
+    monkeypatch.setattr(auth, "_effective_permissions", lambda _conn, _user_id, _role: {"inventory": {"read": True}})
+    result = auth.my_permissions({"id": 1, "role": "super_admin"})
+    assert result == {"permissions": {"inventory": {"read": True}}}
