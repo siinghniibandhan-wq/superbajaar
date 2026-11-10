@@ -12,6 +12,7 @@ from psycopg.rows import dict_row
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.config import settings
+from app.api.purchasing_lifecycle import SupplierInvoiceCreate, SupplierInvoiceLineInput, create_supplier_invoice
 
 router = APIRouter(prefix="/vendor-portal", tags=["vendor portal"])
 
@@ -72,6 +73,7 @@ class InvoiceInput(BaseModel):
     discount_amount: Decimal = Field(default=Decimal("0"), ge=0, max_digits=16, decimal_places=2)
     invoice_total: Decimal = Field(gt=0, max_digits=16, decimal_places=2)
     source_document_uri: str = Field(min_length=1, max_length=1000)
+    lines: list[SupplierInvoiceLineInput] = Field(min_length=1, max_length=200)
 
     @field_validator("supplier_gstin")
     @classmethod
@@ -354,37 +356,25 @@ def vendor_invoices(request: Request):
 @router.post("/invoices", status_code=201)
 def submit_invoice(payload: InvoiceInput, request: Request):
     user_id = getattr(request.state, "user_id", None)
-    email = getattr(request.state, "user_email", None)
-    if not user_id or not email:
+    if not user_id:
         raise HTTPException(401, "Sign in to continue")
     try:
         with _connect() as conn:
-            with conn.transaction():
-                vendor = _vendor_user(conn, request)
-                order = conn.execute(
-                    "SELECT id,status FROM purchase_orders WHERE id=%s AND supplier_id=%s FOR SHARE",
-                    (payload.purchase_order_id, vendor["supplier_id"]),
-                ).fetchone()
-                if not order:
-                    raise HTTPException(404, "Purchase order not found")
-                if order["status"] not in {"ordered", "partially_received", "received"}:
-                    raise HTTPException(409, "Invoices can be submitted only against an issued purchase order")
-                bucket = os.getenv("SB_PRIVATE_DOCUMENT_BUCKET", "").strip()
-                expected_prefix = f"s3://{bucket}/vendor-invoices/{vendor['supplier_id']}/" if bucket else ""
-                if not expected_prefix or not payload.source_document_uri.startswith(expected_prefix):
-                    raise HTTPException(422, "Upload the invoice document through the private vendor document upload first")
-                row = conn.execute(
-                    "INSERT INTO supplier_invoices(supplier_id,purchase_order_id,supplier_gstin,invoice_number,invoice_date,due_date,"
-                    "taxable_value,cgst_amount,sgst_amount,igst_amount,cess_amount,freight_amount,discount_amount,invoice_total,"
-                    "source_document_uri,match_status,created_by_user_id,created_by_email) "
-                    "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'pending',%s,%s) "
-                    "RETURNING id,purchase_order_id,invoice_number,invoice_date,invoice_total,match_status,created_at",
-                    (vendor["supplier_id"],payload.purchase_order_id,payload.supplier_gstin,payload.invoice_number.strip(),
-                     payload.invoice_date,payload.due_date,payload.taxable_value,payload.cgst_amount,payload.sgst_amount,
-                     payload.igst_amount,payload.cess_amount,payload.freight_amount,payload.discount_amount,payload.invoice_total,
-                     payload.source_document_uri,user_id,email),
-                ).fetchone()
-        return row
+            vendor = _vendor_user(conn, request)
+            order = conn.execute(
+                "SELECT id FROM purchase_orders WHERE id=%s AND supplier_id=%s",
+                (payload.purchase_order_id, vendor["supplier_id"]),
+            ).fetchone()
+            if not order:
+                raise HTTPException(404, "Purchase order not found")
+        bucket = os.getenv("SB_PRIVATE_DOCUMENT_BUCKET", "").strip()
+        expected_prefix = f"s3://{bucket}/vendor-invoices/{vendor['supplier_id']}/" if bucket else ""
+        if not expected_prefix or not payload.source_document_uri.startswith(expected_prefix):
+            raise HTTPException(422, "Upload the invoice document through the private vendor document upload first")
+        # Reuse the canonical Purchasing invoice workflow: policy checks, PO-line
+        # matching, QC-accepted GRN validation, quantity limits and match status.
+        canonical_payload = SupplierInvoiceCreate(**payload.model_dump())
+        return create_supplier_invoice(canonical_payload, request)
     except HTTPException:
         raise
     except psycopg.errors.UniqueViolation as exc:
