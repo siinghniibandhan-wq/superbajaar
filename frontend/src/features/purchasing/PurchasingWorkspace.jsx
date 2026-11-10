@@ -3,6 +3,7 @@ import PurchasingRequestsWorkspace from "./PurchasingRequestsWorkspace.jsx";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./PurchasingWorkspace.css";
 import { apiRequest } from "../../services/api.js";
+import { toLocalDateInputValue } from "./dateInput.js";
 
 const money = v => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(Number(v || 0));
 const label = v => String(v || "").replaceAll("_", " ").replace(/\b\w/g, c => c.toUpperCase());
@@ -49,7 +50,7 @@ export default function PurchasingWorkspace({ onBack }) {
   const [returnReason, setReturnReason] = useState("");
   const [invoiceGrnDetail, setInvoiceGrnDetail] = useState(null);
   const [invoiceNumber, setInvoiceNumber] = useState("");
-  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
+  const [invoiceDate, setInvoiceDate] = useState(() => toLocalDateInputValue());
   const [invoiceDueDate, setInvoiceDueDate] = useState("");
   const invoiceTaxRate = "18";
   const [invoiceTaxMode, setInvoiceTaxMode] = useState("intra");
