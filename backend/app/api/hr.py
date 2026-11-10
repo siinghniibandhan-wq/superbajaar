@@ -1335,7 +1335,7 @@ def approve_payroll(run_id:int,payload:PayrollApprovalInput,request:Request):
                 if pending_earnings:
                     raise HTTPException(
                         409,
-                        f"Payroll approval blocked: {pending_earnings} overtime, incentive or bonus item(s) "
+                        f"Payroll approval blocked: {pending_earnings} variable earning item(s) "
                         "are still awaiting review for this period."
                     )
                 incomplete = conn.execute(
