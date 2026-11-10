@@ -171,10 +171,15 @@ def create_invitation(payload: InvitationCreate, request: Request):
                 ).fetchone()
                 if existing:
                     raise HTTPException(409, "This email already belongs to a login account")
+                conn.execute(
+                    "UPDATE portal_invitations SET revoked_at=now() WHERE lower(email)=lower(%s) "
+                    "AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at<=now()",
+                    (email,),
+                )
                 pending = conn.execute(
-                    "SELECT id FROM portal_invitations WHERE portal_type=%s AND lower(email)=lower(%s) "
-                    "AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at>now()",
-                    (payload.portal_type, email),
+                    "SELECT id FROM portal_invitations WHERE lower(email)=lower(%s) "
+                    "AND accepted_at IS NULL AND revoked_at IS NULL",
+                    (email,),
                 ).fetchone()
                 if pending:
                     raise HTTPException(409, "A valid invitation already exists for this email")
