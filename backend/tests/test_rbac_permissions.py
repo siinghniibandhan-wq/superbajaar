@@ -74,7 +74,7 @@ def test_self_profile_and_permission_routes_are_available_without_user_managemen
     assert not is_self_service_auth_route("GET", "/api/auth/users", "/api")
 
 
-def test_super_admin_permission_resolution_cannot_be_restricted_by_user_override(monkeypatch):
+def test_my_permissions_returns_effective_grants_for_signed_in_user(monkeypatch):
     from app.api import auth
 
     class FakeConnection:
