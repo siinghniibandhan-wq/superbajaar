@@ -1,4 +1,4 @@
--- Super Bajaar loyalty programme and partner enquiries.
+-- Super Bajaar loyalty program and partner enquiries.
 -- Idempotent: safe to apply more than once; adds only the optional order email field to an existing table.
 ALTER TABLE IF EXISTS orders ADD COLUMN IF NOT EXISTS customer_email TEXT;
 
