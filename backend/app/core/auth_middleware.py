@@ -56,7 +56,7 @@ def _action_for_request(method: str, path: str) -> str:
 
 
 def _role_can_write(role: str, path: str) -> bool:
-    if role in {"super_admin", "owner", "admin"}:
+    if role in {"super_admin", "admin"}:
         return True
     if role == "viewer":
         return False
