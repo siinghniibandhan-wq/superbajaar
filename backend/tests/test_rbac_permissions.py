@@ -20,6 +20,12 @@ def test_admin_cannot_grant_permissions_outside_own_authority():
     assert not permissions_within_authority(granted, authority)
 
 
+def test_owner_is_not_a_supported_role():
+    from app.api.auth import USER_ROLES
+    assert "owner" not in USER_ROLES
+    assert "super_admin" in USER_ROLES
+
+
 def test_super_admin_can_manage_all_permissions():
     from app.api.auth import can_manage_all_permissions
 
