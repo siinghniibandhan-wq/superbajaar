@@ -389,3 +389,22 @@ The following are not yet verified or completed:
 The successful production migration is complete and verified for the checks listed above. This does not mean future migrations are automatically applied. The timer remains status-only, and future SQL changes require review and an explicit manual apply. No application code change, backend restart, or automatic migration-apply behaviour is part of this verification.
 
 **Authoritative production status as of 10 November 2026:** 30 migrations applied; 118 tables present and owned by `superbajaar_app`; backup and structure-only restore verified; status-only timer active; real backend database request and full SQL line-by-line review remain outstanding.
+
+
+---
+
+## 14. Post-verification operational recheck — 10 November 2026, 13:04 UTC
+
+A later live EC2 inspection supersedes the earlier timer-health statements in Section 13 for the current runtime state. The successful 30-migration production run, backup validation and structure-only restore test remain historical results; they do not establish that the currently installed automation units are healthy.
+
+### Current live observations
+
+- Both `superbajaar-schema.timer` and `superbajaar-github-sync.timer` are enabled and active, with a two-minute schedule.
+- `superbajaar-schema.service` is failing with exit code 20. Its logs show successful PostgreSQL queries against the correct database, `superbajaar`, followed by `missing_required=000_baseline_schema.sql`.
+- The base schema service unit specifies `--status`, but the active drop-in clears and replaces `ExecStart` without that argument. The effective command is therefore not status-only. Restore `--status` before considering the timer a read-only monitor.
+- `superbajaar-github-sync.service` is failing with exit code 1 because Git cannot write objects under `/opt/superbajaar/source/.git/objects`. Inspect the configured service user and exact repository ownership before making a scoped permission correction.
+- The current baseline discrepancy is not yet diagnosed. Compare the live `schema_migrations` row, current baseline SHA-256 and preserved baseline backup. Do not reapply the baseline or manually manufacture/update a ledger record.
+
+### Current status
+
+**Timers scheduled; both services failing; production automation not currently healthy.** No production database mutation or recursive repository permission change has been performed as part of this recheck. A successful final status requires both services to complete successfully and the baseline discrepancy to be reconciled using evidence from the live database.
