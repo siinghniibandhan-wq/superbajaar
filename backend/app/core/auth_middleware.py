@@ -38,7 +38,7 @@ def _module_for_path(path: str) -> str | None:
         "pos": "pos", "customers": "crm", "orders": "orders", "payments": "payments",
         "razorpay": "payments", "fulfilment": "fulfillment", "delivery": "delivery",
         "pricing": "pricing", "loyalty": "loyalty", "hr": "hr_payroll",
-        "accounting": "accounting", "reports": "dashboard",
+        "accounting": "accounting", "reports": "dashboard", "auth": "user_management", "organisation-policies": "dashboard",
     }
     return aliases.get(route)
 
@@ -197,8 +197,11 @@ async def require_active_session(request: Request) -> None:
 
     module_key = _module_for_path(path)
     if module_key is None:
-        # Authenticated API routes must be explicitly mapped before they can be used.
-        raise HTTPException(status_code=403, detail="No module permission is configured for this resource")
+        # Preserve the existing role policy for routes not yet represented in the
+        # permission catalogue. Map these routes before making them configurable.
+        if request.method not in {"GET", "HEAD"} and not _role_can_write(role, path):
+            raise HTTPException(status_code=403, detail="Your role does not have permission to change this resource")
+        return
     action_key = _action_for_request(request.method, path)
     try:
         with psycopg.connect(settings.database_url, row_factory=dict_row, connect_timeout=3) as conn:
