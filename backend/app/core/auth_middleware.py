@@ -48,7 +48,7 @@ def _module_for_path(path: str, prefix: str = "/api") -> str | None:
         "pos": "pos", "customers": "crm", "orders": "orders", "payments": "payments",
         "razorpay": "payments", "fulfilment": "fulfillment", "delivery": "delivery",
         "pricing": "pricing", "loyalty": "loyalty", "hr": "hr_payroll",
-        "accounting": "accounting", "reports": "dashboard", "auth": "user_management", "organisation-policies": "dashboard",
+        "accounting": "accounting", "reports": "dashboard", "auth": "user_management", "portal-invitations": "user_management", "organisation-policies": "dashboard",
     }
     return aliases.get(route)
 
@@ -97,7 +97,7 @@ async def require_active_session(request: Request) -> None:
     """Authenticate a valid request and enforce role-based write access."""
     path = request.url.path
     prefix = settings.api_prefix.rstrip("/")
-    public = {prefix + "/health", prefix + "/auth/login", prefix + "/customer-auth/register", prefix + "/customer-auth/login"}
+    public = {prefix + "/health", prefix + "/auth/login", prefix + "/customer-auth/register", prefix + "/customer-auth/login", prefix + "/portal-invitations/accept"}
     if method_is_public_serviceability(request.method, path, prefix):
         return
     # Razorpay authenticates this exact POST route with its raw-body HMAC signature.
@@ -211,6 +211,11 @@ async def require_active_session(request: Request) -> None:
     request.state.user_email = row["email"]
 
     if is_self_service_auth_route(request.method, path, prefix):
+        return
+
+    # Portal routers perform their own supplier/employee row-level authorization.
+    # Authentication and active-session checks above still apply to every request.
+    if path.startswith((prefix + "/vendor-portal/", prefix + "/employee-portal/")):
         return
 
     module_key = _module_for_path(path, prefix)
