@@ -128,7 +128,7 @@ def login(payload: LoginPayload):
     except HTTPException:
         raise
     except psycopg.Error as exc:
-        raise HTTPException(503, "Authentication storage unavailable; verify migration 007") from exc
+        raise HTTPException(503, "Authentication storage unavailable; verify the required authentication schema") from exc
 
 
 @router.get("/me")
@@ -213,7 +213,7 @@ def list_users(user=Depends(current_user)):
             ).fetchall()
         return {"items": rows}
     except psycopg.Error as exc:
-        raise HTTPException(503, "Unable to load users; verify migration 007") from exc
+        raise HTTPException(503, "Unable to load users; verify the required authentication schema") from exc
 
 
 @router.post("/users", status_code=201)
@@ -234,7 +234,7 @@ def create_user(payload: UserCreate, user=Depends(current_user)):
     except psycopg.Error as exc:
         if getattr(exc, "sqlstate", None) == "23505":
             raise HTTPException(409, "An account with this email already exists") from exc
-        raise HTTPException(503, "Unable to create user; verify migration 007") from exc
+        raise HTTPException(503, "Unable to create user; verify the required authentication schema") from exc
 
 
 @router.patch("/users/{user_id}")
@@ -275,4 +275,4 @@ def update_user(user_id: int, payload: UserUpdate, user=Depends(current_user)):
     except HTTPException:
         raise
     except psycopg.Error as exc:
-        raise HTTPException(503, "Unable to update user; verify migration 007") from exc
+        raise HTTPException(503, "Unable to update user; verify the required authentication schema") from exc
