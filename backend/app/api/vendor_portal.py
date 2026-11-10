@@ -101,6 +101,13 @@ async def upload_vendor_document(request: Request, file: UploadFile = File(...))
         content = await file.read(10 * 1024 * 1024 + 1)
         if not content or len(content) > 10 * 1024 * 1024:
             raise HTTPException(413, "Document must be between 1 byte and 10 MB")
+        signatures = {
+            "application/pdf": content.startswith(b"%PDF-"),
+            "image/jpeg": content.startswith(b"\\xff\\xd8\\xff"),
+            "image/png": content.startswith(b"\\x89PNG\\r\\n\\x1a\\n"),
+        }
+        if not signatures.get(file.content_type, False):
+            raise HTTPException(415, "The uploaded file content does not match its declared document type")
         extension = {"application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png"}[file.content_type]
         key = f"vendor-invoices/{vendor['supplier_id']}/{uuid.uuid4().hex}.{extension}"
         client = boto3.client("s3", region_name=os.getenv("AWS_REGION") or None)
