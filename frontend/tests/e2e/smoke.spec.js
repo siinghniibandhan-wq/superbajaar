@@ -555,7 +555,7 @@ test("HR staff can view their own payslips in employee self-service", async ({ p
   await page.getByText("View breakdown").click();
   await expect(page.getByText("Basic", { exact: true })).toBeVisible();
   await expect(page.getByText("Approved salary advance recovery")).toBeVisible();
-  await expect(page.getByText("PF", { exact: true })).toBeVisible();
+  await expect(page.getByText(/PF: Employee/)).toBeVisible();
 });
 
 
