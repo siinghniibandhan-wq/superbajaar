@@ -182,6 +182,7 @@ class UserCreate(BaseModel):
     full_name: str = Field(min_length=1, max_length=200)
     password: str = Field(min_length=12, max_length=1024)
     role: str = "staff"
+    permissions: dict[str, dict[str, bool]] = Field(default_factory=dict)
 
     @field_validator("email")
     @classmethod
@@ -241,11 +242,16 @@ def create_user(payload: UserCreate, user=Depends(current_user)):
         raise HTTPException(403, "Only a Super Admin can create Admin accounts")
     try:
         with _connect() as conn:
-            row = conn.execute(
-                "INSERT INTO app_users(email,full_name,password_hash,role) VALUES(%s,%s,%s,%s) "
-                "RETURNING id,email,full_name,role,is_active,created_at,updated_at",
-                (payload.email, payload.full_name, _password_hash(payload.password), payload.role),
-            ).fetchone()
+            with conn.transaction():
+                authority = _effective_permissions(conn, user["id"], user["role"])
+                if not can_manage_all_permissions(user["role"]) and not permissions_within_authority(payload.permissions, authority):
+                    raise HTTPException(403, "You cannot grant permissions you do not hold")
+                row = conn.execute(
+                    "INSERT INTO app_users(email,full_name,password_hash,role) VALUES(%s,%s,%s,%s) "
+                    "RETURNING id,email,full_name,role,is_active,created_at,updated_at",
+                    (payload.email, payload.full_name, _password_hash(payload.password), payload.role),
+                ).fetchone()
+                _save_user_permissions(conn, row["id"], payload.permissions, user["id"])
         return row
     except psycopg.Error as exc:
         if getattr(exc, "sqlstate", None) == "23505":
