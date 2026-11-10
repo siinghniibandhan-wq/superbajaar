@@ -12,7 +12,12 @@ from pydantic import BaseModel, Field
 
 from app.api.auth import _password_hash
 from app.core.config import settings
-from app.services.portal_invitation import hash_invitation_token, invitation_is_usable, issue_invitation_token
+from app.services.portal_invitation import (
+    hash_invitation_token,
+    invitation_is_usable,
+    issue_invitation_token,
+    send_resend_email,
+)
 
 router = APIRouter(prefix="/portal-invitations", tags=["portal invitations"])
 
@@ -37,24 +42,49 @@ class InvitationAccept(BaseModel):
 
 
 def _send_invitation(email: str, portal_type: str, invitation_url: str) -> str:
-    """Send using optional SMTP configuration; return a safe delivery state."""
-    host = os.getenv("SB_SMTP_HOST", "").strip()
-    sender = os.getenv("SB_SMTP_FROM", "").strip()
-    if not host or not sender:
-        return "copy_link"
-    port = int(os.getenv("SB_SMTP_PORT", "587"))
-    username = os.getenv("SB_SMTP_USERNAME", "")
-    password = os.getenv("SB_SMTP_PASSWORD", "")
-    message = EmailMessage()
-    message["Subject"] = "Your Super Bajaar portal invitation"
-    message["From"] = sender
-    message["To"] = email
+    """Send with Resend or optional SMTP; fall back to the admin's copyable link."""
+    subject = "Your Super Bajaar portal invitation"
     portal_label = "Vendor" if portal_type == "vendor" else "Employee"
-    message.set_content(
+    body = (
         f"You have been invited to activate your Super Bajaar {portal_label} Portal.\n\n"
         f"Use this one-time link within 48 hours:\n{invitation_url}\n\n"
         "If you were not expecting this invitation, please contact Super Bajaar."
     )
+    provider = os.getenv("SB_EMAIL_PROVIDER", "smtp").strip().lower()
+
+    if provider == "resend":
+        api_key = os.getenv("RESEND_API_KEY", "").strip()
+        sender = os.getenv("SB_SMTP_FROM", "onboarding@resend.dev").strip()
+        # Resend's shared testing sender can only deliver to the account owner's
+        # verified email. Do not attempt to send portal invitations to other users
+        # until a verified sending domain is configured.
+        test_recipient = os.getenv("RESEND_TEST_RECIPIENT", "").strip().lower()
+        if not api_key or not test_recipient or email.strip().lower() != test_recipient:
+            return "copy_link"
+        message_id = send_resend_email(
+            api_key=api_key,
+            sender=sender,
+            recipient=test_recipient,
+            subject=subject,
+            text=body,
+        )
+        return "sent" if message_id else "copy_link"
+
+    host = os.getenv("SB_SMTP_HOST", "").strip()
+    sender = os.getenv("SB_SMTP_FROM", "").strip()
+    if not host or not sender:
+        return "copy_link"
+    try:
+        port = int(os.getenv("SB_SMTP_PORT", "587"))
+    except ValueError:
+        return "copy_link"
+    username = os.getenv("SB_SMTP_USERNAME", "")
+    password = os.getenv("SB_SMTP_PASSWORD", "")
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = sender
+    message["To"] = email
+    message.set_content(body)
     try:
         context = ssl.create_default_context()
         with smtplib.SMTP(host, port, timeout=10) as smtp:
