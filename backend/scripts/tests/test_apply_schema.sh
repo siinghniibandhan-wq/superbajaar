@@ -156,4 +156,11 @@ check "duplicate table-name exit 50" "$(run "$T/s19")" 50
 check "duplicate table-name check creates no backup" "$(dumps)" 0
 grep -q "duplicate table names already exist" "$T/out" && ok "duplicate table-name reason shown" || bad "duplicate table-name reason missing"
 
+echo "T21 migration runner refuses to proceed when lock file cannot be opened"
+newdb
+mkdir -p "$T/locked"; chmod 500 "$T/locked"
+check "lock open failure exit 50" "$(SB_LOCK_FILE="$T/locked/runner.lock" run "$T/s12")" 50
+grep -q "cannot open lock file" "$T/out" && ok "lock failure explains fail-closed behavior" || bad "lock failure message missing"
+chmod 700 "$T/locked"
+
 echo; echo "RESULT: $pass passed, $fail failed"; rm -rf "$T"; [ $fail -eq 0 ]

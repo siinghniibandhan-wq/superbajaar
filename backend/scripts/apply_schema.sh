@@ -56,7 +56,8 @@ pg(){ $PSQL -X -q -At -v ON_ERROR_STOP=1 -d "$DB" "$@"; }
 die(){ log "ERROR: $2"; exit "$1"; }
 
 [ -d "$DIR" ] || die 50 "schema folder $DIR not found"
-exec 9>"$LOCK" 2>/dev/null && { flock -n 9 || die 60 "another run is in progress"; }
+exec 9>"$LOCK" 2>/dev/null || die 50 "cannot open lock file $LOCK; refusing to run without migration lock"
+flock -n 9 || die 60 "another run is in progress"
 pg -c "select 1" >/dev/null 2>&1 || die 50 "cannot connect to database $DB (check the name; README says sb_app)"
 
 DUP_TABLES=$(pg -c "SELECT count(*) FROM (SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind IN ('r','p') AND n.nspname NOT IN ('pg_catalog','information_schema') AND left(n.nspname,3)<>'pg_' GROUP BY c.relname HAVING count(*) > 1) duplicate_tables") || die 50 "cannot inspect existing table names"
