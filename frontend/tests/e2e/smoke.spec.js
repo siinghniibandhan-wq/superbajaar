@@ -56,7 +56,7 @@ test("customer checkout completes a mocked Razorpay payment", async ({ page }) =
   });
   await page.route("**/api/**", async route => {
     const permissionRequest = route.request();
-    if (new URL(permissionRequest.url()).pathname.endsWith("/auth/my-permissions")) {
+    if (new URL(permissionRequest.url()).pathname.includes("/auth/my-permissions")) {
       const token = permissionRequest.headers().authorization || "";
       const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
       const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
@@ -133,7 +133,7 @@ test("HR manager can access the HR workspace without admin-wide module access", 
   });
   await page.route("**/api/**", async route => {
     const permissionRequest = route.request();
-    if (new URL(permissionRequest.url()).pathname.endsWith("/auth/my-permissions")) {
+    if (new URL(permissionRequest.url()).pathname.includes("/auth/my-permissions")) {
       const token = permissionRequest.headers().authorization || "";
       const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
       const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
@@ -199,7 +199,7 @@ test("HR manager can submit and approve an effective-dated salary revision", asy
   const revisions = [];
   await page.route("**/api/**", async route => {
     const permissionRequest = route.request();
-    if (new URL(permissionRequest.url()).pathname.endsWith("/auth/my-permissions")) {
+    if (new URL(permissionRequest.url()).pathname.includes("/auth/my-permissions")) {
       const token = permissionRequest.headers().authorization || "";
       const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
       const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
@@ -257,7 +257,7 @@ test("HR manager reviews overtime and it is included as an approved variable ear
   let submitted;
   await page.route("**/api/**", async route => {
     const permissionRequest = route.request();
-    if (new URL(permissionRequest.url()).pathname.endsWith("/auth/my-permissions")) {
+    if (new URL(permissionRequest.url()).pathname.includes("/auth/my-permissions")) {
       const token = permissionRequest.headers().authorization || "";
       const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
       const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
@@ -319,7 +319,7 @@ test("HR attendance register formats Unix-second timestamps as real dates", asyn
   });
   await page.route("**/api/**", async route => {
     const permissionRequest = route.request();
-    if (new URL(permissionRequest.url()).pathname.endsWith("/auth/my-permissions")) {
+    if (new URL(permissionRequest.url()).pathname.includes("/auth/my-permissions")) {
       const token = permissionRequest.headers().authorization || "";
       const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
       const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
@@ -352,7 +352,7 @@ test("HR workspace adapts its navigation and employee form across desktop and mo
   await page.addInitScript(() => localStorage.setItem("superbajaar.access_token", "manager-test-token"));
   await page.route("**/api/**", async route => {
     const permissionRequest = route.request();
-    if (new URL(permissionRequest.url()).pathname.endsWith("/auth/my-permissions")) {
+    if (new URL(permissionRequest.url()).pathname.includes("/auth/my-permissions")) {
       const token = permissionRequest.headers().authorization || "";
       const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
       const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
@@ -411,7 +411,7 @@ test("HR establishment edits preserve existing address and registration details"
   await page.addInitScript(() => localStorage.setItem("superbajaar.access_token", "manager-test-token"));
   await page.route("**/api/**", async route => {
     const permissionRequest = route.request();
-    if (new URL(permissionRequest.url()).pathname.endsWith("/auth/my-permissions")) {
+    if (new URL(permissionRequest.url()).pathname.includes("/auth/my-permissions")) {
       const token = permissionRequest.headers().authorization || "";
       const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
       const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
@@ -462,7 +462,7 @@ test("HR planning defaults use the employee's local calendar date, not the UTC d
   });
   await page.route("**/api/**", async route => {
     const permissionRequest = route.request();
-    if (new URL(permissionRequest.url()).pathname.endsWith("/auth/my-permissions")) {
+    if (new URL(permissionRequest.url()).pathname.includes("/auth/my-permissions")) {
       const token = permissionRequest.headers().authorization || "";
       const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
       const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
@@ -490,7 +490,7 @@ test("HR planning surfaces workforce API failures instead of silently showing em
   await page.addInitScript(() => localStorage.setItem("superbajaar.access_token", "manager-test-token"));
   await page.route("**/api/**", async route => {
     const permissionRequest = route.request();
-    if (new URL(permissionRequest.url()).pathname.endsWith("/auth/my-permissions")) {
+    if (new URL(permissionRequest.url()).pathname.includes("/auth/my-permissions")) {
       const token = permissionRequest.headers().authorization || "";
       const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
       const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
@@ -519,7 +519,7 @@ test("HR establishment form retains entered details when the save request fails"
   await page.addInitScript(() => localStorage.setItem("superbajaar.access_token", "manager-test-token"));
   await page.route("**/api/**", async route => {
     const permissionRequest = route.request();
-    if (new URL(permissionRequest.url()).pathname.endsWith("/auth/my-permissions")) {
+    if (new URL(permissionRequest.url()).pathname.includes("/auth/my-permissions")) {
       const token = permissionRequest.headers().authorization || "";
       const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
       const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
@@ -558,7 +558,7 @@ test("management analytics dashboard renders real module summaries and section v
   await page.addInitScript(() => localStorage.setItem("superbajaar.access_token", "owner-analytics-token"));
   await page.route("**/api/**", async route => {
     const permissionRequest = route.request();
-    if (new URL(permissionRequest.url()).pathname.endsWith("/auth/my-permissions")) {
+    if (new URL(permissionRequest.url()).pathname.includes("/auth/my-permissions")) {
       const token = permissionRequest.headers().authorization || "";
       const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
       const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
@@ -619,7 +619,7 @@ test("inventory workspace separates locations, stock operations, approvals, valu
   await page.addInitScript(() => localStorage.setItem("superbajaar.access_token", "owner-inventory-token"));
   await page.route("**/api/**", async route => {
     const permissionRequest = route.request();
-    if (new URL(permissionRequest.url()).pathname.endsWith("/auth/my-permissions")) {
+    if (new URL(permissionRequest.url()).pathname.includes("/auth/my-permissions")) {
       const token = permissionRequest.headers().authorization || "";
       const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
       const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
@@ -662,7 +662,7 @@ test("HR section tabs stay compact and scroll horizontally on mobile", async ({ 
   await page.addInitScript(() => localStorage.setItem("superbajaar.access_token", "manager-test-token"));
   await page.route("**/api/**", async route => {
     const permissionRequest = route.request();
-    if (new URL(permissionRequest.url()).pathname.endsWith("/auth/my-permissions")) {
+    if (new URL(permissionRequest.url()).pathname.includes("/auth/my-permissions")) {
       const token = permissionRequest.headers().authorization || "";
       const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
       const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
@@ -696,7 +696,7 @@ test("inventory workspace exposes its Overview section with live stock and contr
   await page.addInitScript(() => localStorage.setItem("superbajaar.access_token", "owner-inventory-analytics-token"));
   await page.route("**/api/**", async route => {
     const permissionRequest = route.request();
-    if (new URL(permissionRequest.url()).pathname.endsWith("/auth/my-permissions")) {
+    if (new URL(permissionRequest.url()).pathname.includes("/auth/my-permissions")) {
       const token = permissionRequest.headers().authorization || "";
       const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
       const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
@@ -747,7 +747,7 @@ test("HR staff can view their own payslips in employee self-service", async ({ p
   });
   await page.route("**/api/**", async route => {
     const permissionRequest = route.request();
-    if (new URL(permissionRequest.url()).pathname.endsWith("/auth/my-permissions")) {
+    if (new URL(permissionRequest.url()).pathname.includes("/auth/my-permissions")) {
       const token = permissionRequest.headers().authorization || "";
       const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
       const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
@@ -812,7 +812,7 @@ test("HR payroll calculation sends employee-specific manual deduction reasons", 
   let payrollPayload;
   await page.route("**/api/**", async route => {
     const permissionRequest = route.request();
-    if (new URL(permissionRequest.url()).pathname.endsWith("/auth/my-permissions")) {
+    if (new URL(permissionRequest.url()).pathname.includes("/auth/my-permissions")) {
       const token = permissionRequest.headers().authorization || "";
       const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
       const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
