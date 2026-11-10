@@ -13,7 +13,7 @@ def test_vendor_invoice_total_must_reconcile_to_taxable_value_and_tax():
         taxable_value="1000.00",
         cgst_amount="90.00",
         sgst_amount="90.00",
-        invoice_total="1180.00",\n        source_document_uri="s3://private-bucket/vendor-invoices/1/abc.pdf",
+        invoice_total="1180.00",\n        source_document_uri="s3://private-bucket/vendor-invoices/1/abc.pdf",\n        lines=[{"purchase_order_line_id": 1, "goods_receipt_line_id": 2, "quantity": "10", "unit_rate": "100", "taxable_value": "1000", "gst_rate": "18", "cgst_amount": "90", "sgst_amount": "90", "igst_amount": "0"}],\n        lines=[{"purchase_order_line_id": 1, "goods_receipt_line_id": 2, "quantity": "10", "unit_rate": "100", "taxable_value": "1000", "gst_rate": "18", "cgst_amount": "90", "sgst_amount": "90", "igst_amount": "0"}],
     )
     assert payload.invoice_total == 1180
 
