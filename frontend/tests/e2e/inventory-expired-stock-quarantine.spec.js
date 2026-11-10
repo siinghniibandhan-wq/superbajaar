@@ -5,6 +5,15 @@ test("inventory moves expired FEFO cost layers from a saleable store into a non-
   let expiredItems = [{ variant_id: 17, sku: "WF-5KG", product_name: "Wheat Flour 5kg", location_id: 9, location_name: "Patna Main Store", expired_quantity: "3.000", expired_value: "630.00", earliest_expiry: "2026-10-31", layer_count: 2 }];
   await page.addInitScript(() => localStorage.setItem("superbajaar.access_token", "owner-expired-stock-token"));
   await page.route("**/api/**", async route => {
+    const permissionRequest = route.request();
+    if (new URL(permissionRequest.url()).pathname.includes("/auth/my-permissions")) {
+      const token = permissionRequest.headers().authorization || "";
+      const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
+      const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
+      const permissions = Object.fromEntries(allowedKeys.map(key => [key, { read: true }]));
+      return route.fulfill({ json: { permissions } });
+    }
+
     const request = route.request();
     const url = new URL(request.url());
     const method = request.method();

@@ -485,7 +485,7 @@ export default function PurchasingWorkspace({ onBack }) {
         </div>
         <p className="sb-purchasing-boundary"><strong>Operational boundary:</strong> supplier payment allocation reconciles an already-posted Accounting payment voucher; it does not initiate a bank transfer. Landed-cost allocation remains a separately controlled valuation workflow and is not yet represented as completed.</p>
       </section>
-    </> : tab === "requests" ? <PurchasingRequestsWorkspace suppliers={suppliers} locations={locations} variants={variants} onPurchaseOrderCreated={async id => { setTab("orders"); await load(); await openOrder(id); }} /> : tab === "suppliers" ? <>
+    </> : tab === "requests" ? <PurchasingRequestsWorkspace suppliers={suppliers} locations={locations} variants={variants} onPurchaseOrderCreated={async po => { setTab("orders"); await load(); await openOrder(po.id); setNotice(`Quotation awarded. Draft PO ${po.purchase_number} created and still requires purchase approval.`); }} /> : tab === "suppliers" ? <>
       <form className="sb-customer-form" onSubmit={createSupplier}>
         <h2>{supplierEditId ? "Edit supplier" : "Add supplier"}</h2><div className="sb-customer-fields">
           <label>Supplier name *<input required maxLength="200" value={supplierForm.name} onChange={e => setSupplierForm(o => ({ ...o, name: e.target.value }))} /></label>

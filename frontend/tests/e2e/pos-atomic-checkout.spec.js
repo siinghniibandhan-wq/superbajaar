@@ -5,6 +5,15 @@ test("POS creates order and pending tender atomically with a retry-safe checkout
   let orderCreated = false;
   await page.addInitScript(() => localStorage.setItem("superbajaar.access_token", "owner-pos-checkout-token"));
   await page.route("**/api/**", async route => {
+    const permissionRequest = route.request();
+    if (new URL(permissionRequest.url()).pathname.includes("/auth/my-permissions")) {
+      const token = permissionRequest.headers().authorization || "";
+      const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
+      const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
+      const permissions = Object.fromEntries(allowedKeys.map(key => [key, { read: true }]));
+      return route.fulfill({ json: { permissions } });
+    }
+
     const request = route.request();
     const url = new URL(request.url());
     const method = request.method();
@@ -50,6 +59,15 @@ test("POS workspace stacks its catalogue and checkout panels at tablet and phone
   await page.setViewportSize({ width: 980, height: 900 });
   await page.addInitScript(() => localStorage.setItem("superbajaar.access_token", "owner-pos-layout-token"));
   await page.route("**/api/**", async route => {
+    const permissionRequest = route.request();
+    if (new URL(permissionRequest.url()).pathname.includes("/auth/my-permissions")) {
+      const token = permissionRequest.headers().authorization || "";
+      const moduleKeys = ["dashboard", "catalogue", "pricing", "orders", "payments", "inventory", "purchasing", "fulfillment", "delivery", "pos", "crm", "loyalty", "accounting", "hr_payroll", "user_management"];
+      const allowedKeys = /manager|employee/i.test(token) ? ["hr_payroll"] : moduleKeys;
+      const permissions = Object.fromEntries(allowedKeys.map(key => [key, { read: true }]));
+      return route.fulfill({ json: { permissions } });
+    }
+
     const url = new URL(route.request().url());
     if (url.pathname === "/api/auth/me") return route.fulfill({ json: { user: { id: 1, full_name: "Owner", role: "owner" } } });
     if (url.pathname === "/api/health") return route.fulfill({ json: { status: "ok", database: "connected" } });

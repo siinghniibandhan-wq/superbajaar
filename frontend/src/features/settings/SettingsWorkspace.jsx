@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { apiRequest } from "../../services/api.js";
 
 const roles = ["admin", "manager", "staff", "viewer"];
-export default function SettingsWorkspace({ onBack, currentUser }) {
+export default function SettingsWorkspace({ onBack, currentUser, permissions = {} }) {
   const [users, setUsers] = useState([]);
   const [form, setForm] = useState({ email: "", full_name: "", password: "", role: "staff", permissions: {} });
   const [loading, setLoading] = useState(false);
@@ -25,9 +25,10 @@ export default function SettingsWorkspace({ onBack, currentUser }) {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { apiRequest("/auth/permissions").then(setPermissionCatalog).catch(e => setError(e.message || "Unable to load permission catalogue.")); }, []);
   useEffect(() => {
+    if (!permissions.loyalty?.read) return;
     apiRequest("/loyalty/admin/rules").then(result => setLoyaltyRules(result.items || [])).catch(e => setError(e.message || "Unable to load loyalty rules."));
     apiRequest("/loyalty/admin/accounts").then(result => setLoyaltyAccounts(result.items || [])).catch(e => setError(e.message || "Unable to load loyalty accounts."));
-  }, []);
+  }, [permissions.loyalty?.read]);
 
   async function create(event) {
     event.preventDefault(); setSaving(true); setError(""); setNotice("");
@@ -107,7 +108,7 @@ export default function SettingsWorkspace({ onBack, currentUser }) {
       <button className="sb-primary" type="button" disabled={saving} onClick={savePermissions}>{saving ? "Saving…" : "Save permissions"}</button>
       <button type="button" disabled={saving} onClick={()=>setEditingPermissions(null)}>Cancel</button>
     </section>}
-    <form className="sb-form" onSubmit={saveLoyaltyRule}>
+    {permissions.loyalty?.read && <form className="sb-form" onSubmit={saveLoyaltyRule}>
       <h2>Loyalty rewards rules</h2>
       <p>Set the default Super Coins rate or override it for a product/category. Default: 1 coin per ₹100 eligible spend. Coins expire one year after credit.</p>
       <div className="sb-form-grid">
@@ -122,7 +123,7 @@ export default function SettingsWorkspace({ onBack, currentUser }) {
       <h2>Loyalty customer accounts ({loyaltyAccounts.length})</h2>
       <div className="sb-table-wrap"><table><thead><tr><th>Card</th><th>Customer email</th><th>Available coins</th><th>Ledger</th></tr></thead><tbody>{loyaltyAccounts.map(account=><tr key={account.id}><td>{account.card_number}</td><td>{account.customer_email}</td><td>{account.available_coins}</td><td><button type="button" onClick={()=>loadLoyaltyLedger(account.id)}>View history</button></td></tr>)}</tbody></table></div>
       {loyaltyLedger && <div className="sb-data-card"><h3>Ledger: {loyaltyLedger.account.card_number} · {loyaltyLedger.account.customer_email}</h3><div className="sb-table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Coins</th><th>Order</th><th>Expires</th></tr></thead><tbody>{loyaltyLedger.items.map(item=><tr key={item.id}><td>{new Date(item.created_at).toLocaleString()}</td><td>{item.transaction_type}</td><td>{item.coins}</td><td>{item.order_reference || "—"}</td><td>{item.expires_at ? new Date(item.expires_at).toLocaleDateString() : "—"}</td></tr>)}</tbody></table></div></div>}
-    </form>
+    </form>}
     <p className="sb-muted">Current role: {currentUser?.role || "unknown"}. User-management APIs are protected by the backend.</p>
   </section>;
 }

@@ -209,9 +209,12 @@ export default function PurchasingRequestsWorkspace({ suppliers = [], locations 
       const po = await apiRequest(`/purchasing/rfqs/${selectedRfq.id}/award`, {
         method: "POST", body: JSON.stringify({ quotation_id: quotation.id }),
       });
-      setNotice(`Quotation awarded. Draft PO ${po.purchase_number} created and still requires purchase approval.`);
       await loadLists(); await openRfq(selectedRfq.id);
-      if (onPurchaseOrderCreated) onPurchaseOrderCreated(po.id);
+      if (onPurchaseOrderCreated) {
+        await onPurchaseOrderCreated(po);
+      } else {
+        setNotice(`Quotation awarded. Draft PO ${po.purchase_number} created and still requires purchase approval.`);
+      }
     } catch (err) { setError(err.message || "Unable to award quotation."); }
     finally { setSaving(false); }
   }
