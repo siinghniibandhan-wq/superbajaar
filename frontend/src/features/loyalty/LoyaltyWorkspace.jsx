@@ -72,7 +72,7 @@ export default function LoyaltyWorkspace({ onBack }) {
     finally { setBusy(false); }
   };
 
-  const expire = async () => {
+  const updateEnquiry = async (id, status) => {\n    setBusy(true); setError(""); setNotice("");\n    try { await apiRequest("/loyalty/admin/partner-enquiries/" + id, { method: "PATCH", body: JSON.stringify({ status }) }); setEnquiries(rows => rows.map(row => row.id === id ? { ...row, status } : row)); setNotice("Partner enquiry status updated."); }\n    catch (e) { setError(e.message || "Unable to update partner enquiry."); }\n    finally { setBusy(false); }\n  };\n\n  const expire = async () => {
     if (!window.confirm("Expire all currently due Super Coins lots in the next processing batch? Accounting postings will be created.")) return;
     setBusy(true); setError(""); setNotice("");
     try {
@@ -136,7 +136,7 @@ export default function LoyaltyWorkspace({ onBack }) {
     </>}
     {!loading && tab === "enquiries" && <>
       <div className="sb-data-heading"><div><h2>Partner enquiries</h2><span>Incoming loyalty programme partnership requests.</span></div></div>
-      {sourceErrors.enquiries ? <p className="sb-empty">Partner enquiries unavailable: {sourceErrors.enquiries}</p> : <div className="sb-table-wrap"><table><thead><tr><th>Received</th><th>Business</th><th>Contact</th><th>Type</th><th>Message</th><th>Status</th></tr></thead><tbody>{enquiries.map(row => <tr key={row.id}><td>{date(row.created_at)}</td><td>{row.business_name}</td><td>{row.name}<br />{row.email}<br />{row.phone}</td><td>{row.partnership_type}</td><td>{row.message}</td><td><span className="sb-loyalty-status">{title(row.status)}</span></td></tr>)}</tbody></table>{!enquiries.length && <p className="sb-empty">No partner enquiries received.</p>}</div>}
+      {sourceErrors.enquiries ? <p className="sb-empty">Partner enquiries unavailable: {sourceErrors.enquiries}</p> : <div className="sb-table-wrap"><table><thead><tr><th>Received</th><th>Business</th><th>Contact</th><th>Type</th><th>Message</th><th>Status</th></tr></thead><tbody>{enquiries.map(row => <tr key={row.id}><td>{date(row.created_at)}</td><td>{row.business_name}</td><td>{row.name}<br />{row.email}<br />{row.phone}</td><td>{row.partnership_type}</td><td>{row.message}</td><td><select aria-label={"Status for " + row.business_name} value={row.status} disabled={busy} onChange={e => updateEnquiry(row.id, e.target.value)}><option value="new">New</option><option value="reviewing">Reviewing</option><option value="contacted">Contacted</option><option value="accepted">Accepted</option><option value="declined">Declined</option><option value="closed">Closed</option></select></td></tr>)}</tbody></table>{!enquiries.length && <p className="sb-empty">No partner enquiries received.</p>}</div>}
     </>}
   </section>;
 }
