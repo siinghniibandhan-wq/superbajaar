@@ -354,3 +354,20 @@
 .an-trend-legend i.income{background:#397fbd}
 .an-trend-legend i.expense{background:#e49a4b}
 @media(max-width:560px){.an-trend-chart{padding:8px 4px 2px}.an-trend-legend{font-size:9px}}
+
+/* Dashboard and report export actions and data visualisations */
+.sb-report-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:9px;margin:14px 0 18px}
+.sb-report-actions button,.sb-report-actions a{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:9px 13px;border:1px solid #dce5ed;border-radius:10px;background:#fff;color:#356f9f;text-decoration:none;font:700 11px Lato,sans-serif;cursor:pointer}
+.sb-report-actions button:hover,.sb-report-actions a:hover{border-color:#9bbbd5;background:#f7fbff}
+.sb-report-chart-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:16px 0}
+.sb-report-chart{min-width:0;padding:18px;border:1px solid #e6ebf0;border-radius:16px;background:#fff}
+.sb-report-chart h2{margin:0 0 16px;font:700 14px Lato,sans-serif}
+.sb-report-bars{display:grid;gap:13px}
+.sb-report-bar-row{display:grid;grid-template-columns:minmax(78px, .7fr) minmax(70px,2fr) auto;align-items:center;gap:10px;font-size:11px}
+.sb-report-bar-row>span{color:#65727e;overflow-wrap:anywhere;text-transform:capitalize}
+.sb-report-bar-row>strong{font-size:11px;font-variant-numeric:tabular-nums}
+.sb-report-bar-track{height:11px;overflow:hidden;border-radius:99px;background:#edf1f5}
+.sb-report-bar-track i{display:block;height:100%;min-width:0;border-radius:99px;background:linear-gradient(90deg,#397fbd,#6aa8d8)}
+.sb-report-chart-empty{position:relative;display:grid;min-height:145px;place-items:center;overflow:hidden;border-radius:10px;background:repeating-linear-gradient(to bottom,transparent 0,transparent 35px,#edf1f5 36px),#fbfcfd}
+.sb-report-chart-empty p{z-index:1;max-width:280px;padding:12px;text-align:center;color:#84909a;font-size:11px;line-height:1.6;background:#ffffffdc}
+@media(max-width:650px){.sb-report-actions{justify-content:flex-start}.sb-report-chart-grid{grid-template-columns:1fr}.sb-report-bar-row{grid-template-columns:75px minmax(50px,1fr) auto}}
