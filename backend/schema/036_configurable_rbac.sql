@@ -117,5 +117,10 @@ JOIN public.app_permissions p ON p.action_key IN ('read','create','edit')
 ON CONFLICT (role_id, module_id, permission_id) DO UPDATE SET allowed = EXCLUDED.allowed;
 
 -- Normalize legacy Owner accounts to Admin without deleting user accounts or credentials.
+-- Remove the legacy Owner value from the database role constraint after normalizing accounts.
+ALTER TABLE public.app_users DROP CONSTRAINT IF EXISTS app_users_role_check;
 UPDATE public.app_users SET role = 'admin', updated_at = now() WHERE role = 'owner';
+ALTER TABLE public.app_users
+    ADD CONSTRAINT app_users_role_check
+    CHECK (role = ANY (ARRAY['super_admin'::text,'admin'::text,'manager'::text,'staff'::text,'viewer'::text]));
 DELETE FROM public.app_roles WHERE name = 'owner';
