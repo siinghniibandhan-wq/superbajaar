@@ -22,5 +22,5 @@
 .sb-pos .sb-form { display:grid; gap:13px; margin-top:16px; padding:16px; border:1px solid #edeff1; border-radius:18px; background:#fff; }
 .sb-pos .sb-form h3 { margin:0; color:#2d4153; }
 .sb-pos .sb-muted { color:#77838d; font-size:11px; line-height:1.65; }
-@media(max-width:900px) { .sb-pos .sb-pos-layout { grid-template-columns:minmax(0,1fr); } }
+@media(max-width:1100px) { .sb-pos .sb-pos-layout { grid-template-columns:minmax(0,1fr); } }
 @media(max-width:540px) { .sb-pos .sb-pos-products { grid-template-columns:minmax(0,1fr); } .sb-pos .sb-pos-cart-line { grid-template-columns:minmax(0,1fr) 68px; } .sb-pos .sb-pos-cart-line > strong { grid-column:1/-1; text-align:right; } .sb-pos .sb-pos-layout > .sb-data-card { padding:14px; border-radius:18px; } }
