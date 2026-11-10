@@ -31,7 +31,7 @@ def test_hr_statutory_history_guards_preserve_supported_workflows():
         try:
             actor_id = conn.execute(
                 "INSERT INTO app_users(email,full_name,password_hash,role) "
-                "VALUES(%s,%s,%s,'owner') RETURNING id",
+                "VALUES(%s,%s,%s,'super_admin') RETURNING id",
                 (f"hr-history-{suffix}@test.local", "HR History Test", "test-hash"),
             ).fetchone()[0]
 
