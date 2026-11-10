@@ -11,7 +11,7 @@ const today = todayHRDate;
 const money = v => new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR"}).format(Number(v||0));
 
 export default function HRWorkspace({onBack,currentUser}) {
-  const manager=["owner","admin","manager"].includes(currentUser?.role);
+  const manager=["super_admin","owner","admin","manager"].includes(currentUser?.role);
   const [tab,setTab]=useState("overview"),[employees,setEmployees]=useState([]),[departments,setDepartments]=useState([]),[employeeQuery,setEmployeeQuery]=useState("");
   const [attendance,setAttendance]=useState([]),[leaves,setLeaves]=useState([]),[expenses,setExpenses]=useState([]);
   const [runs,setRuns]=useState([]),[payslips,setPayslips]=useState([]),[month,setMonth]=useState(today().slice(0,7));
