@@ -1,0 +1,14 @@
+[Unit]
+Description=Synchronise Super Bajaar production checkout from GitHub main
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/superbajaar/source
+ExecStart=/usr/bin/bash /opt/superbajaar/source/backend/scripts/sync_main.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
