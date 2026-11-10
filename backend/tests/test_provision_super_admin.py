@@ -70,9 +70,10 @@ def test_noninteractive_run_without_secure_parameter_fails_closed(monkeypatch, c
 
     result = provisioner.main()
 
+    captured = capsys.readouterr()
     assert result == 2
-    assert "non-interactive" in capsys.readouterr().err.lower()
-    assert "securestring" in capsys.readouterr().err.lower()
+    assert "non-interactive" in captured.err.lower()
+    assert "securestring" in captured.err.lower()
 
 
 def test_secure_parameter_provisions_admin_and_deletes_secret_after_success(monkeypatch, capsys):
