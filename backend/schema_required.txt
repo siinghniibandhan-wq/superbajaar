@@ -33,4 +33,3 @@
 033_razorpay_webhook_inbox.sql
 034_hr_scheduling_leave_lifecycle.sql
 035_inventory_facility_internal_locations.sql
-036_super_admin_role.sql
