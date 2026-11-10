@@ -1,95 +1,134 @@
 # Super Bajaar
 
-**Omnichannel commerce, retail operations and business management platform**
+**Retail commerce, omnichannel operations and business management platform**
 
-Super Bajaar is a commerce platform intended to support the customer-facing storefront and the operational systems behind a retail business. This repository is the source of truth for application code, backend services, database schema, engineering documentation and CI workflows.
+Super Bajaar is a React/Vite and FastAPI application backed by PostgreSQL. The repository contains the customer-facing application entry point, the operational/admin workspace, backend APIs, versioned database schema files, automated checks and deployment-support scripts.
 
-> [!IMPORTANT]
-> This repository is being restored from the project checkpoint archive. A file appearing in the repository does not by itself prove that its feature is complete, tested, deployed or production-ready. Treat restoration, code verification, integration testing and deployment as separate milestones.
+This README describes the code currently committed on `main`. It is an engineering guide, not a claim that every module is complete or that the latest code is deployed to production.
 
-> [!CAUTION]
-> Never reset, drop, truncate, recreate or bulk-delete production data. Do not change production infrastructure, service ports, API routing, deployment mechanisms, secrets or database migration automation without explicit owner approval and a verified plan.
+## Current source of truth
 
-## Project scope
+- **Repository:** [siinghniibandhan-wq/superbajaar](https://github.com/siinghniibandhan-wq/superbajaar)
+- **Default branch:** `main`
+- **Canonical frontend application:** `frontend/`
+- **Backend application:** `backend/app/`
+- **Database schema migrations:** `backend/schema/`
+- **Required schema release gate:** `backend/schema_required.txt`
 
-The platform's intended business areas include:
+The root Vite project is retained as a compatibility entry point. In particular, `src/App.jsx` re-exports the canonical app from `frontend/src/app/App.jsx`; it is not a second independent application implementation. Keep the two package/build entry points working unless an approved architecture change says otherwise.
 
-- **Commerce:** storefront, catalogue, product attributes and variants, pricing, promotions, cart, checkout and orders.
-- **Retail operations:** inventory, purchasing, goods receipt, batch and expiry tracking, stock ledger, reservations, fulfilment and delivery.
-- **Customer operations:** customer profiles, CRM, support cases and loyalty.
-- **Point of sale:** in-store POS and omnichannel sales visibility.
-- **Finance:** payments, refunds, accounting, tax and financial reporting.
-- **People and administration:** HR, payroll, roles, permissions and operational dashboards.
+## Product areas
 
-A module's presence in the project scope is not a completion claim. Verify its implementation, API contract, permissions, data integrity and end-to-end workflows before marking it ready.
+The current frontend source contains workspaces for:
+
+- Catalogue
+- Inventory
+- Purchasing
+- Point of Sale (POS)
+- Customers and CRM
+- Orders
+- Payments
+- Fulfilment
+- Delivery
+- Pricing
+- Loyalty
+- HR
+- Accounting
+- Reports
+- Settings
+- Master dashboard and shared overview components
+
+The backend registers API routers for health, catalogue, inventory, inventory locations, orders, payments and Razorpay webhooks, delivery, fulfilment, customers, purchasing, purchasing lifecycle, HR, staff authentication, customer authentication, loyalty, accounting, organisation policies, pricing, POS and reports.
+
+A directory, screen, API router or migration existing in Git does **not** prove that its business workflow is complete. Readiness must be established with API, database, permission and end-to-end evidence. In particular, test cross-module flows rather than marking a module complete from its UI alone.
+
+## Architecture
+
+```text
+Browser
+  |
+  v
+React 18 + Vite
+  frontend/src/app, frontend/src/features, frontend/src/services
+  |
+  v
+FastAPI application
+  backend/app/main.py
+  |
+  +--> API routers
+  +--> authentication/session middleware
+  +--> services and repositories
+  +--> configured external integrations
+  |
+  v
+PostgreSQL
+  backend/schema/*.sql
+  backend/scripts/apply_schema.sh
+```
+
+- **Frontend:** React 18, Vite 6 and `lucide-react`.
+- **Backend:** Python FastAPI, Pydantic Settings and Psycopg.
+- **Database:** PostgreSQL.
+- **Backend ASGI entry point:** `backend/app/main.py`.
+- **Compatibility ASGI entry point:** `backend/main.py` imports and exposes the canonical `app.main:app`.
+- **API prefix:** `/api` by default.
+- **Backend port setting:** `8001` by default; the actual runtime binding must match the process manager and reverse proxy configuration.
+- **Payment integration:** Razorpay configuration is supported through backend environment settings. Use test credentials until the integration has been verified.
+
+The repository includes AWS-related configuration fields and historical deployment assumptions, but this README does not assert the current state of any AWS account, EC2 instance, database, DNS record, CDN or production deployment. Verify live infrastructure independently before changing it.
 
 ## Repository layout
 
-The checkpoint uses two frontend entry areas: the root-level Vite application and the separately organised `frontend/` application. Preserve their paths as supplied by the checkpoint; do not flatten or merge them without an explicit architecture decision.
-
 ```text
 superbajaar/
-├── .github/                 # GitHub workflows, dependency and PR configuration
+├── .github/
+│   └── workflows/                 # CI, browser quality, DB checks and security scans
 ├── backend/
 │   ├── app/
-│   │   ├── api/             # FastAPI route modules
-│   │   ├── core/            # Settings, security and shared backend core
-│   │   ├── integrations/    # External service integrations
-│   │   ├── middleware/      # Request middleware
-│   │   ├── models/          # Persistence/domain models
-│   │   ├── repositories/    # Data access
-│   │   ├── schemas/         # Request/response schemas
-│   │   ├── services/        # Business logic
-│   │   └── utils/           # Shared backend utilities
-│   ├── schema/              # Versioned database schema migrations
-│   ├── scripts/             # Operational and migration scripts
-│   ├── tests/               # Backend tests
-│   ├── main.py              # ASGI application entry point
+│   │   ├── api/                   # FastAPI route modules
+│   │   ├── core/                  # Settings and authentication middleware
+│   │   ├── integrations/           # External integrations
+│   │   ├── models/
+│   │   ├── repositories/
+│   │   ├── schemas/
+│   │   ├── services/              # Business logic
+│   │   └── middleware/
+│   ├── schema/                    # Numbered PostgreSQL schema SQL files
+│   ├── scripts/                   # Migration runner, integrity checks and tests
+│   ├── tests/                     # Backend tests
+│   ├── .env.example
+│   ├── main.py                    # ASGI compatibility entry point
 │   └── requirements.txt
-├── database/                # Database baseline and seed assets
-├── docs/                    # Architecture, governance, plans and module records
 ├── frontend/
-│   ├── public/              # Frontend static assets
-│   ├── scripts/             # Frontend validation/build helpers
+│   ├── public/
+│   ├── scripts/                   # Build and route validation helpers
 │   ├── src/
-│   │   ├── app/             # Application shell and routing
-│   │   ├── features/        # Business workspaces and feature modules
-│   │   └── services/        # API and shared frontend services
-│   ├── tests/               # Frontend and browser tests
+│   │   ├── app/                   # Application shell and routing
+│   │   ├── features/              # Business workspaces
+│   │   ├── services/              # API helpers
+│   │   └── styles.css
+│   ├── tests/
+│   │   ├── contracts/
+│   │   ├── e2e/
+│   │   └── unit/
 │   ├── package.json
 │   └── vite.config.js
-├── public/                  # Root application public assets
-├── src/                     # Root application entry and compatibility layer
+├── src/                           # Root compatibility entry point
+├── public/                        # Root public assets
 ├── index.html
-├── package.json
+├── package.json                   # Root compatibility build scripts
 ├── vite.config.js
-├── AGENTS.md                # Agent contribution guidance
-├── CLAUDE.md                # Database/backend specialist guidance
-├── GEMINI.md                # Contributor guidance
-├── IMPORTANT_UPDATES.md     # Dated project decisions and status
-├── SECURITY.md              # Security reporting and handling
-└── README.md                # Project entry point
+├── README.md
+└── SECURITY.md
 ```
 
-The precise file inventory is defined by the checkpoint and Git tree. This diagram is an orientation guide, not a replacement for inspecting the actual source paths.
-
-## Architecture at a glance
-
-The documented application architecture is:
-
-1. React + Vite browser applications provide storefront and operational workspaces.
-2. Frontend services call the backend through the configured API client.
-3. Python FastAPI exposes API routes and validates requests, identity, permissions and business rules.
-4. Repositories/services access PostgreSQL and any explicitly configured integrations.
-5. Database changes are delivered through reviewed, versioned schema files and the existing migration runner.
-
-The project checkpoint documents an AWS deployment arrangement involving Amplify for frontend hosting and EC2 with Nginx/Gunicorn for the backend. These are deployment records, not instructions to provision or modify infrastructure during source restoration. Confirm the live deployment configuration separately before making operational changes.
+This is an orientation map; the Git tree is authoritative for the exact file inventory.
 
 ## Local development
 
-Use the package manifest belonging to the application you intend to run. The repository contains both root-level and `frontend/` Vite configuration; do not assume they are interchangeable.
+Use Node.js 20 for the frontend workflows, matching the CI configuration. Use Python 3.12 for backend CI and a compatible local Python environment.
 
-### Frontend workspace
+### Frontend (canonical application)
 
 ```bash
 cd frontend
@@ -97,111 +136,218 @@ npm install
 npm run dev
 ```
 
-Production build:
+The development server is configured for port `5173`.
+
+Build the production bundle:
 
 ```bash
 npm run build
 ```
 
-### Backend
+Run frontend unit and contract tests:
 
-Use a supported Python version and an isolated virtual environment:
+```bash
+npm run test:unit
+```
+
+Check admin navigation routes:
+
+```bash
+npm run test:routes
+```
+
+Run Playwright browser tests (after installing the Playwright browser dependencies):
+
+```bash
+npx playwright install --with-deps chromium
+npm run test:e2e
+```
+
+### Root compatibility build
+
+The root package also has Vite `dev`, `build` and `preview` scripts. CI builds both the root project and `frontend/`; keep both builds healthy.
+
+```bash
+npm install
+npm run build
+```
+
+### Backend
 
 ```bash
 cd backend
 python -m venv .venv
 ```
 
-Activate the environment, then install the backend dependencies:
+Activate the virtual environment, then install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-The application entry point is `backend/main.py`. Check the backend settings and environment example files before starting the service. Do not copy production secrets into local files or commit them.
+Configure the environment using `backend/.env.example` as a template. Start the canonical ASGI application from the backend directory:
 
-> [!NOTE]
-> These are setup commands, not a claim that dependencies have been installed or that the application currently builds. Run the actual checks and record their output before reporting a passing result.
+```bash
+uvicorn app.main:app --host 127.0.0.1 --port 8001
+```
 
-## Configuration and secrets
+The compatibility import `main:app` is also retained for existing process-manager commands. Do not change a deployed service command or port without checking the live service configuration first.
 
-- Use the supplied `.env.example` files as templates.
-- Keep real `.env` files, API keys, database credentials, signing keys, tokens and production configuration out of Git.
-- Never place privileged credentials in browser-exposed `VITE_*` variables. Any value compiled into a Vite frontend must be treated as public.
-- Backend secrets belong in the approved runtime secret/configuration mechanism.
-- Do not recreate or guess production credentials from historical documentation.
+Run backend tests against a disposable test database:
 
-## Database and migration safety
+```bash
+cd backend
+python -m pytest tests/test_*.py -q --strict-markers --strict-config
+```
 
-Database schema changes must follow the project's database governance documents and existing runner contract.
+Never point local tests or migration experiments at production.
 
-- Add a uniquely numbered migration using the established naming convention in `backend/schema/`.
-- Do not duplicate migration numbers or rewrite migrations already applied to an environment.
-- Keep SQL migration files focused on schema/data changes; do not embed deployment-tooling changes in SQL.
-- Review constraints, indexes, foreign keys, data migration impact and rollback/recovery implications.
-- Run migration checks against disposable test databases before proposing a production change.
-- Preserve the existing backup-before-change, per-file transaction, checksum ledger and failure-recording safeguards.
-- A missing or unverified backup must stop a production schema change.
-- Never manually fake migration-ledger entries or apply migrations to production without explicit approval.
+## Environment and secrets
 
-Read `docs/DATABASE_CHANGE_RULES.md` and the runner documentation before changing database files.
+The backend reads settings from environment variables and a local `.env` file. Start with `backend/.env.example`; replace placeholders with local/test values.
 
-## Engineering and release rules
+Important settings include:
 
-1. Inspect the current source and relevant documentation before editing.
-2. Keep changes narrowly scoped and preserve existing user-facing workflows, forms, state, API calls and business rules unless the owner explicitly approves a change.
-3. Work on a feature branch from the latest `main`; use pull requests for review.
-4. Include tests and update the relevant documentation with material changes.
-5. Review the complete diff for unintended file changes, secrets, generated files and migration-number collisions.
-6. Report exactly which checks ran and their actual results.
-7. A successful build is not proof of end-to-end correctness.
-8. Do not deploy, change AWS resources or alter production data as part of a code-only restoration task.
-
-## Security baseline
-
-- Enforce authentication and authorization on the backend; frontend route hiding is not access control.
-- Validate all inputs and enforce business rules server-side.
-- Restrict CORS to approved origins; do not use wildcard origins with credentialed requests.
-- Apply rate limits to sensitive and abuse-prone endpoints.
-- Keep privileged APIs and secrets out of browser bundles.
-- Use parameterized database access and least-privilege database roles.
-- Avoid logging passwords, tokens, payment data or unnecessary personal information.
-- Review dependency alerts and run the repository's security checks where configured.
-- Report security issues privately using the process in `SECURITY.md`.
-
-## Documentation map
-
-| Document | Purpose |
+| Variable | Purpose |
 |---|---|
-| `AGENTS.md` | General repository contribution and agent rules |
-| `CLAUDE.md` | Specialist database/backend operating rules |
-| `GEMINI.md` | Contributor instructions |
-| `IMPORTANT_UPDATES.md` | Dated decisions and project updates |
-| `SECURITY.md` | Security reporting and handling |
-| `docs/architecture.md` | System architecture and API contracts |
-| `docs/DEVELOPMENT_WORKFLOW.md` | Development, review and operations workflow |
-| `docs/DATABASE_CHANGE_RULES.md` | Database governance and migration safeguards |
-| `docs/AI_ENGINEERING_OPERATING_MODEL.md` | AI contributor roles and handoffs |
-| `docs/MODULE_READINESS_AUDIT.md` | Module readiness evidence and gaps |
-| `docs/ACCOUNTING_INTEGRATION_STATUS.md` | Accounting integration status record |
+| `DATABASE_URL` | PostgreSQL connection string |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated allowed browser origins |
+| `APP_ENV` | Runtime environment |
+| `APP_NAME` | API display name |
+| `API_PREFIX` | API route prefix; defaults to `/api` |
+| `PORT` | Backend port; defaults to `8001` |
+| `JWT_SECRET_KEY` | JWT signing secret; `SB_SECRET_KEY` is a compatibility fallback |
+| `RAZORPAY_KEY_ID` | Razorpay key ID |
+| `RAZORPAY_KEY_SECRET` | Razorpay API secret |
+| `RAZORPAY_WEBHOOK_SECRET` | Razorpay webhook verification secret |
+| `SB_SERVICEABLE_PINS` | Optional serviceability configuration |
 
-Consult the relevant detailed document rather than treating this README as the full technical specification.
+Security rules:
 
-## Current repository restoration status
+- Never commit real `.env` files, passwords, API keys, signing keys, tokens, private keys or database credentials.
+- Use a randomly generated signing secret of at least 32 characters; do not use the example placeholder.
+- Treat every `VITE_*` variable as public because it can be embedded in the browser bundle. Never put server secrets in frontend variables.
+- Use separate credentials and databases for development, tests and production.
+- Grant the application database role only the permissions it needs.
+- Do not log passwords, access tokens, payment secrets or unnecessary customer personal data.
 
-The new repository is being populated from the archived checkpoint while preserving original paths and excluding transient caches and environment-specific secret/configuration files.
+## PostgreSQL schema and SQL migration numbering
 
-Restoration is complete only when:
-- the expected source files and directory structure are present;
-- the restored Git tree is compared against the checkpoint inventory;
-- required environment templates and documentation are accounted for;
-- frontend and backend checks have been run and their results recorded; and
-- any missing or intentionally excluded files are documented.
+**All versioned application schema SQL files belong in `backend/schema/`.** Do not place new application migrations in a miscellaneous folder or execute SQL merely because a file exists in the repository.
 
-Do not interpret a partial Git tree, this README, or a commit message as proof that the application is restored, tested or deployed.
+### Numbering rule — duplicate numbering is resolved and guarded
 
----
+The migration files use this exact filename format:
 
-**Project:** Super Bajaar  
-**Repository:** [siinghniibandhan-wq/superbajaar](https://github.com/siinghniibandhan-wq/superbajaar)  
-**Default branch:** `main`
+```text
+NNN_lowercase_description.sql
+```
+
+Examples from the current schema directory:
+
+```text
+000_baseline_schema.sql
+001_loyalty_programme.sql
+008_product_category_assignments.sql
+009_product_availability_delivery.sql
+...
+034_hr_scheduling_leave_lifecycle.sql
+035_inventory_facility_internal_locations.sql
+```
+
+The current committed schema directory contains **30 SQL files**, with unique three-digit numeric prefixes. The numbering is not required to be consecutive: gaps are intentional historical/versioning space and must not be filled by renumbering existing files.
+
+The previous duplicate-prefix problem has been addressed in the current migration set. Duplicate numbering is also actively rejected by the migration tooling and CI:
+
+1. `backend/scripts/apply_schema.sh` validates every filename and stops if two files share the same three-digit prefix. It exits before taking a backup or applying SQL when a duplicate is found.
+2. `.github/workflows/migration-check.yml` checks the filename format and prefix uniqueness on pull requests and pushes.
+3. The migration-check workflow applies every schema file to disposable PostgreSQL 15 and 16 databases, then applies them again to check repeatability.
+4. The migration runner has dedicated tests proving that duplicate prefixes (including duplicate `001` and `008`) are rejected before backup or SQL execution.
+
+**When adding a migration:**
+
+- Inspect the complete current `backend/schema/` directory and the history on the target branch first.
+- Select a new, unused three-digit prefix. The current highest committed prefix is `035`; `036` is only the next candidate if it is still unused when the change is prepared and reviewed.
+- Never reuse a prefix, rename or renumber an already-applied migration, or edit an applied migration to change its effect. Create a new numbered migration for a later correction.
+- Use lowercase letters, digits and underscores after the prefix.
+- Keep SQL files focused on database schema/data changes. Do not put shell commands, deployment tooling, CI configuration or service-management changes inside SQL.
+- Add a filename to `backend/schema_required.txt` in the same change when application code depends on the tables/columns it introduces and the release must be blocked until that migration is applied.
+- Test the SQL against disposable PostgreSQL before proposing deployment.
+
+### Required migration list
+
+`backend/schema_required.txt` is the release-critical subset of schema files. It is **not** a complete inventory of every SQL file. Every name in that list must exist in `backend/schema/`. The migration runner uses it to decide whether a release may proceed when a non-required migration has failed. The current list explicitly documents why `011_customer_phone_uniqueness.sql` is not in that required subset; do not change that policy casually.
+
+### Migration runner safeguards
+
+Use the existing runner and its documented modes:
+
+```bash
+backend/scripts/apply_schema.sh backend/schema --dry-run
+backend/scripts/apply_schema.sh backend/schema --status
+```
+
+The runner is designed to:
+
+- Verify a PostgreSQL connection and migration filenames before proceeding.
+- Reject duplicate migration prefixes and duplicate table names across non-system schemas.
+- Refuse to guess when a populated database has no migration ledger.
+- Take and verify a `pg_dump` backup before applying pending files; if backup verification fails, it makes no schema change.
+- Apply each SQL file in its own transaction.
+- Record applied filenames and SHA-256 checksums in `schema_migrations`.
+- Record failures in `schema_migration_failures`, report them and avoid repeatedly retrying unchanged failed files.
+- Detect edits to already-applied migrations and report them rather than silently reapplying them.
+- Use `schema_required.txt` to distinguish a release-blocking migration failure from a non-required failure.
+
+The `--dry-run` and `--status` modes still connect to the configured database to inspect its state. Run them only against the intended environment. Do not run the apply mode against production without explicit approval, a verified backup, a reviewed migration plan and a recovery plan. Never fake migration-ledger entries or manually bypass the required-file gate.
+
+The migration runner tests are in `backend/scripts/tests/test_apply_schema.sh`. They require a throw-away PostgreSQL database and explicitly refuse configurations that look like production.
+
+## CI, quality and security checks
+
+GitHub Actions currently defines these workflows:
+
+| Workflow | What it checks |
+|---|---|
+| Super Bajaar CI | Backend tests on PostgreSQL 15, frontend unit/contract tests, route validation and builds for both frontend entry points |
+| Browser quality (Playwright + Lighthouse) | Frontend build, Playwright browser tests, and Lighthouse performance/accessibility/best-practices/SEO reports |
+| Database files check | SQL filename and unique-number checks, schema integrity, repeatable PostgreSQL 15/16 application, permissions, migration-runner tests and backend database tests |
+| Semgrep SAST | Static application security analysis |
+| Gitleaks Secret Scan | Secret scanning |
+
+The database workflow uses disposable CI databases; it does not apply migrations to the production database. CI success is evidence for the checks that actually ran, not proof of production deployment or of every real-world business workflow.
+
+To inspect current results, open the repository's [GitHub Actions](https://github.com/siinghniibandhan-wq/superbajaar/actions) page. Do not report checks as passing without checking the relevant run.
+
+## Change and release discipline
+
+1. Read the existing implementation and relevant tests before editing.
+2. Keep changes scoped and preserve existing screens, forms, state, API calls, buttons, routes and business workflows unless a change is explicitly approved.
+3. Preserve storefront behaviour and existing category structure when working on admin modules.
+4. Do not alter database deployment automation as a side effect of an application change.
+5. Add or update tests for behaviour changes and update documentation when architecture, setup or operational rules change.
+6. Review the complete diff for unintended deletions, generated files, secrets and duplicate SQL prefixes.
+7. Run the relevant focused checks, then the applicable full CI checks.
+8. State exactly what changed, which commit contains it, and which checks were actually run.
+9. Treat deployment, production database migration and infrastructure modification as separate controlled operations. A code commit does not mean production has changed.
+
+## Operational and data safety
+
+- Never drop, reset, truncate, recreate or bulk-delete production data as a routine fix.
+- Do not change AWS resources, DNS, security groups, service ports, reverse-proxy routing, secrets or production services without explicit authorization and a verified plan.
+- Back up and verify data before any approved production database change.
+- Keep customer and employee data confidential and apply least-privilege access.
+- Follow the repository's `SECURITY.md` process for reporting vulnerabilities.
+
+## Project status language
+
+Use precise status labels:
+
+- **Present in source:** the file or code exists in the repository.
+- **Builds:** the relevant build command completed successfully.
+- **Tested:** named tests ran and passed in the stated environment.
+- **Integrated:** the end-to-end workflow across its dependent modules was verified.
+- **Deployed:** the intended release is confirmed running in the target environment.
+- **Production-ready:** security, data integrity, monitoring, backup/recovery and operational acceptance have been verified.
+
+Do not use these labels interchangeably.
