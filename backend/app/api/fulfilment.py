@@ -42,9 +42,10 @@ def _actor(request: Request):
 
 def _db_error(exc):
     logger.error(
-        "Fulfilment database operation failed (SQLSTATE=%s): %s",
+        "Fulfilment database operation failed (%s, SQLSTATE=%s): %s",
+        type(exc).__name__,
         getattr(exc, "sqlstate", None),
-        getattr(getattr(exc, "diag", None), "message_primary", "database error"),
+        str(exc)[:300],
     )
     if getattr(exc, "sqlstate", None) == "23503":
         return HTTPException(status_code=422, detail="Referenced shipment, order or product line does not exist")
