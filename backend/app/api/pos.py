@@ -77,8 +77,8 @@ def list_pos_sales(
                       SELECT order_id,
                              sum(amount) FILTER (WHERE p.status='captured') AS captured_amount,
                              sum(amount) FILTER (WHERE p.status IN ('pending','authorized')) AS pending_amount,
-                             string_agg(DISTINCT status, ', ') AS payment_statuses
-                      FROM payments GROUP BY order_id
+                             string_agg(DISTINCT p.status, ', ') AS payment_statuses
+                      FROM payments p GROUP BY order_id
                     ) p ON p.order_id=o.id
                     WHERE {where}
                     ORDER BY o.created_at DESC
