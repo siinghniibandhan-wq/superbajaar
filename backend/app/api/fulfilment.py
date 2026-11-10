@@ -606,8 +606,8 @@ class ReturnDisposition(BaseModel):
 def post_return_disposition(return_id: int, line_id: int, payload: ReturnDisposition, request: Request):
     """Post inspected returned stock, original cost and accounting reclassification atomically."""
     actor_id, actor_email = _actor(request)
-    if getattr(request.state, "role", None) not in {"owner", "admin", "manager"}:
-        raise HTTPException(status_code=403, detail="Only owner, admin or manager may post return disposition")
+    if getattr(request.state, "role", None) not in {"super_admin", "admin", "manager"}:
+        raise HTTPException(status_code=403, detail="Only Super Admin, Admin or manager may post return disposition")
     from app.services.inventory_costing import create_cost_layer, money
     from app.services.accounting_posting import PostingConfigurationError, build_inventory_mapping_lines
 
@@ -812,8 +812,8 @@ class ReturnQuarantineRelease(BaseModel):
 def release_return_quarantine(return_id: int, line_id: int, payload: ReturnQuarantineRelease, request: Request):
     """Move inspected customer-return quarantine stock to a saleable same-entity facility."""
     actor_id, actor_email = _actor(request)
-    if getattr(request.state, "role", None) not in {"owner", "admin", "manager"}:
-        raise HTTPException(status_code=403, detail="Only owner, admin or manager may release returned quarantine stock")
+    if getattr(request.state, "role", None) not in {"super_admin", "admin", "manager"}:
+        raise HTTPException(status_code=403, detail="Only Super Admin, Admin or manager may release returned quarantine stock")
     from app.services.inventory_costing import create_cost_layer, money
 
     reference_id = f"{line_id}:{payload.idempotency_key}"
@@ -855,7 +855,7 @@ def release_return_quarantine(return_id: int, line_id: int, payload: ReturnQuara
                     "SELECT id,establishment_id,is_active,is_fulfillable FROM stock_locations WHERE id=%s FOR UPDATE",
                     (payload.destination_location_id,),
                 ).fetchone()
-                if source is not None and getattr(request.state, "role", None) not in {"owner", "admin"}:
+                if source is not None and getattr(request.state, "role", None) not in {"super_admin", "admin"}:
                     allowed_scope = conn.execute(
                         "SELECT 1 FROM hr_employees he JOIN hr_employee_statutory_profiles esp ON esp.employee_id=he.id "
                         "WHERE he.user_id=%s AND esp.establishment_id=%s LIMIT 1",
