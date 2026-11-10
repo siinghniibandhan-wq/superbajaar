@@ -1,5 +1,5 @@
 -- Configurable RBAC: roles, modules, actions and user-specific module grants.
--- Additive migration. Existing role assignments and user records are preserved.
+-- Existing user accounts are preserved. Legacy owner accounts are normalized to admin; Super Admin is the sole highest-privilege role.
 CREATE TABLE IF NOT EXISTS public.app_roles (
     id bigserial PRIMARY KEY,
     name varchar(60) NOT NULL UNIQUE,
@@ -42,7 +42,6 @@ CREATE TABLE IF NOT EXISTS public.app_user_module_permissions (
 
 INSERT INTO public.app_roles (name, label) VALUES
     ('super_admin', 'Super Admin'),
-    ('owner', 'Owner'),
     ('admin', 'Admin'),
     ('manager', 'Manager'),
     ('staff', 'Staff'),
@@ -80,7 +79,7 @@ ON CONFLICT (action_key) DO NOTHING;
 -- Default grants are only starting templates. User-specific assignments can narrow or extend
 -- them, subject to the assigning administrator's own effective authority.
 INSERT INTO public.app_role_permissions (role_id, module_id, permission_id, allowed)
-SELECT r.id, m.id, p.id, (r.name IN ('super_admin','owner'))
+SELECT r.id, m.id, p.id, (r.name = 'super_admin')
 FROM public.app_roles r
 CROSS JOIN public.app_modules m
 CROSS JOIN public.app_permissions p
@@ -97,7 +96,7 @@ JOIN public.app_modules m ON (
     (r.name = 'viewer')
 )
 JOIN public.app_permissions p ON p.action_key = 'read'
-WHERE r.name NOT IN ('super_admin','owner')
+WHERE r.name <> 'super_admin'
 ON CONFLICT (role_id, module_id, permission_id) DO UPDATE SET allowed = EXCLUDED.allowed;
 
 -- Admin receives operational write permissions by default, but not user/role administration.
@@ -106,13 +105,17 @@ SELECT r.id, m.id, p.id, true
 FROM public.app_roles r
 JOIN public.app_modules m ON (r.name = 'admin' OR (r.name = 'manager' AND m.module_key IN ('inventory','purchasing','orders','payments','delivery','crm','hr_payroll')))
 JOIN public.app_permissions p ON p.action_key IN ('create','edit','approve','export')
-WHERE r.name NOT IN ('super_admin','owner')
+WHERE r.name <> 'super_admin'
 ON CONFLICT (role_id, module_id, permission_id) DO UPDATE SET allowed = EXCLUDED.allowed;
 
 -- User and role administration is a separate protected module.
 INSERT INTO public.app_role_permissions (role_id, module_id, permission_id, allowed)
-SELECT r.id, m.id, p.id, (r.name IN ('super_admin','owner','admin'))
+SELECT r.id, m.id, p.id, (r.name IN ('super_admin','admin'))
 FROM public.app_roles r
 JOIN public.app_modules m ON m.module_key = 'user_management'
 JOIN public.app_permissions p ON p.action_key IN ('read','create','edit')
 ON CONFLICT (role_id, module_id, permission_id) DO UPDATE SET allowed = EXCLUDED.allowed;
+
+-- Normalize legacy Owner accounts to Admin without deleting user accounts or credentials.
+UPDATE public.app_users SET role = 'admin', updated_at = now() WHERE role = 'owner';
+DELETE FROM public.app_roles WHERE name = 'owner';
