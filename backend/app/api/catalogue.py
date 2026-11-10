@@ -496,10 +496,10 @@ def update_product(product_id: int, payload: ProductUpdate):
 
 @router.delete("/products/{product_id}")
 def delete_product(product_id: int, payload: ProductDeleteRequest, request: Request):
-    """Permanently remove a product only for owner/admin, with a mandatory audit reason."""
+    """Permanently remove a product only for Super Admin/Admin, with a mandatory audit reason."""
     role = getattr(request.state, "role", None)
-    if role not in {"owner", "admin"}:
-        raise HTTPException(status_code=403, detail="Only an owner or admin can delete products")
+    if role not in {"super_admin", "admin"}:
+        raise HTTPException(status_code=403, detail="Only an Super Admin or Admin can delete products")
     actor_id = getattr(request.state, "user_id", None)
     actor_email = getattr(request.state, "user_email", None)
     if actor_id is None or not actor_email:
