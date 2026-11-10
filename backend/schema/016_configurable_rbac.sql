@@ -62,7 +62,8 @@ INSERT INTO public.app_modules (module_key, label) VALUES
     ('loyalty', 'Loyalty'),
     ('hr_payroll', 'HR & Payroll'),
     ('accounting', 'Accounting'),
-    ('dashboard', 'Master Dashboard')
+    ('dashboard', 'Master Dashboard'),
+    ('user_management', 'User Management')
 ON CONFLICT (module_key) DO NOTHING;
 
 INSERT INTO public.app_permissions (action_key, label) VALUES
@@ -108,4 +109,12 @@ FROM public.app_roles r
 JOIN public.app_modules m ON (r.name = 'admin' OR (r.name = 'manager' AND m.module_key IN ('inventory','purchasing','orders','payments','delivery','crm','hr_payroll')))
 JOIN public.app_permissions p ON p.action_key IN ('create','edit','approve','export')
 WHERE r.name <> 'super_admin'
+ON CONFLICT (role_id, module_id, permission_id) DO UPDATE SET allowed = EXCLUDED.allowed;
+
+-- User and role administration is a separate protected module.
+INSERT INTO public.app_role_permissions (role_id, module_id, permission_id, allowed)
+SELECT r.id, m.id, p.id, (r.name IN ('super_admin','admin'))
+FROM public.app_roles r
+JOIN public.app_modules m ON m.module_key = 'user_management'
+JOIN public.app_permissions p ON p.action_key IN ('read','create','edit')
 ON CONFLICT (role_id, module_id, permission_id) DO UPDATE SET allowed = EXCLUDED.allowed;
