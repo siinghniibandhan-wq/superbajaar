@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from app.api.hr import EmployeeInput, LeaveInput, PayrollRunInput, ReviewInput, SalaryRevisionInput
+from app.api.hr import EmployeeInput, LeaveInput, PayrollRunInput, ReviewInput, SalaryRevisionInput, PayrollEarningInput
 from app.main import app
 
 client = TestClient(app)
@@ -171,3 +171,27 @@ def test_hr_salary_history_is_manager_only_without_a_session(monkeypatch):
     monkeypatch.setattr(config.settings, "database_url", "")
     response = client.get("/api/hr/employees/1/salary-revisions")
     assert response.status_code == 401
+
+
+def test_hr_overtime_earning_requires_matching_hours_and_rate():
+    earning = PayrollEarningInput(
+        earning_type="overtime", period_start="2026-12-01", period_end="2026-12-31",
+        amount="1500.00", hours="10", hourly_rate="150",
+        reason="Approved weekend overtime"
+    )
+    assert earning.amount == Decimal("1500.00")
+
+    with pytest.raises(ValidationError, match="must equal hours multiplied by hourly rate"):
+        PayrollEarningInput(
+            earning_type="overtime", period_start="2026-12-01", period_end="2026-12-31",
+            amount="1400.00", hours="10", hourly_rate="150",
+            reason="Approved weekend overtime"
+        )
+
+
+def test_hr_incentive_earning_requires_a_full_calendar_month():
+    with pytest.raises(ValidationError, match="full calendar month"):
+        PayrollEarningInput(
+            earning_type="incentive", period_start="2026-12-02", period_end="2026-12-31",
+            amount="1000.00", reason="Monthly sales incentive"
+        )
