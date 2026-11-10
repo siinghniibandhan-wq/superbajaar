@@ -67,6 +67,69 @@ def _send_invitation(email: str, portal_type: str, invitation_url: str) -> str:
         return "copy_link"
 
 
+@router.get("/eligible-records")
+def eligible_records(request: Request, portal_type: str):
+    if not getattr(request.state, "user_id", None) or getattr(request.state, "role", "") not in {"super_admin", "admin"}:
+        raise HTTPException(403, "Super Admin or Admin permission is required")
+    if portal_type not in {"vendor", "employee"}:
+        raise HTTPException(422, "Portal type must be vendor or employee")
+    try:
+        with _connect() as conn:
+            if portal_type == "vendor":
+                rows = conn.execute(
+                    "SELECT s.id,s.name AS display_name,s.email FROM suppliers s "
+                    "WHERE s.is_active=TRUE AND s.email IS NOT NULL AND NOT EXISTS "
+                    "(SELECT 1 FROM vendor_portal_users v JOIN app_users u ON u.id=v.user_id "
+                    "WHERE v.supplier_id=s.id AND v.is_active=TRUE AND u.is_active=TRUE) "
+                    "ORDER BY s.name LIMIT 500"
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT e.id,(e.first_name || ' ' || e.last_name) AS display_name,e.email "
+                    "FROM hr_employees e WHERE e.status<>'terminated' AND e.user_id IS NULL "
+                    "ORDER BY e.first_name,e.last_name LIMIT 500"
+                ).fetchall()
+        return {"items": rows}
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Unable to load eligible portal accounts") from exc
+
+
+@router.get("")
+def list_invitations(request: Request):
+    if not getattr(request.state, "user_id", None) or getattr(request.state, "role", "") not in {"super_admin", "admin"}:
+        raise HTTPException(403, "Super Admin or Admin permission is required")
+    try:
+        with _connect() as conn:
+            rows = conn.execute(
+                "SELECT id,portal_type,email,supplier_id,employee_id,expires_at,accepted_at,revoked_at,created_at "
+                "FROM portal_invitations ORDER BY created_at DESC LIMIT 200"
+            ).fetchall()
+        return {"items": rows}
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Unable to load portal invitations") from exc
+
+
+@router.post("/{invitation_id}/revoke")
+def revoke_invitation(invitation_id: int, request: Request):
+    if not getattr(request.state, "user_id", None) or getattr(request.state, "role", "") not in {"super_admin", "admin"}:
+        raise HTTPException(403, "Super Admin or Admin permission is required")
+    try:
+        with _connect() as conn:
+            row = conn.execute(
+                "UPDATE portal_invitations SET revoked_at=now() "
+                "WHERE id=%s AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at>now() "
+                "RETURNING id,portal_type,email,revoked_at",
+                (invitation_id,),
+            ).fetchone()
+        if not row:
+            raise HTTPException(409, "Invitation is no longer pending or has expired")
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Unable to revoke invitation") from exc
+
+
 @router.post("", status_code=201)
 def create_invitation(payload: InvitationCreate, request: Request):
     actor_id = getattr(request.state, "user_id", None)
