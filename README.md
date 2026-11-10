@@ -237,6 +237,8 @@ Security rules:
 ## PostgreSQL schema and SQL migration numbering
 
 > **Critical:** Never rename, edit, move or delete an existing migration file. Read [the migration filename immutability rule](docs/SCHEMA_MIGRATION_CRITICAL_RULE.md) before changing `backend/schema/`.
+>
+> Operational procedures, production database identity, status-only scheduling, manual apply steps and the historical duplicate-`036` reconciliation are documented in [Database Migrations](docs/DATABASE_MIGRATIONS.md).
 
 **All versioned application schema SQL files belong in `backend/schema/`.** Do not place new application migrations in a miscellaneous folder or execute SQL merely because a file exists in the repository.
 
