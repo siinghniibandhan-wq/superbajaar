@@ -156,3 +156,11 @@ def test_hr_salary_revision_rejects_negative_components():
             effective_from="2026-12-01", basic_salary=-1, hra=0,
             special_allowance=0, other_allowance=0, reason="Annual revision"
         )
+
+
+def test_hr_salary_revisions_follow_full_calendar_month_payroll_periods():
+    with pytest.raises(ValidationError, match="first day of a calendar month"):
+        SalaryRevisionInput(
+            effective_from="2026-12-15", basic_salary=30000, hra=12000,
+            special_allowance=5000, other_allowance=1000, reason="Mid-month change"
+        )
