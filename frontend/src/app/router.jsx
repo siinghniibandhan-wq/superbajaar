@@ -89,7 +89,7 @@ const workspaceRoutes = {
   accounting: ({ onBack, currentUser }) => <AccountingWorkspace onBack={onBack} currentUser={currentUser} />,
   hr: ({ onBack, currentUser }) => <HRWorkspace onBack={onBack} currentUser={currentUser} />,
   reports: ({ onBack }) => <ReportsWorkspace onBack={onBack} />,
-  settings: ({ onBack, currentUser }) => <SettingsWorkspace onBack={onBack} currentUser={currentUser} />,
+  settings: ({ onBack, currentUser, permissions }) => <SettingsWorkspace onBack={onBack} currentUser={currentUser} permissions={permissions} />,
 };
 
 function AppShell() {
@@ -163,7 +163,7 @@ function AppShell() {
       </aside>
       <div className="sb-main-content">
         {selected && visibleIds.has(selected.id) ? (workspaceRoutes[selected.id]
-          ? workspaceRoutes[selected.id]({ item: selected, onBack: back, onOpen: openById, currentUser: user })
+          ? workspaceRoutes[selected.id]({ item: selected, onBack: back, onOpen: openById, currentUser: user, permissions })
           : <UnavailableWorkspace item={selected} onBack={back} />)
           : <ModuleLauncher onOpen={open} groups={visibleGroups} />}
       </div>
