@@ -538,6 +538,8 @@ test("HR staff can view their own payslips in employee self-service", async ({ p
         deductions: "3500.00",
         employer_contributions: "2400.00",
         net_pay: "40000.00",
+        earnings_breakdown: { basic: "30000.00", hra: "8000.00", special_allowance: "3000.00", other_allowance: "1000.00" },
+        deduction_breakdown: { manual_deduction: "500.00", manual_note: "Approved salary advance recovery", statutory: { pf: { employee_amount: "1800.00", employer_amount: "1800.00" }, esi: { employee_amount: "0.00", employer_amount: "0.00" }, pt: { employee_amount: "200.00", employer_amount: "0.00" }, tds: { employee_amount: "1000.00", employer_amount: "0.00" } } },
       }] } });
     }
     return route.fulfill({ json: { items: [] } });
@@ -550,6 +552,10 @@ test("HR staff can view their own payslips in employee self-service", async ({ p
   await expect(page.getByRole("heading", { name: "My payslips", exact: true })).toBeVisible();
   await expect(page.getByText("2026-10-01 – 2026-10-31")).toBeVisible();
   await expect(page.getByText("₹40,000.00")).toBeVisible();
+  await page.getByText("View breakdown").click();
+  await expect(page.getByText("Basic", { exact: true })).toBeVisible();
+  await expect(page.getByText("Approved salary advance recovery")).toBeVisible();
+  await expect(page.getByText("PF", { exact: true })).toBeVisible();
 });
 
 
