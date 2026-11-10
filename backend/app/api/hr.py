@@ -1176,10 +1176,10 @@ def my_payslips(request:Request):
 
 
 def _post_approved_payroll_accrual(conn, run_id: int, actor: tuple[int | None, str | None]) -> dict:
-    """Post approved payroll expense/liability accrual; missing setup becomes a retryable exception."""
+    """Post one balanced payroll accrual journal per legal establishment."""
     run = conn.execute(
-        "SELECT id,period_start,period_end,total_gross,total_reimbursements,total_net,"
-        "accounting_accrual_voucher_id FROM hr_payroll_runs WHERE id=%s FOR UPDATE",
+        "SELECT id,period_start,period_end,accounting_accrual_voucher_id "
+        "FROM hr_payroll_runs WHERE id=%s FOR UPDATE",
         (run_id,),
     ).fetchone()
     if run is None:
@@ -1187,88 +1187,123 @@ def _post_approved_payroll_accrual(conn, run_id: int, actor: tuple[int | None, s
     if run["accounting_accrual_voucher_id"]:
         return {"status": "posted", "voucher_id": run["accounting_accrual_voucher_id"]}
 
+    establishments = conn.execute(
+        "SELECT DISTINCT e.id,e.code FROM hr_payroll_statutory_snapshots s "
+        "JOIN hr_establishments e ON e.id=s.establishment_id "
+        "WHERE s.payroll_run_id=%s ORDER BY e.code,e.id",
+        (run_id,),
+    ).fetchall()
+    if not establishments:
+        return {"status": "exception", "exception": "No establishment-scoped statutory snapshots exist for this payroll run."}
+
     source_type = "hr_payroll_accrual"
-    source_id = str(run_id)
-    event_key = "payroll-approved-v1"
-    try:
-        establishments = conn.execute(
-            "SELECT DISTINCT e.code FROM hr_payroll_statutory_snapshots s "
-            "JOIN hr_establishments e ON e.id=s.establishment_id "
-            "WHERE s.payroll_run_id=%s ORDER BY e.code",
-            (run_id,),
-        ).fetchall()
-        if len(establishments) != 1:
-            raise PostingConfigurationError(
-                "Payroll accounting requires exactly one legal establishment per payroll run; "
-                "split payroll by establishment before accrual posting"
-            )
-        legal_entity_code = establishments[0]["code"]
-        totals = conn.execute(
-            "SELECT COALESCE(sum(gross_earnings),0) AS gross,"
-            "COALESCE(sum(reimbursements),0) AS reimbursements,"
-            "COALESCE(sum(net_pay),0) AS net_pay,"
-            "COALESCE(sum(COALESCE((deduction_breakdown->>'manual_deduction')::numeric,0)),0) AS manual_deductions "
-            "FROM hr_payslips WHERE payroll_run_id=%s",
-            (run_id,),
+    event_key = "payroll-approved-v2"
+    posted = []
+    errors = []
+    for establishment in establishments:
+        establishment_id = establishment["id"]
+        legal_entity_code = establishment["code"]
+        existing = conn.execute(
+            "SELECT id,accounting_voucher_id,total_amount FROM hr_payroll_accrual_postings "
+            "WHERE payroll_run_id=%s AND establishment_id=%s",
+            (run_id,establishment_id),
         ).fetchone()
-        statutory_rows = conn.execute(
-            "SELECT component,COALESCE(sum(employee_amount),0) AS employee_amount,"
-            "COALESCE(sum(employer_amount),0) AS employer_amount "
-            "FROM hr_payroll_statutory_snapshots WHERE payroll_run_id=%s GROUP BY component",
-            (run_id,),
-        ).fetchall()
-        statutory_employee = {row["component"]: row["employee_amount"] for row in statutory_rows}
-        statutory_employer = {row["component"]: row["employer_amount"] for row in statutory_rows}
-        mappings = conn.execute(
-            "SELECT * FROM accounting_event_account_mappings WHERE legal_entity_code=%s "
-            "AND source_module='hr' AND event_type='payroll_accrual' AND status='approved' "
-            "AND effective_from<=%s AND (effective_to IS NULL OR effective_to>=%s)",
-            (legal_entity_code,run["period_end"],run["period_end"]),
-        ).fetchall()
-        lines = build_payroll_accrual_lines(
-            gross=totals["gross"], reimbursements=totals["reimbursements"],
-            net_pay=totals["net_pay"], manual_deductions=totals["manual_deductions"],
-            statutory_employee=statutory_employee, statutory_employer=statutory_employer,
-            mappings=mappings, legal_entity_code=legal_entity_code, event_date=run["period_end"],
-        )
-        debit_total = sum((Decimal(str(line["debit"])) for line in lines), Decimal("0.00"))
-        header = {
-            "voucher_type": "journal", "voucher_date": run["period_end"],
-            "narration": f"Payroll accrual for {run['period_start']} to {run['period_end']}",
-            "reference": f"HR-PAYROLL-{run_id}", "party_type": "other",
-            "party_name": f"Payroll {legal_entity_code}",
-            "total_amount": debit_total, "source_type": source_type, "source_id": source_id,
-            "idempotency_key": f"hr-payroll-accrual:{run_id}",
-        }
-        with conn.transaction():
-            voucher_id = _post_voucher(conn, header, lines, actor)
+        if existing:
+            posted.append({
+                "establishment_id": establishment_id,
+                "legal_entity_code": legal_entity_code,
+                "voucher_id": existing["accounting_voucher_id"],
+                "total_amount": existing["total_amount"],
+            })
+            continue
+
+        source_id = f"{run_id}:{establishment_id}"
+        try:
+            totals = conn.execute(
+                "SELECT COALESCE(sum(p.gross_earnings),0) AS gross,"
+                "COALESCE(sum(p.reimbursements),0) AS reimbursements,"
+                "COALESCE(sum(p.net_pay),0) AS net_pay,"
+                "COALESCE(sum(COALESCE((p.deduction_breakdown->>'manual_deduction')::numeric,0)),0) AS manual_deductions "
+                "FROM hr_payslips p WHERE p.payroll_run_id=%s AND EXISTS ("
+                "SELECT 1 FROM hr_payroll_statutory_snapshots s WHERE s.payroll_run_id=p.payroll_run_id "
+                "AND s.employee_id=p.employee_id AND s.establishment_id=%s)",
+                (run_id,establishment_id),
+            ).fetchone()
+            statutory_rows = conn.execute(
+                "SELECT component,COALESCE(sum(employee_amount),0) AS employee_amount,"
+                "COALESCE(sum(employer_amount),0) AS employer_amount "
+                "FROM hr_payroll_statutory_snapshots WHERE payroll_run_id=%s AND establishment_id=%s "
+                "GROUP BY component",
+                (run_id,establishment_id),
+            ).fetchall()
+            statutory_employee = {row["component"]: row["employee_amount"] for row in statutory_rows}
+            statutory_employer = {row["component"]: row["employer_amount"] for row in statutory_rows}
+            mappings = conn.execute(
+                "SELECT * FROM accounting_event_account_mappings WHERE legal_entity_code=%s "
+                "AND source_module='hr' AND event_type='payroll_accrual' AND status='approved' "
+                "AND effective_from<=%s AND (effective_to IS NULL OR effective_to>=%s)",
+                (legal_entity_code,run["period_end"],run["period_end"]),
+            ).fetchall()
+            lines = build_payroll_accrual_lines(
+                gross=totals["gross"], reimbursements=totals["reimbursements"],
+                net_pay=totals["net_pay"], manual_deductions=totals["manual_deductions"],
+                statutory_employee=statutory_employee, statutory_employer=statutory_employer,
+                mappings=mappings, legal_entity_code=legal_entity_code, event_date=run["period_end"],
+            )
+            debit_total = sum((Decimal(str(line["debit"])) for line in lines), Decimal("0.00"))
+            header = {
+                "voucher_type": "journal", "voucher_date": run["period_end"],
+                "narration": f"Payroll accrual for {run['period_start']} to {run['period_end']} · {legal_entity_code}",
+                "reference": f"HR-PAYROLL-{run_id}-{legal_entity_code}", "party_type": "other",
+                "party_name": f"Payroll {legal_entity_code}", "total_amount": debit_total,
+                "source_type": source_type, "source_id": source_id,
+                "idempotency_key": f"hr-payroll-accrual:{run_id}:{establishment_id}",
+            }
+            with conn.transaction():
+                voucher_id = _post_voucher(conn, header, lines, actor)
+            conn.execute(
+                "INSERT INTO hr_payroll_accrual_postings(payroll_run_id,establishment_id,accounting_voucher_id,total_amount) "
+                "VALUES(%s,%s,%s,%s)",
+                (run_id,establishment_id,voucher_id,debit_total),
+            )
+            conn.execute(
+                "INSERT INTO accounting_posting_exceptions(source_module,source_type,source_id,event_key,event_date,"
+                "status,voucher_id,attempts,last_attempt_at,updated_at) "
+                "VALUES('hr',%s,%s,%s,%s,'posted',%s,1,now(),now()) "
+                "ON CONFLICT(source_module,source_type,source_id,event_key) DO UPDATE SET "
+                "status='posted',voucher_id=EXCLUDED.voucher_id,exception_code=NULL,exception_message=NULL,"
+                "attempts=accounting_posting_exceptions.attempts+1,last_attempt_at=now(),updated_at=now()",
+                (source_type,source_id,event_key,run["period_end"],voucher_id),
+            )
+            posted.append({
+                "establishment_id": establishment_id,
+                "legal_entity_code": legal_entity_code,
+                "voucher_id": voucher_id,
+                "total_amount": debit_total,
+            })
+        except (PostingConfigurationError, HTTPException) as exc:
+            code = "mapping_or_balance_error" if isinstance(exc, PostingConfigurationError) else "accounting_posting_rejected"
+            message = str(exc) if isinstance(exc, PostingConfigurationError) else str(exc.detail)
+            conn.execute(
+                "INSERT INTO accounting_posting_exceptions(source_module,source_type,source_id,event_key,event_date,"
+                "status,exception_code,exception_message,attempts,last_attempt_at,updated_at) "
+                "VALUES('hr',%s,%s,%s,%s,'exception',%s,%s,1,now(),now()) "
+                "ON CONFLICT(source_module,source_type,source_id,event_key) DO UPDATE SET "
+                "status='exception',exception_code=EXCLUDED.exception_code,exception_message=EXCLUDED.exception_message,"
+                "attempts=accounting_posting_exceptions.attempts+1,last_attempt_at=now(),updated_at=now()",
+                (source_type,source_id,event_key,run["period_end"],code,message[:2000]),
+            )
+            errors.append({"establishment_id": establishment_id, "legal_entity_code": legal_entity_code, "exception": message})
+
+    if len(establishments) == 1 and len(posted) == 1 and not errors:
         conn.execute(
             "UPDATE hr_payroll_runs SET accounting_accrual_voucher_id=%s,updated_at=now() WHERE id=%s",
-            (voucher_id,run_id),
+            (posted[0]["voucher_id"],run_id),
         )
-        conn.execute(
-            "INSERT INTO accounting_posting_exceptions(source_module,source_type,source_id,event_key,event_date,"
-            "status,voucher_id,attempts,last_attempt_at,updated_at) "
-            "VALUES('hr',%s,%s,%s,%s,'posted',%s,1,now(),now()) "
-            "ON CONFLICT(source_module,source_type,source_id,event_key) DO UPDATE SET "
-            "status='posted',voucher_id=EXCLUDED.voucher_id,exception_code=NULL,exception_message=NULL,"
-            "attempts=accounting_posting_exceptions.attempts+1,last_attempt_at=now(),updated_at=now()",
-            (source_type,source_id,event_key,run["period_end"],voucher_id),
-        )
-        return {"status": "posted", "voucher_id": voucher_id}
-    except (PostingConfigurationError, HTTPException) as exc:
-        code = "mapping_or_balance_error" if isinstance(exc, PostingConfigurationError) else "accounting_posting_rejected"
-        message = str(exc) if isinstance(exc, PostingConfigurationError) else str(exc.detail)
-        conn.execute(
-            "INSERT INTO accounting_posting_exceptions(source_module,source_type,source_id,event_key,event_date,"
-            "status,exception_code,exception_message,attempts,last_attempt_at,updated_at) "
-            "VALUES('hr',%s,%s,%s,%s,'exception',%s,%s,1,now(),now()) "
-            "ON CONFLICT(source_module,source_type,source_id,event_key) DO UPDATE SET "
-            "status='exception',exception_code=EXCLUDED.exception_code,exception_message=EXCLUDED.exception_message,"
-            "attempts=accounting_posting_exceptions.attempts+1,last_attempt_at=now(),updated_at=now()",
-            (source_type,source_id,event_key,run["period_end"],code,message[:2000]),
-        )
-        return {"status": "exception", "exception": message}
+    if errors:
+        return {"status": "exception", "posted": posted, "errors": errors}
+    return {"status": "posted", "postings": posted}
+
 
 @router.post("/payroll/runs/{run_id}/approve")
 def approve_payroll(run_id:int,payload:PayrollApprovalInput,request:Request):
