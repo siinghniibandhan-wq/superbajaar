@@ -199,6 +199,7 @@ export default function HRWorkspace({onBack,currentUser}) {
         </tbody></table>
         <h3>Deductions & contributions</h3>
         <table><tbody><tr><td>Employee deductions</td><td>{money(printingPayslip.deductions)}</td></tr>
+          <tr><td>Manual deduction</td><td>{money(printingPayslip.deduction_breakdown?.manual_deduction)}</td></tr>
           {Object.entries(printingPayslip.deduction_breakdown?.statutory||{}).map(([key,value])=><tr key={key}><td>{key.toUpperCase()} — employee</td><td>{money(value.employee_amount)}</td></tr>)}
           {Object.entries(printingPayslip.deduction_breakdown?.statutory||{}).map(([key,value])=><tr key={key+"-employer"}><td>{key.toUpperCase()} — employer</td><td>{money(value.employer_amount)}</td></tr>)}
           <tr><th>Net pay</th><th>{money(printingPayslip.net_pay)}</th></tr>
