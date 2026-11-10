@@ -58,3 +58,19 @@ def test_employee_leave_rejects_end_date_before_start_date():
             days="1",
             reason="Personal work",
         )
+
+
+def test_vendor_document_signature_accepts_valid_pdf_jpeg_and_png():
+    from app.api.vendor_portal import _matches_document_signature
+
+    assert _matches_document_signature("application/pdf", b"%PDF-1.7")
+    assert _matches_document_signature("image/jpeg", bytes((0xFF, 0xD8, 0xFF, 0xE0)))
+    assert _matches_document_signature("image/png", bytes((0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)))
+
+
+def test_vendor_document_signature_rejects_mismatched_or_unknown_content():
+    from app.api.vendor_portal import _matches_document_signature
+
+    assert not _matches_document_signature("image/jpeg", b"\\xff\\xd8\\xff")
+    assert not _matches_document_signature("image/png", b"not a png")
+    assert not _matches_document_signature("text/plain", b"hello")
