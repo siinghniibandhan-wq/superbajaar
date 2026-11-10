@@ -23,7 +23,7 @@ def api(monkeypatch):
     suffix=uuid.uuid4().hex[:10]
     with psycopg.connect(TEST_DB) as conn:
         user_id=conn.execute(
-            "INSERT INTO app_users(email,full_name,password_hash,role) VALUES(%s,%s,%s,'owner') RETURNING id",
+            "INSERT INTO app_users(email,full_name,password_hash,role) VALUES(%s,%s,%s,'super_admin') RETURNING id",
             (f"order-{suffix}@test.local","Order Integration Test","test-hash"),
         ).fetchone()[0]
         category_id=conn.execute(
@@ -69,7 +69,7 @@ def api(monkeypatch):
             "received_quantity,remaining_quantity,unit_cost) VALUES(%s,%s,%s,%s,5,5,10)",
             (variant_id,location_id,movement_id,"BATCH-"+suffix),
         )
-    role={"value":"owner"}
+    role={"value":"super_admin"}
     async def fake_session(request:Request):
         request.state.role=role["value"]
         request.state.user_id=user_id
