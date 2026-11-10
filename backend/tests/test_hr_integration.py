@@ -187,6 +187,8 @@ def test_hr_admin_can_manage_departments_establishments_and_attendance(api):
         "basic_salary":"30000","hra":"5000","special_allowance":"1000","other_allowance":"0"
     }))
     assert updated["first_name"]=="Edited"
+    salary_profile=next(x for x in ok(api.get("/api/hr/employees"))["items"] if x["id"]==employee["id"])
+    assert Decimal(str(salary_profile["basic_salary"]))==Decimal("25000.00")
 
     api.role["value"]="staff"
     punch=ok(api.post("/api/hr/attendance/punch",json={"punch_type":"clock_in"}),201)
