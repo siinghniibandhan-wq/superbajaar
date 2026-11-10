@@ -164,3 +164,10 @@ def test_hr_salary_revisions_follow_full_calendar_month_payroll_periods():
             effective_from="2026-12-15", basic_salary=30000, hra=12000,
             special_allowance=5000, other_allowance=1000, reason="Mid-month change"
         )
+
+
+def test_hr_salary_history_is_manager_only_without_a_session(monkeypatch):
+    from app.core import config
+    monkeypatch.setattr(config.settings, "database_url", "")
+    response = client.get("/api/hr/employees/1/salary-revisions")
+    assert response.status_code == 401
