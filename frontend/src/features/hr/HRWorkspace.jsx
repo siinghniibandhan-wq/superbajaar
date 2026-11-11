@@ -3,6 +3,7 @@ import { apiRequest } from "../../services/api.js";
 import "../catalogue/catalogue.css";
 import "./HRWorkspace.css";
 import HRStatutoryPolicies from "./HRStatutoryPolicies.jsx";
+import HROverview from "./HROverview.jsx";
 import HRAdvancedWorkflows from "./HRAdvancedWorkflows.jsx";
 import OrganisationChart from "./OrganisationChart.jsx";
 import { formatHRDateTime, toLocalDateTimeInput, todayHRDate } from "./hrDateTime.js";
@@ -30,6 +31,7 @@ export default function HRWorkspace({onBack,currentUser}) {
   const [attendance,setAttendance]=useState([]),[leaves,setLeaves]=useState([]),[expenses,setExpenses]=useState([]);
   const [runs,setRuns]=useState([]),[payslips,setPayslips]=useState([]),[month,setMonth]=useState(today().slice(0,7));
   const [error,setError]=useState(""),[notice,setNotice]=useState(""),[busy,setBusy]=useState(false);
+  const [overviewData,setOverviewData]=useState(null),[overviewError,setOverviewError]=useState(""),[overviewLoading,setOverviewLoading]=useState(false);
   const [dept,setDept]=useState({code:"",name:"",description:""});
   const [editingDepartment,setEditingDepartment]=useState(null);
   const [editingEmployee,setEditingEmployee]=useState(null);
@@ -59,7 +61,15 @@ export default function HRWorkspace({onBack,currentUser}) {
           apiRequest("/hr/payroll/earning-adjustments"),
         ]);
         setAttendance(a.items||[]);setRuns(r.items||[]);setEarningAdjustments(earnings.items||[]);
+        setOverviewLoading(true);
+        try{
+          const overview=await apiRequest("/hr/overview?month="+month);
+          setOverviewData(overview);setOverviewError("");
+        }catch(overviewFailure){
+          setOverviewError(overviewFailure.message||"Unable to load management overview.");
+        }finally{setOverviewLoading(false);}
       }else{
+        setOverviewData(null);setOverviewError("");
         const a=await apiRequest("/hr/attendance/me?month="+month);const p=await apiRequest("/hr/payroll/me/payslips");
         setAttendance(a.items||[]);setPayslips(p.items||[]);
       }
@@ -92,7 +102,8 @@ export default function HRWorkspace({onBack,currentUser}) {
     {error&&<p className="sb-alert" role="alert">{error}</p>}{notice&&<p className="sb-success" role="status">{notice}</p>}
     <div className="hr-toolbar"><label>Month <input type="month" value={month} onChange={e=>setMonth(e.target.value)}/></label><button type="button" onClick={load} disabled={busy}>Refresh</button></div>
     <nav className="hr-nav" aria-label="HR sections">{tabs.map(group=><div className="hr-nav-group" key={group.group}><span>{group.group}</span><div className="hr-tabs">{group.items.map(([key,label])=><button key={key} type="button" className={tab===key?"active":""} aria-current={tab===key?"page":undefined} onClick={()=>setTab(key)}>{label}</button>)}</div></div>)}</nav>
-    {tab==="overview"&&<div className="hr-overview"><article><span>Employees</span><strong>{employees.length}</strong><small>Workforce records</small></article><article><span>Departments</span><strong>{departments.filter(d=>d.is_active).length}</strong><small>Active departments</small></article><article><span>Pending leave</span><strong>{leaves.filter(x=>x.status==="pending").length}</strong><small>Requests awaiting review</small></article><article><span>Pending expenses</span><strong>{expenses.filter(x=>x.status==="pending").length}</strong><small>Claims awaiting review</small></article>{manager&&<article><span>Payroll runs</span><strong>{runs.length}</strong><small>Monthly payroll history</small></article>}<article><span>Attendance sessions</span><strong>{attendance.length}</strong><small>{manager?"Selected month register":"My selected month"}</small></article><div className="hr-overview-note"><strong>HR operations</strong><p>Use the sections above to manage workforce records, time, leave, expenses and payroll. Statutory calculations use approved effective-dated policies only.</p></div></div>}
+    {tab==="overview"&&manager&&<HROverview data={overviewData} loading={overviewLoading} error={overviewError} onRefresh={load} onNavigate={setTab}/>}
+    {tab==="overview"&&!manager&&<div className="hr-overview"><article><span>My attendance sessions</span><strong>{attendance.length}</strong><small>Selected month</small></article><article><span>My pending leave</span><strong>{leaves.filter(x=>x.status==="pending").length}</strong><small>Requests awaiting review</small></article><article><span>My pending expenses</span><strong>{expenses.filter(x=>x.status==="pending").length}</strong><small>Claims awaiting review</small></article><article><span>My payslips</span><strong>{payslips.length}</strong><small>Available salary statements</small></article><div className="hr-overview-note"><strong>Employee self-service</strong><p>View your attendance, leave requests, reimbursements and payslips using the sections above.</p></div></div>}
     {tab==="organisation"&&manager&&<OrganisationChart departments={departments}/>}
     {tab==="people"&&<div className="hr-panel">
       {manager&&<><h2>Department management</h2>
