@@ -999,6 +999,25 @@ def request_attendance_correction(session_id: int, payload: AttendanceAdjustment
         raise _db_error(exc) from exc
 
 
+@router.get("/attendance/sessions/{session_id}/audit")
+def attendance_session_audit(session_id: int, request: Request):
+    _manager(request)
+    with _hr_connection() as conn:
+        exists = conn.execute(
+            "SELECT id FROM hr_attendance_sessions WHERE id=%s",
+            (session_id,),
+        ).fetchone()
+        if exists is None:
+            raise HTTPException(404, "Attendance session not found")
+        rows = conn.execute(
+            "SELECT id,attendance_session_id,employee_id,event_type,actor_user_id,"
+            "before_state,after_state,created_at FROM hr_attendance_audit_events "
+            "WHERE attendance_session_id=%s ORDER BY created_at,id",
+            (session_id,),
+        ).fetchall()
+        return {"items": rows}
+
+
 @router.get("/attendance/corrections")
 def list_attendance_corrections(request: Request, status: str = Query(default="pending", pattern="^(pending|approved|rejected|cancelled|all)$")):
     _manager(request)
