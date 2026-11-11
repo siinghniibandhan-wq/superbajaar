@@ -24,12 +24,12 @@ The workflow fails closed if it cannot identify a previous successful job or can
 
 Set these repository/environment values:
 
-- Production environment secret `AWS_ROLE_TO_ASSUME`: IAM role ARN trusted by GitHub Actions OIDC.
+- Repository secret `AWS_ROLE_TO_ASSUME`: IAM role ARN trusted by GitHub Actions OIDC.
 - Repository variable `AWS_REGION`: AWS region containing EC2 and Amplify.
 - Repository variable `EC2_INSTANCE_ID`: target EC2 instance ID.
 - Repository variable `AMPLIFY_SITE_URL`: public production Amplify URL.
 - Repository variable `AMPLIFY_APP_ID`: exact Amplify Hosting app ID (format starts with `d`).
-- The Amplify production branch is currently configured as `main` in the workflow.
+- The Amplify production branch is currently configured as `main` in the workflow. The deployment jobs intentionally do not bind to a GitHub Environment: the IAM trust policy is restricted to the exact OIDC subject `repo:siinghniibandhan-wq/superbajaar:ref:refs/heads/main`, and attaching a GitHub Environment changes the OIDC subject to an environment-based subject.
 
 The GitHub OIDC role needs the existing SSM permissions plus the narrowly scoped Amplify permissions shown in `docs/operations/amplify-rollback-iam-policy.json`. Replace the placeholders in that policy with the account ID, region, and app ID, then add the statement to the existing `SuperBajaarGitHubDeployPolicy`. Do not replace the existing SSM statement. The EC2 instance profile and SSM agent configuration remain unchanged.
 
