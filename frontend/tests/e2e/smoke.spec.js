@@ -186,7 +186,7 @@ test("HR manager can access the HR workspace without admin-wide module access", 
   await expect(page.getByRole("navigation", { name: "Module navigation" })).toHaveCount(0);
 
   for (const section of ["People directory", "Attendance", "Leave", "Planning & lifecycle", "Expenses", "Payroll", "Payslips", "Statutory policies"]) {
-    await expect(page.getByRole("button", { name: section })).toBeVisible();
+    await expect(page.getByRole("button", { name: section, exact: true })).toBeVisible();
   }
   await page.getByRole("button", { name: "People directory" }).click();
   await expect(page.getByRole("heading", { name: "Employee directory" })).toBeVisible();
