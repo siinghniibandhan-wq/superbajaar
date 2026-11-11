@@ -236,3 +236,22 @@ def test_hr_attendance_adjustment_requires_a_reason():
             clock_in_at="2026-11-11T09:00:00+05:30",
             reason="     ",
         )
+
+
+
+def test_hr_termination_requires_exit_date():
+    with pytest.raises(ValidationError, match="Exit date is required"):
+        EmployeeInput(
+            employee_code="SB-TERM-01", first_name="Test", last_name="Person",
+            email="term-person@test.local", designation="Operator",
+            joining_date="2026-01-01", status="terminated",
+        )
+
+
+def test_hr_termination_accepts_exit_date_not_before_joining():
+    employee = EmployeeInput(
+        employee_code="SB-TERM-02", first_name="Test", last_name="Person",
+        email="term-person2@test.local", designation="Operator",
+        joining_date="2026-01-01", exit_date="2026-11-30", status="terminated",
+    )
+    assert employee.exit_date.isoformat() == "2026-11-30"
