@@ -35,7 +35,9 @@ export default function HRWorkspace({onBack,currentUser}) {
   const [dept,setDept]=useState({code:"",name:"",description:""});
   const [editingDepartment,setEditingDepartment]=useState(null);
   const [editingEmployee,setEditingEmployee]=useState(null);
-  const [attendanceEdit,setAttendanceEdit]=useState({});\n  const [attendanceEmployeeFilter,setAttendanceEmployeeFilter]=useState("");\n  const [attendanceDepartmentFilter,setAttendanceDepartmentFilter]=useState("");
+  const [attendanceEdit,setAttendanceEdit]=useState({});
+  const [attendanceEmployeeFilter,setAttendanceEmployeeFilter]=useState("");
+  const [attendanceDepartmentFilter,setAttendanceDepartmentFilter]=useState("");
   const [salaryEmployeeId,setSalaryEmployeeId]=useState(null),[salaryRevisions,setSalaryRevisions]=useState([]);
   const [salaryDraft,setSalaryDraft]=useState({effective_from:today(),effective_to:"",basic_salary:"0",hra:"0",special_allowance:"0",other_allowance:"0",reason:""});
   const [earningAdjustments,setEarningAdjustments]=useState([]);
