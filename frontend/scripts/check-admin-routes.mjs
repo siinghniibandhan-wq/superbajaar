@@ -8,7 +8,7 @@ assert.ok(groupsMatch, "admin navigation groups must exist");
 assert.ok(routesMatch, "explicit workspace route registry must exist");
 
 const ids = [...groupsMatch[1].matchAll(/id: "([^"]+)"/g)].map(match => match[1]);
-const routeIds = [...routesMatch[1].matchAll(/^\s{2}([a-z][a-z0-9]*):/gm)].map(match => match[1]);
+const routeIds = [...routesMatch[1].matchAll(/^\s{2}([a-z][A-Za-z0-9]*):/gm)].map(match => match[1]);
 assert.equal(new Set(ids).size, ids.length, "navigation module IDs must be unique");
 const standaloneAdminRoutes = ["portalAccess", "identity"];
 const registeredWorkspaceIds = routeIds.filter(id => !standaloneAdminRoutes.includes(id));
