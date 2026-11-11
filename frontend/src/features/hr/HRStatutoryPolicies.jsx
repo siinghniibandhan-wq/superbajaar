@@ -19,7 +19,7 @@ const emptyEstablishment = {code:"",legal_name:"",display_name:"",state_code:"",
 const emptyPolicy = {establishment_id:"",component:"pf",version_label:"",effective_from:todayHRDate(),effective_to:"",review_due_on:"",policy_config:'{"enabled":false}',source_references:"[]"};
 const emptyProfile = {establishment_id:"",uan:"",esic_number:"",pan:"",tds_regime:"new",override_reason:"",pf_applicable_override:"",esi_applicable_override:"",pt_applicable_override:"",declarations:"{}",exemptions:"{}",previous_employer_income:"{}",effective_from:todayHRDate(),effective_to:""};
 
-export default function HRStatutoryPolicies() {
+export default function HRStatutoryPolicies({ currentUser }) {
   const [establishments,setEstablishments]=useState([]);
   const [policies,setPolicies]=useState([]);
   const [employees,setEmployees]=useState([]);
@@ -165,7 +165,7 @@ export default function HRStatutoryPolicies() {
     </details>
     <details id="hr-compliance-register" className="hr-compliance-section"><summary>Policy register</summary>
     <div className="hr-table-wrap"><table><thead><tr><th>Component</th><th>Establishment</th><th>Version / effective period</th><th>Status</th><th>Approval</th></tr></thead><tbody>
-      {policies.map(p=><tr key={p.id}><td>{p.component.toUpperCase()}</td><td>{p.display_name} · {p.state_code}</td><td>{p.version_label}<small>{p.effective_from} – {p.effective_to||"Open-ended"}</small></td><td>{p.status}</td><td>{p.status==="draft"&&<button disabled={busy} onClick={()=>act(()=>post("/hr/statutory/policies/"+p.id+"/submit"),"Policy submitted for approval.")}>Submit</button>}{p.status==="in_review"&&<button disabled={busy} onClick={()=>act(()=>post("/hr/statutory/policies/"+p.id+"/approve"),"Policy approved and effective period reserved.")}>Approve</button>}{p.status==="approved"&&"Approved"}</td></tr>)}
+      {policies.map(p=><tr key={p.id}><td>{p.component.toUpperCase()}</td><td>{p.display_name} · {p.state_code}</td><td>{p.version_label}<small>{p.effective_from} – {p.effective_to||"Open-ended"}</small></td><td>{p.status}</td><td>{p.status==="draft"&&<button disabled={busy} onClick={()=>act(()=>post("/hr/statutory/policies/"+p.id+"/submit"),"Policy submitted for approval.")}>Submit</button>}{p.status==="in_review"&&<button disabled={busy||Number(p.submitted_by_user_id)===Number(currentUser?.id)} title={Number(p.submitted_by_user_id)===Number(currentUser?.id)?"A different authorised user must approve this policy":""} onClick={()=>act(()=>post("/hr/statutory/policies/"+p.id+"/approve"),"Policy approved and effective period reserved.")}>Approve</button>}{p.status==="approved"&&"Approved"}</td></tr>)}
       {!policies.length&&<tr><td colSpan="5">No statutory policy versions created.</td></tr>}
     </tbody></table></div>
 </details>

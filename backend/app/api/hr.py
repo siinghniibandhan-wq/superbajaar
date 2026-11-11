@@ -62,6 +62,12 @@ def _manager(request: Request) -> int:
     return actor
 
 
+def _require_independent_reviewer(submitter_id: int | None, reviewer_id: int, record_name: str) -> None:
+    """Prevent the same manager from submitting and approving a financial/control record."""
+    if submitter_id is not None and int(submitter_id) == int(reviewer_id):
+        raise HTTPException(403, f"A {record_name} must be reviewed by a different authorised user")
+
+
 def _employee(conn, user_id: int):
     row = conn.execute(
         "SELECT id,employee_code,first_name,last_name,email,department_id,status "
@@ -740,6 +746,7 @@ def review_salary_revision(employee_id: int, revision_id: int, payload: PayrollA
                 raise HTTPException(404, "Salary revision not found")
             if revision["status"] != "draft":
                 raise HTTPException(409, "Only draft salary revisions can be reviewed")
+            _require_independent_reviewer(revision["created_by_user_id"], actor, "salary revision")
             if payload.decision == "rejected":
                 return conn.execute(
                     "UPDATE hr_employee_salary_versions SET status='rejected',review_note=%s,"
@@ -1079,7 +1086,7 @@ def list_leave(request: Request):
         with _hr_connection() as conn:
             if role in {"super_admin","owner","admin","manager"}:
                 rows = conn.execute(
-                    "SELECT l.*,e.employee_code,e.first_name,e.last_name FROM hr_leave_requests l "
+                    "SELECT l.*,e.employee_code,e.first_name,e.last_name,e.user_id AS employee_user_id FROM hr_leave_requests l "
                     "JOIN hr_employees e ON e.id=l.employee_id ORDER BY l.created_at DESC"
                 ).fetchall()
             else:
@@ -1123,13 +1130,19 @@ def review_leave(leave_id: int, payload: ReviewInput, request: Request):
     actor = _manager(request)
     try:
         with _hr_connection() as conn:
+            request_row = conn.execute(
+                "SELECT lr.id,e.user_id FROM hr_leave_requests lr "
+                "JOIN hr_employees e ON e.id=lr.employee_id WHERE lr.id=%s AND lr.status='pending' FOR UPDATE OF lr",
+                (leave_id,),
+            ).fetchone()
+            if request_row is None:
+                raise HTTPException(409, "Leave request not found or already reviewed")
+            _require_independent_reviewer(request_row["user_id"], actor, "leave request")
             row = conn.execute(
                 "UPDATE hr_leave_requests SET status=%s,reviewed_by_user_id=%s,review_note=%s,reviewed_at=now() "
                 "WHERE id=%s AND status='pending' RETURNING *",
                 (payload.decision,actor,payload.note,leave_id),
             ).fetchone()
-            if row is None:
-                raise HTTPException(409, "Leave request not found or already reviewed")
             if payload.decision == "approved":
                 policy = conn.execute(
                     "SELECT p.* FROM hr_leave_policies p "
@@ -1170,7 +1183,7 @@ def list_expenses(request: Request):
         with _hr_connection() as conn:
             if role in {"super_admin","owner","admin","manager"}:
                 rows=conn.execute(
-                    "SELECT x.*,e.employee_code,e.first_name,e.last_name FROM hr_expenses x "
+                    "SELECT x.*,e.employee_code,e.first_name,e.last_name,e.user_id AS employee_user_id FROM hr_expenses x "
                     "JOIN hr_employees e ON e.id=x.employee_id ORDER BY x.created_at DESC"
                 ).fetchall()
             else:
@@ -1205,13 +1218,19 @@ def review_expense(expense_id:int,payload:ReviewInput,request:Request):
     actor=_manager(request)
     try:
         with _hr_connection() as conn:
+            expense = conn.execute(
+                "SELECT x.id,e.user_id FROM hr_expenses x JOIN hr_employees e ON e.id=x.employee_id "
+                "WHERE x.id=%s AND x.status='pending' FOR UPDATE OF x",
+                (expense_id,),
+            ).fetchone()
+            if expense is None:
+                raise HTTPException(409,"Expense not found or already reviewed")
+            _require_independent_reviewer(expense["user_id"], actor, "expense claim")
             row=conn.execute(
                 "UPDATE hr_expenses SET status=%s,reviewed_by_user_id=%s,review_note=%s,reviewed_at=now() "
                 "WHERE id=%s AND status='pending' RETURNING *",
                 (payload.decision,actor,payload.note,expense_id),
             ).fetchone()
-            if row is None:
-                raise HTTPException(409,"Expense not found or already reviewed")
             return row
     except HTTPException:
         raise
@@ -1275,6 +1294,7 @@ def review_payroll_earning_adjustment(adjustment_id: int, payload: PayrollApprov
                 raise HTTPException(404, "Payroll earning adjustment not found")
             if adjustment["status"] != "pending":
                 raise HTTPException(409, "Only pending payroll earning adjustments can be reviewed")
+            _require_independent_reviewer(adjustment["created_by_user_id"], actor, "variable earning")
             closed = conn.execute(
                 "SELECT id FROM hr_payroll_runs WHERE period_start=%s AND period_end=%s "
                 "AND status IN ('approved','paid') LIMIT 1",
@@ -1713,6 +1733,13 @@ def approve_payroll(run_id:int,payload:PayrollApprovalInput,request:Request):
     actor=_manager(request)
     try:
         with _hr_connection() as conn:
+            run = conn.execute(
+                "SELECT id,status,period_start,period_end,created_by_user_id FROM hr_payroll_runs WHERE id=%s FOR UPDATE",
+                (run_id,),
+            ).fetchone()
+            if run is None or run["status"] != "calculated":
+                raise HTTPException(409, "Payroll run is not in a reviewable calculated state")
+            _require_independent_reviewer(run["created_by_user_id"], actor, "payroll run")
             if payload.decision=="rejected":
                 row=conn.execute(
                     "UPDATE hr_payroll_runs SET status='draft',notes=concat_ws(E'\\n',notes,%s),updated_at=now() "
@@ -1720,11 +1747,6 @@ def approve_payroll(run_id:int,payload:PayrollApprovalInput,request:Request):
                     (payload.note,run_id),
                 ).fetchone()
             else:
-                run = conn.execute(
-                    "SELECT id,status,period_start,period_end FROM hr_payroll_runs WHERE id=%s FOR UPDATE", (run_id,)
-                ).fetchone()
-                if run is None or run["status"] != "calculated":
-                    raise HTTPException(409, "Payroll run is not in a reviewable calculated state")
                 pending_earnings = conn.execute(
                     "SELECT count(*) AS total FROM hr_payroll_earning_adjustments "
                     "WHERE period_start=%s AND period_end=%s AND status='pending'",
@@ -2027,6 +2049,7 @@ def approve_statutory_policy(policy_id: int, request: Request):
             ).fetchone()
             if policy is None or policy["status"] != "in_review":
                 raise HTTPException(409,"Only a policy in review can be approved")
+            _require_independent_reviewer(policy["submitted_by_user_id"], actor, "statutory policy")
             overlap = conn.execute(
                 "SELECT id FROM hr_statutory_policy_versions WHERE establishment_id=%s AND component=%s "
                 "AND status='approved' AND id<>%s AND daterange(effective_from,COALESCE(effective_to,'infinity'::date),'[]') "
