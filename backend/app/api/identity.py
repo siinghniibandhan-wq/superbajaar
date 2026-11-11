@@ -72,7 +72,7 @@ def identity_register(request: Request, search: str | None = Query(default=None,
         raise HTTPException(503, "Unable to load identity register") from exc
 
 
-@router.get("/{party_id}")
+@router.get("/parties/{party_id}")
 def identity_detail(party_id: int, request: Request):
     _admin(request)
     try:
