@@ -17,7 +17,7 @@ fail(){ log "ERROR: $*"; exit 1; }
 command -v flock >/dev/null && command -v curl >/dev/null && command -v git >/dev/null || fail "Required command missing"
 mkdir -p "$(dirname "$LOCK_FILE")"
 exec 9>"$LOCK_FILE"
-flock -n 9 || fail "Another deployment is running"
+flock -w 120 9 || fail "Timed out waiting for the source sync/deploy lock"
 cd "$REPO_DIR"
 [[ "$(git branch --show-current)" == main ]] || fail "Production checkout must remain on main"
 [[ -z "$(git status --porcelain)" ]] || fail "Production checkout is dirty"
