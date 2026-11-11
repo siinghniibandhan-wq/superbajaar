@@ -166,3 +166,29 @@ def test_identity_service_adds_contact_as_unverified_until_proof_is_recorded():
         )
         assert contact["normalized_value"] == "+919876543210"
         assert contact["verification_status"] == "unverified"
+
+
+def test_identity_service_links_existing_customer_profile_and_login_without_rekeying():
+    from app.services.identity import IdentityService
+
+    suffix = uuid4().hex
+    with psycopg.connect(TEST_DB, row_factory=dict_row) as conn:
+        customer = conn.execute(
+            "INSERT INTO customer_accounts(email,full_name,password_hash,referral_code) "
+            "VALUES(%s,%s,%s,%s) RETURNING id",
+            (f"identity-link-{suffix}@test.local", "Identity Link Test", "test-hash", "REF" + suffix[:12].upper()),
+        ).fetchone()
+        party = IdentityService(conn).create_party(
+            party_type="individual", display_name="Identity Link Test"
+        )
+        service = IdentityService(conn)
+        profile = service.link_profile(
+            party_id=party["id"], profile_type="customer_account",
+            source_id=customer["id"], link_method="authenticated_claim",
+        )
+        auth = service.link_auth_account(
+            party_id=party["id"], account_type="customer",
+            source_id=customer["id"], link_method="authenticated_claim",
+        )
+        assert profile["customer_account_id"] == customer["id"]
+        assert auth["customer_account_id"] == customer["id"]
