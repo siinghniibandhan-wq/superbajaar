@@ -103,8 +103,12 @@ def test_hr_employee_attendance_expense_payroll_accounting_cycle(api):
         "description":"Approved local travel reimbursement"
     }),201)
     api.role["value"]="super_admin"
+    assert api.patch("/api/hr/leave/"+str(leave["id"])+"/review",json={"decision":"approved"}).status_code==403
+    assert api.patch("/api/hr/expenses/"+str(expense["id"])+"/review",json={"decision":"approved"}).status_code==403
+    api.as_reviewer()
     ok(api.patch("/api/hr/leave/"+str(leave["id"])+"/review",json={"decision":"approved"}))
     ok(api.patch("/api/hr/expenses/"+str(expense["id"])+"/review",json={"decision":"approved"}))
+    api.as_primary()
 
     payroll=ok(api.post("/api/hr/payroll/runs",json={
         "period_start":"2026-10-01","period_end":"2026-10-31","deductions_by_employee":{}
@@ -281,12 +285,14 @@ def test_hr_self_service_leave_and_expense_rejections_require_reason(api):
     expense_rejected=api.patch("/api/hr/expenses/"+str(expense["id"])+"/review",json={"decision":"rejected","note":" "})
     assert leave_rejected.status_code==422
     assert expense_rejected.status_code==422
+    api.as_reviewer()
     ok(api.patch("/api/hr/leave/"+str(leave["id"])+"/review",json={
         "decision":"rejected","note":"Insufficient notice for this leave period"
     }))
     ok(api.patch("/api/hr/expenses/"+str(expense["id"])+"/review",json={
         "decision":"rejected","note":"Receipt is missing"
     }))
+    api.as_primary()
 
 
 
@@ -391,7 +397,9 @@ def test_hr_leave_policy_accrual_is_idempotent_and_adjustments_are_ledgered(api)
         "days":"1","reason":"Planned annual leave"
     }),201)
     api.role["value"]="super_admin"
+    api.as_reviewer()
     ok(api.patch("/api/hr/leave/"+str(request["id"])+"/review",json={"decision":"approved"}))
+    api.as_primary()
     api.role["value"]="staff"
     cancelled=ok(api.post("/api/hr/leave/"+str(request["id"])+"/cancel",json={
         "reason":"Leave plan changed after approval"
@@ -521,16 +529,20 @@ def test_hr_leave_overlap_blocks_pending_and_approved_but_not_rejected(api):
     })
     assert pending_overlap.status_code==409
     api.role["value"]="super_admin"
+    api.as_reviewer()
     ok(api.patch("/api/hr/leave/"+str(first["id"])+"/review",json={
         "decision":"rejected","note":"Rejected for this test"
     }))
+    api.as_primary()
     api.role["value"]="staff"
     replacement=ok(api.post("/api/hr/leave",json={
         "leave_type":"annual","start_date":"2026-12-10","end_date":"2026-12-12",
         "days":"3","reason":"Resubmitted after rejection"
     }),201)
     api.role["value"]="super_admin"
+    api.as_reviewer()
     ok(api.patch("/api/hr/leave/"+str(replacement["id"])+"/review",json={"decision":"approved"}))
+    api.as_primary()
     approved_overlap=api.post("/api/hr/leave",json={
         "leave_type":"casual","start_date":"2026-12-11","end_date":"2026-12-11",
         "days":"1","reason":"Overlapping approved leave"
