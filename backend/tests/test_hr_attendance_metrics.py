@@ -68,3 +68,22 @@ def test_geofence_rejects_outside_and_invalid_coordinates():
             center_latitude=25.0, center_longitude=85.0,
             radius_meters=100,
         )
+
+
+def test_attendance_punch_requires_coordinate_pairs_and_accuracy_requires_gps():
+    from pydantic import ValidationError
+    from app.api.hr import PunchInput
+
+    with pytest.raises(ValidationError, match="provided together"):
+        PunchInput(punch_type="clock_in", latitude=25.6)
+    with pytest.raises(ValidationError, match="requires GPS coordinates"):
+        PunchInput(punch_type="clock_out", accuracy_meters=20)
+    assert PunchInput(punch_type="clock_in", latitude=25.6, longitude=85.1).latitude == 25.6
+
+
+def test_attendance_punch_rejects_out_of_range_coordinates():
+    from pydantic import ValidationError
+    from app.api.hr import PunchInput
+
+    with pytest.raises(ValidationError):
+        PunchInput(punch_type="clock_in", latitude=91, longitude=85)
