@@ -216,6 +216,11 @@ class PayrollRunInput(BaseModel):
         last_day = monthrange(self.period_start.year, self.period_start.month)[1]
         if self.period_end != date(self.period_start.year, self.period_start.month, last_day):
             raise ValueError("Payroll period must cover one complete calendar month")
+        for employee_id, amount in self.deductions_by_employee.items():
+            if amount > 0:
+                reason = self.deduction_notes.get(employee_id)
+                if not reason or len(reason.strip()) < 5:
+                    raise ValueError("A reason is required for every manual payroll deduction")
         return self
 
 
