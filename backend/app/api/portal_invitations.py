@@ -133,7 +133,7 @@ def list_invitations(request: Request):
     try:
         with _connect() as conn:
             rows = conn.execute(
-                "SELECT id,portal_type,email,supplier_id,employee_id,expires_at,accepted_at,revoked_at,created_at "
+                "SELECT id,portal_type,email,supplier_id,employee_id,representative_name,expires_at,accepted_at,revoked_at,created_at "
                 "FROM portal_invitations ORDER BY created_at DESC LIMIT 200"
             ).fetchall()
         return {"items": rows}
@@ -181,9 +181,7 @@ def create_invitation(payload: InvitationCreate, request: Request):
                     if not record or not record["is_active"]:
                         raise HTTPException(404, "Active supplier not found")
                     email = (record["email"] or "").strip().lower()
-                    full_name = (invitation["representative_name"] or "").strip()
-                    if len(full_name) < 2:
-                        raise HTTPException(409, "This vendor invitation has no authorised representative name; issue a new invitation")
+                    full_name = payload.representative_name.strip()
                     if not email:
                         raise HTTPException(422, "Add a supplier email before inviting its vendor user")
                     employee_id = None
@@ -270,7 +268,9 @@ def accept_invitation(payload: InvitationAccept):
                     ).fetchone()
                     if not record or not record["is_active"]:
                         raise HTTPException(403, "This supplier account is inactive")
-                    full_name = record["name"]
+                    full_name = (invitation["representative_name"] or "").strip()
+                    if len(full_name) < 2:
+                        raise HTTPException(409, "This vendor invitation has no authorised representative name; issue a new invitation")
                 else:
                     record = conn.execute(
                         "SELECT first_name,last_name,status,user_id FROM hr_employees WHERE id=%s FOR UPDATE",
