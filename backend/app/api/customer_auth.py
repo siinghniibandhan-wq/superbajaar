@@ -9,6 +9,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.api.auth import _password_hash, _password_matches, _sign, _decode
 from app.core.config import settings
+from app.services.identity import IdentityService
 
 router = APIRouter(prefix="/customer-auth", tags=["customer authentication"])
 TOKEN_TTL_HOURS = 24 * 30
@@ -180,20 +181,77 @@ def register(payload: CustomerRegister):
                     (email, payload.full_name, phone, _password_hash(payload.password), own_code,
                      referrer["id"] if referrer else None),
                 ).fetchone()
+                # Create the permanent individual identity without changing the legacy customer ID.
+                # Contact points remain unverified until the existing verification flow proves control.
+                from app.services.identity import IdentityService
+                identity = IdentityService(conn)
+                party = identity.create_party(
+                    party_type="individual",
+                    display_name=customer["full_name"],
+                    reason="Customer self-registration",
+                )
+                identity.link_profile(
+                    party_id=party["id"],
+                    profile_type="customer_account",
+                    source_id=customer["id"],
+                    link_method="authenticated_claim",
+                )
+                identity.link_auth_account(
+                    party_id=party["id"],
+                    account_type="customer",
+                    source_id=customer["id"],
+                    link_method="authenticated_claim",
+                )
+                identity.add_contact(
+                    party_id=party["id"],
+                    contact_type="email",
+                    value=email,
+                    source="customer_registration",
+                )
+                identity.add_contact(
+                    party_id=party["id"],
+                    contact_type="phone",
+                    value=phone,
+                    source="customer_registration",
+                )
                 # Track the referral only; no reward is issued until reward rules are confirmed.
                 if referrer:
-                    conn.execute(
+                    referral = conn.execute(
                         "INSERT INTO customer_referrals (referrer_customer_id,referred_customer_id,referral_code) "
-                        "VALUES (%s,%s,%s)",
+                        "VALUES (%s,%s,%s) RETURNING id",
                         (referrer["id"], customer["id"], referral_code),
-                    )
+                    ).fetchone()
+                    referrer_party = conn.execute(
+                        "SELECT party_id FROM identity_profiles WHERE profile_type='customer_account' "
+                        "AND customer_account_id=%s AND status='active'",
+                        (referrer["id"],),
+                    ).fetchone()
+                    # Link only through the existing customer-account FK mapping, never email/phone similarity.
+                    if referrer_party and referrer_party["party_id"] != party["id"]:
+                        conn.execute(
+                            "INSERT INTO identity_referral_links(referral_id,referrer_party_id,referred_party_id) "
+                            "VALUES(%s,%s,%s)",
+                            (referral["id"], referrer_party["party_id"], party["id"]),
+                        )
+                        identity._event(
+                            party_id=referrer_party["party_id"], event_type="profile_linked",
+                            event_data={"profile_type":"referral","referral_id":referral["id"],"referred_party_id":party["id"]},
+                            reason="Referral identity association created from verified customer account links",
+                        )
                 # Create the customer's existing loyalty card now; coin balance remains in its ledger.
                 card_number = "SB-" + secrets.token_hex(5).upper()
-                conn.execute(
+                loyalty_account = conn.execute(
                     "INSERT INTO loyalty_accounts (customer_email,card_number) VALUES (%s,%s) "
-                    "ON CONFLICT (customer_email) DO NOTHING",
+                    "ON CONFLICT (customer_email) DO NOTHING RETURNING id",
                     (email, card_number),
-                )
+                ).fetchone()
+                # The just-authenticated registration owns this newly issued card; never infer ownership of an old card by email.
+                if loyalty_account:
+                    conn.execute(
+                        "INSERT INTO identity_loyalty_accounts(party_id,loyalty_account_id,link_method) "
+                        "VALUES(%s,%s,'verified_customer_account')",
+                        (party["id"], loyalty_account["id"]),
+                    )
                 session = _issue_session(conn, customer)
         return {**session, "customer": _public_customer(customer)}
     except HTTPException:
@@ -245,6 +303,72 @@ def me(request: Request):
         raise
     except psycopg.Error as exc:
         raise HTTPException(status_code=503, detail="Could not load customer account") from exc
+
+
+class IdentityClaimIn(BaseModel):
+    target_sbid: str = Field(min_length=8, max_length=40)
+    reason: str = Field(min_length=5, max_length=500)
+
+
+@router.post("/identity-claims", status_code=202)
+def request_identity_claim(payload: IdentityClaimIn, request: Request):
+    """Authenticated customer request to claim an existing SBID; never confirms whether it exists."""
+    customer_id = getattr(request.state, "customer_id", None)
+    if not customer_id:
+        raise HTTPException(status_code=401, detail="Customer sign-in required")
+    requested_sbid = payload.target_sbid.strip().upper()
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                customer = conn.execute(
+                    "SELECT id,full_name FROM customer_accounts WHERE id=%s AND is_active=TRUE FOR UPDATE",
+                    (customer_id,),
+                ).fetchone()
+                if not customer:
+                    raise HTTPException(status_code=401, detail="Customer account is no longer active")
+                own = conn.execute(
+                    "SELECT party_id FROM identity_profiles WHERE profile_type='customer_account' AND customer_account_id=%s AND status='active'",
+                    (customer_id,),
+                ).fetchone()
+                if own is None:
+                    service = IdentityService(conn)
+                    party = service.create_party(
+                        party_type="individual", display_name=customer["full_name"],
+                        reason="Legacy customer initiated identity claim",
+                    )
+                    service.link_profile(
+                        party_id=party["id"], profile_type="customer_account",
+                        source_id=customer_id, link_method="authenticated_claim",
+                        reason="Legacy customer identity claim",
+                    )
+                    service.link_auth_account(
+                        party_id=party["id"], account_type="customer",
+                        source_id=customer_id, link_method="authenticated_claim",
+                    )
+                    own_party_id = party["id"]
+                else:
+                    own_party_id = own["party_id"]
+                target = conn.execute(
+                    "SELECT id FROM identity_parties WHERE upper(sbid)=%s AND status='active'",
+                    (requested_sbid,),
+                ).fetchone()
+                # A missing target and a valid target have the same public response.
+                if target and target["id"] != own_party_id:
+                    conn.execute(
+                        "INSERT INTO identity_link_requests(idempotency_key,requester_party_id,target_party_id,request_type,status,expires_at,request_context) "
+                        "VALUES(%s,%s,%s,'claim_existing_identity','proof_required',now()+interval '7 days',jsonb_build_object('reason',%s))",
+                        (secrets.token_urlsafe(24), own_party_id, target["id"], payload.reason),
+                    )
+                    IdentityService(conn)._event(
+                        party_id=target["id"], event_type="link_requested",
+                        event_data={"request_type":"claim_existing_identity"},
+                        actor_party_id=own_party_id, reason="Authenticated customer identity claim submitted",
+                    )
+        return {"status": "submitted", "message": "If the identity can be matched, the request will be reviewed. We will not disclose identity details here."}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(status_code=503, detail="Unable to submit identity claim") from exc
 
 
 @router.post("/logout")

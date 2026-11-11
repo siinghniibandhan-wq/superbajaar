@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from psycopg.rows import dict_row
 from pydantic import BaseModel, Field, field_validator
 from app.core.config import settings
+from app.services.identity import IdentityService
 
 logger = logging.getLogger(__name__)
 
@@ -182,8 +183,27 @@ def list_customers(search:str|None=Query(default=None,max_length=200),limit:int=
 @router.post("",status_code=201)
 def create_customer(p:CustomerIn):
     try:
-        with _connect() as c:
-            return c.execute("INSERT INTO customers(name,phone,email,pin_code,address,notes) VALUES(%s,%s,%s,%s,%s,%s) RETURNING id,name,phone,email,pin_code,address,notes,is_active,created_at,updated_at",(p.name,p.phone,p.email.lower() if p.email else None,p.pin_code,p.address,p.notes)).fetchone()
+        with _connect() as conn:
+            with conn.transaction():
+                customer = conn.execute(
+                    "INSERT INTO customers(name,phone,email,pin_code,address,notes) VALUES(%s,%s,%s,%s,%s,%s) RETURNING id,name,phone,email,pin_code,address,notes,is_active,created_at,updated_at",
+                    (p.name,p.phone,p.email.lower() if p.email else None,p.pin_code,p.address,p.notes),
+                ).fetchone()
+                identity = IdentityService(conn)
+                party = identity.create_party(
+                    party_type="individual", display_name=customer["name"],
+                    reason="CRM customer profile created",
+                )
+                identity.link_profile(
+                    party_id=party["id"], profile_type="crm_customer",
+                    source_id=customer["id"], link_method="admin_verified",
+                    reason="New CRM profile created",
+                )
+                if customer["email"]:
+                    identity.add_contact(party_id=party["id"], contact_type="email", value=customer["email"], source="crm_customer")
+                if customer["phone"]:
+                    identity.add_contact(party_id=party["id"], contact_type="phone", value=customer["phone"], source="crm_customer")
+        return customer
     except psycopg.Error as e:raise _error(e) from e
 
 @router.patch("/{customer_id}")
@@ -461,6 +481,32 @@ def link_customer_account(customer_id:int,payload:CustomerAccountLinkIn,request:
                     (request.state.user_id,payload.verification_method,payload.customer_account_id,customer_id),
                 ).fetchone()
                 if row is None: raise HTTPException(404,"Active customer account or CRM customer not found")
+                identity = IdentityService(conn)
+                account_party = conn.execute(
+                    "SELECT p.id FROM identity_profiles ip JOIN identity_parties p ON p.id=ip.party_id "
+                    "WHERE ip.profile_type='customer_account' AND ip.customer_account_id=%s AND ip.status='active' FOR UPDATE OF p",
+                    (payload.customer_account_id,),
+                ).fetchone()
+                crm_party = conn.execute(
+                    "SELECT p.id FROM identity_profiles ip JOIN identity_parties p ON p.id=ip.party_id "
+                    "WHERE ip.profile_type='crm_customer' AND ip.crm_customer_id=%s AND ip.status='active' FOR UPDATE OF p",
+                    (customer_id,),
+                ).fetchone()
+                if account_party is None:
+                    account = conn.execute("SELECT full_name FROM customer_accounts WHERE id=%s", (payload.customer_account_id,)).fetchone()
+                    account_party = identity.create_party(party_type="individual", display_name=account["full_name"], reason="Verified CRM account link")
+                    identity.link_profile(party_id=account_party["id"], profile_type="customer_account", source_id=payload.customer_account_id, link_method="admin_verified", actor_user_id=request.state.user_id)
+                    identity.link_auth_account(party_id=account_party["id"], account_type="customer", source_id=payload.customer_account_id, link_method="admin_verified", actor_user_id=request.state.user_id)
+                if crm_party is None:
+                    crm = conn.execute("SELECT name FROM customers WHERE id=%s", (customer_id,)).fetchone()
+                    crm_party = identity.create_party(party_type="individual", display_name=crm["name"], reason="Verified CRM account link")
+                    identity.link_profile(party_id=crm_party["id"], profile_type="crm_customer", source_id=customer_id, link_method="admin_verified", actor_user_id=request.state.user_id)
+                if crm_party["id"] != account_party["id"]:
+                    from app.api.identity import _merge_claimed_party
+                    _merge_claimed_party(
+                        conn, crm_party["id"], account_party["id"], request.state.user_id,
+                        "Verified CRM account link", payload.verification_method,
+                    )
         return {"link":row}
     except HTTPException: raise
     except psycopg.Error as exc:

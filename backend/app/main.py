@@ -16,6 +16,7 @@ from app.api.payments import router as payments_router, razorpay_router
 from app.api.delivery import router as delivery_router
 from app.api.fulfilment import router as fulfilment_router
 from app.api.customers import router as customers_router
+from app.api.identity import router as identity_router
 from app.api.purchasing import router as purchasing_router
 from app.api.purchasing_lifecycle import router as purchasing_lifecycle_router
 from app.api.hr import router as hr_router
@@ -101,6 +102,7 @@ app.include_router(razorpay_router, prefix=settings.api_prefix)
 app.include_router(delivery_router, prefix=settings.api_prefix)
 app.include_router(fulfilment_router, prefix=settings.api_prefix)
 app.include_router(customers_router, prefix=settings.api_prefix)
+app.include_router(identity_router, prefix=settings.api_prefix)
 app.include_router(purchasing_router, prefix=settings.api_prefix)
 app.include_router(purchasing_lifecycle_router, prefix=settings.api_prefix)
 app.include_router(hr_router, prefix=settings.api_prefix)

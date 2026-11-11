@@ -7,6 +7,7 @@ export default function PortalAccessWorkspace() {
   const [records, setRecords] = useState([]);
   const [invitations, setInvitations] = useState([]);
   const [recordId, setRecordId] = useState("");
+  const [representativeName, setRepresentativeName] = useState("");
   const [latestLink, setLatestLink] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -31,7 +32,7 @@ export default function PortalAccessWorkspace() {
     try {
       const result = await apiRequest("/portal-invitations", {
         method: "POST",
-        body: JSON.stringify({ portal_type: type, record_id: Number(recordId) }),
+        body: JSON.stringify({ portal_type: type, record_id: Number(recordId), ...(type === "vendor" ? { representative_name: representativeName.trim() } : {}) }),
       });
       setLatestLink(result.invitation_url || "");
       setNotice(result.delivery_status === "sent"
@@ -61,8 +62,9 @@ export default function PortalAccessWorkspace() {
         <div className="portal-admin-switch"><button className={type==="vendor"?"active":""} onClick={()=>setType("vendor")}>Vendor</button><button className={type==="employee"?"active":""} onClick={()=>setType("employee")}>Employee</button></div>
         <form onSubmit={invite} className="portal-admin-form">
           <label>{type==="vendor"?"Supplier":"Employee"} record<select value={recordId} onChange={event=>setRecordId(event.target.value)} required><option value="">Select an eligible {type}</option>{records.map(record=><option key={record.id} value={record.id}>{record.display_name} · {record.email}</option>)}</select></label>
+          {type === "vendor" && <label>Authorised representative full name<input value={representativeName} onChange={event => setRepresentativeName(event.target.value)} minLength={2} maxLength={200} required placeholder="Person who will activate the vendor portal" /></label>}
           {!records.length && <p className="portal-admin-hint">No eligible records found. Add an active {type} with a valid email in the existing {type==="vendor"?"Purchasing":"HR"} workspace first.</p>}
-          <button className="portal-admin-primary" type="submit" disabled={busy || !recordId}>{busy?"Creating invitation…":"Create invitation"}</button>
+          <button className="portal-admin-primary" type="submit" disabled={busy || !recordId || (type === "vendor" && representativeName.trim().length < 2)}>{busy?"Creating invitation…":"Create invitation"}</button>
         </form>
         {latestLink && <div className="portal-invite-link"><strong>One-time activation link</strong><div><input readOnly value={latestLink} aria-label="Activation link"/><button onClick={copy}>Copy link</button></div><small>Valid for 48 hours. This is the only time the raw invitation link is displayed.</small></div>}
       </article>
