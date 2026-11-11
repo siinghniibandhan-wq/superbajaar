@@ -180,6 +180,39 @@ def register(payload: CustomerRegister):
                     (email, payload.full_name, phone, _password_hash(payload.password), own_code,
                      referrer["id"] if referrer else None),
                 ).fetchone()
+                # Create the permanent individual identity without changing the legacy customer ID.
+                # Contact points remain unverified until the existing verification flow proves control.
+                from app.services.identity import IdentityService
+                identity = IdentityService(conn)
+                party = identity.create_party(
+                    party_type="individual",
+                    display_name=customer["full_name"],
+                    reason="Customer self-registration",
+                )
+                identity.link_profile(
+                    party_id=party["id"],
+                    profile_type="customer_account",
+                    source_id=customer["id"],
+                    link_method="authenticated_claim",
+                )
+                identity.link_auth_account(
+                    party_id=party["id"],
+                    account_type="customer",
+                    source_id=customer["id"],
+                    link_method="authenticated_claim",
+                )
+                identity.add_contact(
+                    party_id=party["id"],
+                    contact_type="email",
+                    value=email,
+                    source="customer_registration",
+                )
+                identity.add_contact(
+                    party_id=party["id"],
+                    contact_type="phone",
+                    value=phone,
+                    source="customer_registration",
+                )
                 # Track the referral only; no reward is issued until reward rules are confirmed.
                 if referrer:
                     conn.execute(
