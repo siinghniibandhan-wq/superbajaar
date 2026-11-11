@@ -67,6 +67,28 @@ CREATE TABLE IF NOT EXISTS public.identity_profiles (
             AND crm_customer_id IS NULL AND employee_id IS NULL AND supplier_id IS NOT NULL)
     )
 );
+CREATE OR REPLACE FUNCTION public.identity_profile_party_type_guard()
+RETURNS trigger LANGUAGE plpgsql AS $
+DECLARE
+    v_party_type text;
+BEGIN
+    SELECT party_type INTO v_party_type
+    FROM public.identity_parties
+    WHERE id = NEW.party_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Identity party does not exist';
+    END IF;
+    IF (NEW.profile_type = 'vendor_organisation' AND v_party_type <> 'organisation')
+       OR (NEW.profile_type <> 'vendor_organisation' AND v_party_type <> 'individual') THEN
+        RAISE EXCEPTION 'Profile type % is incompatible with party type %', NEW.profile_type, v_party_type;
+    END IF;
+    RETURN NEW;
+END $;
+DROP TRIGGER IF EXISTS identity_profile_party_type_guard_trigger ON public.identity_profiles;
+CREATE TRIGGER identity_profile_party_type_guard_trigger
+    BEFORE INSERT OR UPDATE OF party_id,profile_type ON public.identity_profiles
+    FOR EACH ROW EXECUTE FUNCTION public.identity_profile_party_type_guard();
+
 CREATE UNIQUE INDEX IF NOT EXISTS identity_profile_customer_uidx
     ON public.identity_profiles(customer_account_id) WHERE customer_account_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS identity_profile_crm_customer_uidx
@@ -96,6 +118,24 @@ CREATE TABLE IF NOT EXISTS public.identity_auth_accounts (
         OR (account_type = 'staff' AND customer_account_id IS NULL AND app_user_id IS NOT NULL)
     )
 );
+CREATE OR REPLACE FUNCTION public.identity_auth_party_type_guard()
+RETURNS trigger LANGUAGE plpgsql AS $
+DECLARE
+    v_party_type text;
+BEGIN
+    SELECT party_type INTO v_party_type
+    FROM public.identity_parties
+    WHERE id = NEW.party_id;
+    IF v_party_type IS DISTINCT FROM 'individual' THEN
+        RAISE EXCEPTION 'Authentication accounts must link to an individual identity';
+    END IF;
+    RETURN NEW;
+END $;
+DROP TRIGGER IF EXISTS identity_auth_party_type_guard_trigger ON public.identity_auth_accounts;
+CREATE TRIGGER identity_auth_party_type_guard_trigger
+    BEFORE INSERT OR UPDATE OF party_id,account_type ON public.identity_auth_accounts
+    FOR EACH ROW EXECUTE FUNCTION public.identity_auth_party_type_guard();
+
 CREATE UNIQUE INDEX IF NOT EXISTS identity_auth_customer_account_uidx
     ON public.identity_auth_accounts(customer_account_id) WHERE customer_account_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS identity_auth_app_user_uidx
