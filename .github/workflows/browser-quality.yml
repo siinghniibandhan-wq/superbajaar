@@ -36,7 +36,7 @@ jobs:
       - name: Build frontend
         run: npm run build
       - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
       - name: Run browser smoke tests
         run: npm run test:e2e
       - name: Upload Playwright report
@@ -70,7 +70,7 @@ jobs:
       - name: Install Chromium for Lighthouse
         working-directory: frontend
         run: |
-          npx playwright install --with-deps chromium
+          npx playwright install chromium
           CHROME_PATH="$(find "$HOME/.cache/ms-playwright" -type f -name chrome -perm -u+x | head -n 1)"
           if [ -z "$CHROME_PATH" ]; then
             echo "Playwright Chromium executable was not found" >&2
