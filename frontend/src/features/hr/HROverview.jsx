@@ -60,7 +60,7 @@ export default function HROverview({ data, loading, error, onNavigate, onRefresh
         <Metric label="Attendance rate" value={attendance.rate == null ? "Not available" : attendance.rate + "%"} detail={attendanceDetail} />
       </div>
       {!attendance.available && <p className="hr-dashboard-note">Absence and lateness are not guessed. {attendance.reason}</p>}
-      <button type="button" className="hr-dashboard-link" onClick={() => onNavigate("attendance")}>Open attendance register →</button>
+      <button type="button" className="hr-dashboard-link" onClick={() => onNavigate("attendance")}>View time register →</button>
     </Section>
 
     <Section title="Payroll financials">
