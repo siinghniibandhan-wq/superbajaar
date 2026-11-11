@@ -226,7 +226,7 @@ def register(payload: CustomerRegister):
                         (referrer["id"],),
                     ).fetchone()
                     # Link only through the existing customer-account FK mapping, never email/phone similarity.
-                    if referrer_party:
+                    if referrer_party and referrer_party["party_id"] != party["id"]:
                         conn.execute(
                             "INSERT INTO identity_referral_links(referral_id,referrer_party_id,referred_party_id) "
                             "VALUES(%s,%s,%s)",
