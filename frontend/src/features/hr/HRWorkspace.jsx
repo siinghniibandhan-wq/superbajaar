@@ -78,12 +78,13 @@ export default function HRWorkspace({onBack,currentUser}) {
       setEmployees(results[0].items||[]);setDepartments(results[1].items||[]);setLeaves(results[2].items||[]);setExpenses(results[3].items||[]);
       if(manager){
         const last=new Date(Number(month.slice(0,4)),Number(month.slice(5,7)),0).getDate();
-        const [a,r,earnings]=await Promise.all([
+        const [a,r,earnings,corrections]=await Promise.all([
           apiRequest("/hr/attendance/register?start_date="+month+"-01&end_date="+month+"-"+String(last).padStart(2,"0")),
           apiRequest("/hr/payroll/runs"),
           apiRequest("/hr/payroll/earning-adjustments"),
+          apiRequest("/hr/attendance/corrections?status=pending"),
         ]);
-        setAttendance(a.items||[]);setRuns(r.items||[]);setEarningAdjustments(earnings.items||[]);
+        setAttendance(a.items||[]);setAttendanceCorrections(corrections.items||[]);setRuns(r.items||[]);setEarningAdjustments(earnings.items||[]);
         setOverviewLoading(true);
         try{
           const overview=await apiRequest("/hr/overview?month="+month);
