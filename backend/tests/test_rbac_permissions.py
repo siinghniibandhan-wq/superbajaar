@@ -88,3 +88,12 @@ def test_my_permissions_returns_effective_grants_for_signed_in_user(monkeypatch)
     monkeypatch.setattr(auth, "_effective_permissions", lambda _conn, _user_id, _role: {"inventory": {"read": True}})
     result = auth.my_permissions({"id": 1, "role": "super_admin"})
     assert result == {"permissions": {"inventory": {"read": True}}}
+
+
+
+def test_identity_register_routes_use_user_management_permissions():
+    from app.core.auth_middleware import _module_for_path, _action_for_request
+
+    assert _module_for_path("/api/identity") == "user_management"
+    assert _module_for_path("/api/identity/parties/123") == "user_management"
+    assert _action_for_request("GET", "/api/identity") == "read"
