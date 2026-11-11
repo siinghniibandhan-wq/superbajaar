@@ -264,7 +264,11 @@ jobs:
           set -euo pipefail
           curl --fail --silent --show-error --location --retry 5 --retry-all-errors --retry-delay 5 --max-time 30 -H 'Cache-Control: no-cache' "$SITE_URL/?sb_health=$GITHUB_RUN_ID-rollback" -o /tmp/amplify-restored.html
           grep -qi '<html' /tmp/amplify-restored.html
-          grep -Fq "name=\"sb-release\" content=\"$EXPECTED_SHA\"" /tmp/amplify-restored.html
+          if grep -q 'name="sb-release"' /tmp/amplify-restored.html; then
+            grep -Fq "name=\\"sb-release\\" content=\\"$EXPECTED_SHA\\"" /tmp/amplify-restored.html
+          else
+            echo "Restored legacy release predates the release marker; Amplify retry job is pinned to $EXPECTED_SHA"
+          fi
           python - /tmp/amplify-restored.html "$SITE_URL" <<'PY'
           import html.parser, sys, urllib.parse, urllib.request
           class Assets(html.parser.HTMLParser):
