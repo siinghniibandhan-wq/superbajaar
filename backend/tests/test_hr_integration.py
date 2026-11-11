@@ -641,3 +641,29 @@ def test_hr_multi_establishment_payroll_accruals_are_tracked_per_entity(api):
     assert posting["status"]=="exception"
     failed_entities={item["legal_entity_code"] for item in posting["errors"]}
     assert {employees[0][1]["code"],employees[1][1]["code"]}.issubset(failed_entities)
+
+
+
+def test_hr_manager_overview_aggregates_real_schema_without_inventing_attendance(api):
+    department=ok(api.post("/api/hr/departments",json={
+        "code":"OV"+api.suffix[:5],"name":"Overview "+api.suffix
+    }),201)
+    employee=ok(api.post("/api/hr/employees",json={
+        "employee_code":"OV-"+api.suffix,"first_name":"Overview","last_name":"Employee",
+        "email":"overview-"+api.suffix+"@test.local","department_id":department["id"],
+        "designation":"Analyst","joining_date":"2099-01-01","basic_salary":"25000"
+    }),201)
+
+    overview=ok(api.get("/api/hr/overview?month=2099-12"))
+    assert overview["period"] == {
+        "month":"2099-12","start_date":"2099-12-01","end_date":"2099-12-31"
+    }
+    assert overview["workforce"]["total"] >= 1
+    assert overview["workforce"]["active"] >= 1
+    assert any(item["id"] == department["id"] for item in overview["workforce"]["departments"])
+    assert overview["attendance"]["available"] is False
+    assert overview["attendance"]["absent"] is None
+    assert overview["attendance"]["rate"] is None
+    assert overview["payroll"]["run_count"] == 0
+    assert "employees_without_portal_user" in overview["controls"]
+    assert len(overview["trends"]["headcount"]) == 7
