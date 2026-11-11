@@ -24,6 +24,13 @@ class DeployBackendConfigurationTests(unittest.TestCase):
         self.assertIn('PYTHONPYCACHEPREFIX=', self.source)
         self.assertIn('python" -m compileall -q backend/app', self.source)
 
+    def test_amplify_workflow_can_discover_app_by_repository_when_variable_missing(self):
+        workflow = SCRIPT.parents[3] / ".github" / "workflows" / "deploy.yml"
+        source = workflow.read_text(encoding="utf-8")
+        self.assertIn("aws amplify list-apps", source)
+        self.assertIn("https://github.com/siinghniibandhan-wq/superbajaar", source)
+        self.assertIn("Exactly one matching Amplify app is required", source)
+
     def test_preserves_deployment_safety_guards(self):
         for guard in (
             'systemctl is-active --quiet "$SERVICE"',
