@@ -102,3 +102,38 @@ def test_profile_type_requires_exactly_one_matching_domain_reference():
                     "INSERT INTO identity_profiles(party_id,profile_type) VALUES(%s,'employee')",
                     (party["id"],),
                 )
+
+
+def test_vendor_profile_requires_an_organisation_party():
+    suffix = uuid4().hex
+    with psycopg.connect(TEST_DB, row_factory=dict_row) as conn:
+        supplier = conn.execute(
+            "INSERT INTO suppliers(name,email) VALUES(%s,%s) RETURNING id",
+            ("Identity Vendor " + suffix, f"vendor-{suffix}@test.local"),
+        ).fetchone()
+        individual = _party(conn, "individual")
+        with pytest.raises(psycopg.errors.RaiseException, match="incompatible with party type"):
+            with conn.transaction():
+                conn.execute(
+                    "INSERT INTO identity_profiles(party_id,profile_type,supplier_id) "
+                    "VALUES(%s,'vendor_organisation',%s)",
+                    (individual["id"], supplier["id"]),
+                )
+
+
+def test_staff_login_account_cannot_be_attached_to_an_organisation_party():
+    suffix = uuid4().hex
+    with psycopg.connect(TEST_DB, row_factory=dict_row) as conn:
+        user = conn.execute(
+            "INSERT INTO app_users(email,full_name,password_hash,role) "
+            "VALUES(%s,%s,%s,'staff') RETURNING id",
+            (f"identity-staff-{suffix}@test.local", "Identity Staff Test", "test-hash"),
+        ).fetchone()
+        organisation = _party(conn, "organisation")
+        with pytest.raises(psycopg.errors.RaiseException, match="individual identity"):
+            with conn.transaction():
+                conn.execute(
+                    "INSERT INTO identity_auth_accounts(party_id,account_type,app_user_id,link_method) "
+                    "VALUES(%s,'staff',%s,'admin_verified')",
+                    (organisation["id"], user["id"]),
+                )
