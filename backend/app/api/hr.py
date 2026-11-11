@@ -1086,7 +1086,7 @@ def list_leave(request: Request):
         with _hr_connection() as conn:
             if role in {"super_admin","owner","admin","manager"}:
                 rows = conn.execute(
-                    "SELECT l.*,e.employee_code,e.first_name,e.last_name FROM hr_leave_requests l "
+                    "SELECT l.*,e.employee_code,e.first_name,e.last_name,e.user_id AS employee_user_id FROM hr_leave_requests l "
                     "JOIN hr_employees e ON e.id=l.employee_id ORDER BY l.created_at DESC"
                 ).fetchall()
             else:
@@ -1183,7 +1183,7 @@ def list_expenses(request: Request):
         with _hr_connection() as conn:
             if role in {"super_admin","owner","admin","manager"}:
                 rows=conn.execute(
-                    "SELECT x.*,e.employee_code,e.first_name,e.last_name FROM hr_expenses x "
+                    "SELECT x.*,e.employee_code,e.first_name,e.last_name,e.user_id AS employee_user_id FROM hr_expenses x "
                     "JOIN hr_employees e ON e.id=x.employee_id ORDER BY x.created_at DESC"
                 ).fetchall()
             else:
