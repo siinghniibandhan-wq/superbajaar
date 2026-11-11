@@ -1,6 +1,8 @@
 name: Deploy Super Bajaar backend
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
   workflow_dispatch:
@@ -84,6 +86,7 @@ jobs:
 
   deploy-backend:
     name: Deploy backend to EC2 through SSM
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: verify
     runs-on: ubuntu-24.04
     environment: production
@@ -92,10 +95,10 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION }}
       - name: Dispatch deployment to EC2
         env:
-          INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+          INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID || secrets.EC2_INSTANCE_ID }}
           TARGET_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
@@ -119,12 +122,13 @@ jobs:
 
   verify-amplify:
     name: Verify Amplify frontend separately
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: verify
     runs-on: ubuntu-24.04
     steps:
       - name: Check configured Amplify site
         env:
-          SITE_URL: ${{ vars.AMPLIFY_SITE_URL }}
+          SITE_URL: ${{ vars.AMPLIFY_SITE_URL || secrets.AMPLIFY_SITE_URL }}
         run: |
           set -euo pipefail
           test -n "$SITE_URL" || { echo "AMPLIFY_SITE_URL is not configured"; exit 1; }
