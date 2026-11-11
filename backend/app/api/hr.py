@@ -147,6 +147,8 @@ class EmployeeInput(BaseModel):
     def ordered_employment_dates(self):
         if self.exit_date and self.exit_date < self.joining_date:
             raise ValueError("Employee exit date cannot precede joining date")
+        if self.status == "terminated" and self.exit_date is None:
+            raise ValueError("Exit date is required when terminating an employee")
         return self
 
 
@@ -640,7 +642,7 @@ def update_employee(employee_id: int, payload: EmployeeInput, request: Request):
                 "UPDATE hr_employees SET user_id=%s,employee_code=%s,first_name=%s,last_name=%s,email=%s,phone=%s,"
                 "department_id=%s,designation=%s,reports_to_employee_id=%s,employment_type=%s,status=%s,"
                 "joining_date=%s,exit_date=%s,updated_at=now() "
-                "WHERE id=%s RETURNING id,employee_code,first_name,last_name,email,status,updated_at",
+                "WHERE id=%s RETURNING id,user_id,employee_code,first_name,last_name,email,status,updated_at",
                 (payload.user_id,payload.employee_code.strip(),payload.first_name.strip(),payload.last_name.strip(),
                  payload.email,payload.phone.strip(),payload.department_id,payload.designation.strip(),
                  payload.reports_to_employee_id,payload.employment_type,payload.status,payload.joining_date,
@@ -648,6 +650,18 @@ def update_employee(employee_id: int, payload: EmployeeInput, request: Request):
             ).fetchone()
             if row is None:
                 raise HTTPException(404, "Employee not found")
+            if row["status"] == "terminated" and row["user_id"] is not None:
+                # Termination closes employee self-service access without disabling
+                # a shared administrator identity.
+                conn.execute(
+                    "UPDATE app_users SET is_active=FALSE WHERE id=%s AND role='staff'",
+                    (row["user_id"],),
+                )
+                conn.execute(
+                    "UPDATE portal_invitations SET revoked_at=now() WHERE employee_id=%s "
+                    "AND accepted_at IS NULL AND revoked_at IS NULL",
+                    (employee_id,),
+                )
             return row
     except HTTPException:
         raise
