@@ -192,3 +192,48 @@ def test_identity_service_links_existing_customer_profile_and_login_without_reke
         )
         assert profile["customer_account_id"] == customer["id"]
         assert auth["customer_account_id"] == customer["id"]
+
+
+
+def test_merge_consolidates_duplicate_contacts_without_losing_verification_history():
+    from app.api.identity import _merge_claimed_party
+
+    suffix = uuid4().hex
+    with psycopg.connect(TEST_DB, row_factory=dict_row) as conn:
+        actor = conn.execute(
+            "INSERT INTO app_users(email,full_name,password_hash,role) VALUES(%s,%s,%s,'admin') RETURNING id",
+            (f"identity-merge-{suffix}@test.local", "Identity Merge Admin", "test-hash"),
+        ).fetchone()
+        source = _party(conn)
+        target = _party(conn)
+        email = f"merge-{suffix}@test.local"
+        conn.execute(
+            "INSERT INTO identity_contacts(party_id,contact_type,normalized_value,display_value,verification_status,verified_at,source) "
+            "VALUES(%s,'email',%s,%s,'verified',now(),'crm_customer')",
+            (source["id"], email, email),
+        )
+        conn.execute(
+            "INSERT INTO identity_contacts(party_id,contact_type,normalized_value,display_value,verification_status,source) "
+            "VALUES(%s,'email',%s,%s,'unverified','customer_registration')",
+            (target["id"], email, email),
+        )
+
+        result = _merge_claimed_party(
+            conn, source["id"], target["id"], actor["id"],
+            "Verified duplicate customer identity", "document_review",
+        )
+
+        assert result["status"] == "merged"
+        contacts = conn.execute(
+            "SELECT party_id,verification_status,verified_at,valid_to,source "
+            "FROM identity_contacts WHERE contact_type='email' AND normalized_value=%s ORDER BY id",
+            (email,),
+        ).fetchall()
+        assert len(contacts) == 2
+        active = [row for row in contacts if row["valid_to"] is None]
+        historical = [row for row in contacts if row["valid_to"] is not None]
+        assert len(active) == 1 and active[0]["party_id"] == target["id"]
+        assert active[0]["verification_status"] == "verified"
+        assert active[0]["verified_at"] is not None
+        assert len(historical) == 1 and historical[0]["party_id"] == source["id"]
+        assert historical[0]["source"] == "crm_customer"
