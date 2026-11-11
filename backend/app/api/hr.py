@@ -57,7 +57,7 @@ def _actor(request: Request) -> int:
 
 def _manager(request: Request) -> int:
     actor = _actor(request)
-    if getattr(request.state, "role", "") not in {"super_admin", "super_admin", "admin", "manager"}:
+    if getattr(request.state, "role", "") not in {"super_admin", "owner", "admin", "manager"}:
         raise HTTPException(403, "HR manager permission is required")
     return actor
 
@@ -362,7 +362,7 @@ def hr_overview(request: Request, month: str = Query(..., pattern=r"^\\d{4}-(0[1
                 "ON p.employee_id=e.id WHERE e.status IN ('active','probation','on_leave','notice_period') "
                 "AND p.employee_id IS NULL)::int AS employees_without_statutory_profile, "
                 "(SELECT count(*) FROM hr_payroll_runs r LEFT JOIN hr_payroll_accrual_postings p "
-                "ON p.payroll_run_id=r.id WHERE r.status IN ('approved','paid') AND p.id IS NULL)::int "
+                "ON p.payroll_run_id=r.id WHERE r.status IN ('approved','paid') AND p.id IS NULL AND r.accounting_accrual_voucher_id IS NULL)::int "
                 "AS accounting_exceptions, "
                 "(SELECT count(*) FROM hr_employees WHERE status IN ('active','probation','on_leave','notice_period') "
                 "AND (department_id IS NULL OR length(trim(designation))=0))::int AS employee_data_issues"
