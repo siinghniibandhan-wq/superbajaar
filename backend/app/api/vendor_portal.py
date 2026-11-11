@@ -2,7 +2,11 @@
 from datetime import date
 from decimal import Decimal
 import os
+import re
 import uuid
+from urllib.parse import urlsplit
+
+from botocore.exceptions import BotoCoreError, ClientError
 
 import boto3
 
@@ -115,6 +119,48 @@ class InvoiceInput(BaseModel):
         if self.due_date and self.due_date < self.invoice_date:
             raise ValueError("Invoice due date cannot precede invoice date")
         return self
+
+
+def _verify_vendor_document_object(client, bucket: str, document_uri: str, supplier_id: int) -> str:
+    """Verify an uploaded invoice object is real and belongs to this supplier."""
+    parsed = urlsplit(document_uri)
+    prefix = f"vendor-invoices/{supplier_id}/"
+    if (
+        parsed.scheme != "s3"
+        or parsed.netloc != bucket
+        or parsed.query
+        or parsed.fragment
+        or not parsed.path.startswith("/")
+    ):
+        raise HTTPException(422, "Invoice document must reference this supplier's private S3 upload")
+
+    key = parsed.path[1:]
+    name = key[len(prefix):] if key.startswith(prefix) else ""
+    if not name or "/" in name or not re.fullmatch(r"[0-9a-f]{32}\.(pdf|jpg|png)", name):
+        raise HTTPException(422, "Invoice document must reference a valid supplier upload")
+
+    try:
+        head = client.head_object(Bucket=bucket, Key=key)
+    except ClientError as exc:
+        status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+        error_code = exc.response.get("Error", {}).get("Code")
+        if status == 404 or error_code in {"404", "NoSuchKey", "NotFound"}:
+            raise HTTPException(422, "Uploaded invoice document was not found in private storage") from exc
+        raise HTTPException(503, "Unable to verify invoice document in private storage") from exc
+    except BotoCoreError as exc:
+        raise HTTPException(503, "Unable to verify invoice document in private storage") from exc
+
+    metadata = head.get("Metadata") or {}
+    if metadata.get("supplier-id") != str(supplier_id):
+        raise HTTPException(403, "Invoice document does not belong to this supplier")
+    if head.get("ServerSideEncryption") != "AES256":
+        raise HTTPException(422, "Invoice document does not meet private-storage encryption requirements")
+    if head.get("ContentLength", 0) < 1 or head.get("ContentLength", 0) > 10 * 1024 * 1024:
+        raise HTTPException(422, "Invoice document size is invalid")
+    expected_type = {"pdf": "application/pdf", "jpg": "image/jpeg", "png": "image/png"}[name.rsplit(".", 1)[1]]
+    if head.get("ContentType") != expected_type:
+        raise HTTPException(422, "Invoice document content type does not match its file extension")
+    return key
 
 
 @router.post("/documents", status_code=201)
@@ -398,9 +444,11 @@ def submit_invoice(payload: InvoiceInput, request: Request):
             if not order:
                 raise HTTPException(404, "Purchase order not found")
         bucket = os.getenv("SB_PRIVATE_DOCUMENT_BUCKET", "").strip()
-        expected_prefix = f"s3://{bucket}/vendor-invoices/{vendor['supplier_id']}/" if bucket else ""
-        if not expected_prefix or not payload.source_document_uri.startswith(expected_prefix):
-            raise HTTPException(422, "Upload the invoice document through the private vendor document upload first")
+        if not bucket:
+            raise HTTPException(503, "Private document storage is not configured")
+        _verify_vendor_document_object(
+            _s3_client(), bucket, payload.source_document_uri, vendor["supplier_id"]
+        )
         # Reuse the canonical Purchasing invoice workflow: policy checks, PO-line
         # matching, QC-accepted GRN validation, quantity limits and match status.
         canonical_payload = SupplierInvoiceCreate(**payload.model_dump())
