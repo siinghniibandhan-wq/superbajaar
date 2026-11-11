@@ -215,18 +215,42 @@ def register(payload: CustomerRegister):
                 )
                 # Track the referral only; no reward is issued until reward rules are confirmed.
                 if referrer:
-                    conn.execute(
+                    referral = conn.execute(
                         "INSERT INTO customer_referrals (referrer_customer_id,referred_customer_id,referral_code) "
-                        "VALUES (%s,%s,%s)",
+                        "VALUES (%s,%s,%s) RETURNING id",
                         (referrer["id"], customer["id"], referral_code),
-                    )
+                    ).fetchone()
+                    referrer_party = conn.execute(
+                        "SELECT party_id FROM identity_profiles WHERE profile_type='customer_account' "
+                        "AND customer_account_id=%s AND status='active'",
+                        (referrer["id"],),
+                    ).fetchone()
+                    # Link only through the existing customer-account FK mapping, never email/phone similarity.
+                    if referrer_party:
+                        conn.execute(
+                            "INSERT INTO identity_referral_links(referral_id,referrer_party_id,referred_party_id) "
+                            "VALUES(%s,%s,%s)",
+                            (referral["id"], referrer_party["party_id"], party["id"]),
+                        )
+                        identity._event(
+                            party_id=referrer_party["party_id"], event_type="profile_linked",
+                            event_data={"profile_type":"referral","referral_id":referral["id"],"referred_party_id":party["id"]},
+                            reason="Referral identity association created from verified customer account links",
+                        )
                 # Create the customer's existing loyalty card now; coin balance remains in its ledger.
                 card_number = "SB-" + secrets.token_hex(5).upper()
-                conn.execute(
+                loyalty_account = conn.execute(
                     "INSERT INTO loyalty_accounts (customer_email,card_number) VALUES (%s,%s) "
-                    "ON CONFLICT (customer_email) DO NOTHING",
+                    "ON CONFLICT (customer_email) DO NOTHING RETURNING id",
                     (email, card_number),
-                )
+                ).fetchone()
+                # The just-authenticated registration owns this newly issued card; never infer ownership of an old card by email.
+                if loyalty_account:
+                    conn.execute(
+                        "INSERT INTO identity_loyalty_accounts(party_id,loyalty_account_id,link_method) "
+                        "VALUES(%s,%s,'verified_customer_account')",
+                        (party["id"], loyalty_account["id"]),
+                    )
                 session = _issue_session(conn, customer)
         return {**session, "customer": _public_customer(customer)}
     except HTTPException:
