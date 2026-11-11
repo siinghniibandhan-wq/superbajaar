@@ -236,3 +236,13 @@ def test_hr_attendance_adjustment_requires_a_reason():
             clock_in_at="2026-11-11T09:00:00+05:30",
             reason="     ",
         )
+
+
+
+def test_hr_paid_leave_approval_requires_an_effective_approved_policy():
+    from fastapi import HTTPException
+    from app.api.hr import _require_leave_policy_for_approval
+    with pytest.raises(HTTPException) as error:
+        _require_leave_policy_for_approval("annual", None)
+    assert error.value.status_code == 409
+    assert _require_leave_policy_for_approval("unpaid", None) is None
