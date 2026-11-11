@@ -38,5 +38,11 @@ export function parsePayrollInputs(deductionsText, notesText) {
     notes[employeeId] = note.trim();
   }
 
+  for (const [employeeId, amount] of Object.entries(deductions)) {
+    if (amount > 0 && (notes[employeeId] || "").length < 5) {
+      throw new Error("Every positive manual deduction requires a reason of at least 5 characters.");
+    }
+  }
+
   return { deductions_by_employee: deductions, deduction_notes: notes };
 }
