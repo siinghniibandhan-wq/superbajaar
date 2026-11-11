@@ -178,9 +178,11 @@ jobs:
           echo "current_status=$status" >> "$GITHUB_OUTPUT"
       - name: Verify published release and all referenced frontend assets
         id: health
+        continue-on-error: true
         env:
           SITE_URL: ${{ vars.AMPLIFY_SITE_URL || secrets.AMPLIFY_SITE_URL }}
           EXPECTED_SHA: ${{ steps.amplify.outputs.current_status == 'SUCCEED' && github.sha || steps.amplify.outputs.previous_sha }}
+          ALLOW_LEGACY: ${{ steps.amplify.outputs.current_status != 'SUCCEED' }}
         run: |
           set -euo pipefail
           test -n "$SITE_URL" || { echo "AMPLIFY_SITE_URL is not configured"; exit 1; }
