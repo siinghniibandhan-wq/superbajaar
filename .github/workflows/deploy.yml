@@ -190,7 +190,7 @@ jobs:
             curl --fail --silent --show-error --location --retry 3 --retry-all-errors --max-time 30 -H 'Cache-Control: no-cache' "$SITE_URL/?sb_health=$GITHUB_RUN_ID" -o "$html"
             grep -qi '<html' "$html"
             if grep -q 'name="sb-release"' "$html"; then
-              grep -Fq "name=\\"sb-release\\" content=\\"$expected\\"" "$html" || {
+              grep -Fq "name=\"sb-release\" content=\"$expected\"" "$html" || {
                 echo "Published HTML release marker does not match expected commit $expected"
                 return 1
               }
@@ -263,7 +263,7 @@ jobs:
           curl --fail --silent --show-error --location --retry 5 --retry-all-errors --retry-delay 5 --max-time 30 -H 'Cache-Control: no-cache' "$SITE_URL/?sb_health=$GITHUB_RUN_ID-rollback" -o /tmp/amplify-restored.html
           grep -qi '<html' /tmp/amplify-restored.html
           if grep -q 'name="sb-release"' /tmp/amplify-restored.html; then
-            grep -Fq "name=\\"sb-release\\" content=\\"$EXPECTED_SHA\\"" /tmp/amplify-restored.html
+            grep -Fq "name=\"sb-release\" content=\"$EXPECTED_SHA\"" /tmp/amplify-restored.html
           else
             echo "Restored legacy release predates the release marker; Amplify retry job is pinned to $EXPECTED_SHA"
           fi
