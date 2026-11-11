@@ -223,6 +223,12 @@ class PayrollApprovalInput(BaseModel):
     decision: str = Field(pattern="^(approved|rejected)$")
     note: str | None = Field(default=None, max_length=1000)
 
+    @model_validator(mode="after")
+    def rejection_requires_reason(self):
+        if self.decision == "rejected" and not (self.note and self.note.strip()):
+            raise ValueError("A reason is required when rejecting payroll")
+        return self
+
 
 class PayrollPaymentInput(BaseModel):
     accounting_voucher_id: int = Field(gt=0)
