@@ -449,7 +449,7 @@ def hr_overview(request: Request, month: str = Query(..., pattern=r"^\d{4}-(0[1-
                 "SELECT to_char(months.month_start,'YYYY-MM') AS month, "
                 "count(e.id) FILTER (WHERE e.joining_date < (months.month_start + interval '1 month')::date "
                 "AND (e.exit_date IS NULL OR e.exit_date >= months.month_start))::int AS headcount "
-                "FROM generate_series(%s::date,%s::date - interval '1 month',interval '1 month') "
+                "FROM generate_series(%s::date,%s::date,interval '1 month') "
                 "AS months(month_start) LEFT JOIN hr_employees e ON true "
                 "GROUP BY months.month_start ORDER BY months.month_start",
                 (trend_start, period_end),
