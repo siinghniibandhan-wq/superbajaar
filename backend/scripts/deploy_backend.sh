@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 REPO_DIR="${SB_DEPLOY_REPO_DIR:-/opt/superbajaar/source}"
-SERVICE="${SB_DEPLOY_SERVICE:-superbajaar-new.service}"
+SERVICE="${SB_DEPLOY_SERVICE:-superbajaar-backend.service}"
 HEALTH_URL="${SB_DEPLOY_HEALTH_URL:-https://superappkart.duckdns.org/api/health}"
 HR_ROUTE="${SB_DEPLOY_HR_ROUTE:-https://superappkart.duckdns.org/api/hr/attendance/corrections?status=pending}"
 TARGET_SHA="${1:?Usage: deploy_backend.sh <commit-sha>}"
@@ -24,12 +24,12 @@ cd "$REPO_DIR"
 systemctl is-active --quiet "$SERVICE" || fail "$SERVICE is not currently active; refusing an unverified deployment"
 working_dir="$(systemctl show "$SERVICE" -p WorkingDirectory --value)"
 exec_start="$(systemctl show "$SERVICE" -p ExecStart --value)"
-[[ "$working_dir" == "$REPO_DIR" || "$working_dir" == "$REPO_DIR/backend" ]] || fail "Unexpected service WorkingDirectory: $working_dir"
+[[ "$working_dir" == "$REPO_DIR/backend" ]] || fail "Unexpected service WorkingDirectory: $working_dir"
 venv=""
-for candidate in "$REPO_DIR/backend/.venv" "$REPO_DIR/.venv" "$working_dir/.venv"; do
+for candidate in "$working_dir/venv" "$working_dir/.venv" "$REPO_DIR/backend/venv" "$REPO_DIR/backend/.venv" "$REPO_DIR/venv" "$REPO_DIR/.venv"; do
   if [[ -x "$candidate/bin/python" ]]; then venv="$candidate"; break; fi
 done
-[[ -n "$venv" ]] || fail "No existing application virtualenv found; configure backend/.venv or .venv first"
+[[ -n "$venv" ]] || fail "No existing application virtualenv found under backend/venv or supported .venv locations"
 [[ "$exec_start" == *"$venv/bin/"* ]] || fail "Service ExecStart does not use detected virtualenv; refusing to switch runtime"
 old_sha="$(git rev-parse HEAD)"
 rollback_needed=0
