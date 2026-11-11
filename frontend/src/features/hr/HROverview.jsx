@@ -97,6 +97,8 @@ export default function HROverview({ data, loading, error, onNavigate, onRefresh
         <Metric label="Missing statutory profiles" value={controls.employees_without_statutory_profile ?? "—"} detail="Applicability still needs review" tone={controls.employees_without_statutory_profile ? "warning" : "default"} />
         <Metric label="Accounting exceptions" value={controls.accounting_exceptions ?? "—"} detail="Approved / paid runs without accrual posting" tone={controls.accounting_exceptions ? "warning" : "default"} />
         <Metric label="Employee data issues" value={controls.employee_data_issues ?? "—"} detail="Missing department or designation" />
+        <Metric label="Employees without portal login" value={controls.employees_without_portal_user ?? "—"} detail="Employee records not linked to a staff account" tone={controls.employees_without_portal_user ? "warning" : "default"} />
+        <Metric label="Pending employee invitations" value={controls.pending_employee_invitations ?? "—"} detail="Awaiting invitation acceptance" />
       </div>
       <button type="button" className="hr-dashboard-link" onClick={() => onNavigate("statutory")}>Open statutory policies & remittances →</button>
     </Section>
