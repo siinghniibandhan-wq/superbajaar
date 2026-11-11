@@ -75,6 +75,7 @@ jobs:
         run: |
           npm install --no-audit --no-fund
           npm run build
+          grep -Fq "name=\"sb-release\" content=\"$GITHUB_SHA\"" dist/index.html
           cd frontend
           npm run build
       - name: Secret scan
