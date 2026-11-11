@@ -841,23 +841,67 @@ def attendance_punch(payload: PunchInput, request: Request):
 
 
 @router.get("/attendance/register")
-def attendance_register(request: Request, start_date: date, end_date: date):
+def attendance_register(
+    request: Request,
+    start_date: date,
+    end_date: date,
+    employee_id: int | None = Query(default=None, gt=0),
+    department_id: int | None = Query(default=None, gt=0),
+):
     _manager(request)
     if end_date < start_date or (end_date-start_date).days > 93:
         raise HTTPException(422, "Date range must be ordered and no longer than 94 days")
     try:
         with _hr_connection() as conn:
             rows = conn.execute(
-                "SELECT e.employee_code,e.first_name,e.last_name,d.name AS department_name,"
-                "s.id,s.clock_in_at,s.clock_out_at,"
-                "round(extract(epoch FROM (COALESCE(s.clock_out_at,now())-s.clock_in_at))/3600.0,2) AS hours "
+                "SELECT e.id AS employee_id,e.employee_code,e.first_name,e.last_name,"
+                "e.department_id,d.name AS department_name,s.id,s.clock_in_at,s.clock_out_at,"
+                "round(extract(epoch FROM (COALESCE(s.clock_out_at,now())-s.clock_in_at))/3600.0,2) AS hours,"
+                "a.id AS shift_assignment_id,a.planned_start_at,a.planned_end_at,"
+                "sh.timezone,COALESCE(p.grace_minutes,0) AS grace_minutes,"
+                "COALESCE(p.break_minutes,sh.break_minutes,0) AS break_minutes "
                 "FROM hr_employees e LEFT JOIN hr_departments d ON d.id=e.department_id "
                 "LEFT JOIN hr_attendance_sessions s ON s.employee_id=e.id "
                 "AND s.clock_in_at >= %s AND s.clock_in_at < (%s::date + interval '1 day') "
-                "WHERE e.status<>'terminated' ORDER BY e.employee_code,s.clock_in_at",
-                (start_date,end_date),
+                "LEFT JOIN hr_shift_assignments a ON a.employee_id=e.id AND a.status='published' "
+                "AND a.work_date=(s.clock_in_at AT TIME ZONE COALESCE((SELECT timezone FROM hr_shift_definitions WHERE id=a.shift_definition_id),'Asia/Kolkata'))::date "
+                "LEFT JOIN hr_shift_definitions sh ON sh.id=a.shift_definition_id "
+                "LEFT JOIN LATERAL (SELECT grace_minutes,break_minutes FROM hr_attendance_policies ap "
+                "WHERE ap.establishment_id=sh.establishment_id AND ap.effective_from<=a.work_date "
+                "AND (ap.effective_to IS NULL OR ap.effective_to>=a.work_date) "
+                "ORDER BY ap.effective_from DESC LIMIT 1) p ON true "
+                "WHERE e.status<>'terminated' AND (%s::bigint IS NULL OR e.id=%s) "
+                "AND (%s::bigint IS NULL OR e.department_id=%s) "
+                "ORDER BY e.employee_code,s.clock_in_at",
+                (start_date,end_date,employee_id,employee_id,department_id,department_id),
             ).fetchall()
-            return {"items": rows}
+            from app.services.hr_attendance import calculate_shift_metrics
+            items = []
+            totals = {"sessions": 0, "worked_minutes": 0, "late_minutes": 0,
+                      "early_departure_minutes": 0, "overtime_minutes": 0}
+            for source in rows:
+                item = dict(source)
+                if item.get("id") and item.get("planned_start_at") and item.get("planned_end_at"):
+                    metrics = calculate_shift_metrics(
+                        clock_in_at=item["clock_in_at"], clock_out_at=item["clock_out_at"],
+                        planned_start_at=item["planned_start_at"], planned_end_at=item["planned_end_at"],
+                        grace_minutes=item["grace_minutes"], break_minutes=item["break_minutes"],
+                    )
+                else:
+                    metrics = {"worked_minutes": int(float(item.get("hours") or 0) * 60),
+                               "late_minutes": None, "early_departure_minutes": None,
+                               "overtime_minutes": None}
+                item.update(metrics)
+                if item.get("id"):
+                    totals["sessions"] += 1
+                    totals["worked_minutes"] += metrics["worked_minutes"]
+                    for key in ("late_minutes", "early_departure_minutes", "overtime_minutes"):
+                        if metrics[key] is not None:
+                            totals[key] += metrics[key]
+                items.append(item)
+            return {"items": items, "summary": totals, "start_date": start_date, "end_date": end_date}
+    except HTTPException:
+        raise
     except psycopg.Error as exc:
         raise _db_error(exc) from exc
 
