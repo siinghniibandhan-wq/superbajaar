@@ -158,6 +158,7 @@ jobs:
             echo "Discovered Amplify app ID for the connected Super Bajaar repository"
           fi
           test -n "$APP_ID" || { echo "Unable to resolve AMPLIFY_APP_ID"; exit 1; }
+          echo "app_id=$APP_ID" >> "$GITHUB_OUTPUT"
           jobs="$(aws amplify list-jobs --app-id "$APP_ID" --branch-name "$BRANCH_NAME" --max-items 50)"
           previous="$(jq -c --arg sha "$TARGET_SHA" '[.jobSummaries[] | select(.status == "SUCCEED" and .commitId != $sha)] | sort_by(.startTime) | reverse | .[0] // empty' <<<"$jobs")"
           test -n "$previous" || { echo "No previous successful Amplify release found; refusing an ungrounded rollback"; exit 1; }
@@ -245,7 +246,7 @@ jobs:
         id: restore
         if: ${{ always() && steps.amplify.outcome == 'success' && (steps.amplify.outputs.current_status != 'SUCCEED' || steps.health.outcome != 'success') }}
         env:
-          APP_ID: ${{ vars.AMPLIFY_APP_ID }}
+          APP_ID: ${{ steps.amplify.outputs.app_id }}
           BRANCH_NAME: main
           PREVIOUS_JOB_ID: ${{ steps.amplify.outputs.previous_job_id }}
           PREVIOUS_SHA: ${{ steps.amplify.outputs.previous_sha }}
