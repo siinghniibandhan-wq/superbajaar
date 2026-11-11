@@ -150,6 +150,24 @@ test("HR manager can access the HR workspace without admin-wide module access", 
         role: "manager",
       } } });
     }
+    if (url.pathname === "/api/hr/overview") {
+      return route.fulfill({ json: {
+        period: { month: "2026-11", start_date: "2026-11-01", end_date: "2026-11-30" },
+        workforce: { total: 14, active: 12, inactive: 2, joiners: 1, exits: 0, department_count: 3,
+          departments: [{ id: 1, name: "Operations", headcount: 7 }, { id: 2, name: "Finance", headcount: 5 }] },
+        attendance: { available: true, present: 10, absent: 2, late: null, on_leave: 1, open_sessions: 1,
+          scheduled_shift_days: 240, attended_shift_days: 220, absent_shift_days: 20, rate: 91.7, reason: null },
+        payroll: { run_count: 1, gross: 540000, employee_deductions: 42000, employer_contributions: 28000,
+          net: 498000, run_statuses: [{ status: "approved", count: 1 }], accounting_status: "no_exceptions_detected", exceptions: 0 },
+        approvals: { leave_count: 2, expense_count: 1, salary_revision_count: 1, earning_count: 0, lifecycle_overdue_count: 1 },
+        controls: { pending_remittances: 0, employees_without_statutory_profile: 1, accounting_exceptions: 0,
+          employee_data_issues: 0, statutory_readiness: "incomplete", establishments: [],
+          employees_without_portal_user: 2, pending_employee_invitations: 1 },
+        trends: { headcount: [{ month: "2026-11", headcount: 12 }], payroll_gross: [{ month: "2026-11", gross: 540000 }],
+          attendance: { available: false, reason: "History not available" } },
+        data_quality: { partial: true, unavailable_metrics: ["attendance.late", "attendance.trend"] },
+      } });
+    }
     if (url.pathname === "/api/health") {
       return route.fulfill({ json: { status: "ok", database: "connected" } });
     }
@@ -159,6 +177,11 @@ test("HR manager can access the HR workspace without admin-wide module access", 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/admin");
   await expect(page.getByRole("heading", { name: "HR & Payroll" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Workforce at a glance" })).toBeVisible();
+  await expect(page.getByText("Active workforce", { exact: true })).toBeVisible();
+  await expect(page.getByText("Gross payroll", { exact: true })).toBeVisible();
+  await expect(page.getByText("₹5,40,000")).toBeVisible();
+  await expect(page.getByText("Employees without portal login", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Admin access required" })).toHaveCount(0);
   await expect(page.getByRole("navigation", { name: "Module navigation" })).toHaveCount(0);
 
