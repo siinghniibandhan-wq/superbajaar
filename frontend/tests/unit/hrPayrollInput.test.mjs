@@ -28,3 +28,8 @@ test("rejects negative, non-finite, and non-numeric deductions", () => {
 test("requires deduction notes to be strings", () => {
   assert.throws(() => parsePayrollInputs("{}", '{"12":123}'), /notes must be text/);
 });
+
+test("requires a meaningful reason for every positive manual deduction", () => {
+  assert.throws(() => parsePayrollInputs('{"12":100}', "{}"), /reason of at least 5 characters/);
+  assert.throws(() => parsePayrollInputs('{"12":100}', '{"12":"no"}'), /reason of at least 5 characters/);
+});
