@@ -170,6 +170,17 @@ class PunchInput(BaseModel):
     model_config = {"extra": "forbid"}
     punch_type: str = Field(pattern="^(clock_in|clock_out)$")
     note: str | None = Field(default=None, max_length=500)
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+    accuracy_meters: float | None = Field(default=None, gt=0, le=10000)
+
+    @model_validator(mode="after")
+    def paired_coordinates(self):
+        if (self.latitude is None) != (self.longitude is None):
+            raise ValueError("Latitude and longitude must be provided together")
+        if self.accuracy_meters is not None and self.latitude is None:
+            raise ValueError("Location accuracy requires GPS coordinates")
+        return self
 
 
 class LeaveInput(BaseModel):
@@ -814,22 +825,68 @@ def attendance_punch(payload: PunchInput, request: Request):
     try:
         with _hr_connection() as conn:
             employee = _employee(conn, actor)
-            if payload.punch_type == "clock_in":
+            profile = conn.execute(
+                "SELECT establishment_id FROM hr_employee_statutory_profiles WHERE employee_id=%s",
+                (employee["id"],),
+            ).fetchone()
+            policy = None
+            locations = []
+            if profile:
+                policy = conn.execute(
+                    "SELECT * FROM hr_attendance_policies WHERE establishment_id=%s "
+                    "AND effective_from<=CURRENT_DATE AND (effective_to IS NULL OR effective_to>=CURRENT_DATE) "
+                    "ORDER BY effective_from DESC LIMIT 1",
+                    (profile["establishment_id"],),
+                ).fetchone()
+                if policy and policy["geofence_enabled"]:
+                    locations = conn.execute(
+                        "SELECT * FROM hr_attendance_work_locations WHERE establishment_id=%s AND is_active=true",
+                        (profile["establishment_id"],),
+                    ).fetchall()
+            is_clock_in = payload.punch_type == "clock_in"
+            requires_location = bool(policy and policy["geofence_enabled"] and (
+                policy["geofence_enforced"]
+                or (is_clock_in and policy["require_location_on_clock_in"])
+                or (not is_clock_in and policy["require_location_on_clock_out"])
+            ))
+            if requires_location and payload.latitude is None:
+                raise HTTPException(422, "GPS coordinates are required by the active attendance policy")
+            matched_location_id = None
+            if payload.latitude is not None and policy and policy["geofence_enabled"]:
+                from app.services.hr_attendance import is_within_geofence
+                for location in locations:
+                    if is_within_geofence(
+                        latitude=payload.latitude, longitude=payload.longitude,
+                        center_latitude=float(location["latitude"]),
+                        center_longitude=float(location["longitude"]),
+                        radius_meters=location["radius_meters"],
+                    ):
+                        matched_location_id = location["id"]
+                        break
+                if policy["geofence_enforced"] and matched_location_id is None:
+                    raise HTTPException(403, "You are outside the permitted attendance work locations")
+            if is_clock_in:
                 try:
                     row = conn.execute(
-                        "INSERT INTO hr_attendance_sessions(employee_id,clock_in_note,created_by_user_id) "
-                        "VALUES(%s,%s,%s) RETURNING id,employee_id,clock_in_at,clock_out_at,source",
-                        (employee["id"],payload.note,actor),
+                        "INSERT INTO hr_attendance_sessions(employee_id,clock_in_note,created_by_user_id,"
+                        "last_modified_by_user_id,clock_in_latitude,clock_in_longitude,clock_in_accuracy_meters,"
+                        "clock_in_work_location_id) VALUES(%s,%s,%s,%s,%s,%s,%s,%s) "
+                        "RETURNING id,employee_id,clock_in_at,clock_out_at,source",
+                        (employee["id"],payload.note,actor,actor,payload.latitude,payload.longitude,
+                         payload.accuracy_meters,matched_location_id),
                     ).fetchone()
                 except psycopg.errors.UniqueViolation as exc:
                     raise HTTPException(409, "You are already clocked in") from exc
             else:
                 row = conn.execute(
-                    "UPDATE hr_attendance_sessions SET clock_out_at=now(),clock_out_note=%s,closed_by_user_id=%s "
+                    "UPDATE hr_attendance_sessions SET clock_out_at=now(),clock_out_note=%s,closed_by_user_id=%s,"
+                    "last_modified_by_user_id=%s,clock_out_latitude=%s,clock_out_longitude=%s,"
+                    "clock_out_accuracy_meters=%s,clock_out_work_location_id=%s "
                     "WHERE id=(SELECT id FROM hr_attendance_sessions WHERE employee_id=%s AND clock_out_at IS NULL "
                     "ORDER BY clock_in_at DESC LIMIT 1 FOR UPDATE) "
                     "RETURNING id,employee_id,clock_in_at,clock_out_at,source",
-                    (payload.note,actor,employee["id"]),
+                    (payload.note,actor,actor,payload.latitude,payload.longitude,payload.accuracy_meters,
+                     matched_location_id,employee["id"]),
                 ).fetchone()
                 if row is None:
                     raise HTTPException(409, "No open attendance session exists")
