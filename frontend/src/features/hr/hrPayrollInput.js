@@ -18,7 +18,7 @@ export function parsePayrollInputs(deductionsText, notesText) {
   const notes = {};
 
   for (const [employeeId, rawAmount] of Object.entries(rawDeductions)) {
-    if (!/^[1-9]\\d*$/.test(employeeId)) {
+    if (!/^[1-9]\d*$/.test(employeeId)) {
       throw new Error("Manual deduction keys must be positive employee IDs.");
     }
     const amount = Number(rawAmount);
@@ -29,7 +29,7 @@ export function parsePayrollInputs(deductionsText, notesText) {
   }
 
   for (const [employeeId, note] of Object.entries(rawNotes)) {
-    if (!/^[1-9]\\d*$/.test(employeeId) || typeof note !== "string") {
+    if (!/^[1-9]\d*$/.test(employeeId) || typeof note !== "string") {
       throw new Error("Deduction notes must use positive employee IDs and notes must be text.");
     }
     notes[employeeId] = note.trim();
