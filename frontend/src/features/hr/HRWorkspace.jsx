@@ -48,7 +48,7 @@ function downloadPayslips(payslips, includeEmployee) {
 export default function HRWorkspace({onBack,currentUser}) {
   const manager=["super_admin","owner","admin","manager"].includes(currentUser?.role);
   const [tab,setTab]=useState("overview"),[employees,setEmployees]=useState([]),[departments,setDepartments]=useState([]),[employeeQuery,setEmployeeQuery]=useState("");
-  const [attendance,setAttendance]=useState([]),[attendanceCorrections,setAttendanceCorrections]=useState([]),[leaves,setLeaves]=useState([]),[expenses,setExpenses]=useState([]);
+  const [attendance,setAttendance]=useState([]),[attendanceCorrections,setAttendanceCorrections]=useState([]),[attendanceAudit,setAttendanceAudit]=useState(null),[leaves,setLeaves]=useState([]),[expenses,setExpenses]=useState([]);
   const [runs,setRuns]=useState([]),[payslips,setPayslips]=useState([]),[month,setMonth]=useState(today().slice(0,7));
   const [error,setError]=useState(""),[notice,setNotice]=useState(""),[busy,setBusy]=useState(false);
   const [overviewData,setOverviewData]=useState(null),[overviewError,setOverviewError]=useState(""),[overviewLoading,setOverviewLoading]=useState(false);
