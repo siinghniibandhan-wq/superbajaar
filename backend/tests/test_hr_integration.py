@@ -641,3 +641,62 @@ def test_hr_multi_establishment_payroll_accruals_are_tracked_per_entity(api):
     assert posting["status"]=="exception"
     failed_entities={item["legal_entity_code"] for item in posting["errors"]}
     assert {employees[0][1]["code"],employees[1][1]["code"]}.issubset(failed_entities)
+
+
+
+def test_hr_manager_overview_aggregates_real_schema_without_inventing_attendance(api):
+    department=ok(api.post("/api/hr/departments",json={
+        "code":"OV"+api.suffix[:5],"name":"Overview "+api.suffix
+    }),201)
+    employee=ok(api.post("/api/hr/employees",json={
+        "employee_code":"OV-"+api.suffix,"first_name":"Overview","last_name":"Employee",
+        "email":"overview-"+api.suffix+"@test.local","department_id":department["id"],
+        "designation":"Analyst","joining_date":"2099-01-01","basic_salary":"25000"
+    }),201)
+
+    overview=ok(api.get("/api/hr/overview?month=2099-12"))
+    assert overview["period"] == {
+        "month":"2099-12","start_date":"2099-12-01","end_date":"2099-12-31"
+    }
+    assert overview["workforce"]["total"] >= 1
+    assert overview["workforce"]["active"] >= 1
+    assert any(item["id"] == department["id"] for item in overview["workforce"]["departments"])
+    assert overview["attendance"]["available"] is False
+    assert overview["attendance"]["absent"] is None
+    assert overview["attendance"]["rate"] is None
+    assert overview["payroll"]["run_count"] == 0
+    assert "employees_without_portal_user" in overview["controls"]
+    assert len(overview["trends"]["headcount"]) == 7
+
+
+
+def test_hr_termination_deactivates_employee_portal_login(api):
+    with psycopg.connect(TEST_DB) as conn:
+        staff_user_id=conn.execute(
+            "INSERT INTO app_users(email,full_name,password_hash,role,is_active) "
+            "VALUES(%s,'Termination Test Employee','test-hash','staff',TRUE) RETURNING id",
+            ("termination-"+api.suffix+"@test.local",),
+        ).fetchone()[0]
+    department=ok(api.post("/api/hr/departments",json={
+        "code":"TM"+api.suffix[:5],"name":"Termination "+api.suffix
+    }),201)
+    employee=ok(api.post("/api/hr/employees",json={
+        "user_id":staff_user_id,"employee_code":"TM-"+api.suffix,
+        "first_name":"Termination","last_name":"Employee",
+        "email":"termination-"+api.suffix+"@test.local","phone":"9000000000",
+        "department_id":department["id"],"designation":"Operator",
+        "joining_date":"2026-01-01","basic_salary":"25000"
+    }),201)
+    terminated=ok(api.put(f"/api/hr/employees/{employee['id']}",json={
+        "user_id":staff_user_id,"employee_code":employee["employee_code"],
+        "first_name":"Termination","last_name":"Employee",
+        "email":"termination-"+api.suffix+"@test.local","phone":"9000000000",
+        "department_id":department["id"],"designation":"Operator",
+        "employment_type":"full_time","status":"terminated",
+        "joining_date":"2026-01-01","exit_date":"2026-11-11",
+        "basic_salary":"25000","hra":"0","special_allowance":"0","other_allowance":"0"
+    }))
+    assert terminated["status"] == "terminated"
+    with psycopg.connect(TEST_DB) as conn:
+        active=conn.execute("SELECT is_active FROM app_users WHERE id=%s",(staff_user_id,)).fetchone()[0]
+    assert active is False

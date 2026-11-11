@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from app.core.config import settings
 from app.api.accounting import _actor as _accounting_actor, _post_voucher
 from app.services.accounting_posting import PostingConfigurationError, build_payroll_accrual_lines
+from app.services.hr_overview import month_period, month_trend_period
 from app.services.hr_statutory_payroll import (
     StatutoryPolicyError, assess_policy_readiness, calculate_statutory_payroll,
 )
@@ -56,7 +57,7 @@ def _actor(request: Request) -> int:
 
 def _manager(request: Request) -> int:
     actor = _actor(request)
-    if getattr(request.state, "role", "") not in {"super_admin", "super_admin", "admin", "manager"}:
+    if getattr(request.state, "role", "") not in {"super_admin", "owner", "admin", "manager"}:
         raise HTTPException(403, "HR manager permission is required")
     return actor
 
@@ -146,13 +147,23 @@ class EmployeeInput(BaseModel):
     def ordered_employment_dates(self):
         if self.exit_date and self.exit_date < self.joining_date:
             raise ValueError("Employee exit date cannot precede joining date")
+        if self.status == "terminated" and self.exit_date is None:
+            raise ValueError("Exit date is required when terminating an employee")
         return self
 
 
 class AttendanceAdjustmentInput(BaseModel):
     clock_in_at: Any
     clock_out_at: Any | None = None
-    reason: str = Field(max_length=500)
+    reason: str = Field(min_length=5, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def require_adjustment_reason(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 5:
+            raise ValueError("Attendance adjustment reason must contain at least 5 characters")
+        return value
 
 
 class PunchInput(BaseModel):
@@ -215,12 +226,23 @@ class PayrollRunInput(BaseModel):
         last_day = monthrange(self.period_start.year, self.period_start.month)[1]
         if self.period_end != date(self.period_start.year, self.period_start.month, last_day):
             raise ValueError("Payroll period must cover one complete calendar month")
+        for employee_id, amount in self.deductions_by_employee.items():
+            if amount > 0:
+                reason = self.deduction_notes.get(employee_id)
+                if not reason or len(reason.strip()) < 5:
+                    raise ValueError("A reason is required for every manual payroll deduction")
         return self
 
 
 class PayrollApprovalInput(BaseModel):
     decision: str = Field(pattern="^(approved|rejected)$")
     note: str | None = Field(default=None, max_length=1000)
+
+    @model_validator(mode="after")
+    def rejection_requires_reason(self):
+        if self.decision == "rejected" and not (self.note and self.note.strip()):
+            raise ValueError("A reason is required when rejecting payroll")
+        return self
 
 
 class PayrollPaymentInput(BaseModel):
@@ -292,6 +314,191 @@ class PayrollEarningInput(BaseModel):
             raise ValueError("Hours and hourly rate are only accepted for overtime")
         return self
 
+
+
+@router.get("/overview")
+def hr_overview(request: Request, month: str = Query(..., pattern=r"^\d{4}-(0[1-9]|1[0-2])$")):
+    """Return organisation-wide HR management metrics for one calendar month."""
+    _manager(request)
+    try:
+        period_start, period_end = month_period(month)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    try:
+        with _hr_connection() as conn:
+            workforce = conn.execute(
+                "SELECT count(*)::int AS total, "
+                "count(*) FILTER (WHERE status IN ('active','probation','on_leave','notice_period'))::int AS active, "
+                "count(*) FILTER (WHERE status='terminated')::int AS inactive, "
+                "count(*) FILTER (WHERE joining_date >= %s AND joining_date < %s)::int AS joiners, "
+                "count(*) FILTER (WHERE exit_date >= %s AND exit_date < %s)::int AS exits "
+                "FROM hr_employees",
+                (period_start, period_end, period_start, period_end),
+            ).fetchone()
+            departments = conn.execute(
+                "SELECT d.id,d.name,count(e.id) FILTER (WHERE e.status IN "
+                "('active','probation','on_leave','notice_period'))::int AS headcount "
+                "FROM hr_departments d LEFT JOIN hr_employees e ON e.department_id=d.id "
+                "WHERE d.is_active=true GROUP BY d.id,d.name ORDER BY d.name"
+            ).fetchall()
+            attendance = conn.execute(
+                "SELECT count(DISTINCT employee_id)::int AS present, "
+                "count(*) FILTER (WHERE clock_out_at IS NULL)::int AS open_sessions "
+                "FROM hr_attendance_sessions WHERE clock_in_at >= %s AND clock_in_at < %s",
+                (period_start, period_end),
+            ).fetchone()
+            on_leave = conn.execute(
+                "SELECT count(DISTINCT employee_id)::int AS employees "
+                "FROM hr_leave_requests WHERE status='approved' "
+                "AND start_date < %s AND end_date >= %s",
+                (period_end, period_start),
+            ).fetchone()["employees"]
+            scheduled_attendance = conn.execute(
+                "WITH scheduled AS ("
+                " SELECT sa.employee_id,sa.work_date,"
+                " EXISTS (SELECT 1 FROM hr_attendance_sessions hs "
+                "         WHERE hs.employee_id=sa.employee_id "
+                "           AND (hs.clock_in_at AT TIME ZONE sd.timezone)::date=sa.work_date) AS attended "
+                " FROM hr_shift_assignments sa "
+                " JOIN hr_shift_definitions sd ON sd.id=sa.shift_definition_id "
+                " WHERE sa.status='published' AND sa.work_date >= %s AND sa.work_date < %s "
+                "   AND NOT EXISTS (SELECT 1 FROM hr_holiday_calendars hc "
+                "                   JOIN hr_holidays h ON h.calendar_id=hc.id "
+                "                   WHERE hc.establishment_id=sd.establishment_id "
+                "                     AND hc.status='approved' "
+                "                     AND hc.effective_year=extract(year FROM sa.work_date)::int "
+                "                     AND h.holiday_date=sa.work_date) "
+                "   AND NOT EXISTS (SELECT 1 FROM hr_leave_requests lr "
+                "                   WHERE lr.employee_id=sa.employee_id AND lr.status='approved' "
+                "                     AND lr.start_date<=sa.work_date AND lr.end_date>=sa.work_date)"
+                ") "
+                "SELECT count(*)::int AS scheduled_days, "
+                "count(*) FILTER (WHERE attended)::int AS attended_days, "
+                "count(*) FILTER (WHERE NOT attended)::int AS absent_days, "
+                "count(DISTINCT employee_id) FILTER (WHERE attended)::int AS present_employees, "
+                "count(DISTINCT employee_id) FILTER (WHERE NOT attended)::int AS absent_employees "
+                "FROM scheduled",
+                (period_start, period_end),
+            ).fetchone()
+            payroll = conn.execute(
+                "SELECT count(*)::int AS run_count, "
+                "COALESCE(sum(total_gross),0)::numeric(16,2) AS gross, "
+                "COALESCE(sum(total_deductions),0)::numeric(16,2) AS employee_deductions, "
+                "COALESCE(sum(total_employer_contributions),0)::numeric(16,2) AS employer_contributions, "
+                "COALESCE(sum(total_net),0)::numeric(16,2) AS net "
+                "FROM hr_payroll_runs WHERE period_start >= %s AND period_start < %s "
+                "AND status IN ('approved','paid')",
+                (period_start, period_end),
+            ).fetchone()
+            run_statuses = conn.execute(
+                "SELECT status,count(*)::int AS count FROM hr_payroll_runs "
+                "WHERE period_start >= %s AND period_start < %s GROUP BY status ORDER BY status",
+                (period_start, period_end),
+            ).fetchall()
+            approvals = conn.execute(
+                "SELECT (SELECT count(*) FROM hr_leave_requests WHERE status='pending')::int AS leave_count, "
+                "(SELECT count(*) FROM hr_expenses WHERE status='pending')::int AS expense_count, "
+                "(SELECT count(*) FROM hr_employee_salary_versions WHERE status='draft')::int AS salary_revision_count, "
+                "(SELECT count(*) FROM hr_payroll_earning_adjustments WHERE status='pending')::int AS earning_count, "
+                "(SELECT count(*) FROM hr_employee_lifecycle_tasks WHERE status IN ('pending','in_progress') "
+                "AND due_date < CURRENT_DATE)::int AS lifecycle_overdue_count"
+            ).fetchone()
+            controls = conn.execute(
+                "SELECT (SELECT count(*) FROM hr_statutory_remittances WHERE status='pending')::int AS pending_remittances, "
+                "(SELECT count(*) FROM hr_employees e LEFT JOIN hr_employee_statutory_profiles p "
+                "ON p.employee_id=e.id WHERE e.status IN ('active','probation','on_leave','notice_period') "
+                "AND p.employee_id IS NULL)::int AS employees_without_statutory_profile, "
+                "(SELECT count(*) FROM hr_payroll_runs r LEFT JOIN hr_payroll_accrual_postings p "
+                "ON p.payroll_run_id=r.id WHERE r.status IN ('approved','paid') AND p.id IS NULL AND r.accounting_accrual_voucher_id IS NULL)::int "
+                "AS accounting_exceptions, "
+                "(SELECT count(*) FROM hr_employees WHERE status IN ('active','probation','on_leave','notice_period') "
+                "AND (department_id IS NULL OR length(trim(designation))=0))::int AS employee_data_issues, "
+                "(SELECT count(*) FROM hr_employees WHERE status IN ('active','probation','on_leave','notice_period') "
+                "AND user_id IS NULL)::int AS employees_without_portal_user, "
+                "(SELECT count(*) FROM portal_invitations WHERE portal_type='employee' AND accepted_at IS NULL "
+                "AND revoked_at IS NULL AND expires_at>now())::int AS pending_employee_invitations"
+            ).fetchone()
+            establishments = conn.execute(
+                "SELECT id,code,display_name FROM hr_establishments WHERE is_active=true ORDER BY display_name"
+            ).fetchall()
+            statutory_readiness = []
+            if establishments:
+                policy_rows = conn.execute(
+                    "SELECT establishment_id,component,effective_from,effective_to,status "
+                    "FROM hr_statutory_policy_versions WHERE effective_from <= %s "
+                    "AND (effective_to IS NULL OR effective_to >= %s)",
+                    (period_end - date.resolution, period_end - date.resolution),
+                ).fetchall()
+                for establishment in establishments:
+                    assessment = assess_policy_readiness(
+                        [policy for policy in policy_rows if policy["establishment_id"] == establishment["id"]],
+                        period_end - date.resolution,
+                    )
+                    statutory_readiness.append({
+                        "establishment_id": establishment["id"],
+                        "establishment": establishment["display_name"],
+                        **assessment,
+                    })
+            controls = dict(controls)
+            controls["statutory_readiness"] = (
+                "not_configured" if not establishments else
+                "ready" if all(item["ready"] for item in statutory_readiness) else "incomplete"
+            )
+            controls["establishments"] = statutory_readiness
+            trend_start, _ = month_trend_period(month, 6)
+            headcount_trend = conn.execute(
+                "SELECT to_char(months.month_start,'YYYY-MM') AS month, "
+                "count(e.id) FILTER (WHERE e.joining_date < (months.month_start + interval '1 month')::date "
+                "AND (e.exit_date IS NULL OR e.exit_date >= months.month_start))::int AS headcount "
+                "FROM generate_series(%s::date,%s::date,interval '1 month') "
+                "AS months(month_start) LEFT JOIN hr_employees e ON true "
+                "GROUP BY months.month_start ORDER BY months.month_start",
+                (trend_start, period_end),
+            ).fetchall()
+            payroll_trend = conn.execute(
+                "SELECT to_char(period_start,'YYYY-MM') AS month, "
+                "COALESCE(sum(total_gross),0)::numeric(16,2) AS gross "
+                "FROM hr_payroll_runs WHERE period_start >= %s AND period_start < %s "
+                "AND status IN ('approved','paid') GROUP BY period_start ORDER BY period_start",
+                (trend_start, period_end),
+            ).fetchall()
+            accounting_status = "exceptions" if controls["accounting_exceptions"] else "no_exceptions_detected"
+            return {
+                "period": {"month": month, "start_date": period_start.isoformat(),
+                           "end_date": (period_end.fromordinal(period_end.toordinal() - 1)).isoformat()},
+                "workforce": {**workforce, "departments": departments,
+                              "department_count": len(departments)},
+                "attendance": {
+                    "available": bool(scheduled_attendance["scheduled_days"]),
+                    "reason": None if scheduled_attendance["scheduled_days"] else
+                    "No published shift schedule exists for this month; absence and attendance rate cannot be calculated.",
+                    "present": (scheduled_attendance["present_employees"] if scheduled_attendance["scheduled_days"] else attendance["present"]),
+                    "absent": scheduled_attendance["absent_employees"] if scheduled_attendance["scheduled_days"] else None,
+                    "late": None,
+                    "scheduled_shift_days": scheduled_attendance["scheduled_days"],
+                    "attended_shift_days": scheduled_attendance["attended_days"],
+                    "absent_shift_days": scheduled_attendance["absent_days"],
+                    "on_leave": on_leave, "open_sessions": attendance["open_sessions"],
+                    "rate": round(scheduled_attendance["attended_days"] * 100 / scheduled_attendance["scheduled_days"], 1)
+                        if scheduled_attendance["scheduled_days"] else None,
+                },
+                "payroll": {**payroll, "run_statuses": run_statuses,
+                            "accounting_status": accounting_status,
+                            "exceptions": controls["accounting_exceptions"]},
+                "approvals": approvals,
+                "controls": controls,
+                "trends": {"headcount": headcount_trend, "payroll_gross": payroll_trend,
+                           "attendance": {"available": False, "reason": "Reliable shift and holiday history is required."}},
+                "data_quality": {
+                    "partial": True,
+                    "unavailable_metrics": ["attendance.late", "attendance.trend"],
+                },
+            }
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
 
 
 @router.get("/departments")
@@ -366,7 +573,7 @@ def list_employees(request: Request, limit: int = Query(100, ge=1, le=500), offs
     role = getattr(request.state, "role", "")
     try:
         with _hr_connection() as conn:
-            if role in {"super_admin", "super_admin", "admin", "manager"}:
+            if role in {"super_admin", "owner", "admin", "manager"}:
                 rows = conn.execute(
                     "SELECT e.id,e.user_id,e.employee_code,e.first_name,e.last_name,e.email,e.phone,"
                     "e.department_id,d.name AS department_name,e.designation,e.reports_to_employee_id,"
@@ -435,7 +642,7 @@ def update_employee(employee_id: int, payload: EmployeeInput, request: Request):
                 "UPDATE hr_employees SET user_id=%s,employee_code=%s,first_name=%s,last_name=%s,email=%s,phone=%s,"
                 "department_id=%s,designation=%s,reports_to_employee_id=%s,employment_type=%s,status=%s,"
                 "joining_date=%s,exit_date=%s,updated_at=now() "
-                "WHERE id=%s RETURNING id,employee_code,first_name,last_name,email,status,updated_at",
+                "WHERE id=%s RETURNING id,user_id,employee_code,first_name,last_name,email,status,updated_at",
                 (payload.user_id,payload.employee_code.strip(),payload.first_name.strip(),payload.last_name.strip(),
                  payload.email,payload.phone.strip(),payload.department_id,payload.designation.strip(),
                  payload.reports_to_employee_id,payload.employment_type,payload.status,payload.joining_date,
@@ -443,6 +650,18 @@ def update_employee(employee_id: int, payload: EmployeeInput, request: Request):
             ).fetchone()
             if row is None:
                 raise HTTPException(404, "Employee not found")
+            if row["status"] == "terminated" and row["user_id"] is not None:
+                # Termination closes employee self-service access without disabling
+                # a shared administrator identity.
+                conn.execute(
+                    "UPDATE app_users SET is_active=FALSE WHERE id=%s AND role='staff'",
+                    (row["user_id"],),
+                )
+                conn.execute(
+                    "UPDATE portal_invitations SET revoked_at=now() WHERE employee_id=%s "
+                    "AND accepted_at IS NULL AND revoked_at IS NULL",
+                    (employee_id,),
+                )
             return row
     except HTTPException:
         raise
@@ -679,7 +898,7 @@ def list_leave(request: Request):
     role = getattr(request.state, "role", "")
     try:
         with _hr_connection() as conn:
-            if role in {"super_admin","super_admin","admin","manager"}:
+            if role in {"super_admin","owner","admin","manager"}:
                 rows = conn.execute(
                     "SELECT l.*,e.employee_code,e.first_name,e.last_name FROM hr_leave_requests l "
                     "JOIN hr_employees e ON e.id=l.employee_id ORDER BY l.created_at DESC"
@@ -770,7 +989,7 @@ def list_expenses(request: Request):
     role = getattr(request.state,"role","")
     try:
         with _hr_connection() as conn:
-            if role in {"super_admin","super_admin","admin","manager"}:
+            if role in {"super_admin","owner","admin","manager"}:
                 rows=conn.execute(
                     "SELECT x.*,e.employee_code,e.first_name,e.last_name FROM hr_expenses x "
                     "JOIN hr_employees e ON e.id=x.employee_id ORDER BY x.created_at DESC"
@@ -2047,7 +2266,7 @@ def list_shift_assignments(request: Request, start_date: date, end_date: date):
         raise HTTPException(422,"Roster range must be ordered and no longer than 93 days")
     role = getattr(request.state,"role","")
     with _hr_connection() as conn:
-        if role in {"super_admin","super_admin","admin","manager"}:
+        if role in {"super_admin","owner","admin","manager"}:
             rows = conn.execute(
                 "SELECT a.*,e.employee_code,e.first_name,e.last_name,s.name AS shift_name "
                 "FROM hr_shift_assignments a JOIN hr_employees e ON e.id=a.employee_id "
@@ -2242,7 +2461,7 @@ def list_leave_balances(request: Request, employee_id: int | None = Query(defaul
     actor = _actor(request)
     role = getattr(request.state,"role","")
     with _hr_connection() as conn:
-        if role in {"super_admin","super_admin","admin","manager"}:
+        if role in {"super_admin","owner","admin","manager"}:
             rows = conn.execute(
                 "SELECT b.*,b.closing_days+COALESCE((SELECT sum(l.quantity_days) FROM hr_leave_ledger l "
                 "WHERE l.employee_id=b.employee_id AND l.leave_type=b.leave_type AND l.created_at>b.calculated_at),0) "
@@ -2459,7 +2678,7 @@ def list_leave_ledger(request: Request, employee_id: int | None = Query(default=
     actor = _actor(request)
     role = getattr(request.state,"role","")
     with _hr_connection() as conn:
-        if role in {"super_admin","super_admin","admin","manager"}:
+        if role in {"super_admin","owner","admin","manager"}:
             rows = conn.execute(
                 "SELECT l.*,e.employee_code,e.first_name,e.last_name FROM hr_leave_ledger l "
                 "JOIN hr_employees e ON e.id=l.employee_id WHERE (%s::bigint IS NULL OR l.employee_id=%s) "
@@ -2556,7 +2775,7 @@ def list_lifecycle_tasks(request: Request, employee_id: int | None = Query(defau
     actor = _actor(request)
     role = getattr(request.state,"role","")
     with _hr_connection() as conn:
-        if role in {"super_admin","super_admin","admin","manager"}:
+        if role in {"super_admin","owner","admin","manager"}:
             rows = conn.execute(
                 "SELECT t.*,e.employee_code,e.first_name,e.last_name FROM hr_employee_lifecycle_tasks t "
                 "JOIN hr_employees e ON e.id=t.employee_id WHERE (%s::bigint IS NULL OR t.employee_id=%s) "
@@ -2582,7 +2801,7 @@ def update_lifecycle_task(task_id: int, payload: LifecycleTaskUpdateInput, reque
         task = conn.execute("SELECT * FROM hr_employee_lifecycle_tasks WHERE id=%s FOR UPDATE",(task_id,)).fetchone()
         if not task:
             raise HTTPException(404,"Lifecycle task not found")
-        if role not in {"super_admin","super_admin","admin","manager"}:
+        if role not in {"super_admin","owner","admin","manager"}:
             employee = _employee(conn,actor)
             if not (task["owner_user_id"] == actor or (task["employee_id"] == employee["id"] and task["owner_role"] == "employee")):
                 raise HTTPException(403,"You cannot update this lifecycle task")
@@ -2592,7 +2811,7 @@ def update_lifecycle_task(task_id: int, payload: LifecycleTaskUpdateInput, reque
                 raise HTTPException(409,"Only a manager may reopen a completed lifecycle task")
         if payload.status == "completed" and not (payload.completion_note or payload.evidence_reference):
             raise HTTPException(422,"A completion note or evidence reference is required")
-        is_manager = role in {"super_admin","super_admin","admin","manager"}
+        is_manager = role in {"super_admin","owner","admin","manager"}
         owner_user_id = (
             payload.owner_user_id if is_manager and "owner_user_id" in payload.model_fields_set
             else task["owner_user_id"]
@@ -2689,7 +2908,7 @@ def list_lifecycle_task_events(task_id: int, request: Request):
         task = conn.execute("SELECT employee_id,owner_user_id,owner_role FROM hr_employee_lifecycle_tasks WHERE id=%s",(task_id,)).fetchone()
         if not task:
             raise HTTPException(404,"Lifecycle task not found")
-        if role not in {"super_admin","super_admin","admin","manager"}:
+        if role not in {"super_admin","owner","admin","manager"}:
             employee = _employee(conn,actor)
             if not (task["owner_user_id"] == actor or (task["employee_id"] == employee["id"] and task["owner_role"] == "employee")):
                 raise HTTPException(403,"You cannot view this lifecycle task history")
