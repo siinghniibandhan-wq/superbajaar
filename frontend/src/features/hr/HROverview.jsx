@@ -31,6 +31,10 @@ export default function HROverview({ data, loading, error, onNavigate, onRefresh
     ? "Attendance rate " + (attendance.rate == null ? "not available" : attendance.rate + "%")
     : attendance.reason || "Shift and holiday data is incomplete";
   const runStates = (payroll.run_statuses || []).map(item => item.status + ": " + item.count).join(" · ") || "No runs in this period";
+  const headcountPoints = trends.headcount || [];
+  const payrollPoints = trends.payroll_gross || [];
+  const maxHeadcount = Math.max(1, ...headcountPoints.map(point => Number(point.headcount) || 0));
+  const maxGross = Math.max(1, ...payrollPoints.map(point => Number(point.gross) || 0));
 
   return <div className="hr-management-overview">
     {error && <p className="hr-dashboard-inline-warning" role="status">Some overview data could not refresh: {error}</p>}
@@ -105,8 +109,22 @@ export default function HROverview({ data, loading, error, onNavigate, onRefresh
 
     <Section title="Trends">
       <div className="hr-dashboard-trends">
-        <div><h3>Headcount</h3><ul>{(trends.headcount || []).map(point => <li key={point.month}><span>{point.month}</span><strong>{point.headcount}</strong></li>)}</ul></div>
-        <div><h3>Gross payroll</h3><ul>{(trends.payroll_gross || []).map(point => <li key={point.month}><span>{point.month}</span><strong>{money(point.gross)}</strong></li>)}</ul></div>
+        <div><h3>Headcount trend</h3>
+          <div className="hr-dashboard-chart" role="img" aria-label={"Monthly headcount: " + headcountPoints.map(point => point.month + " " + point.headcount).join(", ")}>
+            {headcountPoints.map(point => <div className="hr-dashboard-chart-column" key={point.month}>
+              <strong>{point.headcount}</strong><span className="hr-dashboard-chart-track"><i style={{height: ((Number(point.headcount) || 0) / maxHeadcount * 100) + "%"}} /></span><small>{point.month.slice(2)}</small>
+            </div>)}
+            {!headcountPoints.length && <p>No headcount history available.</p>}
+          </div>
+        </div>
+        <div><h3>Gross payroll trend</h3>
+          <div className="hr-dashboard-chart" role="img" aria-label={"Monthly gross payroll: " + payrollPoints.map(point => point.month + " " + point.gross).join(", ")}>
+            {payrollPoints.map(point => <div className="hr-dashboard-chart-column" key={point.month}>
+              <strong>{money(point.gross)}</strong><span className="hr-dashboard-chart-track"><i style={{height: ((Number(point.gross) || 0) / maxGross * 100) + "%"}} /></span><small>{point.month.slice(2)}</small>
+            </div>)}
+            {!payrollPoints.length && <p>No approved payroll history available.</p>}
+          </div>
+        </div>
       </div>
       {unavailable.length > 0 && <p className="hr-dashboard-note">Some analytics are not yet available from reliable source data: {unavailable.join(", ")}.</p>}
     </Section>
