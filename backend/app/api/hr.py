@@ -296,7 +296,7 @@ class PayrollEarningInput(BaseModel):
 
 
 @router.get("/overview")
-def hr_overview(request: Request, month: str = Query(..., pattern=r"^\\d{4}-(0[1-9]|1[0-2])$")):
+def hr_overview(request: Request, month: str = Query(..., pattern=r"^\d{4}-(0[1-9]|1[0-2])$")):
     """Return organisation-wide HR management metrics for one calendar month."""
     _manager(request)
     try:
