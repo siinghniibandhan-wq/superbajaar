@@ -166,3 +166,76 @@ def review_link_request(request_id: int, payload: ReviewIn, request: Request):
         if getattr(exc, "sqlstate", None) == "23505":
             raise HTTPException(409, "That profile is already linked to an identity") from exc
         raise HTTPException(503, "Unable to review identity request") from exc
+
+
+class LoyaltyLinkIn(BaseModel):
+    customer_account_id: int = Field(gt=0)
+    loyalty_account_id: int = Field(gt=0)
+    verification_confirmed: bool
+    proof_method: str = Field(min_length=3, max_length=40)
+    reason: str = Field(min_length=5, max_length=500)
+
+
+@router.post("/loyalty-links", status_code=201)
+def link_loyalty_account(payload: LoyaltyLinkIn, request: Request):
+    _admin(request)
+    if not payload.verification_confirmed:
+        raise HTTPException(422, "Verify ownership of the existing loyalty account before linking")
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                party = conn.execute(
+                    "SELECT p.id FROM identity_profiles ip JOIN identity_parties p ON p.id=ip.party_id "
+                    "WHERE ip.profile_type='customer_account' AND ip.customer_account_id=%s AND ip.status='active' AND p.status='active' FOR UPDATE OF p",
+                    (payload.customer_account_id,),
+                ).fetchone()
+                if party is None:
+                    raise HTTPException(409, "Customer account has no active SBID; resolve its identity first")
+                loyalty = conn.execute("SELECT id FROM loyalty_accounts WHERE id=%s", (payload.loyalty_account_id,)).fetchone()
+                if loyalty is None:
+                    raise HTTPException(404, "Loyalty account not found")
+                row = conn.execute(
+                    "INSERT INTO identity_loyalty_accounts(party_id,loyalty_account_id,link_method,linked_by_user_id) VALUES(%s,%s,'admin_verified',%s) RETURNING id,party_id,loyalty_account_id,linked_at",
+                    (party["id"], payload.loyalty_account_id, request.state.user_id),
+                ).fetchone()
+                IdentityService(conn)._event(party_id=party["id"],event_type="profile_linked",event_data={"profile_type":"loyalty_account","loyalty_account_id":payload.loyalty_account_id,"proof_method":payload.proof_method},actor_user_id=request.state.user_id,reason=payload.reason)
+        return {"link": row}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        if getattr(exc, "sqlstate", None) == "23505":
+            raise HTTPException(409, "This loyalty account is already linked") from exc
+        raise HTTPException(503, "Unable to link loyalty account") from exc
+
+
+@router.post("/referral-links/{referral_id}", status_code=201)
+def link_referral_parties(referral_id: int, request: Request):
+    _admin(request)
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                referral = conn.execute(
+                    "SELECT r.id,r.referrer_customer_id,r.referred_customer_id FROM customer_referrals r WHERE r.id=%s FOR UPDATE",
+                    (referral_id,),
+                ).fetchone()
+                if referral is None:
+                    raise HTTPException(404, "Referral record not found")
+                parties = conn.execute(
+                    "SELECT customer_account_id,party_id FROM identity_profiles WHERE profile_type='customer_account' AND status='active' AND customer_account_id IN (%s,%s) FOR UPDATE",
+                    (referral["referrer_customer_id"], referral["referred_customer_id"]),
+                ).fetchall()
+                mapping = {row["customer_account_id"]: row["party_id"] for row in parties}
+                if referral["referrer_customer_id"] not in mapping or referral["referred_customer_id"] not in mapping:
+                    raise HTTPException(409, "Both referral customer accounts must have verified SBID profile links first")
+                row = conn.execute(
+                    "INSERT INTO identity_referral_links(referral_id,referrer_party_id,referred_party_id) VALUES(%s,%s,%s) RETURNING id,referral_id,referrer_party_id,referred_party_id,linked_at",
+                    (referral_id,mapping[referral["referrer_customer_id"]],mapping[referral["referred_customer_id"]]),
+                ).fetchone()
+                IdentityService(conn)._event(party_id=mapping[referral["referrer_customer_id"]],event_type="profile_linked",event_data={"profile_type":"referral","referral_id":referral_id,"referred_party_id":mapping[referral["referred_customer_id"]]},actor_user_id=request.state.user_id,reason="Referral SBID association created from existing customer account links")
+        return {"link": row}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        if getattr(exc, "sqlstate", None) == "23505":
+            raise HTTPException(409, "This referral is already linked") from exc
+        raise HTTPException(503, "Unable to link referral identities") from exc
