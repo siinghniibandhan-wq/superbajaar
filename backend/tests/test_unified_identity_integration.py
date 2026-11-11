@@ -137,3 +137,32 @@ def test_staff_login_account_cannot_be_attached_to_an_organisation_party():
                     "VALUES(%s,'staff',%s,'admin_verified')",
                     (organisation["id"], user["id"]),
                 )
+
+
+
+def test_identity_service_creates_party_and_audit_event_atomically():
+    from app.services.identity import IdentityService
+
+    with psycopg.connect(TEST_DB, row_factory=dict_row) as conn:
+        service = IdentityService(conn)
+        party = service.create_party(party_type="individual", display_name="Service Test Person")
+        assert party["sbid"].startswith("SBID-")
+        event = conn.execute(
+            "SELECT event_type,event_data FROM identity_events WHERE party_id=%s ORDER BY id DESC LIMIT 1",
+            (party["id"],),
+        ).fetchone()
+        assert event["event_type"] == "party_created"
+        assert event["event_data"]["party_type"] == "individual"
+
+
+def test_identity_service_adds_contact_as_unverified_until_proof_is_recorded():
+    from app.services.identity import IdentityService
+
+    with psycopg.connect(TEST_DB, row_factory=dict_row) as conn:
+        service = IdentityService(conn)
+        party = service.create_party(party_type="individual", display_name="Contact Test Person")
+        contact = service.add_contact(
+            party_id=party["id"], contact_type="phone", value="9876543210"
+        )
+        assert contact["normalized_value"] == "+919876543210"
+        assert contact["verification_status"] == "unverified"
