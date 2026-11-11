@@ -153,7 +153,7 @@ class EmployeeInput(BaseModel):
 class AttendanceAdjustmentInput(BaseModel):
     clock_in_at: Any
     clock_out_at: Any | None = None
-    reason: str = Field(max_length=500)
+    reason: str = Field(min_length=5, max_length=500)
 
 
 class PunchInput(BaseModel):
