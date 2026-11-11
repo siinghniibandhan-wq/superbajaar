@@ -100,7 +100,7 @@ def _merge_claimed_party(conn, source_party_id: int, target_party_id: int, actor
         """,
         (source_party_id, target_party_id),
     )
-    conn.execute("UPDATE identity_contacts SET party_id=%s,updated_at=now() WHERE party_id=%s", (target_party_id,source_party_id))
+    conn.execute("UPDATE identity_contacts SET party_id=%s,updated_at=now() WHERE party_id=%s AND valid_to IS NULL", (target_party_id,source_party_id))
     conn.execute("UPDATE identity_relationships SET from_party_id=%s,updated_at=now() WHERE from_party_id=%s", (target_party_id,source_party_id))
     conn.execute("UPDATE identity_relationships SET to_party_id=%s,updated_at=now() WHERE to_party_id=%s", (target_party_id,source_party_id))
     conn.execute("UPDATE identity_loyalty_accounts SET party_id=%s WHERE party_id=%s", (target_party_id,source_party_id))
