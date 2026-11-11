@@ -136,7 +136,7 @@ def _verify_vendor_document_object(client, bucket: str, document_uri: str, suppl
 
     key = parsed.path[1:]
     name = key[len(prefix):] if key.startswith(prefix) else ""
-    if not name or "/" in name or not re.fullmatch(r"[0-9a-f]{32}\\.(pdf|jpg|png)", name):
+    if not name or "/" in name or not re.fullmatch(r"[0-9a-f]{32}\.(pdf|jpg|png)", name):
         raise HTTPException(422, "Invoice document must reference a valid supplier upload")
 
     try:
