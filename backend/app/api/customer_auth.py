@@ -305,6 +305,11 @@ def me(request: Request):
         raise HTTPException(status_code=503, detail="Could not load customer account") from exc
 
 
+class IdentityClaimIn(BaseModel):
+    target_sbid: str = Field(min_length=8, max_length=40)
+    reason: str = Field(min_length=5, max_length=500)
+
+
 @router.post("/identity-claims", status_code=202)
 def request_identity_claim(payload: IdentityClaimIn, request: Request):
     """Authenticated customer request to claim an existing SBID; never confirms whether it exists."""
