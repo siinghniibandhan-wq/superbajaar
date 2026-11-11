@@ -124,7 +124,8 @@ export default function HRWorkspace({onBack,currentUser}) {
   };
   const tabs=[{group:"Overview",items:[["overview","Overview"]]},...(manager?[{group:"Workforce",items:[["organisation","Organisation chart"],["people","People directory"]]}]:[]),{group:"Time & attendance",items:[["attendance","Attendance"],["leave","Leave"],["advanced","Planning & lifecycle"]]},{group:"Compensation",items:[["expenses","Expenses"],["payroll","Payroll"],["payslips","Payslips"]]},...(manager?[{group:"Compliance & insights",items:[["statutory","Statutory policies"]]}]:[])];
   const filteredEmployees=employees.filter(e=>[e.employee_code,e.first_name,e.last_name,e.email,e.department_name,e.designation].some(v=>String(v||"").toLowerCase().includes(employeeQuery.toLowerCase())));
-  const open=attendance.find(x=>!x.clock_out_at);\n  const visibleAttendance=attendance.filter(x=>(!attendanceEmployeeFilter||String(x.employee_id)===attendanceEmployeeFilter)&&(!attendanceDepartmentFilter||String(x.department_id)===attendanceDepartmentFilter));
+  const open=attendance.find(x=>!x.clock_out_at);
+  const visibleAttendance=attendance.filter(x=>(!attendanceEmployeeFilter||String(x.employee_id)===attendanceEmployeeFilter)&&(!attendanceDepartmentFilter||String(x.department_id)===attendanceDepartmentFilter));
 
   return <section className="sb-workspace hr-workspace">
     <button className="sb-back" onClick={onBack} type="button">← All workspaces</button>
