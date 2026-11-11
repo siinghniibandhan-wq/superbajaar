@@ -20,8 +20,8 @@ function downloadAttendanceCsv(rows) {
     ["Overtime minutes","overtime_minutes"]
   ];
   const quote = value => '"' + String(value ?? "").replace(/"/g,'""') + '"';
-  const csv = [columns.map(([label])=>quote(label)).join(","),...rows.filter(row=>row.id).map(row=>columns.map(([,key])=>quote(row[key])).join(","))].join("\\r\\n");
-  const blob = new Blob(["\\uFEFF",csv],{type:"text/csv;charset=utf-8;"});
+  const csv = [columns.map(([label])=>quote(label)).join(","),...rows.filter(row=>row.id).map(row=>columns.map(([,key])=>quote(row[key])).join(","))].join("\r\n");
+  const blob = new Blob(["\uFEFF",csv],{type:"text/csv;charset=utf-8;"});
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
