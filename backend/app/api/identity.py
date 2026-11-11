@@ -40,11 +40,40 @@ def _merge_claimed_party(conn, source_party_id: int, target_party_id: int, actor
         (target_party_id, source_party_id),
     ).fetchone():
         raise HTTPException(409, "Both identities contain the same profile type; manual profile resolution is required")
-    if conn.execute(
-        "SELECT 1 FROM identity_contacts a JOIN identity_contacts b ON b.party_id=%s AND b.contact_type=a.contact_type AND b.normalized_value=a.normalized_value AND b.valid_to IS NULL WHERE a.party_id=%s AND a.valid_to IS NULL LIMIT 1",
+    # Preserve duplicate source contacts as closed history, while retaining the
+    # strongest verification evidence on the canonical contact row.
+    conn.execute(
+        """
+        UPDATE identity_contacts target
+        SET verification_status='verified',
+            verified_at=COALESCE(target.verified_at, source.verified_at),
+            updated_at=now()
+        FROM identity_contacts source
+        WHERE target.party_id=%s AND source.party_id=%s
+          AND target.contact_type=source.contact_type
+          AND target.normalized_value=source.normalized_value
+          AND target.valid_to IS NULL AND source.valid_to IS NULL
+          AND source.verification_status='verified'
+          AND target.verification_status <> 'verified'
+        """,
         (target_party_id, source_party_id),
-    ).fetchone():
-        raise HTTPException(409, "Both identities contain the same contact; resolve the contact conflict before merging")
+    )
+    conn.execute(
+        """
+        UPDATE identity_contacts source
+        SET valid_to=GREATEST(now(), source.valid_from),
+            is_primary=false,
+            updated_at=now()
+        WHERE source.party_id=%s AND source.valid_to IS NULL
+          AND EXISTS (
+              SELECT 1 FROM identity_contacts target
+              WHERE target.party_id=%s AND target.valid_to IS NULL
+                AND target.contact_type=source.contact_type
+                AND target.normalized_value=source.normalized_value
+          )
+        """,
+        (source_party_id, target_party_id),
+    )
     if conn.execute(
         "SELECT 1 FROM identity_relationships WHERE (from_party_id=%s AND to_party_id=%s) OR (from_party_id=%s AND to_party_id=%s) LIMIT 1",
         (source_party_id,target_party_id,target_party_id,source_party_id),
@@ -76,7 +105,7 @@ def _merge_claimed_party(conn, source_party_id: int, target_party_id: int, actor
         event_data={"source_party_id":source_party_id,"source_sbid":source["sbid"],"canonical_sbid":target["sbid"],"proof_method":proof_method},
         actor_user_id=actor_user_id,reason=reason,
     )
-    return {"source_sbid": source["sbid"], "canonical_sbid": target["sbid"]}
+    return {"source_sbid": source["sbid"], "canonical_sbid": target["sbid"], "status": "merged"}
 
 
 def _admin(request: Request):
@@ -390,47 +419,11 @@ def merge_parties(source_party_id: int, payload: MergeIn, request: Request):
     try:
         with _connect() as conn:
             with conn.transaction():
-                rows = conn.execute(
-                    "SELECT id,sbid,party_type,status FROM identity_parties WHERE id IN (%s,%s) ORDER BY id FOR UPDATE",
-                    (source_party_id,payload.target_party_id),
-                ).fetchall()
-                parties = {row["id"]: row for row in rows}
-                source, target = parties.get(source_party_id), parties.get(payload.target_party_id)
-                if not source or not target or source["status"] != "active" or target["status"] != "active":
-                    raise HTTPException(409, "Both identities must exist and be active")
-                if source["party_type"] != target["party_type"]:
-                    raise HTTPException(409, "Individual and organisation identities cannot be merged")
-                conflict = conn.execute(
-                    "SELECT 1 FROM identity_profiles a JOIN identity_profiles b ON b.party_id=%s AND b.profile_type=a.profile_type "
-                    "WHERE a.party_id=%s LIMIT 1", (target_party_id,source_party_id),
-                ).fetchone()
-                if conflict:
-                    raise HTTPException(409, "Both identities contain the same profile type; resolve the profile conflict before merging")
-                collapses = conn.execute(
-                    "SELECT 1 FROM identity_relationships WHERE (from_party_id=%s AND to_party_id=%s) OR (from_party_id=%s AND to_party_id=%s) LIMIT 1",
-                    (source_party_id,target_party_id,target_party_id,source_party_id),
-                ).fetchone()
-                if collapses:
-                    raise HTTPException(409, "These identities already have a direct relationship; resolve it before merging")
-                referral_conflict = conn.execute(
-                    "SELECT 1 FROM identity_referral_links WHERE (referrer_party_id=%s AND referred_party_id=%s) OR (referrer_party_id=%s AND referred_party_id=%s) LIMIT 1",
-                    (source_party_id,target_party_id,target_party_id,source_party_id),
-                ).fetchone()
-                if referral_conflict:
-                    raise HTTPException(409, "A referral link would collapse into a self-referral; resolve it before merging")
-                conn.execute("UPDATE identity_profiles SET party_id=%s,updated_at=now() WHERE party_id=%s", (target_party_id,source_party_id))
-                conn.execute("UPDATE identity_auth_accounts SET party_id=%s WHERE party_id=%s", (target_party_id,source_party_id))
-                conn.execute("UPDATE identity_contacts SET party_id=%s,updated_at=now() WHERE party_id=%s", (target_party_id,source_party_id))
-                conn.execute("UPDATE identity_relationships SET from_party_id=%s,updated_at=now() WHERE from_party_id=%s", (target_party_id,source_party_id))
-                conn.execute("UPDATE identity_relationships SET to_party_id=%s,updated_at=now() WHERE to_party_id=%s", (target_party_id,source_party_id))
-                conn.execute("UPDATE identity_loyalty_accounts SET party_id=%s WHERE party_id=%s", (target_party_id,source_party_id))
-                conn.execute("UPDATE identity_referral_links SET referrer_party_id=%s WHERE referrer_party_id=%s", (target_party_id,source_party_id))
-                conn.execute("UPDATE identity_referral_links SET referred_party_id=%s WHERE referred_party_id=%s", (target_party_id,source_party_id))
-                conn.execute("INSERT INTO identity_aliases(alias_sbid,source_party_id,canonical_party_id,merge_reason,merged_by_user_id) VALUES(%s,%s,%s,%s,%s)", (source["sbid"],source_party_id,target_party_id,payload.reason,request.state.user_id))
-                conn.execute("UPDATE identity_parties SET status='merged',merged_into_party_id=%s,updated_at=now() WHERE id=%s", (target_party_id,source_party_id))
-                service = IdentityService(conn)
-                service._event(party_id=target_party_id,event_type="party_merged",event_data={"source_party_id":source_party_id,"source_sbid":source["sbid"],"canonical_sbid":target["sbid"],"proof_method":payload.proof_method},actor_user_id=request.state.user_id,reason=payload.reason)
-        return {"source_sbid": source["sbid"], "canonical_sbid": target["sbid"], "status": "merged"}
+                result = _merge_claimed_party(
+                    conn, source_party_id, payload.target_party_id,
+                    request.state.user_id, payload.reason, payload.proof_method,
+                )
+        return result
     except HTTPException:
         raise
     except psycopg.Error as exc:
@@ -463,10 +456,14 @@ def split_profile(party_id: int, payload: SplitIn, request: Request):
                     "(SELECT count(*) FROM identity_relationships WHERE (from_party_id=%s OR to_party_id=%s) AND status IN ('pending','active')) AS relationship_count",
                     (party_id, party_id, party_id, party_id, party_id),
                 ).fetchone()
-                if any(attached_history[key] for key in ("loyalty_count", "referral_count", "relationship_count")):
+                contact_count = conn.execute(
+                    "SELECT count(*) AS n FROM identity_contacts WHERE party_id=%s AND valid_to IS NULL",
+                    (party_id,),
+                ).fetchone()["n"]
+                if contact_count or any(attached_history[key] for key in ("loyalty_count", "referral_count", "relationship_count")):
                     raise HTTPException(
                         409,
-                        "This identity has loyalty, referral or organisation-relationship history. Resolve those associations explicitly before splitting the profile.",
+                        "This identity has contacts, loyalty, referral or organisation-relationship history. Resolve those associations explicitly before splitting the profile.",
                     )
                 new_party = IdentityService(conn).create_party(party_type=party["party_type"],display_name=party["display_name"],actor_user_id=request.state.user_id,reason=payload.reason)
                 conn.execute("UPDATE identity_profiles SET party_id=%s,updated_at=now() WHERE id=%s", (new_party["id"],payload.profile_id))
