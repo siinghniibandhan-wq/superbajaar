@@ -16,7 +16,7 @@ assert.deepEqual([...ids].sort(), [...registeredWorkspaceIds].sort(), "every nav
 for (const id of standaloneAdminRoutes) {
   assert.ok(routeIds.includes(id), `${id} must have an explicit route`);
 }
-assert.ok(source.includes('selected.id === "portalAccess"'), "Portal Access must remain explicitly admin-gated");
+assert.ok(source.includes('(selected.id === "portalAccess" && ["super_admin","admin"].includes(user.role))'), "Portal Access must remain explicitly admin-gated");
 assert.ok(source.includes('selected.id === "identity" && ["super_admin","admin"].includes(user.role)'), "Identity Register must remain explicitly admin-gated");
 assert.ok(source.includes("function UnavailableWorkspace"), "unknown IDs must have an explicit unavailable state");
 assert.ok(!source.includes("This module is not implemented yet"), "old unfinished-workspace fallback must be removed");
