@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS public.identity_profiles (
     )
 );
 CREATE OR REPLACE FUNCTION public.identity_profile_party_type_guard()
-RETURNS trigger LANGUAGE plpgsql AS $
+RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
     v_party_type text;
 BEGIN
@@ -119,7 +119,7 @@ CREATE TABLE IF NOT EXISTS public.identity_auth_accounts (
     )
 );
 CREATE OR REPLACE FUNCTION public.identity_auth_party_type_guard()
-RETURNS trigger LANGUAGE plpgsql AS $
+RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
     v_party_type text;
 BEGIN
