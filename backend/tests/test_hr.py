@@ -234,5 +234,5 @@ def test_hr_attendance_adjustment_requires_a_reason():
     with pytest.raises(ValidationError):
         AttendanceAdjustmentInput(
             clock_in_at="2026-11-11T09:00:00+05:30",
-            reason="  ",
+            reason="     ",
         )
