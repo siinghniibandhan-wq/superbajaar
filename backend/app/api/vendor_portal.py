@@ -2,10 +2,11 @@
 from datetime import date
 from decimal import Decimal
 import os
+import re
 import uuid
 from urllib.parse import urlsplit
 
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 
 import boto3
 
@@ -135,7 +136,7 @@ def _verify_vendor_document_object(client, bucket: str, document_uri: str, suppl
 
     key = parsed.path[1:]
     name = key[len(prefix):] if key.startswith(prefix) else ""
-    if not name or "/" in name or not __import__("re").fullmatch(r"[0-9a-f]{32}\\.(pdf|jpg|png)", name):
+    if not name or "/" in name or not re.fullmatch(r"[0-9a-f]{32}\\.(pdf|jpg|png)", name):
         raise HTTPException(422, "Invoice document must reference a valid supplier upload")
 
     try:
@@ -145,6 +146,8 @@ def _verify_vendor_document_object(client, bucket: str, document_uri: str, suppl
         error_code = exc.response.get("Error", {}).get("Code")
         if status == 404 or error_code in {"404", "NoSuchKey", "NotFound"}:
             raise HTTPException(422, "Uploaded invoice document was not found in private storage") from exc
+        raise HTTPException(503, "Unable to verify invoice document in private storage") from exc
+    except BotoCoreError as exc:
         raise HTTPException(503, "Unable to verify invoice document in private storage") from exc
 
     metadata = head.get("Metadata") or {}
