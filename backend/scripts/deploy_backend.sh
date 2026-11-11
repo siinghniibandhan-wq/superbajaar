@@ -7,7 +7,8 @@ HEALTH_URL="${SB_DEPLOY_HEALTH_URL:-https://superappkart.duckdns.org/api/health}
 HR_ROUTE="${SB_DEPLOY_HR_ROUTE:-https://superappkart.duckdns.org/api/hr/attendance/corrections?status=pending}"
 TARGET_SHA="${1:?Usage: deploy_backend.sh <commit-sha>}"
 # Shared with sync_main.sh: serialize source checkout updates and deployments.
-LOCK_FILE="${SB_DEPLOY_LOCK_FILE:-/run/lock/superbajaar-source.lock}"
+# Reuse the lock already used by the installed two-minute sync timer.
+LOCK_FILE="${SB_DEPLOY_LOCK_FILE:-/run/lock/superbajaar-github-sync.lock}"
 log(){ printf '[%s] %s\n' "$(date --iso-8601=seconds)" "$*"; }
 fail(){ log "ERROR: $*"; exit 1; }
 [[ "$(id -un)" == ubuntu ]] || fail "Run as ubuntu; do not run as root"
