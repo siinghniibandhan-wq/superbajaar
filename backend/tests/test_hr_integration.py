@@ -26,17 +26,25 @@ def api(monkeypatch):
             "INSERT INTO app_users(email,full_name,password_hash,role) VALUES(%s,%s,%s,'super_admin') RETURNING id",
             (f"hr-{suffix}@test.local","HR Integration Test","test-hash"),
         ).fetchone()[0]
+        reviewer_id=conn.execute(
+            "INSERT INTO app_users(email,full_name,password_hash,role) VALUES(%s,%s,%s,'super_admin') RETURNING id",
+            (f"hr-reviewer-{suffix}@test.local","HR Independent Reviewer","test-hash"),
+        ).fetchone()[0]
     role={"value":"super_admin"}
+    actor={"user_id":user_id}
     async def fake_session(request:Request):
         request.state.role=role["value"]
-        request.state.user_id=user_id
-        request.state.user_email=f"hr-{suffix}@test.local"
+        request.state.user_id=actor["user_id"]
+        request.state.user_email=f"hr-{suffix}@test.local" if actor["user_id"]==user_id else f"hr-reviewer-{suffix}@test.local"
     from app.api import hr
     monkeypatch.setattr(hr.settings,"database_url",TEST_DB)
     app.dependency_overrides[require_active_session]=fake_session
     client=TestClient(app)
     client.role=role
     client.user_id=user_id
+    client.reviewer_id=reviewer_id
+    client.as_reviewer=lambda: actor.update(user_id=reviewer_id)
+    client.as_primary=lambda: actor.update(user_id=user_id)
     client.suffix=suffix
     yield client
     app.dependency_overrides.pop(require_active_session,None)
@@ -76,7 +84,9 @@ def test_hr_employee_attendance_expense_payroll_accounting_cycle(api):
             "policy_config":{"enabled":False}
         }),201)
         ok(api.post("/api/hr/statutory/policies/"+str(policy["id"])+"/submit"))
+        api.as_reviewer()
         ok(api.post("/api/hr/statutory/policies/"+str(policy["id"])+"/approve"))
+        api.as_primary()
 
     api.role["value"]="staff"
     punch_in=ok(api.post("/api/hr/attendance/punch",json={"punch_type":"clock_in"}),201)
@@ -112,6 +122,7 @@ def test_hr_employee_attendance_expense_payroll_accounting_cycle(api):
     slips=ok(api.get("/api/hr/payroll/runs/"+str(payroll["id"])+"/payslips"))
     assert len(slips["items"])==1
     assert Decimal(str(slips["items"][0]["net_pay"]))==Decimal("46250.00")
+    api.as_reviewer()
     ok(api.post("/api/hr/payroll/runs/"+str(payroll["id"])+"/approve",json={"decision":"approved"}))
     remittances=ok(api.post("/api/hr/payroll/runs/"+str(payroll["id"])+"/statutory-remittances",json={}),201)
     assert len(remittances["items"])==4
@@ -150,6 +161,7 @@ def test_payroll_approval_is_blocked_without_employee_statutory_setup(api):
     assert payroll["statutory_readiness"]=="incomplete"
     assert payroll["approval_blocked"] is True
     assert payroll["incomplete_employees"][0]["employee_id"]==employee["id"]
+    api.as_reviewer()
     blocked=api.post("/api/hr/payroll/runs/"+str(payroll["id"])+"/approve",json={"decision":"approved"})
     assert blocked.status_code==409
     assert "statutory profiles" in blocked.text
@@ -551,6 +563,7 @@ def test_hr_salary_revisions_and_overtime_flow_into_payroll_once(api):
         "special_allowance":"5000","other_allowance":"1000","reason":"Annual performance revision"
     }),201)
     assert revision["status"]=="draft"
+    api.as_reviewer()
     approved=ok(api.post(
         f"/api/hr/employees/{employee['id']}/salary-revisions/{revision['id']}/review",
         json={"decision":"approved"}
@@ -565,6 +578,7 @@ def test_hr_salary_revisions_and_overtime_flow_into_payroll_once(api):
         "amount":"1500.00","hours":"10","hourly_rate":"150",
         "reason":"Approved weekend store coverage"
     }),201)
+    api.as_primary()
     ok(api.post(f"/api/hr/payroll/earning-adjustments/{overtime['id']}/review",json={"decision":"approved"}))
     payroll=ok(api.post("/api/hr/payroll/runs",json={
         "period_start":"2026-12-01","period_end":"2026-12-31"
@@ -588,6 +602,7 @@ def test_hr_salary_revisions_and_overtime_flow_into_payroll_once(api):
         "earning_type":"incentive","period_start":"2026-12-01","period_end":"2026-12-31",
         "amount":"2000.00","reason":"Pending monthly sales incentive"
     }),201)
+    api.as_reviewer()
     blocked=api.post(f"/api/hr/payroll/runs/{payroll['id']}/approve",json={"decision":"approved"})
     assert blocked.status_code==409
     assert "awaiting review" in blocked.text
@@ -621,7 +636,9 @@ def test_hr_multi_establishment_payroll_accruals_are_tracked_per_entity(api):
                 "policy_config":{"enabled":False}
             }),201)
             ok(api.post(f"/api/hr/statutory/policies/{policy['id']}/submit"))
+            api.as_reviewer()
             ok(api.post(f"/api/hr/statutory/policies/{policy['id']}/approve"))
+            api.as_primary()
         employees.append((employee,establishment))
 
     # The integration database is shared across HR tests; isolate this payroll
@@ -637,6 +654,7 @@ def test_hr_multi_establishment_payroll_accruals_are_tracked_per_entity(api):
         "period_start":"2027-01-01","period_end":"2027-01-31"
     }),201)
     assert payroll["employee_count"]>=2
+    api.as_reviewer()
     approved=ok(api.post(f"/api/hr/payroll/runs/{payroll['id']}/approve",json={"decision":"approved"}))
     posting=approved["accounting_accrual"]
     assert posting["status"]=="exception"
