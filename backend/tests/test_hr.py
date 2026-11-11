@@ -204,3 +204,11 @@ def test_hr_final_settlement_earning_types_are_supported_with_manual_amounts():
             amount="2500.00", reason="Approved final settlement component"
         )
         assert earning.earning_type == earning_type
+
+
+
+def test_hr_payroll_rejection_requires_a_reason():
+    from app.api.hr import PayrollApprovalInput
+    with pytest.raises(ValidationError, match="A reason is required when rejecting payroll"):
+        PayrollApprovalInput(decision="rejected")
+    assert PayrollApprovalInput(decision="rejected", note="Incorrect payroll totals").note == "Incorrect payroll totals"
