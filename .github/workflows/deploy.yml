@@ -92,7 +92,6 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: verify
     runs-on: ubuntu-24.04
-    environment: production
     steps:
       - name: Configure AWS credentials using GitHub OIDC
         uses: aws-actions/configure-aws-credentials@v4
@@ -131,7 +130,6 @@ jobs:
     needs: verify
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    environment: production
     steps:
       - name: Configure AWS credentials using GitHub OIDC
         uses: aws-actions/configure-aws-credentials@v4
