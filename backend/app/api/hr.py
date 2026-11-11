@@ -398,7 +398,11 @@ def hr_overview(request: Request, month: str = Query(..., pattern=r"^\d{4}-(0[1-
                 "ON p.payroll_run_id=r.id WHERE r.status IN ('approved','paid') AND p.id IS NULL AND r.accounting_accrual_voucher_id IS NULL)::int "
                 "AS accounting_exceptions, "
                 "(SELECT count(*) FROM hr_employees WHERE status IN ('active','probation','on_leave','notice_period') "
-                "AND (department_id IS NULL OR length(trim(designation))=0))::int AS employee_data_issues"
+                "AND (department_id IS NULL OR length(trim(designation))=0))::int AS employee_data_issues, "
+                "(SELECT count(*) FROM hr_employees WHERE status IN ('active','probation','on_leave','notice_period') "
+                "AND user_id IS NULL)::int AS employees_without_portal_user, "
+                "(SELECT count(*) FROM portal_invitations WHERE portal_type='employee' AND accepted_at IS NULL "
+                "AND revoked_at IS NULL AND expires_at>now())::int AS pending_employee_invitations"
             ).fetchone()
             establishments = conn.execute(
                 "SELECT id,code,display_name FROM hr_establishments WHERE is_active=true ORDER BY display_name"
