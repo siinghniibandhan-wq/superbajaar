@@ -140,3 +140,19 @@ DROP TRIGGER IF EXISTS hr_attendance_audit_no_update ON public.hr_attendance_aud
 CREATE TRIGGER hr_attendance_audit_no_update
     BEFORE UPDATE OR DELETE ON public.hr_attendance_audit_events
     FOR EACH ROW EXECUTE FUNCTION public.hr_attendance_audit_immutable();
+
+DO $grant$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='superbajaar_user') THEN
+        GRANT SELECT,INSERT,UPDATE ON public.hr_attendance_policies TO superbajaar_user;
+        GRANT SELECT,INSERT,UPDATE ON public.hr_attendance_work_locations TO superbajaar_user;
+        GRANT SELECT,INSERT,UPDATE ON public.hr_attendance_correction_requests TO superbajaar_user;
+        GRANT SELECT,INSERT ON public.hr_attendance_audit_events TO superbajaar_user;
+        GRANT USAGE,SELECT ON SEQUENCE
+            public.hr_attendance_policies_id_seq,
+            public.hr_attendance_work_locations_id_seq,
+            public.hr_attendance_correction_requests_id_seq,
+            public.hr_attendance_audit_events_id_seq TO superbajaar_user;
+    END IF;
+END
+$grant$;
