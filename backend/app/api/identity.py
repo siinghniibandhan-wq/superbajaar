@@ -86,6 +86,20 @@ def _merge_claimed_party(conn, source_party_id: int, target_party_id: int, actor
         raise HTTPException(409, "A referral would become a self-referral")
     conn.execute("UPDATE identity_profiles SET party_id=%s,updated_at=now() WHERE party_id=%s", (target_party_id,source_party_id))
     conn.execute("UPDATE identity_auth_accounts SET party_id=%s WHERE party_id=%s", (target_party_id,source_party_id))
+    conn.execute(
+        """
+        UPDATE identity_contacts source
+        SET is_primary=false
+        WHERE source.party_id=%s AND source.valid_to IS NULL AND source.is_primary=true
+          AND EXISTS (
+              SELECT 1 FROM identity_contacts target
+              WHERE target.party_id=%s AND target.contact_type=source.contact_type
+                AND target.valid_to IS NULL AND target.verification_status='verified'
+                AND target.is_primary=true
+          )
+        """,
+        (source_party_id, target_party_id),
+    )
     conn.execute("UPDATE identity_contacts SET party_id=%s,updated_at=now() WHERE party_id=%s", (target_party_id,source_party_id))
     conn.execute("UPDATE identity_relationships SET from_party_id=%s,updated_at=now() WHERE from_party_id=%s", (target_party_id,source_party_id))
     conn.execute("UPDATE identity_relationships SET to_party_id=%s,updated_at=now() WHERE to_party_id=%s", (target_party_id,source_party_id))
