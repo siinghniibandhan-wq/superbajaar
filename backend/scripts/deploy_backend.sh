@@ -43,7 +43,7 @@ rollback(){
   fi
   exit "$rc"
 }
-trap rollback ERR
+trap rollback EXIT
 git fetch --quiet origin main
 git cat-file -e "$TARGET_SHA^{commit}" || fail "Target commit is not available locally after fetch"
 git merge-base --is-ancestor "$old_sha" "$TARGET_SHA" || fail "Target is not a fast-forward from current production"
@@ -60,5 +60,5 @@ done
 hr_code="$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 15 "$HR_ROUTE" || true)"
 case "$hr_code" in 2??|401|403) ;; *) fail "HR route check failed with HTTP $hr_code" ;; esac
 rollback_needed=0
-trap - ERR
+trap - EXIT
 log "Deployment verified: $(git rev-parse HEAD); health=OK; HR route HTTP $hr_code"
