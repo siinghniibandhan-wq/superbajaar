@@ -20,7 +20,7 @@ class DeployBackendConfigurationTests(unittest.TestCase):
         self.assertIn('"$working_dir/.venv"', self.source)
 
     def test_validates_existing_gunicorn_runtime_without_replacing_it(self):
-        self.assertIn('[ "$working_dir" == "$REPO_DIR/backend" ]', self.source) if False else self.assertIn('[[ "$working_dir" == "$REPO_DIR/backend" ]]', self.source)
+        self.assertIn('[[ "$working_dir" == "$REPO_DIR/backend" ]]', self.source)
         self.assertIn('[[ "$exec_start" == *"$venv/bin/"* ]]', self.source)
 
     def test_compilation_uses_writable_external_bytecode_cache(self):
