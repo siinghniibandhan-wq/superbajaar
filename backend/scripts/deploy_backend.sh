@@ -9,7 +9,7 @@ TARGET_SHA="${1:?Usage: deploy_backend.sh <commit-sha>}"
 # Shared with sync_main.sh: serialize source checkout updates and deployments.
 # Reuse the lock already used by the installed two-minute sync timer.
 LOCK_FILE="${SB_DEPLOY_LOCK_FILE:-/run/lock/superbajaar-github-sync.lock}"
-log(){ printf '[%s] %s\\n' "$(date --iso-8601=seconds)" "$*"; }
+log(){ printf '[%s] %s\n' "$(date --iso-8601=seconds)" "$*"; }
 fail(){ log "ERROR: $*"; exit 1; }
 [[ "$(id -un)" == ubuntu ]] || fail "Run as ubuntu; do not run as root"
 [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || fail "Invalid commit SHA"
