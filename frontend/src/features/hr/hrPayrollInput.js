@@ -21,6 +21,9 @@ export function parsePayrollInputs(deductionsText, notesText) {
     if (!/^[1-9]\d*$/.test(employeeId)) {
       throw new Error("Manual deduction keys must be positive employee IDs.");
     }
+    if (!(typeof rawAmount === "number" || typeof rawAmount === "string") || String(rawAmount).trim() === "") {
+      throw new Error("Each manual deduction must be a non-negative finite amount.");
+    }
     const amount = Number(rawAmount);
     if (!Number.isFinite(amount) || amount < 0) {
       throw new Error("Each manual deduction must be a non-negative finite amount.");
