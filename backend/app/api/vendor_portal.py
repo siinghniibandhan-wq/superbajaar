@@ -168,7 +168,7 @@ def vendor_invoice_document(invoice_id: int, request: Request):
             if not row["source_document_uri"].startswith(prefix):
                 raise HTTPException(403, "Invoice document is outside this supplier account")
             key = row["source_document_uri"][len(f"s3://{bucket}/"):]
-        client = boto3.client("s3", region_name=os.getenv("AWS_REGION") or None)
+        client = _s3_client()
         url = client.generate_presigned_url(
             "get_object", Params={"Bucket": bucket, "Key": key}, ExpiresIn=300
         )
