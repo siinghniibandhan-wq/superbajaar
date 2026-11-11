@@ -155,6 +155,14 @@ class AttendanceAdjustmentInput(BaseModel):
     clock_out_at: Any | None = None
     reason: str = Field(min_length=5, max_length=500)
 
+    @field_validator("reason")
+    @classmethod
+    def require_adjustment_reason(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 5:
+            raise ValueError("Attendance adjustment reason must contain at least 5 characters")
+        return value
+
 
 class PunchInput(BaseModel):
     model_config = {"extra": "forbid"}
