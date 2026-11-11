@@ -2,6 +2,12 @@
   "Version": "2012-10-17",
   "Statement": [
     {
+      "Sid": "DiscoverSuperBajaarAmplifyApp",
+      "Effect": "Allow",
+      "Action": "amplify:ListApps",
+      "Resource": "*"
+    },
+    {
       "Sid": "ListProductionAmplifyJobs",
       "Effect": "Allow",
       "Action": "amplify:ListJobs",
