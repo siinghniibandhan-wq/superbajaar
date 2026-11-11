@@ -191,10 +191,17 @@ jobs:
             local html="/tmp/amplify-index.html"
             curl --fail --silent --show-error --location --retry 3 --retry-all-errors --max-time 30 -H 'Cache-Control: no-cache' "$SITE_URL/?sb_health=$GITHUB_RUN_ID" -o "$html"
             grep -qi '<html' "$html"
-            grep -Fq "name=\"sb-release\" content=\"$expected\"" "$html" || {
-              echo "Published HTML release marker does not match expected commit $expected"
+            if grep -q 'name="sb-release"' "$html"; then
+              grep -Fq "name=\\"sb-release\\" content=\\"$expected\\"" "$html" || {
+                echo "Published HTML release marker does not match expected commit $expected"
+                return 1
+              }
+            elif [[ "$ALLOW_LEGACY" == "true" ]]; then
+              echo "Previous known-good release predates the commit marker; relying on its successful Amplify job ID plus HTML/asset checks for this one-time baseline recovery"
+            else
+              echo "Published HTML is missing the required release marker"
               return 1
-            }
+            fi
             python - "$html" "$SITE_URL" <<'PY'
           import html.parser, sys, urllib.parse, urllib.request
           class Assets(html.parser.HTMLParser):
