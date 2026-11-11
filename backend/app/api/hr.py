@@ -73,6 +73,13 @@ def _employee(conn, user_id: int):
     return row
 
 
+def _require_leave_policy_for_approval(leave_type: str, policy):
+    """Paid leave must be governed by one approved effective-dated policy."""
+    if leave_type != "unpaid" and policy is None:
+        raise HTTPException(409, "An approved effective leave policy is required before paid leave can be approved")
+    return policy
+
+
 def _validate_reporting_manager(conn, employee_id: int, manager_id: int | None):
     """Reject self-reporting and cycles in the employee reporting hierarchy."""
     if manager_id is None:
@@ -946,6 +953,7 @@ def review_leave(leave_id: int, payload: ReviewInput, request: Request):
                     "ORDER BY p.effective_from DESC LIMIT 1",
                     (row["employee_id"],row["leave_type"],row["start_date"],row["end_date"])
                 ).fetchone()
+                _require_leave_policy_for_approval(row["leave_type"], policy)
                 if policy and row["leave_type"] != "unpaid":
                     balance = conn.execute(
                         "SELECT COALESCE(sum(quantity_days),0) AS days FROM hr_leave_ledger "
