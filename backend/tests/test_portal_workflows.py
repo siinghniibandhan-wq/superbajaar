@@ -112,3 +112,59 @@ def test_vendor_s3_client_falls_back_to_aws_region(monkeypatch):
     vendor_portal._s3_client()
 
     assert captured == {"service": "s3", "region_name": "ap-south-1"}
+
+
+def test_vendor_invoice_document_verification_accepts_owned_uploaded_object():
+    from app.api.vendor_portal import _verify_vendor_document_object
+
+    class S3:
+        def head_object(self, **kwargs):
+            assert kwargs == {"Bucket": "private-bucket", "Key": "vendor-invoices/42/" + "a" * 32 + ".pdf"}
+            return {"Metadata": {"supplier-id": "42"}, "ServerSideEncryption": "AES256", "ContentLength": 123, "ContentType": "application/pdf"}
+
+    key = _verify_vendor_document_object(S3(), "private-bucket", "s3://private-bucket/vendor-invoices/42/" + "a" * 32 + ".pdf", 42)
+    assert key == "vendor-invoices/42/" + "a" * 32 + ".pdf"
+
+
+def test_vendor_invoice_document_verification_rejects_other_supplier_or_bucket():
+    from fastapi import HTTPException
+    from app.api.vendor_portal import _verify_vendor_document_object
+
+    class S3:
+        def head_object(self, **kwargs):
+            raise AssertionError("S3 must not be called for an invalid URI")
+
+    with pytest.raises(HTTPException) as wrong_supplier:
+        _verify_vendor_document_object(S3(), "private-bucket", "s3://private-bucket/vendor-invoices/7/" + "a" * 32 + ".pdf", 42)
+    assert wrong_supplier.value.status_code == 422
+
+    with pytest.raises(HTTPException) as wrong_bucket:
+        _verify_vendor_document_object(S3(), "private-bucket", "s3://other-bucket/vendor-invoices/42/" + "a" * 32 + ".pdf", 42)
+    assert wrong_bucket.value.status_code == 422
+
+
+def test_vendor_invoice_document_verification_rejects_missing_s3_object():
+    from botocore.exceptions import ClientError
+    from fastapi import HTTPException
+    from app.api.vendor_portal import _verify_vendor_document_object
+
+    class S3:
+        def head_object(self, **kwargs):
+            raise ClientError({"Error": {"Code": "404", "Message": "Not Found"}, "ResponseMetadata": {"HTTPStatusCode": 404}}, "HeadObject")
+
+    with pytest.raises(HTTPException) as missing:
+        _verify_vendor_document_object(S3(), "private-bucket", "s3://private-bucket/vendor-invoices/42/" + "a" * 32 + ".pdf", 42)
+    assert missing.value.status_code == 422
+
+
+def test_vendor_invoice_document_verification_rejects_wrong_s3_metadata():
+    from fastapi import HTTPException
+    from app.api.vendor_portal import _verify_vendor_document_object
+
+    class S3:
+        def head_object(self, **kwargs):
+            return {"Metadata": {"supplier-id": "99"}, "ServerSideEncryption": "AES256", "ContentLength": 123, "ContentType": "application/pdf"}
+
+    with pytest.raises(HTTPException) as wrong_owner:
+        _verify_vendor_document_object(S3(), "private-bucket", "s3://private-bucket/vendor-invoices/42/" + "a" * 32 + ".pdf", 42)
+    assert wrong_owner.value.status_code == 403
