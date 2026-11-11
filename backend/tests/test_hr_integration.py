@@ -198,8 +198,9 @@ def test_hr_admin_can_manage_departments_establishments_and_attendance(api):
         "clock_out_at":"2026-11-02T18:00:00+05:30",
         "reason":"Corrected missed attendance punch"
     }))
-    assert adjusted["source"]=="manager_adjustment"
-    assert adjusted["clock_out_at"] is not None
+    assert adjusted["status"]=="pending_review"
+    assert adjusted["request"]["status"]=="pending"
+    assert adjusted["request"]["requested_by_user_id"]==api.user_id
     invalid_adjustment=api.patch("/api/hr/attendance/sessions/"+str(punch["id"]),json={
         "clock_in_at":"2026-11-02T18:00:00+05:30",
         "clock_out_at":"2026-11-02T09:00:00+05:30",

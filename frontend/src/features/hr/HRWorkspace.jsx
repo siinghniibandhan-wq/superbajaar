@@ -12,6 +12,26 @@ import { exportPayslipsCsv } from "./hrPayslipExport.js";
 const today = todayHRDate;
 const money = v => new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR"}).format(Number(v||0));
 
+function downloadAttendanceCsv(rows) {
+  const columns = [
+    ["Employee code","employee_code"],["Employee","first_name"],["Last name","last_name"],
+    ["Department","department_name"],["Clock in","clock_in_at"],["Clock out","clock_out_at"],
+    ["Hours","hours"],["Late minutes","late_minutes"],["Early departure minutes","early_departure_minutes"],
+    ["Overtime minutes","overtime_minutes"]
+  ];
+  const quote = value => '"' + String(value ?? "").replace(/"/g,'""') + '"';
+  const csv = [columns.map(([label])=>quote(label)).join(","),...rows.filter(row=>row.id).map(row=>columns.map(([,key])=>quote(row[key])).join(","))].join("\r\n");
+  const blob = new Blob(["\uFEFF",csv],{type:"text/csv;charset=utf-8;"});
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "hr-attendance-register.csv";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 function downloadPayslips(payslips, includeEmployee) {
   const csv = exportPayslipsCsv(payslips, { includeEmployee });
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -28,7 +48,7 @@ function downloadPayslips(payslips, includeEmployee) {
 export default function HRWorkspace({onBack,currentUser}) {
   const manager=["super_admin","owner","admin","manager"].includes(currentUser?.role);
   const [tab,setTab]=useState("overview"),[employees,setEmployees]=useState([]),[departments,setDepartments]=useState([]),[employeeQuery,setEmployeeQuery]=useState("");
-  const [attendance,setAttendance]=useState([]),[leaves,setLeaves]=useState([]),[expenses,setExpenses]=useState([]);
+  const [attendance,setAttendance]=useState([]),[attendanceCorrections,setAttendanceCorrections]=useState([]),[attendanceAudit,setAttendanceAudit]=useState(null),[establishments,setEstablishments]=useState([]),[attendancePolicies,setAttendancePolicies]=useState([]),[attendanceWorkLocations,setAttendanceWorkLocations]=useState([]),[leaves,setLeaves]=useState([]),[expenses,setExpenses]=useState([]);
   const [runs,setRuns]=useState([]),[payslips,setPayslips]=useState([]),[month,setMonth]=useState(today().slice(0,7));
   const [error,setError]=useState(""),[notice,setNotice]=useState(""),[busy,setBusy]=useState(false);
   const [overviewData,setOverviewData]=useState(null),[overviewError,setOverviewError]=useState(""),[overviewLoading,setOverviewLoading]=useState(false);
@@ -36,6 +56,11 @@ export default function HRWorkspace({onBack,currentUser}) {
   const [editingDepartment,setEditingDepartment]=useState(null);
   const [editingEmployee,setEditingEmployee]=useState(null);
   const [attendanceEdit,setAttendanceEdit]=useState({});
+  const [attendanceEmployeeFilter,setAttendanceEmployeeFilter]=useState("");
+  const [attendanceDepartmentFilter,setAttendanceDepartmentFilter]=useState("");
+  const [attendanceDateFilter,setAttendanceDateFilter]=useState("");
+  const [attendancePolicyDraft,setAttendancePolicyDraft]=useState({establishment_id:"",grace_minutes:"0",break_minutes:"0",geofence_enabled:false,geofence_enforced:false,require_location_on_clock_in:false,require_location_on_clock_out:false,effective_from:today()});
+  const [attendanceLocationDraft,setAttendanceLocationDraft]=useState({establishment_id:"",code:"",name:"",latitude:"",longitude:"",radius_meters:"150"});
   const [salaryEmployeeId,setSalaryEmployeeId]=useState(null),[salaryRevisions,setSalaryRevisions]=useState([]);
   const [salaryDraft,setSalaryDraft]=useState({effective_from:today(),effective_to:"",basic_salary:"0",hra:"0",special_allowance:"0",other_allowance:"0",reason:""});
   const [earningAdjustments,setEarningAdjustments]=useState([]);
@@ -55,12 +80,16 @@ export default function HRWorkspace({onBack,currentUser}) {
       setEmployees(results[0].items||[]);setDepartments(results[1].items||[]);setLeaves(results[2].items||[]);setExpenses(results[3].items||[]);
       if(manager){
         const last=new Date(Number(month.slice(0,4)),Number(month.slice(5,7)),0).getDate();
-        const [a,r,earnings]=await Promise.all([
+        const [a,r,earnings,corrections,establishmentResult,policyResult,locationResult]=await Promise.all([
           apiRequest("/hr/attendance/register?start_date="+month+"-01&end_date="+month+"-"+String(last).padStart(2,"0")),
           apiRequest("/hr/payroll/runs"),
           apiRequest("/hr/payroll/earning-adjustments"),
+          apiRequest("/hr/attendance/corrections?status=pending"),
+          apiRequest("/hr/establishments"),
+          apiRequest("/hr/attendance/policies"),
+          apiRequest("/hr/attendance/work-locations"),
         ]);
-        setAttendance(a.items||[]);setRuns(r.items||[]);setEarningAdjustments(earnings.items||[]);
+        setAttendance(a.items||[]);setAttendanceCorrections(corrections.items||[]);setEstablishments(establishmentResult.items||[]);setAttendancePolicies(policyResult.items||[]);setAttendanceWorkLocations(locationResult.items||[]);setRuns(r.items||[]);setEarningAdjustments(earnings.items||[]);
         setOverviewLoading(true);
         try{
           const overview=await apiRequest("/hr/overview?month="+month);
@@ -71,11 +100,29 @@ export default function HRWorkspace({onBack,currentUser}) {
       }else{
         setOverviewData(null);setOverviewError("");
         const a=await apiRequest("/hr/attendance/me?month="+month);const p=await apiRequest("/hr/payroll/me/payslips");
-        setAttendance(a.items||[]);setPayslips(p.items||[]);
+        setAttendance(a.items||[]);setAttendanceCorrections([]);setPayslips(p.items||[]);
       }
     }catch(e){setError(e.message||"Unable to load HR records.");}finally{setBusy(false);}
   },[manager,month]);
   useEffect(()=>{load();},[load]);
+
+  async function loadAttendanceAudit(sessionId){
+    setBusy(true);setError("");
+    try{
+      const result=await apiRequest("/hr/attendance/sessions/"+sessionId+"/audit");
+      setAttendanceAudit({sessionId,items:result.items||[]});
+    }catch(e){setError(e.message||"Unable to load attendance audit history.");}
+    finally{setBusy(false);}
+  }
+
+  async function getAttendancePunchLocation(){
+    if(!navigator.geolocation) return {};
+    return new Promise(resolve=>navigator.geolocation.getCurrentPosition(
+      position=>resolve({latitude:position.coords.latitude,longitude:position.coords.longitude,accuracy_meters:position.coords.accuracy}),
+      ()=>resolve({}),
+      {enableHighAccuracy:true,timeout:10000,maximumAge:0}
+    ));
+  }
 
   async function act(fn,message){
     setBusy(true);setError("");setNotice("");
@@ -94,6 +141,7 @@ export default function HRWorkspace({onBack,currentUser}) {
   const tabs=[{group:"Overview",items:[["overview","Overview"]]},...(manager?[{group:"Workforce",items:[["organisation","Organisation chart"],["people","People directory"]]}]:[]),{group:"Time & attendance",items:[["attendance","Attendance"],["leave","Leave"],["advanced","Planning & lifecycle"]]},{group:"Compensation",items:[["expenses","Expenses"],["payroll","Payroll"],["payslips","Payslips"]]},...(manager?[{group:"Compliance & insights",items:[["statutory","Statutory policies"]]}]:[])];
   const filteredEmployees=employees.filter(e=>[e.employee_code,e.first_name,e.last_name,e.email,e.department_name,e.designation].some(v=>String(v||"").toLowerCase().includes(employeeQuery.toLowerCase())));
   const open=attendance.find(x=>!x.clock_out_at);
+  const visibleAttendance=attendance.filter(x=>(!attendanceEmployeeFilter||String(x.employee_id)===attendanceEmployeeFilter)&&(!attendanceDepartmentFilter||String(x.department_id)===attendanceDepartmentFilter)&&(!attendanceDateFilter||(x.clock_in_at&&new Date(x.clock_in_at).toLocaleDateString("en-CA")===attendanceDateFilter)));
 
   return <section className="sb-workspace hr-workspace">
     <button className="sb-back" onClick={onBack} type="button">← All workspaces</button>
@@ -160,9 +208,9 @@ export default function HRWorkspace({onBack,currentUser}) {
        </>}
     </div>}
     {tab==="attendance"&&<div className="hr-panel">
-      {!manager&&<div className="hr-punch-card"><h2>My attendance</h2><p>{open?"Currently clocked in":"Not currently clocked in"}</p><button disabled={busy} onClick={()=>act(()=>post("/hr/attendance/punch",{punch_type:open?"clock_out":"clock_in"}),open?"Clocked out.":"Clocked in.")}>{open?"Clock out":"Clock in"}</button></div>}
-      <h2>{manager?"Attendance register":"My attendance log"}</h2><div className="hr-table-wrap"><table><thead><tr><th>Employee / session</th><th>Clock in</th><th>Clock out</th><th>Hours</th>{manager&&<th>HR action</th>}</tr></thead><tbody>{attendance.map((a,i)=><tr key={a.id||i}><td>{a.employee_code||"Session"} {a.first_name||""} {a.last_name||""}</td><td>{formatHRDateTime(a.clock_in_at)}</td><td>{a.clock_out_at?formatHRDateTime(a.clock_out_at):"Open"}</td><td>{a.hours??"—"}</td>{manager&&<td>{a.id&&<button type="button" onClick={()=>setAttendanceEdit({id:a.id,clock_in_at:toLocalDateTimeInput(a.clock_in_at),clock_out_at:toLocalDateTimeInput(a.clock_out_at),reason:""})}>Adjust</button>}</td>}</tr>)}{!attendance.length&&<tr><td colSpan={manager?5:4}>No attendance sessions recorded for this period.</td></tr>}</tbody></table></div>
-      {manager&&attendanceEdit.id&&<form className="hr-form" onSubmit={e=>{e.preventDefault();act(()=>patch("/hr/attendance/sessions/"+attendanceEdit.id,{clock_in_at:new Date(attendanceEdit.clock_in_at).toISOString(),clock_out_at:attendanceEdit.clock_out_at?new Date(attendanceEdit.clock_out_at).toISOString():null,reason:attendanceEdit.reason}),"Attendance corrected with HR reason recorded.");setAttendanceEdit({});}}>
+      {!manager&&<div className="hr-punch-card"><h2>My attendance</h2><p>{open?"Currently clocked in":"Not currently clocked in"}</p><button disabled={busy} onClick={()=>act(async()=>{const location=await getAttendancePunchLocation();await post("/hr/attendance/punch",{punch_type:open?"clock_out":"clock_in",...location});},open?"Clocked out.":"Clocked in.")}>{open?"Clock out":"Clock in"}</button></div>}
+      <h2>{manager?"Attendance register":"My attendance log"}</h2>{manager&&<section className="hr-panel"><h3>Attendance policy & geofences</h3><p>Configure grace time, break duration and location enforcement by establishment. GPS is collected only when an employee clocks in or out.</p><form className="hr-form hr-grid" onSubmit={e=>{e.preventDefault();act(async()=>{await post("/hr/attendance/policies",{...attendancePolicyDraft,establishment_id:Number(attendancePolicyDraft.establishment_id),grace_minutes:Number(attendancePolicyDraft.grace_minutes),break_minutes:Number(attendancePolicyDraft.break_minutes)});const result=await apiRequest("/hr/attendance/policies");setAttendancePolicies(result.items||[]);},"Attendance policy saved.");}}><label>Establishment<select required value={attendancePolicyDraft.establishment_id} onChange={e=>setAttendancePolicyDraft({...attendancePolicyDraft,establishment_id:e.target.value})}><option value="">Select establishment</option>{establishments.map(x=><option key={x.id} value={x.id}>{x.display_name||x.legal_name||x.code}</option>)}</select></label><label>Grace minutes<input type="number" min="0" max="240" value={attendancePolicyDraft.grace_minutes} onChange={e=>setAttendancePolicyDraft({...attendancePolicyDraft,grace_minutes:e.target.value})}/></label><label>Break minutes<input type="number" min="0" max="720" value={attendancePolicyDraft.break_minutes} onChange={e=>setAttendancePolicyDraft({...attendancePolicyDraft,break_minutes:e.target.value})}/></label><label>Effective from<input type="date" required value={attendancePolicyDraft.effective_from} onChange={e=>setAttendancePolicyDraft({...attendancePolicyDraft,effective_from:e.target.value})}/></label><label><input type="checkbox" checked={attendancePolicyDraft.geofence_enabled} onChange={e=>setAttendancePolicyDraft({...attendancePolicyDraft,geofence_enabled:e.target.checked,geofence_enforced:e.target.checked?attendancePolicyDraft.geofence_enforced:false,require_location_on_clock_in:e.target.checked?attendancePolicyDraft.require_location_on_clock_in:false,require_location_on_clock_out:e.target.checked?attendancePolicyDraft.require_location_on_clock_out:false})}/> Enable geofencing</label><label><input type="checkbox" disabled={!attendancePolicyDraft.geofence_enabled} checked={attendancePolicyDraft.geofence_enforced} onChange={e=>setAttendancePolicyDraft({...attendancePolicyDraft,geofence_enforced:e.target.checked})}/> Enforce work-location boundary</label><label><input type="checkbox" disabled={!attendancePolicyDraft.geofence_enabled} checked={attendancePolicyDraft.require_location_on_clock_in} onChange={e=>setAttendancePolicyDraft({...attendancePolicyDraft,require_location_on_clock_in:e.target.checked})}/> Require GPS at clock-in</label><label><input type="checkbox" disabled={!attendancePolicyDraft.geofence_enabled} checked={attendancePolicyDraft.require_location_on_clock_out} onChange={e=>setAttendancePolicyDraft({...attendancePolicyDraft,require_location_on_clock_out:e.target.checked})}/> Require GPS at clock-out</label><button disabled={busy||!attendancePolicyDraft.establishment_id}>Save policy version</button></form><h4>Work locations</h4><form className="hr-form hr-grid" onSubmit={e=>{e.preventDefault();act(async()=>{await post("/hr/attendance/work-locations",{...attendanceLocationDraft,establishment_id:Number(attendanceLocationDraft.establishment_id),latitude:Number(attendanceLocationDraft.latitude),longitude:Number(attendanceLocationDraft.longitude),radius_meters:Number(attendanceLocationDraft.radius_meters)});const result=await apiRequest("/hr/attendance/work-locations");setAttendanceWorkLocations(result.items||[]);setAttendanceLocationDraft({...attendanceLocationDraft,code:"",name:""});},"Work location added.");}}><label>Establishment<select required value={attendanceLocationDraft.establishment_id} onChange={e=>setAttendanceLocationDraft({...attendanceLocationDraft,establishment_id:e.target.value})}><option value="">Select establishment</option>{establishments.map(x=><option key={x.id} value={x.id}>{x.display_name||x.legal_name||x.code}</option>)}</select></label><label>Location code<input required value={attendanceLocationDraft.code} onChange={e=>setAttendanceLocationDraft({...attendanceLocationDraft,code:e.target.value})}/></label><label>Location name<input required value={attendanceLocationDraft.name} onChange={e=>setAttendanceLocationDraft({...attendanceLocationDraft,name:e.target.value})}/></label><label>Latitude<input type="number" min="-90" max="90" step="any" required value={attendanceLocationDraft.latitude} onChange={e=>setAttendanceLocationDraft({...attendanceLocationDraft,latitude:e.target.value})}/></label><label>Longitude<input type="number" min="-180" max="180" step="any" required value={attendanceLocationDraft.longitude} onChange={e=>setAttendanceLocationDraft({...attendanceLocationDraft,longitude:e.target.value})}/></label><label>Radius (metres)<input type="number" min="10" max="10000" required value={attendanceLocationDraft.radius_meters} onChange={e=>setAttendanceLocationDraft({...attendanceLocationDraft,radius_meters:e.target.value})}/></label><button type="button" onClick={async()=>{const point=await getAttendancePunchLocation();if(point.latitude!=null)setAttendanceLocationDraft({...attendanceLocationDraft,latitude:String(point.latitude),longitude:String(point.longitude)});else setError("Location permission was unavailable. Enter coordinates manually.");}}>Use my current location</button><button disabled={busy||!attendanceLocationDraft.establishment_id}>Add work location</button></form><ul>{attendanceWorkLocations.map(x=><li key={x.id}>{x.name} ({x.code}) — {x.radius_meters} m — {x.is_active?"Active":"Inactive"}</li>)}</ul><small>{attendancePolicies.length} policy version(s) configured</small></section>}{manager&&<div className="hr-toolbar"><label>Employee <select value={attendanceEmployeeFilter} onChange={e=>setAttendanceEmployeeFilter(e.target.value)}><option value="">All employees</option>{employees.filter(e=>e.status!=="terminated").map(e=><option key={e.id} value={e.id}>{e.employee_code} — {e.first_name} {e.last_name||""}</option>)}</select></label><label>Department <select value={attendanceDepartmentFilter} onChange={e=>setAttendanceDepartmentFilter(e.target.value)}><option value="">All departments</option>{departments.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></label><label>Day <input type="date" value={attendanceDateFilter} onChange={e=>setAttendanceDateFilter(e.target.value)}/></label><button type="button" onClick={()=>{setAttendanceEmployeeFilter("");setAttendanceDepartmentFilter("");setAttendanceDateFilter("");}}>Clear filters</button><button type="button" onClick={()=>downloadAttendanceCsv(visibleAttendance)}>Export CSV / Excel</button><button type="button" onClick={()=>window.print()}>Print / Save PDF</button></div>}<div className="hr-overview">{manager&&<><article><span>Sessions</span><strong>{visibleAttendance.filter(x=>x.id).length}</strong><small>Selected month</small></article><article><span>Late minutes</span><strong>{visibleAttendance.reduce((n,x)=>n+Number(x.late_minutes||0),0)}</strong><small>Published shifts only</small></article><article><span>Overtime minutes</span><strong>{visibleAttendance.reduce((n,x)=>n+Number(x.overtime_minutes||0),0)}</strong><small>Before payroll approval</small></article></>}</div><div className="hr-table-wrap"><table><thead><tr><th>Employee / session</th><th>Clock in</th><th>Clock out</th><th>Hours</th>{manager&&<><th>Late</th><th>Early</th><th>Overtime</th><th>HR action</th></>}</tr></thead><tbody>{visibleAttendance.map((a,i)=><tr key={a.id||i}><td>{a.employee_code||"Session"} {a.first_name||""} {a.last_name||""}</td><td>{formatHRDateTime(a.clock_in_at)}</td><td>{a.clock_out_at?formatHRDateTime(a.clock_out_at):"Open"}</td><td>{a.hours??"—"}</td>{manager&&<><td>{a.late_minutes==null?"—":a.late_minutes+" min"}</td><td>{a.early_departure_minutes==null?"—":a.early_departure_minutes+" min"}</td><td>{a.overtime_minutes==null?"—":a.overtime_minutes+" min"}</td><td>{a.id&&<><button type="button" onClick={()=>setAttendanceEdit({id:a.id,clock_in_at:toLocalDateTimeInput(a.clock_in_at),clock_out_at:toLocalDateTimeInput(a.clock_out_at),reason:""})}>Request correction</button> <button type="button" onClick={()=>loadAttendanceAudit(a.id)}>Audit</button></>}</td></>}</tr>)}{!visibleAttendance.filter(x=>x.id).length&&<tr><td colSpan={manager?8:4}>No attendance sessions recorded for this period.</td></tr>}</tbody></table></div>{manager&&attendanceAudit&&<section className="hr-panel"><h3>Audit history — session #{attendanceAudit.sessionId}</h3><div className="hr-table-wrap"><table><thead><tr><th>When</th><th>Event</th><th>Actor user ID</th><th>Before / after snapshot</th></tr></thead><tbody>{attendanceAudit.items.map(event=><tr key={event.id}><td>{formatHRDateTime(event.created_at)}</td><td>{event.event_type}</td><td>{event.actor_user_id||"System"}</td><td><details><summary>View snapshots</summary><pre>{JSON.stringify({before:event.before_state,after:event.after_state},null,2)}</pre></details></td></tr>)}{!attendanceAudit.items.length&&<tr><td colSpan="4">No audit events recorded.</td></tr>}</tbody></table></div></section>}{manager&&<section className="hr-panel"><h3>Correction requests awaiting independent review</h3><div className="hr-table-wrap"><table><thead><tr><th>Employee</th><th>Requested check-in</th><th>Requested check-out</th><th>Reason</th><th>Review</th></tr></thead><tbody>{attendanceCorrections.map(x=><tr key={x.id}><td>{x.employee_code} {x.first_name} {x.last_name}</td><td>{formatHRDateTime(x.requested_clock_in_at)}</td><td>{x.requested_clock_out_at?formatHRDateTime(x.requested_clock_out_at):"Open"}</td><td>{x.reason}</td><td><button type="button" disabled={Number(x.requested_by_user_id)===Number(currentUser?.id)} onClick={()=>review("/hr/attendance/corrections/"+x.id+"/review","approved")}>Approve</button> <button type="button" disabled={Number(x.requested_by_user_id)===Number(currentUser?.id)} onClick={()=>review("/hr/attendance/corrections/"+x.id+"/review","rejected")}>Reject</button></td></tr>)}{!attendanceCorrections.length&&<tr><td colSpan="5">No pending corrections.</td></tr>}</tbody></table></div></section>}
+      {manager&&attendanceEdit.id&&<form className="hr-form" onSubmit={e=>{e.preventDefault();act(()=>patch("/hr/attendance/sessions/"+attendanceEdit.id,{clock_in_at:new Date(attendanceEdit.clock_in_at).toISOString(),clock_out_at:attendanceEdit.clock_out_at?new Date(attendanceEdit.clock_out_at).toISOString():null,reason:attendanceEdit.reason}),"Correction submitted for independent approval.");setAttendanceEdit({});}}>
         <h3>Correct attendance session #{attendanceEdit.id}</h3>
         <label>Check-in<input type="datetime-local" value={attendanceEdit.clock_in_at} onChange={e=>setAttendanceEdit({...attendanceEdit,clock_in_at:e.target.value})} required/></label>
         <label>Check-out (optional)<input type="datetime-local" value={attendanceEdit.clock_out_at} onChange={e=>setAttendanceEdit({...attendanceEdit,clock_out_at:e.target.value})}/></label>

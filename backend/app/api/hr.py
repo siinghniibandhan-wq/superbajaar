@@ -170,6 +170,17 @@ class PunchInput(BaseModel):
     model_config = {"extra": "forbid"}
     punch_type: str = Field(pattern="^(clock_in|clock_out)$")
     note: str | None = Field(default=None, max_length=500)
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+    accuracy_meters: float | None = Field(default=None, gt=0, le=10000)
+
+    @model_validator(mode="after")
+    def paired_coordinates(self):
+        if (self.latitude is None) != (self.longitude is None):
+            raise ValueError("Latitude and longitude must be provided together")
+        if self.accuracy_meters is not None and self.latitude is None:
+            raise ValueError("Location accuracy requires GPS coordinates")
+        return self
 
 
 class LeaveInput(BaseModel):
@@ -814,22 +825,68 @@ def attendance_punch(payload: PunchInput, request: Request):
     try:
         with _hr_connection() as conn:
             employee = _employee(conn, actor)
-            if payload.punch_type == "clock_in":
+            profile = conn.execute(
+                "SELECT establishment_id FROM hr_employee_statutory_profiles WHERE employee_id=%s",
+                (employee["id"],),
+            ).fetchone()
+            policy = None
+            locations = []
+            if profile:
+                policy = conn.execute(
+                    "SELECT * FROM hr_attendance_policies WHERE establishment_id=%s "
+                    "AND effective_from<=CURRENT_DATE AND (effective_to IS NULL OR effective_to>=CURRENT_DATE) "
+                    "ORDER BY effective_from DESC LIMIT 1",
+                    (profile["establishment_id"],),
+                ).fetchone()
+                if policy and policy["geofence_enabled"]:
+                    locations = conn.execute(
+                        "SELECT * FROM hr_attendance_work_locations WHERE establishment_id=%s AND is_active=true",
+                        (profile["establishment_id"],),
+                    ).fetchall()
+            is_clock_in = payload.punch_type == "clock_in"
+            requires_location = bool(policy and policy["geofence_enabled"] and (
+                policy["geofence_enforced"]
+                or (is_clock_in and policy["require_location_on_clock_in"])
+                or (not is_clock_in and policy["require_location_on_clock_out"])
+            ))
+            if requires_location and payload.latitude is None:
+                raise HTTPException(422, "GPS coordinates are required by the active attendance policy")
+            matched_location_id = None
+            if payload.latitude is not None and policy and policy["geofence_enabled"]:
+                from app.services.hr_attendance import is_within_geofence
+                for location in locations:
+                    if is_within_geofence(
+                        latitude=payload.latitude, longitude=payload.longitude,
+                        center_latitude=float(location["latitude"]),
+                        center_longitude=float(location["longitude"]),
+                        radius_meters=location["radius_meters"],
+                    ):
+                        matched_location_id = location["id"]
+                        break
+                if policy["geofence_enforced"] and matched_location_id is None:
+                    raise HTTPException(403, "You are outside the permitted attendance work locations")
+            if is_clock_in:
                 try:
                     row = conn.execute(
-                        "INSERT INTO hr_attendance_sessions(employee_id,clock_in_note,created_by_user_id) "
-                        "VALUES(%s,%s,%s) RETURNING id,employee_id,clock_in_at,clock_out_at,source",
-                        (employee["id"],payload.note,actor),
+                        "INSERT INTO hr_attendance_sessions(employee_id,clock_in_note,created_by_user_id,"
+                        "last_modified_by_user_id,clock_in_latitude,clock_in_longitude,clock_in_accuracy_meters,"
+                        "clock_in_work_location_id) VALUES(%s,%s,%s,%s,%s,%s,%s,%s) "
+                        "RETURNING id,employee_id,clock_in_at,clock_out_at,source",
+                        (employee["id"],payload.note,actor,actor,payload.latitude,payload.longitude,
+                         payload.accuracy_meters,matched_location_id),
                     ).fetchone()
                 except psycopg.errors.UniqueViolation as exc:
                     raise HTTPException(409, "You are already clocked in") from exc
             else:
                 row = conn.execute(
-                    "UPDATE hr_attendance_sessions SET clock_out_at=now(),clock_out_note=%s,closed_by_user_id=%s "
+                    "UPDATE hr_attendance_sessions SET clock_out_at=now(),clock_out_note=%s,closed_by_user_id=%s,"
+                    "last_modified_by_user_id=%s,clock_out_latitude=%s,clock_out_longitude=%s,"
+                    "clock_out_accuracy_meters=%s,clock_out_work_location_id=%s "
                     "WHERE id=(SELECT id FROM hr_attendance_sessions WHERE employee_id=%s AND clock_out_at IS NULL "
                     "ORDER BY clock_in_at DESC LIMIT 1 FOR UPDATE) "
                     "RETURNING id,employee_id,clock_in_at,clock_out_at,source",
-                    (payload.note,actor,employee["id"]),
+                    (payload.note,actor,actor,payload.latitude,payload.longitude,payload.accuracy_meters,
+                     matched_location_id,employee["id"]),
                 ).fetchone()
                 if row is None:
                     raise HTTPException(409, "No open attendance session exists")
@@ -841,51 +898,173 @@ def attendance_punch(payload: PunchInput, request: Request):
 
 
 @router.get("/attendance/register")
-def attendance_register(request: Request, start_date: date, end_date: date):
+def attendance_register(
+    request: Request,
+    start_date: date,
+    end_date: date,
+    employee_id: int | None = Query(default=None, gt=0),
+    department_id: int | None = Query(default=None, gt=0),
+):
     _manager(request)
     if end_date < start_date or (end_date-start_date).days > 93:
         raise HTTPException(422, "Date range must be ordered and no longer than 94 days")
     try:
         with _hr_connection() as conn:
             rows = conn.execute(
-                "SELECT e.employee_code,e.first_name,e.last_name,d.name AS department_name,"
-                "s.id,s.clock_in_at,s.clock_out_at,"
-                "round(extract(epoch FROM (COALESCE(s.clock_out_at,now())-s.clock_in_at))/3600.0,2) AS hours "
+                "SELECT e.id AS employee_id,e.employee_code,e.first_name,e.last_name,"
+                "e.department_id,d.name AS department_name,s.id,s.clock_in_at,s.clock_out_at,"
+                "round(extract(epoch FROM (COALESCE(s.clock_out_at,now())-s.clock_in_at))/3600.0,2) AS hours,"
+                "a.id AS shift_assignment_id,a.planned_start_at,a.planned_end_at,"
+                "sh.timezone,COALESCE(p.grace_minutes,0) AS grace_minutes,"
+                "COALESCE(p.break_minutes,sh.break_minutes,0) AS break_minutes "
                 "FROM hr_employees e LEFT JOIN hr_departments d ON d.id=e.department_id "
                 "LEFT JOIN hr_attendance_sessions s ON s.employee_id=e.id "
                 "AND s.clock_in_at >= %s AND s.clock_in_at < (%s::date + interval '1 day') "
-                "WHERE e.status<>'terminated' ORDER BY e.employee_code,s.clock_in_at",
-                (start_date,end_date),
+                "LEFT JOIN hr_shift_assignments a ON a.employee_id=e.id AND a.status='published' "
+                "AND a.work_date=(s.clock_in_at AT TIME ZONE COALESCE((SELECT timezone FROM hr_shift_definitions WHERE id=a.shift_definition_id),'Asia/Kolkata'))::date "
+                "LEFT JOIN hr_shift_definitions sh ON sh.id=a.shift_definition_id "
+                "LEFT JOIN LATERAL (SELECT grace_minutes,break_minutes FROM hr_attendance_policies ap "
+                "WHERE ap.establishment_id=sh.establishment_id AND ap.effective_from<=a.work_date "
+                "AND (ap.effective_to IS NULL OR ap.effective_to>=a.work_date) "
+                "ORDER BY ap.effective_from DESC LIMIT 1) p ON true "
+                "WHERE e.status<>'terminated' AND (%s::bigint IS NULL OR e.id=%s) "
+                "AND (%s::bigint IS NULL OR e.department_id=%s) "
+                "ORDER BY e.employee_code,s.clock_in_at",
+                (start_date,end_date,employee_id,employee_id,department_id,department_id),
             ).fetchall()
-            return {"items": rows}
+            from app.services.hr_attendance import calculate_shift_metrics
+            items = []
+            totals = {"sessions": 0, "worked_minutes": 0, "late_minutes": 0,
+                      "early_departure_minutes": 0, "overtime_minutes": 0}
+            for source in rows:
+                item = dict(source)
+                if item.get("id") and item.get("planned_start_at") and item.get("planned_end_at"):
+                    metrics = calculate_shift_metrics(
+                        clock_in_at=item["clock_in_at"], clock_out_at=item["clock_out_at"],
+                        planned_start_at=item["planned_start_at"], planned_end_at=item["planned_end_at"],
+                        grace_minutes=item["grace_minutes"], break_minutes=item["break_minutes"],
+                    )
+                else:
+                    metrics = {"worked_minutes": int(float(item.get("hours") or 0) * 60),
+                               "late_minutes": None, "early_departure_minutes": None,
+                               "overtime_minutes": None}
+                item.update(metrics)
+                if item.get("id"):
+                    totals["sessions"] += 1
+                    totals["worked_minutes"] += metrics["worked_minutes"]
+                    for key in ("late_minutes", "early_departure_minutes", "overtime_minutes"):
+                        if metrics[key] is not None:
+                            totals[key] += metrics[key]
+                items.append(item)
+            return {"items": items, "summary": totals, "start_date": start_date, "end_date": end_date}
+    except HTTPException:
+        raise
     except psycopg.Error as exc:
         raise _db_error(exc) from exc
 
 
 @router.patch("/attendance/sessions/{session_id}")
-def adjust_attendance_session(session_id: int, payload: AttendanceAdjustmentInput, request: Request):
-    actor=_manager(request)
-    from datetime import datetime
+def request_attendance_correction(session_id: int, payload: AttendanceAdjustmentInput, request: Request):
+    """Submit a correction for independent review; never mutate the source session here."""
+    actor = _manager(request)
     try:
-        clock_in=datetime.fromisoformat(str(payload.clock_in_at).replace("Z","+00:00"))
-        clock_out=datetime.fromisoformat(str(payload.clock_out_at).replace("Z","+00:00")) if payload.clock_out_at else None
+        clock_in = datetime.fromisoformat(str(payload.clock_in_at).replace("Z", "+00:00"))
+        clock_out = datetime.fromisoformat(str(payload.clock_out_at).replace("Z", "+00:00")) if payload.clock_out_at else None
     except ValueError as exc:
-        raise HTTPException(422,"Attendance timestamps must be valid ISO date-time values") from exc
+        raise HTTPException(422, "Attendance timestamps must be valid ISO date-time values") from exc
+    if clock_in.tzinfo is None or (clock_out is not None and clock_out.tzinfo is None):
+        raise HTTPException(422, "Attendance timestamps must include a timezone offset")
     if clock_out and clock_out < clock_in:
-        raise HTTPException(422,"Check-out cannot be earlier than check-in")
+        raise HTTPException(422, "Check-out cannot be earlier than check-in")
     try:
         with _hr_connection() as conn:
-            row=conn.execute(
-                "UPDATE hr_attendance_sessions SET clock_in_at=%s,clock_out_at=%s,source='manager_adjustment',"
-                "clock_in_note=concat_ws(E'\\n',nullif(clock_in_note,''),'HR adjustment: '||%s),"
-                "closed_by_user_id=%s,clock_out_note=CASE WHEN %s IS NULL THEN clock_out_note "
-                "ELSE concat_ws(E'\\n',nullif(clock_out_note,''),'HR adjustment: '||%s) END "
-                "WHERE id=%s RETURNING id,employee_id,clock_in_at,clock_out_at,source,clock_in_note,clock_out_note",
-                (clock_in,clock_out,payload.reason.strip(),actor,clock_out,payload.reason.strip(),session_id),
+            session = conn.execute(
+                "SELECT id,employee_id FROM hr_attendance_sessions WHERE id=%s FOR UPDATE",
+                (session_id,),
             ).fetchone()
-            if row is None:
-                raise HTTPException(404,"Attendance session not found")
-            return row
+            if session is None:
+                raise HTTPException(404, "Attendance session not found")
+            row = conn.execute(
+                "INSERT INTO hr_attendance_correction_requests "
+                "(attendance_session_id,employee_id,requested_clock_in_at,requested_clock_out_at,reason,requested_by_user_id) "
+                "VALUES(%s,%s,%s,%s,%s,%s) RETURNING *",
+                (session_id,session["employee_id"],clock_in,clock_out,payload.reason.strip(),actor),
+            ).fetchone()
+            return {"status": "pending_review", "request": row}
+    except HTTPException:
+        raise
+    except psycopg.errors.UniqueViolation as exc:
+        raise HTTPException(409, "A correction request is already awaiting review for this session") from exc
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.get("/attendance/sessions/{session_id}/audit")
+def attendance_session_audit(session_id: int, request: Request):
+    _manager(request)
+    with _hr_connection() as conn:
+        exists = conn.execute(
+            "SELECT id FROM hr_attendance_sessions WHERE id=%s",
+            (session_id,),
+        ).fetchone()
+        if exists is None:
+            raise HTTPException(404, "Attendance session not found")
+        rows = conn.execute(
+            "SELECT id,attendance_session_id,employee_id,event_type,actor_user_id,"
+            "before_state,after_state,created_at FROM hr_attendance_audit_events "
+            "WHERE attendance_session_id=%s ORDER BY created_at,id",
+            (session_id,),
+        ).fetchall()
+        return {"items": rows}
+
+
+@router.get("/attendance/corrections")
+def list_attendance_corrections(request: Request, status: str = Query(default="pending", pattern="^(pending|approved|rejected|cancelled|all)$")):
+    _manager(request)
+    with _hr_connection() as conn:
+        rows = conn.execute(
+            "SELECT c.*,e.employee_code,e.first_name,e.last_name "
+            "FROM hr_attendance_correction_requests c "
+            "JOIN hr_employees e ON e.id=c.employee_id "
+            "WHERE (%s='all' OR c.status=%s) ORDER BY c.created_at DESC",
+            (status,status),
+        ).fetchall()
+        return {"items": rows}
+
+
+@router.patch("/attendance/corrections/{correction_id}/review")
+def review_attendance_correction(correction_id: int, payload: ReviewInput, request: Request):
+    actor = _manager(request)
+    try:
+        with _hr_connection() as conn:
+            correction = conn.execute(
+                "SELECT * FROM hr_attendance_correction_requests WHERE id=%s FOR UPDATE",
+                (correction_id,),
+            ).fetchone()
+            if correction is None or correction["status"] != "pending":
+                raise HTTPException(409, "Correction request not found or already reviewed")
+            if correction["requested_by_user_id"] == actor:
+                raise HTTPException(403, "A correction must be reviewed by a different authorised user")
+            if payload.decision == "approved":
+                updated = conn.execute(
+                    "UPDATE hr_attendance_sessions SET clock_in_at=%s,clock_out_at=%s,"
+                    "source='manager_adjustment',last_modified_by_user_id=%s,closed_by_user_id=%s,"
+                    "clock_in_note=concat_ws(E'\\n',nullif(clock_in_note,''),'Approved HR correction: '||%s),"
+                    "clock_out_note=CASE WHEN %s IS NULL THEN clock_out_note ELSE "
+                    "concat_ws(E'\\n',nullif(clock_out_note,''),'Approved HR correction: '||%s) END "
+                    "WHERE id=%s RETURNING id",
+                    (correction["requested_clock_in_at"],correction["requested_clock_out_at"],actor,actor,
+                     correction["reason"],correction["requested_clock_out_at"],correction["reason"],
+                     correction["attendance_session_id"]),
+                ).fetchone()
+                if updated is None:
+                    raise HTTPException(404, "Attendance session no longer exists")
+            reviewed = conn.execute(
+                "UPDATE hr_attendance_correction_requests SET status=%s,reviewed_by_user_id=%s,"
+                "review_note=%s,reviewed_at=now() WHERE id=%s AND status='pending' RETURNING *",
+                (payload.decision,actor,payload.note,correction_id),
+            ).fetchone()
+            return reviewed
     except HTTPException:
         raise
     except psycopg.Error as exc:
@@ -2065,6 +2244,49 @@ def file_statutory_remittance(remittance_id: int, payload: RemittanceFileInput, 
 
 
 # Additive HR workforce planning, leave ledger and employee lifecycle workflows.
+class AttendancePolicyInput(BaseModel):
+    establishment_id: int = Field(gt=0)
+    grace_minutes: int = Field(default=0, ge=0, le=240)
+    break_minutes: int = Field(default=0, ge=0, le=720)
+    geofence_enabled: bool = False
+    geofence_enforced: bool = False
+    require_location_on_clock_in: bool = False
+    require_location_on_clock_out: bool = False
+    effective_from: date
+    effective_to: date | None = None
+
+    @model_validator(mode="after")
+    def validate_policy(self):
+        if self.effective_to and self.effective_to < self.effective_from:
+            raise ValueError("Attendance policy end date cannot precede its start date")
+        if self.geofence_enforced and not self.geofence_enabled:
+            raise ValueError("Geofence enforcement requires geofencing to be enabled")
+        if (self.require_location_on_clock_in or self.require_location_on_clock_out) and not self.geofence_enabled:
+            raise ValueError("Required GPS capture needs geofencing to be enabled")
+        return self
+
+
+class AttendanceWorkLocationInput(BaseModel):
+    establishment_id: int = Field(gt=0)
+    code: str = Field(min_length=2, max_length=32)
+    name: str = Field(min_length=2, max_length=120)
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    radius_meters: int = Field(ge=10, le=10000)
+
+    @field_validator("code", "name")
+    @classmethod
+    def trim_location_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Work location code and name cannot be blank")
+        return value
+
+
+class AttendanceWorkLocationStatusInput(BaseModel):
+    is_active: bool
+
+
 class ShiftDefinitionInput(BaseModel):
     establishment_id: int = Field(gt=0)
     code: str = Field(min_length=2, max_length=32)
@@ -2230,6 +2452,77 @@ class LifecycleTaskUpdateInput(BaseModel):
     due_date: date | None = None
     evidence_reference: str | None = Field(default=None, max_length=500)
     completion_note: str | None = Field(default=None, max_length=1000)
+
+
+@router.get("/attendance/policies")
+def list_attendance_policies(request: Request, establishment_id: int | None = Query(default=None, gt=0)):
+    _manager(request)
+    with _hr_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM hr_attendance_policies WHERE (%s::bigint IS NULL OR establishment_id=%s) "
+            "ORDER BY establishment_id,effective_from DESC",
+            (establishment_id,establishment_id),
+        ).fetchall()
+        return {"items": rows}
+
+
+@router.post("/attendance/policies", status_code=201)
+def create_attendance_policy(payload: AttendancePolicyInput, request: Request):
+    actor = _manager(request)
+    with _hr_connection() as conn:
+        overlap = conn.execute(
+            "SELECT id FROM hr_attendance_policies WHERE establishment_id=%s "
+            "AND daterange(effective_from,COALESCE(effective_to,'infinity'::date),'[]') "
+            "&& daterange(%s,COALESCE(%s,'infinity'::date),'[]')",
+            (payload.establishment_id,payload.effective_from,payload.effective_to),
+        ).fetchone()
+        if overlap:
+            raise HTTPException(409, "An attendance policy already covers part of this effective period")
+        return conn.execute(
+            "INSERT INTO hr_attendance_policies(establishment_id,grace_minutes,break_minutes,geofence_enabled,"
+            "geofence_enforced,require_location_on_clock_in,require_location_on_clock_out,effective_from,effective_to,"
+            "created_by_user_id,updated_by_user_id) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *",
+            (payload.establishment_id,payload.grace_minutes,payload.break_minutes,payload.geofence_enabled,
+             payload.geofence_enforced,payload.require_location_on_clock_in,payload.require_location_on_clock_out,
+             payload.effective_from,payload.effective_to,actor,actor),
+        ).fetchone()
+
+
+@router.get("/attendance/work-locations")
+def list_attendance_work_locations(request: Request, establishment_id: int | None = Query(default=None, gt=0)):
+    _manager(request)
+    with _hr_connection() as conn:
+        return {"items": conn.execute(
+            "SELECT * FROM hr_attendance_work_locations WHERE (%s::bigint IS NULL OR establishment_id=%s) "
+            "ORDER BY establishment_id,name",
+            (establishment_id,establishment_id),
+        ).fetchall()}
+
+
+@router.post("/attendance/work-locations", status_code=201)
+def create_attendance_work_location(payload: AttendanceWorkLocationInput, request: Request):
+    actor = _manager(request)
+    with _hr_connection() as conn:
+        return conn.execute(
+            "INSERT INTO hr_attendance_work_locations(establishment_id,code,name,latitude,longitude,radius_meters,created_by_user_id) "
+            "VALUES(%s,%s,%s,%s,%s,%s,%s) RETURNING *",
+            (payload.establishment_id,payload.code,payload.name,payload.latitude,payload.longitude,
+             payload.radius_meters,actor),
+        ).fetchone()
+
+
+@router.patch("/attendance/work-locations/{location_id}")
+def update_attendance_work_location(location_id: int, payload: AttendanceWorkLocationStatusInput, request: Request):
+    _manager(request)
+    with _hr_connection() as conn:
+        row = conn.execute(
+            "UPDATE hr_attendance_work_locations SET is_active=%s,updated_at=now() "
+            "WHERE id=%s RETURNING *",
+            (payload.is_active,location_id),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(404, "Attendance work location not found")
+        return row
 
 
 @router.get("/shifts")
