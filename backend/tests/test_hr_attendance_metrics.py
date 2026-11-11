@@ -87,3 +87,40 @@ def test_attendance_punch_rejects_out_of_range_coordinates():
 
     with pytest.raises(ValidationError):
         PunchInput(punch_type="clock_in", latitude=91, longitude=85)
+
+
+def test_attendance_policy_rejects_enforcement_without_geofence():
+    from pydantic import ValidationError
+    from app.api.hr import AttendancePolicyInput
+
+    with pytest.raises(ValidationError, match="requires geofencing to be enabled"):
+        AttendancePolicyInput(
+            establishment_id=1, geofence_enabled=False, geofence_enforced=True,
+            effective_from="2026-11-01",
+        )
+
+
+def test_attendance_policy_rejects_reversed_effective_period():
+    from pydantic import ValidationError
+    from app.api.hr import AttendancePolicyInput
+
+    with pytest.raises(ValidationError, match="end date cannot precede"):
+        AttendancePolicyInput(
+            establishment_id=1, effective_from="2026-11-30", effective_to="2026-11-01",
+        )
+
+
+def test_attendance_work_location_validates_coordinates_and_radius():
+    from pydantic import ValidationError
+    from app.api.hr import AttendanceWorkLocationInput
+
+    with pytest.raises(ValidationError):
+        AttendanceWorkLocationInput(
+            establishment_id=1, code="HQ", name="Head Office",
+            latitude=91, longitude=85.1, radius_meters=150,
+        )
+    with pytest.raises(ValidationError):
+        AttendanceWorkLocationInput(
+            establishment_id=1, code="HQ", name="Head Office",
+            latitude=25.6, longitude=85.1, radius_meters=5,
+        )
