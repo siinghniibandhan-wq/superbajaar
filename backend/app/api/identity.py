@@ -217,9 +217,11 @@ def review_link_request(request_id: int, payload: ReviewIn, request: Request):
                 if item is None or item["status"] not in {"pending", "proof_required"}:
                     raise HTTPException(409, "Request is no longer reviewable")
                 if item["expires_at"] <= datetime.now(timezone.utc):
-                    # A concurrent expiry can only be reported; commit the status
-                    # update after leaving this transaction.
-                    raise HTTPException(410, "Identity request has expired; refresh the review queue")
+                    conn.execute(
+                        "UPDATE identity_link_requests SET status='expired',reviewed_at=now(),updated_at=now() WHERE id=%s",
+                        (request_id,),
+                    )
+                    return {"id": request_id, "status": "expired"}
                 if payload.decision == "approve":
                     service = IdentityService(conn)
                     if item["request_type"] == "link_profile":
