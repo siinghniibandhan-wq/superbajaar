@@ -368,7 +368,7 @@ test("HR attendance register formats Unix-second timestamps as real dates", asyn
   await expect(page.getByRole("heading", { name: "Attendance register" })).toBeVisible();
   await expect(page.getByText(/2027/)).toBeVisible();
   await expect(page.getByText(/1970/)).toHaveCount(0);
-  await page.getByRole("button", { name: "Adjust" }).click();
+  await page.getByRole("button", { name: "Request correction" }).click();
   await expect(page.locator('input[type="datetime-local"]').first()).toHaveValue(/^2027-/);
 });
 
