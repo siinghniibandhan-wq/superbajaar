@@ -55,6 +55,7 @@ export default function HROverview({ data, loading, error, onNavigate, onRefresh
       <div className="hr-metric-grid">
         <Metric label="Employees with attendance" value={attendance.present ?? "—"} detail="Distinct employees with a clock-in" />
         <Metric label="On approved leave" value={attendance.on_leave ?? "—"} detail="Overlapping selected month" />
+        <Metric label="Absent employees" value={attendance.absent ?? "Not available"} detail={attendance.scheduled_shift_days ? attendance.absent_shift_days + " missed scheduled shifts" : "No reliable published shift schedule"} tone={attendance.absent ? "warning" : "default"} />
         <Metric label="Open sessions" value={attendance.open_sessions ?? "—"} detail="Require review / clock-out" tone={attendance.open_sessions ? "warning" : "default"} />
         <Metric label="Attendance rate" value={attendance.rate == null ? "Not available" : attendance.rate + "%"} detail={attendanceDetail} />
       </div>
@@ -91,6 +92,7 @@ export default function HROverview({ data, loading, error, onNavigate, onRefresh
 
     <Section title="Compliance & accounting controls">
       <div className="hr-metric-grid">
+        <Metric label="Statutory policy readiness" value={controls.statutory_readiness || "Not available"} detail={(controls.establishments || []).length + " active establishment(s) checked"} tone={controls.statutory_readiness === "ready" ? "default" : "warning"} />
         <Metric label="Pending statutory remittances" value={controls.pending_remittances ?? "—"} detail="Payment / filing follow-up" tone={controls.pending_remittances ? "warning" : "default"} />
         <Metric label="Missing statutory profiles" value={controls.employees_without_statutory_profile ?? "—"} detail="Applicability still needs review" tone={controls.employees_without_statutory_profile ? "warning" : "default"} />
         <Metric label="Accounting exceptions" value={controls.accounting_exceptions ?? "—"} detail="Approved / paid runs without accrual posting" tone={controls.accounting_exceptions ? "warning" : "default"} />
