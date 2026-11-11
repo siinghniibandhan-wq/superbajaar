@@ -1,0 +1,22 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ListProductionAmplifyJobs",
+      "Effect": "Allow",
+      "Action": [
+        "amplify:ListJobs"
+      ],
+      "Resource": "arn:aws:amplify:<AWS_REGION>:<AWS_ACCOUNT_ID>:apps/<AMPLIFY_APP_ID>/branches/main"
+    },
+    {
+      "Sid": "ReadAndRetryProductionAmplifyJobs",
+      "Effect": "Allow",
+      "Action": [
+        "amplify:GetJob",
+        "amplify:StartJob"
+      ],
+      "Resource": "arn:aws:amplify:<AWS_REGION>:<AWS_ACCOUNT_ID>:apps/<AMPLIFY_APP_ID>/branches/main/jobs/*"
+    }
+  ]
+}
