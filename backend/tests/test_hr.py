@@ -212,3 +212,27 @@ def test_hr_payroll_rejection_requires_a_reason():
     with pytest.raises(ValidationError, match="A reason is required when rejecting payroll"):
         PayrollApprovalInput(decision="rejected")
     assert PayrollApprovalInput(decision="rejected", note="Incorrect payroll totals").note == "Incorrect payroll totals"
+
+
+
+def test_hr_manual_payroll_deduction_requires_employee_specific_reason():
+    with pytest.raises(ValidationError, match="A reason is required for every manual payroll deduction"):
+        PayrollRunInput(
+            period_start="2026-11-01", period_end="2026-11-30",
+            deductions_by_employee={12: Decimal("500.00")},
+        )
+    payroll = PayrollRunInput(
+        period_start="2026-11-01", period_end="2026-11-30",
+        deductions_by_employee={12: Decimal("500.00")},
+        deduction_notes={12: "Approved salary advance recovery"},
+    )
+    assert payroll.deduction_notes[12] == "Approved salary advance recovery"
+
+
+def test_hr_attendance_adjustment_requires_a_reason():
+    from app.api.hr import AttendanceAdjustmentInput
+    with pytest.raises(ValidationError):
+        AttendanceAdjustmentInput(
+            clock_in_at="2026-11-11T09:00:00+05:30",
+            reason="  ",
+        )
