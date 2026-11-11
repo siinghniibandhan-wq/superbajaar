@@ -74,3 +74,41 @@ def test_vendor_document_signature_rejects_mismatched_or_unknown_content():
     assert not _matches_document_signature("image/jpeg", b"\\xff\\xd8\\xff")
     assert not _matches_document_signature("image/png", b"not a png")
     assert not _matches_document_signature("text/plain", b"hello")
+
+
+def test_vendor_s3_client_uses_configured_bucket_region_and_default_credentials(monkeypatch):
+    from app.api import vendor_portal
+
+    captured = {}
+    monkeypatch.setenv("SB_S3_REGION", "ap-south-1")
+    monkeypatch.setenv("AWS_REGION", "us-east-1")
+    monkeypatch.delenv("AWS_ACCESS_KEY_ID", raising=False)
+    monkeypatch.delenv("AWS_SECRET_ACCESS_KEY", raising=False)
+
+    def fake_client(service, **kwargs):
+        captured["service"] = service
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(vendor_portal.boto3, "client", fake_client)
+    vendor_portal._s3_client()
+
+    assert captured == {"service": "s3", "region_name": "ap-south-1"}
+
+
+def test_vendor_s3_client_falls_back_to_aws_region(monkeypatch):
+    from app.api import vendor_portal
+
+    captured = {}
+    monkeypatch.delenv("SB_S3_REGION", raising=False)
+    monkeypatch.setenv("AWS_REGION", "ap-south-1")
+
+    def fake_client(service, **kwargs):
+        captured["service"] = service
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(vendor_portal.boto3, "client", fake_client)
+    vendor_portal._s3_client()
+
+    assert captured == {"service": "s3", "region_name": "ap-south-1"}
