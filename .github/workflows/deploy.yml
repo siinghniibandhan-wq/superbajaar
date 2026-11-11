@@ -170,6 +170,10 @@ jobs:
             sleep 20
           done
           test -n "$current_id" || { echo "Timed out waiting for Amplify job for $TARGET_SHA"; exit 1; }
+          case "$status" in
+            SUCCEED|FAILED|CANCELLED) ;;
+            *) echo "Amplify job did not reach a terminal state before timeout: $status"; exit 1 ;;
+          esac
           echo "current_job_id=$current_id" >> "$GITHUB_OUTPUT"
           echo "current_status=$status" >> "$GITHUB_OUTPUT"
       - name: Verify published release and all referenced frontend assets
