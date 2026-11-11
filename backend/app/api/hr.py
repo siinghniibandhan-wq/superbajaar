@@ -1130,13 +1130,19 @@ def review_leave(leave_id: int, payload: ReviewInput, request: Request):
     actor = _manager(request)
     try:
         with _hr_connection() as conn:
+            request_row = conn.execute(
+                "SELECT lr.id,e.user_id FROM hr_leave_requests lr "
+                "JOIN hr_employees e ON e.id=lr.employee_id WHERE lr.id=%s AND lr.status='pending' FOR UPDATE OF lr",
+                (leave_id,),
+            ).fetchone()
+            if request_row is None:
+                raise HTTPException(409, "Leave request not found or already reviewed")
+            _require_independent_reviewer(request_row["user_id"], actor, "leave request")
             row = conn.execute(
                 "UPDATE hr_leave_requests SET status=%s,reviewed_by_user_id=%s,review_note=%s,reviewed_at=now() "
                 "WHERE id=%s AND status='pending' RETURNING *",
                 (payload.decision,actor,payload.note,leave_id),
             ).fetchone()
-            if row is None:
-                raise HTTPException(409, "Leave request not found or already reviewed")
             if payload.decision == "approved":
                 policy = conn.execute(
                     "SELECT p.* FROM hr_leave_policies p "
@@ -1212,13 +1218,19 @@ def review_expense(expense_id:int,payload:ReviewInput,request:Request):
     actor=_manager(request)
     try:
         with _hr_connection() as conn:
+            expense = conn.execute(
+                "SELECT x.id,e.user_id FROM hr_expenses x JOIN hr_employees e ON e.id=x.employee_id "
+                "WHERE x.id=%s AND x.status='pending' FOR UPDATE OF x",
+                (expense_id,),
+            ).fetchone()
+            if expense is None:
+                raise HTTPException(409,"Expense not found or already reviewed")
+            _require_independent_reviewer(expense["user_id"], actor, "expense claim")
             row=conn.execute(
                 "UPDATE hr_expenses SET status=%s,reviewed_by_user_id=%s,review_note=%s,reviewed_at=now() "
                 "WHERE id=%s AND status='pending' RETURNING *",
                 (payload.decision,actor,payload.note,expense_id),
             ).fetchone()
-            if row is None:
-                raise HTTPException(409,"Expense not found or already reviewed")
             return row
     except HTTPException:
         raise
