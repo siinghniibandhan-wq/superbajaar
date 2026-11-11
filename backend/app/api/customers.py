@@ -502,23 +502,11 @@ def link_customer_account(customer_id:int,payload:CustomerAccountLinkIn,request:
                     crm_party = identity.create_party(party_type="individual", display_name=crm["name"], reason="Verified CRM account link")
                     identity.link_profile(party_id=crm_party["id"], profile_type="crm_customer", source_id=customer_id, link_method="admin_verified", actor_user_id=request.state.user_id)
                 if crm_party["id"] != account_party["id"]:
-                    conn.execute(
-                        "UPDATE identity_profiles SET party_id=%s,updated_at=now() WHERE profile_type='crm_customer' AND crm_customer_id=%s",
-                        (account_party["id"], customer_id),
+                    from app.api.identity import _merge_claimed_party
+                    _merge_claimed_party(
+                        conn, crm_party["id"], account_party["id"], request.state.user_id,
+                        "Verified CRM account link", payload.verification_method,
                     )
-                    source = conn.execute("SELECT sbid FROM identity_parties WHERE id=%s FOR UPDATE", (crm_party["id"],)).fetchone()
-                    target = conn.execute("SELECT sbid FROM identity_parties WHERE id=%s FOR UPDATE", (account_party["id"],)).fetchone()
-                    conn.execute(
-                        "INSERT INTO identity_aliases(alias_sbid,source_party_id,canonical_party_id,merge_reason,merged_by_user_id) VALUES(%s,%s,%s,%s,%s)",
-                        (source["sbid"], crm_party["id"], account_party["id"], "Verified CRM account link", request.state.user_id),
-                    )
-                    conn.execute(
-                        "UPDATE identity_parties SET status='merged',merged_into_party_id=%s,updated_at=now() WHERE id=%s",
-                        (account_party["id"], crm_party["id"]),
-                    )
-                    identity._event(party_id=account_party["id"], event_type="party_merged",
-                        event_data={"source_party_id":crm_party["id"],"target_party_id":account_party["id"],"source_sbid":source["sbid"]},
-                        actor_user_id=request.state.user_id, reason="Verified CRM account link")
         return {"link":row}
     except HTTPException: raise
     except psycopg.Error as exc:
