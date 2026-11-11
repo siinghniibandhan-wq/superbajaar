@@ -10,7 +10,7 @@ The EC2 script fast-forwards the existing `/opt/superbajaar/source` checkout, in
 
 Amplify Hosting uses atomic deployments: it updates the hosted application only after the deployment is complete. A failed build/deployment job is not published as the live website; the previously successful version normally remains live. This is the first protection layer, not a substitute for checking the live site after deployment.
 
-The root Vite build embeds the Amplify-provided `AWS_COMMIT_ID` in `<meta name="sb-release">`. GitHub Actions then:
+The root Vite build embeds the Amplify-provided `AWS_COMMIT_ID` in `<meta name="sb-release">` (AWS documents this variable as the current build's commit ID). GitHub Actions then:
 
 1. Finds the Amplify job for the exact pushed Git commit and records the latest earlier successful job as the rollback target.
 2. Waits for the current Amplify job to finish.
@@ -18,7 +18,7 @@ The root Vite build embeds the Amplify-provided `AWS_COMMIT_ID` in `<meta name="
 4. If the Amplify job failed, the previous version should still be live; if the new version published but fails the health check, it starts a retry of the recorded previous successful job.
 5. Waits for the rollback job to succeed and repeats the release-marker and asset checks against the previous commit.
 
-The workflow fails closed if it cannot identify a previous successful job or cannot prove that the restored release is healthy. It never treats an HTTP 200 homepage alone as proof of a healthy release. This HTTP-level verification checks the deployed HTML and static bundles; it does not prove every interactive user journey or backend integration.
+The workflow fails closed if it cannot identify a previous successful job or cannot prove that the restored release is healthy. The first rollback may target a pre-marker release from before this feature was introduced; in that one-time case, the previous successful Amplify job is pinned to the exact commit and its HTML plus all static bundles are checked, while subsequent rollbacks also require an exact HTML commit marker. It never treats an HTTP 200 homepage alone as proof of a healthy release. This HTTP-level verification checks the deployed HTML and static bundles; it does not prove every interactive user journey or backend integration.
 
 ## One-time GitHub configuration
 
