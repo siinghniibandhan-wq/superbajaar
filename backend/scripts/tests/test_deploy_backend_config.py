@@ -20,6 +20,10 @@ class DeployBackendConfigurationTests(unittest.TestCase):
         self.assertIn('[[ "$working_dir" == "$REPO_DIR/backend" ]]', self.source)
         self.assertIn('[[ "$exec_start" == *"$venv/bin/"* ]]', self.source)
 
+    def test_compilation_uses_writable_external_bytecode_cache(self):
+        self.assertIn('PYTHONPYCACHEPREFIX=', self.source)
+        self.assertIn('python" -m compileall -q backend/app', self.source)
+
     def test_preserves_deployment_safety_guards(self):
         for guard in (
             'systemctl is-active --quiet "$SERVICE"',
