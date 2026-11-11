@@ -83,7 +83,7 @@ BEGIN
         RAISE EXCEPTION 'Profile type % is incompatible with party type %', NEW.profile_type, v_party_type;
     END IF;
     RETURN NEW;
-END $;
+END $$;
 DROP TRIGGER IF EXISTS identity_profile_party_type_guard_trigger ON public.identity_profiles;
 CREATE TRIGGER identity_profile_party_type_guard_trigger
     BEFORE INSERT OR UPDATE OF party_id,profile_type ON public.identity_profiles
@@ -130,7 +130,7 @@ BEGIN
         RAISE EXCEPTION 'Authentication accounts must link to an individual identity';
     END IF;
     RETURN NEW;
-END $;
+END $$;
 DROP TRIGGER IF EXISTS identity_auth_party_type_guard_trigger ON public.identity_auth_accounts;
 CREATE TRIGGER identity_auth_party_type_guard_trigger
     BEFORE INSERT OR UPDATE OF party_id,account_type ON public.identity_auth_accounts
