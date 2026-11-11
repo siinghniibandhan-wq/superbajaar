@@ -20,7 +20,7 @@ test("rejects arrays and non-object payroll payloads", () => {
 });
 
 test("rejects negative, non-finite, and non-numeric deductions", () => {
-  for (const value of ['{"12":-1}', '{"12":"NaN"}', '{"12":"abc"}']) {
+  for (const value of ['{"12":-1}', '{"12":"NaN"}', '{"12":"abc"}', '{"12":null}', '{"12":""}', '{"12":true}']) {
     assert.throws(() => parsePayrollInputs(value, "{}"), /non-negative finite amount/);
   }
 });
