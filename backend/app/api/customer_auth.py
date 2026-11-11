@@ -9,6 +9,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.api.auth import _password_hash, _password_matches, _sign, _decode
 from app.core.config import settings
+from app.services.identity import IdentityService
 
 router = APIRouter(prefix="/customer-auth", tags=["customer authentication"])
 TOKEN_TTL_HOURS = 24 * 30
@@ -302,6 +303,67 @@ def me(request: Request):
         raise
     except psycopg.Error as exc:
         raise HTTPException(status_code=503, detail="Could not load customer account") from exc
+
+
+@router.post("/identity-claims", status_code=202)
+def request_identity_claim(payload: IdentityClaimIn, request: Request):
+    """Authenticated customer request to claim an existing SBID; never confirms whether it exists."""
+    customer_id = getattr(request.state, "customer_id", None)
+    if not customer_id:
+        raise HTTPException(status_code=401, detail="Customer sign-in required")
+    requested_sbid = payload.target_sbid.strip().upper()
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                customer = conn.execute(
+                    "SELECT id,full_name FROM customer_accounts WHERE id=%s AND is_active=TRUE FOR UPDATE",
+                    (customer_id,),
+                ).fetchone()
+                if not customer:
+                    raise HTTPException(status_code=401, detail="Customer account is no longer active")
+                own = conn.execute(
+                    "SELECT party_id FROM identity_profiles WHERE profile_type='customer_account' AND customer_account_id=%s AND status='active'",
+                    (customer_id,),
+                ).fetchone()
+                if own is None:
+                    service = IdentityService(conn)
+                    party = service.create_party(
+                        party_type="individual", display_name=customer["full_name"],
+                        reason="Legacy customer initiated identity claim",
+                    )
+                    service.link_profile(
+                        party_id=party["id"], profile_type="customer_account",
+                        source_id=customer_id, link_method="authenticated_claim",
+                        reason="Legacy customer identity claim",
+                    )
+                    service.link_auth_account(
+                        party_id=party["id"], account_type="customer",
+                        source_id=customer_id, link_method="authenticated_claim",
+                    )
+                    own_party_id = party["id"]
+                else:
+                    own_party_id = own["party_id"]
+                target = conn.execute(
+                    "SELECT id FROM identity_parties WHERE upper(sbid)=%s AND status='active'",
+                    (requested_sbid,),
+                ).fetchone()
+                # A missing target and a valid target have the same public response.
+                if target and target["id"] != own_party_id:
+                    conn.execute(
+                        "INSERT INTO identity_link_requests(idempotency_key,requester_party_id,target_party_id,request_type,status,expires_at,request_context) "
+                        "VALUES(%s,%s,%s,'claim_existing_identity','proof_required',now()+interval '7 days',jsonb_build_object('reason',%s))",
+                        (secrets.token_urlsafe(24), own_party_id, target["id"], payload.reason),
+                    )
+                    IdentityService(conn)._event(
+                        party_id=target["id"], event_type="link_requested",
+                        event_data={"request_type":"claim_existing_identity"},
+                        actor_party_id=own_party_id, reason="Authenticated customer identity claim submitted",
+                    )
+        return {"status": "submitted", "message": "If the identity can be matched, the request will be reviewed. We will not disclose identity details here."}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(status_code=503, detail="Unable to submit identity claim") from exc
 
 
 @router.post("/logout")
