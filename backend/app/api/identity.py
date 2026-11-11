@@ -454,6 +454,18 @@ def split_profile(party_id: int, payload: SplitIn, request: Request):
                 profile = conn.execute("SELECT id,profile_type,customer_account_id,crm_customer_id,employee_id,supplier_id FROM identity_profiles WHERE id=%s AND party_id=%s AND status='active' FOR UPDATE", (payload.profile_id,party_id)).fetchone()
                 if profile is None:
                     raise HTTPException(404, "Active profile does not belong to this identity")
+                attached_history = conn.execute(
+                    "SELECT "
+                    "(SELECT count(*) FROM identity_loyalty_accounts WHERE party_id=%s) AS loyalty_count, "
+                    "(SELECT count(*) FROM identity_referral_links WHERE referrer_party_id=%s OR referred_party_id=%s) AS referral_count, "
+                    "(SELECT count(*) FROM identity_relationships WHERE (from_party_id=%s OR to_party_id=%s) AND status IN ('pending','active')) AS relationship_count",
+                    (party_id, party_id, party_id, party_id, party_id),
+                ).fetchone()
+                if any(attached_history[key] for key in ("loyalty_count", "referral_count", "relationship_count")):
+                    raise HTTPException(
+                        409,
+                        "This identity has loyalty, referral or organisation-relationship history. Resolve those associations explicitly before splitting the profile.",
+                    )
                 new_party = IdentityService(conn).create_party(party_type=party["party_type"],display_name=party["display_name"],actor_user_id=request.state.user_id,reason=payload.reason)
                 conn.execute("UPDATE identity_profiles SET party_id=%s,updated_at=now() WHERE id=%s", (new_party["id"],payload.profile_id))
                 if profile["profile_type"] == "customer_account":
