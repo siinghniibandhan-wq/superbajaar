@@ -6,8 +6,7 @@ REPO_DIR="${SB_SYNC_REPO_DIR:-/opt/superbajaar/source}"
 REMOTE="${SB_SYNC_REMOTE:-origin}"
 BRANCH="${SB_SYNC_BRANCH:-main}"
 LOG_FILE="${SB_SYNC_LOG_FILE:-/var/log/superbajaar-github-sync.log}"
-# Shared with deploy_backend.sh: serialize source checkout updates and deployments.
-LOCK_FILE="${SB_SYNC_LOCK_FILE:-/run/lock/superbajaar-source.lock}"
+LOCK_FILE="${SB_SYNC_LOCK_FILE:-/run/lock/superbajaar-github-sync.lock}"
 log() {
   local message="$*"
   printf '[%s] %s\n' "$(date --iso-8601=seconds)" "$message" | tee -a "$LOG_FILE" 2>/dev/null || printf '[%s] %s\n' "$(date --iso-8601=seconds)" "$message" >&2
