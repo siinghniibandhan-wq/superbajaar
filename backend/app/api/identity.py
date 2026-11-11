@@ -33,6 +33,8 @@ class LinkRequestIn(BaseModel):
     requested_source_id: str | None = Field(default=None, max_length=80)
     idempotency_key: str = Field(min_length=8, max_length=120)
     reason: str = Field(min_length=5, max_length=500)
+    relationship_type: str | None = Field(default=None, max_length=40)
+    relationship_scope: dict = Field(default_factory=dict)
 
 
 class ReviewIn(BaseModel):
@@ -115,14 +117,16 @@ def create_link_request(payload: LinkRequestIn, request: Request):
     _admin(request)
     if payload.request_type == "link_profile" and (not payload.requested_profile_type or not payload.requested_source_id or not payload.requested_source_id.isdigit()):
         raise HTTPException(422, "Profile type and numeric source ID are required")
+    if payload.request_type == "organisation_relationship" and payload.relationship_type not in {"representative", "owner", "director", "authorised_vendor_user", "accountant", "business_partner"}:
+        raise HTTPException(422, "A supported organisation relationship type is required")
     try:
         with _connect() as conn:
             with conn.transaction():
                 row = conn.execute(
                     "INSERT INTO identity_link_requests(idempotency_key,requester_party_id,target_party_id,request_type,status,requested_profile_type,requested_source_id,expires_at,request_context) "
-                    "VALUES(%s,(SELECT party_id FROM identity_auth_accounts WHERE app_user_id=%s AND status='active'),%s,%s,'proof_required',%s,%s,%s,jsonb_build_object('reason',%s)) "
+                    "VALUES(%s,(SELECT party_id FROM identity_auth_accounts WHERE app_user_id=%s AND status='active'),%s,%s,'proof_required',%s,%s,%s,jsonb_build_object('reason',%s,'relationship_type',%s,'relationship_scope',%s::jsonb)) "
                     "ON CONFLICT(idempotency_key) DO NOTHING RETURNING id,status,created_at",
-                    (payload.idempotency_key, request.state.user_id, payload.target_party_id, payload.request_type, payload.requested_profile_type, payload.requested_source_id, datetime.now(timezone.utc)+timedelta(days=7), payload.reason),
+                    (payload.idempotency_key, request.state.user_id, payload.target_party_id, payload.request_type, payload.requested_profile_type, payload.requested_source_id, datetime.now(timezone.utc)+timedelta(days=7), payload.reason, payload.relationship_type, __import__("json").dumps(payload.relationship_scope)),
                 ).fetchone()
                 if row is None:
                     raise HTTPException(409, "This request has already been submitted")
@@ -141,32 +145,93 @@ def review_link_request(request_id: int, payload: ReviewIn, request: Request):
         raise HTTPException(422, "Approval requires recorded proof verification and its method")
     try:
         with _connect() as conn:
+            # Persist expiry in its own committed transaction. Raising inside the
+            # review transaction would roll this status change back.
+            expired = conn.execute(
+                "UPDATE identity_link_requests SET status='expired',reviewed_at=now(),updated_at=now() "
+                "WHERE id=%s AND status IN ('pending','proof_required') AND expires_at<=now() RETURNING id",
+                (request_id,),
+            ).fetchone()
+            if expired:
+                return {"id": request_id, "status": "expired"}
             with conn.transaction():
                 item = conn.execute("SELECT * FROM identity_link_requests WHERE id=%s FOR UPDATE", (request_id,)).fetchone()
                 if item is None or item["status"] not in {"pending", "proof_required"}:
                     raise HTTPException(409, "Request is no longer reviewable")
                 if item["expires_at"] <= datetime.now(timezone.utc):
-                    conn.execute("UPDATE identity_link_requests SET status='expired',reviewed_at=now(),updated_at=now() WHERE id=%s", (request_id,))
-                    raise HTTPException(410, "Identity request has expired")
+                    # A concurrent expiry can only be reported; commit the status
+                    # update after leaving this transaction.
+                    raise HTTPException(410, "Identity request has expired; refresh the review queue")
                 if payload.decision == "approve":
+                    service = IdentityService(conn)
                     if item["request_type"] == "link_profile":
-                        IdentityService(conn).link_profile(party_id=item["target_party_id"],profile_type=item["requested_profile_type"],source_id=int(item["requested_source_id"]),link_method="admin_verified",actor_user_id=request.state.user_id,reason=payload.reason)
+                        service.link_profile(
+                            party_id=item["target_party_id"],
+                            profile_type=item["requested_profile_type"],
+                            source_id=int(item["requested_source_id"]),
+                            link_method="admin_verified",
+                            actor_user_id=request.state.user_id,
+                            reason=payload.reason,
+                        )
+                    elif item["request_type"] == "organisation_relationship":
+                        context = item["request_context"] or {}
+                        relation_type = context.get("relationship_type")
+                        scope = context.get("relationship_scope") or {}
+                        if relation_type not in {"representative", "owner", "director", "authorised_vendor_user", "accountant", "business_partner"}:
+                            raise HTTPException(422, "The requested relationship type is invalid")
+                        if not item["requester_party_id"]:
+                            raise HTTPException(409, "The requesting identity must be resolved before approval")
+                        parties = conn.execute(
+                            "SELECT id,party_type,status FROM identity_parties WHERE id IN (%s,%s) ORDER BY id FOR UPDATE",
+                            (item["requester_party_id"], item["target_party_id"]),
+                        ).fetchall()
+                        by_id = {p["id"]: p for p in parties}
+                        requester = by_id.get(item["requester_party_id"])
+                        target = by_id.get(item["target_party_id"])
+                        if not requester or not target or requester["status"] != "active" or target["status"] != "active":
+                            raise HTTPException(409, "Both identities must be active")
+                        if target["party_type"] != "organisation" or requester["party_type"] != "individual":
+                            raise HTTPException(409, "An organisation relationship must connect an individual to an organisation")
+                        service.create_relationship(
+                            from_party_id=requester["id"],
+                            to_party_id=target["id"],
+                            relationship_type=relation_type,
+                            scope=scope,
+                            actor_user_id=request.state.user_id,
+                            reason=payload.reason,
+                        )
+                        conn.execute(
+                            "UPDATE identity_relationships SET approved_by_user_id=%s WHERE from_party_id=%s AND to_party_id=%s AND relationship_type=%s AND status='active'",
+                            (request.state.user_id, requester["id"], target["id"], relation_type),
+                        )
+                    elif item["request_type"] == "claim_existing_identity":
+                        raise HTTPException(422, "Identity claims require the dedicated authenticated customer claim workflow")
                     else:
-                        raise HTTPException(422, "This request type requires its dedicated verified workflow")
+                        raise HTTPException(422, "This request type is not supported by the review workflow")
                     status = "approved"
-                    conn.execute("UPDATE identity_link_requests SET status=%s,proof_method=%s,proof_verified_at=now(),reviewer_user_id=%s,review_reason=%s,reviewed_at=now(),updated_at=now() WHERE id=%s", (status,payload.proof_method,request.state.user_id,payload.reason,request_id))
+                    conn.execute(
+                        "UPDATE identity_link_requests SET status=%s,proof_method=%s,proof_verified_at=now(),reviewer_user_id=%s,review_reason=%s,reviewed_at=now(),updated_at=now() WHERE id=%s",
+                        (status,payload.proof_method,request.state.user_id,payload.reason,request_id),
+                    )
                     event = "link_approved"
                 else:
                     status = "rejected"
-                    conn.execute("UPDATE identity_link_requests SET status=%s,reviewer_user_id=%s,review_reason=%s,reviewed_at=now(),updated_at=now() WHERE id=%s", (status,request.state.user_id,payload.reason,request_id))
+                    conn.execute(
+                        "UPDATE identity_link_requests SET status=%s,reviewer_user_id=%s,review_reason=%s,reviewed_at=now(),updated_at=now() WHERE id=%s",
+                        (status,request.state.user_id,payload.reason,request_id),
+                    )
                     event = "link_rejected"
-                IdentityService(conn)._event(party_id=item["target_party_id"],event_type=event,event_data={"request_id":request_id,"status":status},actor_user_id=request.state.user_id,reason=payload.reason)
+                IdentityService(conn)._event(
+                    party_id=item["target_party_id"], event_type=event,
+                    event_data={"request_id":request_id,"status":status},
+                    actor_user_id=request.state.user_id, reason=payload.reason,
+                )
         return {"id": request_id, "status": status}
     except HTTPException:
         raise
     except psycopg.Error as exc:
         if getattr(exc, "sqlstate", None) == "23505":
-            raise HTTPException(409, "That profile is already linked to an identity") from exc
+            raise HTTPException(409, "That profile or relationship is already linked") from exc
         raise HTTPException(503, "Unable to review identity request") from exc
 
 
