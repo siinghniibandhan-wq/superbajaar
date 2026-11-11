@@ -1,0 +1,141 @@
+name: Deploy Super Bajaar backend
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: production-backend-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  verify:
+    name: Verify source before deployment
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: superbajaar_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d superbajaar_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      SB_TEST_DATABASE_URL: postgresql://postgres:test@127.0.0.1:5432/superbajaar_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements.txt
+      - name: Apply schema to disposable CI database only
+        env:
+          PGHOST: 127.0.0.1
+          PGUSER: postgres
+          PGPASSWORD: test
+          PGDATABASE: superbajaar_test
+        run: |
+          set -euo pipefail
+          for f in $(ls backend/schema/*.sql | sort); do
+            psql -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+      - name: Compile and test backend
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          python -m compileall -q backend/app
+          cd backend
+          python -m pytest tests/test_*.py -q --strict-markers --strict-config
+      - name: Test admin frontend
+        working-directory: frontend
+        run: |
+          npm install --no-audit --no-fund
+          npm run test:unit
+          npm run test:routes
+      - name: Build storefront and admin
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+          cd frontend
+          npm run build
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Semgrep security scan
+        uses: semgrep/semgrep-action@v1
+        with:
+          config: p/default
+
+  deploy-backend:
+    name: Deploy backend to EC2 through SSM
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: verify
+    runs-on: ubuntu-24.04
+    environment: production
+    steps:
+      - name: Configure AWS credentials using GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION }}
+      - name: Dispatch deployment to EC2
+        env:
+          INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID || secrets.EC2_INSTANCE_ID }}
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test -n "$INSTANCE_ID"
+          remote_command="sudo -u ubuntu bash -lc 'set -euo pipefail; cd /opt/superbajaar/source; git fetch --quiet origin main; git show ${TARGET_SHA}:backend/scripts/deploy_backend.sh > /tmp/sb-deploy-${TARGET_SHA}.sh; chmod 700 /tmp/sb-deploy-${TARGET_SHA}.sh; bash /tmp/sb-deploy-${TARGET_SHA}.sh ${TARGET_SHA}; rm -f /tmp/sb-deploy-${TARGET_SHA}.sh'"
+          parameters="$(jq -n --arg command "$remote_command" '{commands: [$command]}')"
+          command_id="$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --comment "Super Bajaar backend deploy $TARGET_SHA" \
+            --parameters "$parameters" \
+            --query 'Command.CommandId' --output text)"
+          for attempt in $(seq 1 60); do
+            status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+            case "$status" in
+              Success) exit 0 ;;
+              Failed|Cancelled|TimedOut) aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID"; exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo "Timed out waiting for EC2 deployment command $command_id"
+          exit 1
+
+  verify-amplify:
+    name: Verify Amplify frontend separately
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: verify
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check configured Amplify site
+        env:
+          SITE_URL: ${{ vars.AMPLIFY_SITE_URL || secrets.AMPLIFY_SITE_URL }}
+        run: |
+          set -euo pipefail
+          test -n "$SITE_URL" || { echo "AMPLIFY_SITE_URL is not configured"; exit 1; }
+          curl --fail --silent --show-error --location --max-time 30 "$SITE_URL" -o /tmp/amplify-index.html
+          grep -qi '<html' /tmp/amplify-index.html
+          echo "Amplify site is responding with HTML: $SITE_URL"
