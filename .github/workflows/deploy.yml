@@ -216,13 +216,10 @@ jobs:
           print(f"Verified {len(assets)} published JS/CSS assets")
           PY
           }
-          if [[ "$EXPECTED_SHA" == "$GITHUB_SHA" ]]; then
-            verify_release "$EXPECTED_SHA"
-          else
-            verify_release "$EXPECTED_SHA"
-          fi
+          verify_release "$EXPECTED_SHA"
       - name: Restore previous successful Amplify release if deployment or health check failed
-        if: steps.amplify.outputs.current_status != 'SUCCEED' || steps.health.outcome != 'success'
+        id: restore
+        if: ${{ always() && steps.amplify.outcome == 'success' && (steps.amplify.outputs.current_status != 'SUCCEED' || steps.health.outcome != 'success') }}
         env:
           APP_ID: ${{ vars.AMPLIFY_APP_ID }}
           BRANCH_NAME: main
@@ -246,7 +243,7 @@ jobs:
           test "$status" = "SUCCEED" || { echo "Timed out waiting for Amplify rollback"; exit 1; }
           echo "rollback_job_id=$rollback_id" >> "$GITHUB_OUTPUT"
       - name: Verify restored Amplify version is fully healthy
-        if: steps.amplify.outputs.current_status != 'SUCCEED' || steps.health.outcome != 'success'
+        if: ${{ always() && steps.restore.outcome == 'success' }}
         env:
           SITE_URL: ${{ vars.AMPLIFY_SITE_URL || secrets.AMPLIFY_SITE_URL }}
           EXPECTED_SHA: ${{ steps.amplify.outputs.previous_sha }}
