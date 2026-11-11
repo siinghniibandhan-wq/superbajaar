@@ -17,6 +17,16 @@ from app.api.purchasing_lifecycle import SupplierInvoiceCreate, SupplierInvoiceL
 router = APIRouter(prefix="/vendor-portal", tags=["vendor portal"])
 
 
+def _s3_client():
+    """Use the EC2 instance role/default AWS credential chain for private S3 access."""
+    region = (
+        os.getenv("SB_S3_REGION", "").strip()
+        or os.getenv("AWS_REGION", "").strip()
+        or settings.aws_region
+    )
+    return boto3.client("s3", region_name=region)
+
+
 def _connect():
     if not settings.database_url:
         raise HTTPException(503, "Vendor portal database is not configured")
@@ -109,7 +119,7 @@ class InvoiceInput(BaseModel):
 
 @router.post("/documents", status_code=201)
 async def upload_vendor_document(request: Request, file: UploadFile = File(...)):
-    """Upload an invoice attachment to a private, server-side-encrypted S3 bucket."""
+    """Upload an invoice attachment to the configured private AWS S3 bucket."""
     if file.content_type not in {"application/pdf", "image/jpeg", "image/png"}:
         raise HTTPException(415, "Upload a PDF, JPEG or PNG document")
     bucket = os.getenv("SB_PRIVATE_DOCUMENT_BUCKET", "").strip()
@@ -125,7 +135,7 @@ async def upload_vendor_document(request: Request, file: UploadFile = File(...))
             raise HTTPException(415, "The uploaded file content does not match its declared document type")
         extension = {"application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png"}[file.content_type]
         key = f"vendor-invoices/{vendor['supplier_id']}/{uuid.uuid4().hex}.{extension}"
-        client = boto3.client("s3", region_name=os.getenv("AWS_REGION") or None)
+        client = _s3_client()
         client.put_object(
             Bucket=bucket, Key=key, Body=content, ContentType=file.content_type,
             ServerSideEncryption="AES256",
