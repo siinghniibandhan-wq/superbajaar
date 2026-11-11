@@ -176,7 +176,7 @@ function AppShell() {
         {visibleGroups.map(group => <div className="sb-nav-group" key={group.title}><p>{group.title}</p>{group.items.map(item => <button key={item.id} type="button" className={`sb-nav-item ${activeModule === item.id ? "is-active" : ""}`} onClick={() => open(item)}><span>{item.label}</span></button>)}</div>)}
       </aside>
       <div className="sb-main-content">
-        {selected && (visibleIds.has(selected.id) || selected.id === "portalAccess" || (selected.id === "identity" && ["super_admin","admin"].includes(user.role))) ? (workspaceRoutes[selected.id]
+        {selected && (visibleIds.has(selected.id) || (selected.id === "portalAccess" && ["super_admin","admin"].includes(user.role)) || (selected.id === "identity" && ["super_admin","admin"].includes(user.role))) ? (workspaceRoutes[selected.id]
           ? workspaceRoutes[selected.id]({ item: selected, onBack: back, onOpen: openById, currentUser: user, permissions })
           : <UnavailableWorkspace item={selected} onBack={back} />)
           : <ModuleLauncher onOpen={open} groups={visibleGroups} />}
