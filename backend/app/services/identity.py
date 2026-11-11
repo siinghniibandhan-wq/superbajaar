@@ -148,3 +148,81 @@ class IdentityService:
             event_data={"contact_id": result["id"], "contact_type": contact_type},
         )
         return result
+
+    def link_profile(
+        self,
+        *,
+        party_id: int,
+        profile_type: str,
+        source_id: int,
+        link_method: str,
+        actor_user_id: int | None = None,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        """Attach one existing domain profile; never changes its primary key."""
+        columns = {
+            "customer_account": ("customer_account_id", "customer_account"),
+            "crm_customer": ("crm_customer_id", "crm_customer"),
+            "employee": ("employee_id", "employee"),
+            "vendor_organisation": ("supplier_id", "vendor_organisation"),
+        }
+        if profile_type not in columns:
+            raise ValueError("Unsupported identity profile type")
+        if link_method not in {"authenticated_claim", "verified_invitation", "admin_verified", "migration"}:
+            raise ValueError("Unsupported identity link method")
+        column, db_profile_type = columns[profile_type]
+        row = self.connection.execute(
+            f"""
+            INSERT INTO identity_profiles (party_id,profile_type,{column})
+            VALUES (%s,%s,%s)
+            RETURNING id,party_id,profile_type,{column},status,created_at
+            """,
+            (party_id, db_profile_type, source_id),
+        ).fetchone()
+        result = dict(row)
+        self._event(
+            party_id=party_id,
+            event_type="profile_linked",
+            event_data={"profile_id": result["id"], "profile_type": db_profile_type,
+                        "source_id": source_id, "link_method": link_method},
+            actor_user_id=actor_user_id,
+            reason=reason,
+        )
+        return result
+
+    def link_auth_account(
+        self,
+        *,
+        party_id: int,
+        account_type: str,
+        source_id: int,
+        link_method: str,
+        actor_user_id: int | None = None,
+    ) -> dict[str, Any]:
+        """Attach an existing login account to an individual party."""
+        if account_type == "customer":
+            column = "customer_account_id"
+        elif account_type == "staff":
+            column = "app_user_id"
+        else:
+            raise ValueError("account_type must be customer or staff")
+        if link_method not in {"authenticated_claim", "verified_invitation", "admin_verified", "migration"}:
+            raise ValueError("Unsupported identity link method")
+        row = self.connection.execute(
+            f"""
+            INSERT INTO identity_auth_accounts
+                (party_id,account_type,{column},link_method,linked_by_user_id)
+            VALUES (%s,%s,%s,%s,%s)
+            RETURNING id,party_id,account_type,{column},link_method,status,linked_at
+            """,
+            (party_id, account_type, source_id, link_method, actor_user_id),
+        ).fetchone()
+        result = dict(row)
+        self._event(
+            party_id=party_id,
+            event_type="auth_account_linked",
+            event_data={"auth_account_id": result["id"], "account_type": account_type,
+                        "source_id": source_id, "link_method": link_method},
+            actor_user_id=actor_user_id,
+        )
+        return result
