@@ -21,6 +21,64 @@ def _connect():
         raise HTTPException(503, "Identity storage is unavailable") from exc
 
 
+def _merge_claimed_party(conn, source_party_id: int, target_party_id: int, actor_user_id: int, reason: str, proof_method: str):
+    """Merge a verified claimant into the canonical party without losing linked history."""
+    if source_party_id == target_party_id:
+        raise HTTPException(409, "The requesting account is already linked to that identity")
+    rows = conn.execute(
+        "SELECT id,sbid,party_type,status FROM identity_parties WHERE id IN (%s,%s) ORDER BY id FOR UPDATE",
+        (source_party_id, target_party_id),
+    ).fetchall()
+    parties = {row["id"]: row for row in rows}
+    source, target = parties.get(source_party_id), parties.get(target_party_id)
+    if not source or not target or source["status"] != "active" or target["status"] != "active":
+        raise HTTPException(409, "Both identities must be active")
+    if source["party_type"] != target["party_type"]:
+        raise HTTPException(409, "Individual and organisation identities cannot be merged")
+    if conn.execute(
+        "SELECT 1 FROM identity_profiles a JOIN identity_profiles b ON b.party_id=%s AND b.profile_type=a.profile_type WHERE a.party_id=%s LIMIT 1",
+        (target_party_id, source_party_id),
+    ).fetchone():
+        raise HTTPException(409, "Both identities contain the same profile type; manual profile resolution is required")
+    if conn.execute(
+        "SELECT 1 FROM identity_contacts a JOIN identity_contacts b ON b.party_id=%s AND b.contact_type=a.contact_type AND b.normalized_value=a.normalized_value AND b.valid_to IS NULL WHERE a.party_id=%s AND a.valid_to IS NULL LIMIT 1",
+        (target_party_id, source_party_id),
+    ).fetchone():
+        raise HTTPException(409, "Both identities contain the same contact; resolve the contact conflict before merging")
+    if conn.execute(
+        "SELECT 1 FROM identity_relationships WHERE (from_party_id=%s AND to_party_id=%s) OR (from_party_id=%s AND to_party_id=%s) LIMIT 1",
+        (source_party_id,target_party_id,target_party_id,source_party_id),
+    ).fetchone():
+        raise HTTPException(409, "A direct relationship would collapse during this merge")
+    if conn.execute(
+        "SELECT 1 FROM identity_referral_links WHERE (referrer_party_id=%s AND referred_party_id=%s) OR (referrer_party_id=%s AND referred_party_id=%s) LIMIT 1",
+        (source_party_id,target_party_id,target_party_id,source_party_id),
+    ).fetchone():
+        raise HTTPException(409, "A referral would become a self-referral")
+    conn.execute("UPDATE identity_profiles SET party_id=%s,updated_at=now() WHERE party_id=%s", (target_party_id,source_party_id))
+    conn.execute("UPDATE identity_auth_accounts SET party_id=%s WHERE party_id=%s", (target_party_id,source_party_id))
+    conn.execute("UPDATE identity_contacts SET party_id=%s,updated_at=now() WHERE party_id=%s", (target_party_id,source_party_id))
+    conn.execute("UPDATE identity_relationships SET from_party_id=%s,updated_at=now() WHERE from_party_id=%s", (target_party_id,source_party_id))
+    conn.execute("UPDATE identity_relationships SET to_party_id=%s,updated_at=now() WHERE to_party_id=%s", (target_party_id,source_party_id))
+    conn.execute("UPDATE identity_loyalty_accounts SET party_id=%s WHERE party_id=%s", (target_party_id,source_party_id))
+    conn.execute("UPDATE identity_referral_links SET referrer_party_id=%s WHERE referrer_party_id=%s", (target_party_id,source_party_id))
+    conn.execute("UPDATE identity_referral_links SET referred_party_id=%s WHERE referred_party_id=%s", (target_party_id,source_party_id))
+    conn.execute(
+        "INSERT INTO identity_aliases(alias_sbid,source_party_id,canonical_party_id,merge_reason,merged_by_user_id) VALUES(%s,%s,%s,%s,%s)",
+        (source["sbid"],source_party_id,target_party_id,reason,actor_user_id),
+    )
+    conn.execute(
+        "UPDATE identity_parties SET status='merged',merged_into_party_id=%s,updated_at=now() WHERE id=%s",
+        (target_party_id,source_party_id),
+    )
+    IdentityService(conn)._event(
+        party_id=target_party_id,event_type="party_merged",
+        event_data={"source_party_id":source_party_id,"source_sbid":source["sbid"],"canonical_sbid":target["sbid"],"proof_method":proof_method},
+        actor_user_id=actor_user_id,reason=reason,
+    )
+    return {"source_sbid": source["sbid"], "canonical_sbid": target["sbid"]}
+
+
 def _admin(request: Request):
     if not getattr(request.state, "user_id", None) or getattr(request.state, "role", "") not in {"super_admin", "admin"}:
         raise HTTPException(403, "Identity administration permission is required")
@@ -205,7 +263,12 @@ def review_link_request(request_id: int, payload: ReviewIn, request: Request):
                             (request.state.user_id, requester["id"], target["id"], relation_type),
                         )
                     elif item["request_type"] == "claim_existing_identity":
-                        raise HTTPException(422, "Identity claims require the dedicated authenticated customer claim workflow")
+                        if not item["requester_party_id"] or not item["target_party_id"]:
+                            raise HTTPException(409, "The requesting and claimed identities must both be resolved")
+                        _merge_claimed_party(
+                            conn, item["requester_party_id"], item["target_party_id"],
+                            request.state.user_id, payload.reason, payload.proof_method,
+                        )
                     else:
                         raise HTTPException(422, "This request type is not supported by the review workflow")
                     status = "approved"
