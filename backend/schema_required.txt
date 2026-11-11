@@ -38,3 +38,4 @@
 039_hr_multi_establishment_payroll_accruals.sql
 040_hr_final_settlement_earning_types.sql
 041_portal_access_foundation.sql
+042_hr_attendance_controls.sql
