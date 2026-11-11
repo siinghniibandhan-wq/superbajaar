@@ -6,7 +6,8 @@ SERVICE="${SB_DEPLOY_SERVICE:-superbajaar-new.service}"
 HEALTH_URL="${SB_DEPLOY_HEALTH_URL:-https://superappkart.duckdns.org/api/health}"
 HR_ROUTE="${SB_DEPLOY_HR_ROUTE:-https://superappkart.duckdns.org/api/hr/attendance/corrections?status=pending}"
 TARGET_SHA="${1:?Usage: deploy_backend.sh <commit-sha>}"
-LOCK_FILE="${SB_DEPLOY_LOCK_FILE:-/run/lock/superbajaar-deploy.lock}"
+# Shared with sync_main.sh: serialize source checkout updates and deployments.
+LOCK_FILE="${SB_DEPLOY_LOCK_FILE:-/run/lock/superbajaar-source.lock}"
 log(){ printf '[%s] %s\n' "$(date --iso-8601=seconds)" "$*"; }
 fail(){ log "ERROR: $*"; exit 1; }
 [[ "$(id -un)" == ubuntu ]] || fail "Run as ubuntu; do not run as root"
@@ -36,7 +37,7 @@ rollback(){
   if (( rollback_needed )); then
     log "Deployment failed; restoring $old_sha"
     git reset --hard "$old_sha" || log "CRITICAL: source rollback failed"
-    "$venv/bin/pip" install --disable-pip-version-check -r backend/requirements.txt || log "WARNING: previous dependencies could not be restored"
+    "$venv/bin/python" -m pip install --disable-pip-version-check -r backend/requirements.txt || log "WARNING: previous dependencies could not be restored"
     sudo systemctl restart "$SERVICE" || log "CRITICAL: previous service restart failed"
     sleep 5
     curl --fail --silent --show-error --max-time 15 "$HEALTH_URL" >/dev/null || log "CRITICAL: rollback health check failed"
