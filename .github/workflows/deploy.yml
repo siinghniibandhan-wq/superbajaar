@@ -58,6 +58,8 @@ jobs:
           for f in $(ls backend/schema/*.sql | sort); do
             psql -v ON_ERROR_STOP=1 -q -f "$f"
           done
+      - name: Test deployment script configuration
+        run: python -m unittest backend/scripts/tests/test_deploy_backend_config.py -v
       - name: Compile and test backend
         env:
           PYTHONDONTWRITEBYTECODE: '1'
