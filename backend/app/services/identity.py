@@ -190,6 +190,49 @@ class IdentityService:
         )
         return result
 
+    def create_relationship(
+        self,
+        *,
+        from_party_id: int,
+        to_party_id: int,
+        relationship_type: str,
+        scope: dict[str, Any] | None = None,
+        actor_user_id: int | None = None,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        """Create an explicit, scoped party relationship and immutable audit event."""
+        allowed = {
+            "representative", "owner", "director", "employee",
+            "authorised_vendor_user", "accountant", "business_partner", "other",
+        }
+        if from_party_id <= 0 or to_party_id <= 0 or from_party_id == to_party_id:
+            raise ValueError("A relationship requires two distinct valid parties")
+        if relationship_type not in allowed:
+            raise ValueError("Unsupported identity relationship type")
+        if scope is not None and not isinstance(scope, dict):
+            raise ValueError("Relationship scope must be an object")
+        if reason is not None and len(reason.strip()) < 5:
+            raise ValueError("Relationship reason must contain at least five characters")
+        import json
+        row = self.connection.execute(
+            """INSERT INTO identity_relationships
+                (from_party_id,to_party_id,relationship_type,scope,created_by_user_id,reason)
+               VALUES (%s,%s,%s,%s::jsonb,%s,%s)
+               RETURNING id,from_party_id,to_party_id,relationship_type,scope,status,created_at""",
+            (from_party_id, to_party_id, relationship_type,
+             json.dumps(scope or {}, separators=(",", ":")), actor_user_id, reason),
+        ).fetchone()
+        result = dict(row)
+        self._event(
+            party_id=from_party_id,
+            event_type="relationship_created",
+            event_data={"relationship_id": result["id"], "to_party_id": to_party_id,
+                        "relationship_type": relationship_type, "scope": scope or {}},
+            actor_user_id=actor_user_id,
+            reason=reason,
+        )
+        return result
+
     def link_auth_account(
         self,
         *,
