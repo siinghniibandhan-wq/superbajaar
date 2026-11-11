@@ -863,29 +863,88 @@ def attendance_register(request: Request, start_date: date, end_date: date):
 
 
 @router.patch("/attendance/sessions/{session_id}")
-def adjust_attendance_session(session_id: int, payload: AttendanceAdjustmentInput, request: Request):
-    actor=_manager(request)
-    from datetime import datetime
+def request_attendance_correction(session_id: int, payload: AttendanceAdjustmentInput, request: Request):
+    """Submit a correction for independent review; never mutate the source session here."""
+    actor = _manager(request)
     try:
-        clock_in=datetime.fromisoformat(str(payload.clock_in_at).replace("Z","+00:00"))
-        clock_out=datetime.fromisoformat(str(payload.clock_out_at).replace("Z","+00:00")) if payload.clock_out_at else None
+        clock_in = datetime.fromisoformat(str(payload.clock_in_at).replace("Z", "+00:00"))
+        clock_out = datetime.fromisoformat(str(payload.clock_out_at).replace("Z", "+00:00")) if payload.clock_out_at else None
     except ValueError as exc:
-        raise HTTPException(422,"Attendance timestamps must be valid ISO date-time values") from exc
+        raise HTTPException(422, "Attendance timestamps must be valid ISO date-time values") from exc
+    if clock_in.tzinfo is None or (clock_out is not None and clock_out.tzinfo is None):
+        raise HTTPException(422, "Attendance timestamps must include a timezone offset")
     if clock_out and clock_out < clock_in:
-        raise HTTPException(422,"Check-out cannot be earlier than check-in")
+        raise HTTPException(422, "Check-out cannot be earlier than check-in")
     try:
         with _hr_connection() as conn:
-            row=conn.execute(
-                "UPDATE hr_attendance_sessions SET clock_in_at=%s,clock_out_at=%s,source='manager_adjustment',"
-                "clock_in_note=concat_ws(E'\\n',nullif(clock_in_note,''),'HR adjustment: '||%s),"
-                "closed_by_user_id=%s,clock_out_note=CASE WHEN %s IS NULL THEN clock_out_note "
-                "ELSE concat_ws(E'\\n',nullif(clock_out_note,''),'HR adjustment: '||%s) END "
-                "WHERE id=%s RETURNING id,employee_id,clock_in_at,clock_out_at,source,clock_in_note,clock_out_note",
-                (clock_in,clock_out,payload.reason.strip(),actor,clock_out,payload.reason.strip(),session_id),
+            session = conn.execute(
+                "SELECT id,employee_id FROM hr_attendance_sessions WHERE id=%s FOR UPDATE",
+                (session_id,),
             ).fetchone()
-            if row is None:
-                raise HTTPException(404,"Attendance session not found")
-            return row
+            if session is None:
+                raise HTTPException(404, "Attendance session not found")
+            row = conn.execute(
+                "INSERT INTO hr_attendance_correction_requests "
+                "(attendance_session_id,employee_id,requested_clock_in_at,requested_clock_out_at,reason,requested_by_user_id) "
+                "VALUES(%s,%s,%s,%s,%s,%s) RETURNING *",
+                (session_id,session["employee_id"],clock_in,clock_out,payload.reason.strip(),actor),
+            ).fetchone()
+            return {"status": "pending_review", "request": row}
+    except HTTPException:
+        raise
+    except psycopg.errors.UniqueViolation as exc:
+        raise HTTPException(409, "A correction request is already awaiting review for this session") from exc
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.get("/attendance/corrections")
+def list_attendance_corrections(request: Request, status: str = Query(default="pending", pattern="^(pending|approved|rejected|cancelled|all)$")):
+    _manager(request)
+    with _hr_connection() as conn:
+        rows = conn.execute(
+            "SELECT c.*,e.employee_code,e.first_name,e.last_name "
+            "FROM hr_attendance_correction_requests c "
+            "JOIN hr_employees e ON e.id=c.employee_id "
+            "WHERE (%s='all' OR c.status=%s) ORDER BY c.created_at DESC",
+            (status,status),
+        ).fetchall()
+        return {"items": rows}
+
+
+@router.patch("/attendance/corrections/{correction_id}/review")
+def review_attendance_correction(correction_id: int, payload: ReviewInput, request: Request):
+    actor = _manager(request)
+    try:
+        with _hr_connection() as conn:
+            correction = conn.execute(
+                "SELECT * FROM hr_attendance_correction_requests WHERE id=%s FOR UPDATE",
+                (correction_id,),
+            ).fetchone()
+            if correction is None or correction["status"] != "pending":
+                raise HTTPException(409, "Correction request not found or already reviewed")
+            if correction["requested_by_user_id"] == actor:
+                raise HTTPException(403, "A correction must be reviewed by a different authorised user")
+            if payload.decision == "approved":
+                updated = conn.execute(
+                    "UPDATE hr_attendance_sessions SET clock_in_at=%s,clock_out_at=%s,"
+                    "source='manager_adjustment',last_modified_by_user_id=%s,closed_by_user_id=%s,"
+                    "clock_in_note=concat_ws(E'\\n',nullif(clock_in_note,''),'Approved HR correction: '||%s),"
+                    "clock_out_note=CASE WHEN %s IS NULL THEN clock_out_note ELSE "
+                    "concat_ws(E'\\n',nullif(clock_out_note,''),'Approved HR correction: '||%s) END "
+                    "WHERE id=%s RETURNING id",
+                    (correction["requested_clock_in_at"],correction["requested_clock_out_at"],actor,actor,
+                     correction["reason"],correction["requested_clock_out_at"],correction["reason"],
+                     correction["attendance_session_id"]),
+                ).fetchone()
+                if updated is None:
+                    raise HTTPException(404, "Attendance session no longer exists")
+            reviewed = conn.execute(
+                "UPDATE hr_attendance_correction_requests SET status=%s,reviewed_by_user_id=%s,"
+                "review_note=%s,reviewed_at=now() WHERE id=%s AND status='pending' RETURNING *",
+                (payload.decision,actor,payload.note,correction_id),
+            ).fetchone()
+            return reviewed
     except HTTPException:
         raise
     except psycopg.Error as exc:
