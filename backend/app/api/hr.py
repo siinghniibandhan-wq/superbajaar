@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from app.core.config import settings
 from app.api.accounting import _actor as _accounting_actor, _post_voucher
 from app.services.accounting_posting import PostingConfigurationError, build_payroll_accrual_lines
+from app.services.hr_overview import month_period, month_trend_period
 from app.services.hr_statutory_payroll import (
     StatutoryPolicyError, assess_policy_readiness, calculate_statutory_payroll,
 )
@@ -292,6 +293,127 @@ class PayrollEarningInput(BaseModel):
             raise ValueError("Hours and hourly rate are only accepted for overtime")
         return self
 
+
+
+@router.get("/overview")
+def hr_overview(request: Request, month: str = Query(..., pattern=r"^\\d{4}-(0[1-9]|1[0-2])$")):
+    """Return organisation-wide HR management metrics for one calendar month."""
+    _manager(request)
+    try:
+        period_start, period_end = month_period(month)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    try:
+        with _hr_connection() as conn:
+            workforce = conn.execute(
+                "SELECT count(*)::int AS total, "
+                "count(*) FILTER (WHERE status IN ('active','probation','on_leave','notice_period'))::int AS active, "
+                "count(*) FILTER (WHERE status='terminated')::int AS inactive, "
+                "count(*) FILTER (WHERE joining_date >= %s AND joining_date < %s)::int AS joiners, "
+                "count(*) FILTER (WHERE exit_date >= %s AND exit_date < %s)::int AS exits "
+                "FROM hr_employees",
+                (period_start, period_end, period_start, period_end),
+            ).fetchone()
+            departments = conn.execute(
+                "SELECT d.id,d.name,count(e.id) FILTER (WHERE e.status IN "
+                "('active','probation','on_leave','notice_period'))::int AS headcount "
+                "FROM hr_departments d LEFT JOIN hr_employees e ON e.department_id=d.id "
+                "WHERE d.is_active=true GROUP BY d.id,d.name ORDER BY d.name"
+            ).fetchall()
+            attendance = conn.execute(
+                "SELECT count(DISTINCT employee_id)::int AS present, "
+                "count(*) FILTER (WHERE clock_out_at IS NULL)::int AS open_sessions "
+                "FROM hr_attendance_sessions WHERE clock_in_at >= %s AND clock_in_at < %s",
+                (period_start, period_end),
+            ).fetchone()
+            on_leave = conn.execute(
+                "SELECT count(DISTINCT employee_id)::int AS employees "
+                "FROM hr_leave_requests WHERE status='approved' "
+                "AND start_date < %s AND end_date >= %s",
+                (period_end, period_start),
+            ).fetchone()["employees"]
+            payroll = conn.execute(
+                "SELECT count(*)::int AS run_count, "
+                "COALESCE(sum(total_gross),0)::numeric(16,2) AS gross, "
+                "COALESCE(sum(total_deductions),0)::numeric(16,2) AS employee_deductions, "
+                "COALESCE(sum(total_employer_contributions),0)::numeric(16,2) AS employer_contributions, "
+                "COALESCE(sum(total_net),0)::numeric(16,2) AS net "
+                "FROM hr_payroll_runs WHERE period_start >= %s AND period_start < %s "
+                "AND status IN ('approved','paid')",
+                (period_start, period_end),
+            ).fetchone()
+            run_statuses = conn.execute(
+                "SELECT status,count(*)::int AS count FROM hr_payroll_runs "
+                "WHERE period_start >= %s AND period_start < %s GROUP BY status ORDER BY status",
+                (period_start, period_end),
+            ).fetchall()
+            approvals = conn.execute(
+                "SELECT (SELECT count(*) FROM hr_leave_requests WHERE status='pending')::int AS leave_count, "
+                "(SELECT count(*) FROM hr_expenses WHERE status='pending')::int AS expense_count, "
+                "(SELECT count(*) FROM hr_employee_salary_versions WHERE status='draft')::int AS salary_revision_count, "
+                "(SELECT count(*) FROM hr_payroll_earning_adjustments WHERE status='pending')::int AS earning_count, "
+                "(SELECT count(*) FROM hr_employee_lifecycle_tasks WHERE status IN ('pending','in_progress') "
+                "AND due_date < CURRENT_DATE)::int AS lifecycle_overdue_count"
+            ).fetchone()
+            controls = conn.execute(
+                "SELECT (SELECT count(*) FROM hr_statutory_remittances WHERE status='pending')::int AS pending_remittances, "
+                "(SELECT count(*) FROM hr_employees e LEFT JOIN hr_employee_statutory_profiles p "
+                "ON p.employee_id=e.id WHERE e.status IN ('active','probation','on_leave','notice_period') "
+                "AND p.employee_id IS NULL)::int AS employees_without_statutory_profile, "
+                "(SELECT count(*) FROM hr_payroll_runs r LEFT JOIN hr_payroll_accrual_postings p "
+                "ON p.payroll_run_id=r.id WHERE r.status IN ('approved','paid') AND p.id IS NULL)::int "
+                "AS accounting_exceptions, "
+                "(SELECT count(*) FROM hr_employees WHERE status IN ('active','probation','on_leave','notice_period') "
+                "AND (department_id IS NULL OR length(trim(designation))=0))::int AS employee_data_issues"
+            ).fetchone()
+            trend_start, _ = month_trend_period(month, 6)
+            headcount_trend = conn.execute(
+                "SELECT to_char(months.month_start,'YYYY-MM') AS month, "
+                "count(e.id) FILTER (WHERE e.joining_date < (months.month_start + interval '1 month')::date "
+                "AND (e.exit_date IS NULL OR e.exit_date >= months.month_start))::int AS headcount "
+                "FROM generate_series(%s::date,%s::date - interval '1 month',interval '1 month') "
+                "AS months(month_start) LEFT JOIN hr_employees e ON true "
+                "GROUP BY months.month_start ORDER BY months.month_start",
+                (trend_start, period_end),
+            ).fetchall()
+            payroll_trend = conn.execute(
+                "SELECT to_char(period_start,'YYYY-MM') AS month, "
+                "COALESCE(sum(total_gross),0)::numeric(16,2) AS gross "
+                "FROM hr_payroll_runs WHERE period_start >= %s AND period_start < %s "
+                "AND status IN ('approved','paid') GROUP BY period_start ORDER BY period_start",
+                (trend_start, period_end),
+            ).fetchall()
+            accounting_status = "exceptions" if controls["accounting_exceptions"] else "no_exceptions_detected"
+            return {
+                "period": {"month": month, "start_date": period_start.isoformat(),
+                           "end_date": (period_end.fromordinal(period_end.toordinal() - 1)).isoformat()},
+                "workforce": {**workforce, "departments": departments,
+                              "department_count": len(departments)},
+                "attendance": {
+                    "available": False,
+                    "reason": "Absence and lateness require a published shift, approved holiday calendar and applicable attendance policy.",
+                    "present": attendance["present"], "absent": None, "late": None,
+                    "on_leave": on_leave, "open_sessions": attendance["open_sessions"],
+                    "rate": None,
+                },
+                "payroll": {**payroll, "run_statuses": run_statuses,
+                            "accounting_status": accounting_status,
+                            "exceptions": controls["accounting_exceptions"]},
+                "approvals": approvals,
+                "controls": controls,
+                "trends": {"headcount": headcount_trend, "payroll_gross": payroll_trend,
+                           "attendance": {"available": False, "reason": "Reliable shift and holiday history is required."}},
+                "data_quality": {
+                    "partial": True,
+                    "unavailable_metrics": ["attendance.absent", "attendance.late", "attendance.rate",
+                                            "attendance.trend", "statutory_policy_readiness"],
+                },
+            }
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
 
 
 @router.get("/departments")
