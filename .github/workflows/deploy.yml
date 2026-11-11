@@ -125,17 +125,149 @@ jobs:
           exit 1
 
   verify-amplify:
-    name: Verify Amplify frontend separately
+    name: Verify and automatically restore Amplify frontend
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: verify
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: production
     steps:
-      - name: Check configured Amplify site
+      - name: Configure AWS credentials using GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION }}
+      - name: Wait for this commit and capture previous successful release
+        id: amplify
+        env:
+          APP_ID: ${{ vars.AMPLIFY_APP_ID }}
+          BRANCH_NAME: main
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test -n "$APP_ID" || { echo "AMPLIFY_APP_ID repository variable is required"; exit 1; }
+          jobs="$(aws amplify list-jobs --app-id "$APP_ID" --branch-name "$BRANCH_NAME" --max-results 50)"
+          previous="$(jq -c --arg sha "$TARGET_SHA" '[.jobSummaries[] | select(.status == "SUCCEED" and .commitId != $sha)] | sort_by(.startTime) | reverse | .[0] // empty' <<<"$jobs")"
+          test -n "$previous" || { echo "No previous successful Amplify release found; refusing an ungrounded rollback"; exit 1; }
+          previous_id="$(jq -r '.jobId' <<<"$previous")"
+          previous_sha="$(jq -r '.commitId' <<<"$previous")"
+          echo "previous_job_id=$previous_id" >> "$GITHUB_OUTPUT"
+          echo "previous_sha=$previous_sha" >> "$GITHUB_OUTPUT"
+          echo "Previous known-good Amplify release: $previous_sha (job $previous_id)"
+          current_id=""
+          for attempt in $(seq 1 60); do
+            jobs="$(aws amplify list-jobs --app-id "$APP_ID" --branch-name "$BRANCH_NAME" --max-results 50)"
+            current="$(jq -c --arg sha "$TARGET_SHA" '[.jobSummaries[] | select(.commitId == $sha)] | sort_by(.startTime) | reverse | .[0] // empty' <<<"$jobs")"
+            if [[ -n "$current" ]]; then
+              current_id="$(jq -r '.jobId' <<<"$current")"
+              status="$(jq -r '.status' <<<"$current")"
+              echo "Amplify job $current_id status: $status"
+              case "$status" in
+                SUCCEED|FAILED|CANCELLED) break ;;
+              esac
+            fi
+            sleep 20
+          done
+          test -n "$current_id" || { echo "Timed out waiting for Amplify job for $TARGET_SHA"; exit 1; }
+          echo "current_job_id=$current_id" >> "$GITHUB_OUTPUT"
+          echo "current_status=$status" >> "$GITHUB_OUTPUT"
+      - name: Verify published release and all referenced frontend assets
+        id: health
         env:
           SITE_URL: ${{ vars.AMPLIFY_SITE_URL || secrets.AMPLIFY_SITE_URL }}
+          EXPECTED_SHA: ${{ steps.amplify.outputs.current_status == 'SUCCEED' && github.sha || steps.amplify.outputs.previous_sha }}
         run: |
           set -euo pipefail
           test -n "$SITE_URL" || { echo "AMPLIFY_SITE_URL is not configured"; exit 1; }
-          curl --fail --silent --show-error --location --max-time 30 "$SITE_URL" -o /tmp/amplify-index.html
-          grep -qi '<html' /tmp/amplify-index.html
-          echo "Amplify site is responding with HTML: $SITE_URL"
+          verify_release() {
+            local expected="$1"
+            local html="/tmp/amplify-index.html"
+            curl --fail --silent --show-error --location --retry 3 --retry-all-errors --max-time 30 -H 'Cache-Control: no-cache' "$SITE_URL/?sb_health=$GITHUB_RUN_ID" -o "$html"
+            grep -qi '<html' "$html"
+            grep -Fq "name=\"sb-release\" content=\"$expected\"" "$html" || {
+              echo "Published HTML release marker does not match expected commit $expected"
+              return 1
+            }
+            python - "$html" "$SITE_URL" <<'PY'
+          import html.parser, sys, urllib.parse, urllib.request
+          class Assets(html.parser.HTMLParser):
+              def __init__(self):
+                  super().__init__(); self.urls=[]
+              def handle_starttag(self, tag, attrs):
+                  attrs=dict(attrs)
+                  for key in ("src", "href"):
+                      value=attrs.get(key, "")
+                      if value and (".js" in value or ".css" in value):
+                          self.urls.append(value)
+          parser=Assets()
+          parser.feed(open(sys.argv[1], encoding="utf-8").read())
+          base=sys.argv[2]
+          assets=list(dict.fromkeys(urllib.parse.urljoin(base, x) for x in parser.urls))
+          if not any(".js" in x for x in assets):
+              raise SystemExit("No JavaScript bundle was found in the published HTML")
+          for url in assets:
+              request=urllib.request.Request(url, headers={"Cache-Control":"no-cache"})
+              with urllib.request.urlopen(request, timeout=25) as response:
+                  if response.status != 200:
+                      raise SystemExit(f"Asset check failed: {url} returned {response.status}")
+                  if response.headers.get("Content-Length") == "0":
+                      raise SystemExit(f"Asset is empty: {url}")
+          print(f"Verified {len(assets)} published JS/CSS assets")
+          PY
+          }
+          if [[ "$EXPECTED_SHA" == "$GITHUB_SHA" ]]; then
+            verify_release "$EXPECTED_SHA"
+          else
+            verify_release "$EXPECTED_SHA"
+          fi
+      - name: Restore previous successful Amplify release if deployment or health check failed
+        if: steps.amplify.outputs.current_status != 'SUCCEED' || steps.health.outcome != 'success'
+        env:
+          APP_ID: ${{ vars.AMPLIFY_APP_ID }}
+          BRANCH_NAME: main
+          PREVIOUS_JOB_ID: ${{ steps.amplify.outputs.previous_job_id }}
+          PREVIOUS_SHA: ${{ steps.amplify.outputs.previous_sha }}
+        run: |
+          set -euo pipefail
+          echo "Restoring previous successful Amplify job $PREVIOUS_JOB_ID ($PREVIOUS_SHA)"
+          rollback="$(aws amplify start-job --app-id "$APP_ID" --branch-name "$BRANCH_NAME" --job-type RETRY --job-id "$PREVIOUS_JOB_ID")"
+          rollback_id="$(jq -r '.jobSummary.jobId' <<<"$rollback")"
+          test -n "$rollback_id" && test "$rollback_id" != "null"
+          for attempt in $(seq 1 60); do
+            status="$(aws amplify get-job --app-id "$APP_ID" --branch-name "$BRANCH_NAME" --job-id "$rollback_id" --query 'job.summary.status' --output text)"
+            echo "Amplify rollback job $rollback_id status: $status"
+            case "$status" in
+              SUCCEED) break ;;
+              FAILED|CANCELLED) echo "Amplify rollback job failed: $status"; exit 1 ;;
+            esac
+            sleep 20
+          done
+          test "$status" = "SUCCEED" || { echo "Timed out waiting for Amplify rollback"; exit 1; }
+          echo "rollback_job_id=$rollback_id" >> "$GITHUB_OUTPUT"
+      - name: Verify restored Amplify version is fully healthy
+        if: steps.amplify.outputs.current_status != 'SUCCEED' || steps.health.outcome != 'success'
+        env:
+          SITE_URL: ${{ vars.AMPLIFY_SITE_URL || secrets.AMPLIFY_SITE_URL }}
+          EXPECTED_SHA: ${{ steps.amplify.outputs.previous_sha }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --retry 5 --retry-all-errors --retry-delay 5 --max-time 30 -H 'Cache-Control: no-cache' "$SITE_URL/?sb_health=$GITHUB_RUN_ID-rollback" -o /tmp/amplify-restored.html
+          grep -qi '<html' /tmp/amplify-restored.html
+          grep -Fq "name=\"sb-release\" content=\"$EXPECTED_SHA\"" /tmp/amplify-restored.html
+          python - /tmp/amplify-restored.html "$SITE_URL" <<'PY'
+          import html.parser, sys, urllib.parse, urllib.request
+          class Assets(html.parser.HTMLParser):
+              def __init__(self): super().__init__(); self.urls=[]
+              def handle_starttag(self, tag, attrs):
+                  attrs=dict(attrs)
+                  for key in ("src","href"):
+                      value=attrs.get(key,"")
+                      if value and (".js" in value or ".css" in value): self.urls.append(value)
+          parser=Assets(); parser.feed(open(sys.argv[1],encoding="utf-8").read())
+          assets=list(dict.fromkeys(urllib.parse.urljoin(sys.argv[2],x) for x in parser.urls))
+          if not any(".js" in x for x in assets): raise SystemExit("Restored page has no JS bundle")
+          for url in assets:
+              with urllib.request.urlopen(urllib.request.Request(url,headers={"Cache-Control":"no-cache"}),timeout=25) as r:
+                  if r.status != 200: raise SystemExit(f"Restored asset failed: {url} ({r.status})")
+          print(f"Restored release {sys.argv[1]}: {len(assets)} JS/CSS assets healthy")
+          PY
