@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from app.api.auth import _password_hash
 from app.core.config import settings
+from app.services.identity import IdentityService
 from app.services.portal_invitation import (
     hash_invitation_token,
     invitation_is_usable,
@@ -34,6 +35,7 @@ def _connect():
 class InvitationCreate(BaseModel):
     portal_type: str = Field(pattern="^(vendor|employee)$")
     record_id: int = Field(gt=0)
+    representative_name: str | None = Field(default=None, min_length=2, max_length=200)
 
 
 class InvitationAccept(BaseModel):
@@ -166,6 +168,8 @@ def create_invitation(payload: InvitationCreate, request: Request):
     role = getattr(request.state, "role", "")
     if not actor_id or role not in {"super_admin", "admin"}:
         raise HTTPException(403, "Super Admin or Admin permission is required")
+    if payload.portal_type == "vendor" and not (payload.representative_name or "").strip():
+        raise HTTPException(422, "Enter the authorised representative’s full name")
     try:
         with _connect() as conn:
             with conn.transaction():
@@ -177,7 +181,9 @@ def create_invitation(payload: InvitationCreate, request: Request):
                     if not record or not record["is_active"]:
                         raise HTTPException(404, "Active supplier not found")
                     email = (record["email"] or "").strip().lower()
-                    full_name = record["name"]
+                    full_name = (invitation["representative_name"] or "").strip()
+                    if len(full_name) < 2:
+                        raise HTTPException(409, "This vendor invitation has no authorised representative name; issue a new invitation")
                     if not email:
                         raise HTTPException(422, "Add a supplier email before inviting its vendor user")
                     employee_id = None
@@ -216,9 +222,9 @@ def create_invitation(payload: InvitationCreate, request: Request):
                 raw_token, token_hash = issue_invitation_token()
                 expires_at = datetime.now(timezone.utc) + timedelta(hours=48)
                 conn.execute(
-                    "INSERT INTO portal_invitations(portal_type,email,supplier_id,employee_id,token_hash,expires_at,invited_by_user_id) "
-                    "VALUES(%s,%s,%s,%s,%s,%s,%s)",
-                    (payload.portal_type, email, supplier_id, employee_id, token_hash, expires_at, actor_id),
+                    "INSERT INTO portal_invitations(portal_type,email,supplier_id,employee_id,representative_name,token_hash,expires_at,invited_by_user_id) "
+                    "VALUES(%s,%s,%s,%s,%s,%s,%s,%s)",
+                    (payload.portal_type, email, supplier_id, employee_id, (payload.representative_name or full_name).strip(), token_hash, expires_at, actor_id),
                 )
         base_url = os.getenv("SB_PORTAL_BASE_URL", "").rstrip("/")
         route = "/vendor/activate" if payload.portal_type == "vendor" else "/employee/activate"
@@ -247,7 +253,7 @@ def accept_invitation(payload: InvitationAccept):
         with _connect() as conn:
             with conn.transaction():
                 invitation = conn.execute(
-                    "SELECT id,portal_type,email,supplier_id,employee_id,expires_at,accepted_at,revoked_at "
+                    "SELECT id,portal_type,email,supplier_id,employee_id,representative_name,expires_at,accepted_at,revoked_at "
                     "FROM portal_invitations WHERE token_hash=%s FOR UPDATE",
                     (hash_invitation_token(payload.token),),
                 ).fetchone()
@@ -278,12 +284,30 @@ def accept_invitation(payload: InvitationAccept):
                     "VALUES(%s,%s,%s,'staff',TRUE) RETURNING id,email,full_name,role",
                     (invitation["email"], full_name, _password_hash(payload.password)),
                 ).fetchone()
+                identity = IdentityService(conn)
                 if invitation["portal_type"] == "vendor":
+                    organisation = conn.execute(
+                        "SELECT p.id,p.display_name FROM identity_profiles ip JOIN identity_parties p ON p.id=ip.party_id "
+                        "WHERE ip.profile_type='vendor_organisation' AND ip.supplier_id=%s AND ip.status='active' FOR UPDATE OF p",
+                        (invitation["supplier_id"],),
+                    ).fetchone()
+                    if organisation is None:
+                        supplier = conn.execute("SELECT name FROM suppliers WHERE id=%s", (invitation["supplier_id"],)).fetchone()
+                        organisation = identity.create_party(party_type="organisation", display_name=supplier["name"], reason="Vendor portal invitation accepted")
+                        identity.link_profile(party_id=organisation["id"], profile_type="vendor_organisation", source_id=invitation["supplier_id"], link_method="verified_invitation")
+                    representative = identity.create_party(party_type="individual", display_name=full_name, reason="Vendor representative accepted invitation")
+                    identity.link_auth_account(party_id=representative["id"], account_type="staff", source_id=user["id"], link_method="verified_invitation")
+                    identity.add_contact(party_id=representative["id"], contact_type="email", value=invitation["email"], source="vendor_invitation")
+                    identity.create_relationship(from_party_id=representative["id"], to_party_id=organisation["id"], relationship_type="authorised_vendor_user", scope={"supplier_id": invitation["supplier_id"], "portal_access": True}, reason="Accepted vendor portal invitation")
                     conn.execute(
                         "INSERT INTO vendor_portal_users(user_id,supplier_id) VALUES(%s,%s)",
                         (user["id"], invitation["supplier_id"]),
                     )
                 else:
+                    party = identity.create_party(party_type="individual", display_name=full_name, reason="Employee portal invitation accepted")
+                    identity.link_profile(party_id=party["id"], profile_type="employee", source_id=invitation["employee_id"], link_method="verified_invitation")
+                    identity.link_auth_account(party_id=party["id"], account_type="staff", source_id=user["id"], link_method="verified_invitation")
+                    identity.add_contact(party_id=party["id"], contact_type="email", value=invitation["email"], source="employee_invitation")
                     conn.execute(
                         "UPDATE hr_employees SET user_id=%s,updated_at=now() WHERE id=%s AND user_id IS NULL",
                         (user["id"], invitation["employee_id"]),
