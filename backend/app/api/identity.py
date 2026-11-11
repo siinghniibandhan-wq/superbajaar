@@ -160,7 +160,7 @@ def review_queue(request: Request, limit: int = Query(default=100, ge=1, le=300)
     try:
         with _connect() as conn:
             rows = conn.execute(
-                "SELECT r.id,r.request_type,r.status,r.requested_profile_type,r.requested_source_id,r.proof_method,r.proof_verified_at,r.reason,r.created_at,"
+                "SELECT r.id,r.request_type,r.status,r.requested_profile_type,r.requested_source_id,r.proof_method,r.proof_verified_at,r.request_context->>'reason' AS reason,r.created_at,"
                 "sp.sbid AS requester_sbid,tp.sbid AS target_sbid FROM identity_link_requests r "
                 "LEFT JOIN identity_parties sp ON sp.id=r.requester_party_id LEFT JOIN identity_parties tp ON tp.id=r.target_party_id "
                 "WHERE r.status IN ('pending','proof_required') ORDER BY r.created_at LIMIT %s", (limit,)
