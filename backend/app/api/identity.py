@@ -239,3 +239,102 @@ def link_referral_parties(referral_id: int, request: Request):
         if getattr(exc, "sqlstate", None) == "23505":
             raise HTTPException(409, "This referral is already linked") from exc
         raise HTTPException(503, "Unable to link referral identities") from exc
+
+
+class MergeIn(BaseModel):
+    target_party_id: int = Field(gt=0)
+    proof_verified: bool
+    proof_method: str = Field(min_length=3, max_length=40)
+    reason: str = Field(min_length=5, max_length=500)
+
+
+@router.post("/parties/{source_party_id}/merge")
+def merge_parties(source_party_id: int, payload: MergeIn, request: Request):
+    _admin(request)
+    if not payload.proof_verified:
+        raise HTTPException(422, "Merge requires documented proof verification")
+    if source_party_id == payload.target_party_id:
+        raise HTTPException(422, "Source and target identities must differ")
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                rows = conn.execute(
+                    "SELECT id,sbid,party_type,status FROM identity_parties WHERE id IN (%s,%s) ORDER BY id FOR UPDATE",
+                    (source_party_id,payload.target_party_id),
+                ).fetchall()
+                parties = {row["id"]: row for row in rows}
+                source, target = parties.get(source_party_id), parties.get(payload.target_party_id)
+                if not source or not target or source["status"] != "active" or target["status"] != "active":
+                    raise HTTPException(409, "Both identities must exist and be active")
+                if source["party_type"] != target["party_type"]:
+                    raise HTTPException(409, "Individual and organisation identities cannot be merged")
+                conflict = conn.execute(
+                    "SELECT 1 FROM identity_profiles a JOIN identity_profiles b ON b.party_id=%s AND b.profile_type=a.profile_type "
+                    "WHERE a.party_id=%s LIMIT 1", (target_party_id,source_party_id),
+                ).fetchone()
+                if conflict:
+                    raise HTTPException(409, "Both identities contain the same profile type; resolve the profile conflict before merging")
+                collapses = conn.execute(
+                    "SELECT 1 FROM identity_relationships WHERE (from_party_id=%s AND to_party_id=%s) OR (from_party_id=%s AND to_party_id=%s) LIMIT 1",
+                    (source_party_id,target_party_id,target_party_id,source_party_id),
+                ).fetchone()
+                if collapses:
+                    raise HTTPException(409, "These identities already have a direct relationship; resolve it before merging")
+                referral_conflict = conn.execute(
+                    "SELECT 1 FROM identity_referral_links WHERE (referrer_party_id=%s AND referred_party_id=%s) OR (referrer_party_id=%s AND referred_party_id=%s) LIMIT 1",
+                    (source_party_id,target_party_id,target_party_id,source_party_id),
+                ).fetchone()
+                if referral_conflict:
+                    raise HTTPException(409, "A referral link would collapse into a self-referral; resolve it before merging")
+                conn.execute("UPDATE identity_profiles SET party_id=%s,updated_at=now() WHERE party_id=%s", (target_party_id,source_party_id))
+                conn.execute("UPDATE identity_auth_accounts SET party_id=%s WHERE party_id=%s", (target_party_id,source_party_id))
+                conn.execute("UPDATE identity_contacts SET party_id=%s,updated_at=now() WHERE party_id=%s", (target_party_id,source_party_id))
+                conn.execute("UPDATE identity_relationships SET from_party_id=%s,updated_at=now() WHERE from_party_id=%s", (target_party_id,source_party_id))
+                conn.execute("UPDATE identity_relationships SET to_party_id=%s,updated_at=now() WHERE to_party_id=%s", (target_party_id,source_party_id))
+                conn.execute("UPDATE identity_loyalty_accounts SET party_id=%s WHERE party_id=%s", (target_party_id,source_party_id))
+                conn.execute("UPDATE identity_referral_links SET referrer_party_id=%s WHERE referrer_party_id=%s", (target_party_id,source_party_id))
+                conn.execute("UPDATE identity_referral_links SET referred_party_id=%s WHERE referred_party_id=%s", (target_party_id,source_party_id))
+                conn.execute("INSERT INTO identity_aliases(alias_sbid,source_party_id,canonical_party_id,merge_reason,merged_by_user_id) VALUES(%s,%s,%s,%s,%s)", (source["sbid"],source_party_id,target_party_id,payload.reason,request.state.user_id))
+                conn.execute("UPDATE identity_parties SET status='merged',merged_into_party_id=%s,updated_at=now() WHERE id=%s", (target_party_id,source_party_id))
+                service = IdentityService(conn)
+                service._event(party_id=target_party_id,event_type="party_merged",event_data={"source_party_id":source_party_id,"source_sbid":source["sbid"],"canonical_sbid":target["sbid"],"proof_method":payload.proof_method},actor_user_id=request.state.user_id,reason=payload.reason)
+        return {"source_sbid": source["sbid"], "canonical_sbid": target["sbid"], "status": "merged"}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        if getattr(exc, "sqlstate", None) == "23505":
+            raise HTTPException(409, "Merge would violate an identity uniqueness rule") from exc
+        raise HTTPException(503, "Unable to merge identities") from exc
+
+
+class SplitIn(BaseModel):
+    profile_id: int = Field(gt=0)
+    reason: str = Field(min_length=5, max_length=500)
+
+
+@router.post("/parties/{party_id}/split-profile", status_code=201)
+def split_profile(party_id: int, payload: SplitIn, request: Request):
+    _admin(request)
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                party = conn.execute("SELECT id,party_type,display_name,status FROM identity_parties WHERE id=%s FOR UPDATE", (party_id,)).fetchone()
+                if party is None or party["status"] != "active":
+                    raise HTTPException(404, "Active identity not found")
+                profile = conn.execute("SELECT id,profile_type,customer_account_id,crm_customer_id,employee_id,supplier_id FROM identity_profiles WHERE id=%s AND party_id=%s AND status='active' FOR UPDATE", (payload.profile_id,party_id)).fetchone()
+                if profile is None:
+                    raise HTTPException(404, "Active profile does not belong to this identity")
+                new_party = IdentityService(conn).create_party(party_type=party["party_type"],display_name=party["display_name"],actor_user_id=request.state.user_id,reason=payload.reason)
+                conn.execute("UPDATE identity_profiles SET party_id=%s,updated_at=now() WHERE id=%s", (new_party["id"],payload.profile_id))
+                if profile["profile_type"] == "customer_account":
+                    conn.execute("UPDATE identity_auth_accounts SET party_id=%s WHERE party_id=%s AND customer_account_id=%s", (new_party["id"],party_id,profile["customer_account_id"]))
+                elif profile["profile_type"] == "employee":
+                    employee = conn.execute("SELECT user_id FROM hr_employees WHERE id=%s", (profile["employee_id"],)).fetchone()
+                    if employee and employee["user_id"]:
+                        conn.execute("UPDATE identity_auth_accounts SET party_id=%s WHERE party_id=%s AND app_user_id=%s", (new_party["id"],party_id,employee["user_id"]))
+                IdentityService(conn)._event(party_id=party_id,event_type="party_split",event_data={"new_party_id":new_party["id"],"new_sbid":new_party["sbid"],"profile_id":payload.profile_id,"profile_type":profile["profile_type"]},actor_user_id=request.state.user_id,reason=payload.reason)
+        return {"party": new_party, "moved_profile_id": payload.profile_id}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Unable to split identity profile") from exc
