@@ -52,7 +52,7 @@ git merge-base --is-ancestor "$old_sha" "$TARGET_SHA" || fail "Target is not a f
 git merge --ff-only "$TARGET_SHA"
 rollback_needed=1
 "$venv/bin/python" -m pip install --disable-pip-version-check -r backend/requirements.txt
-"$venv/bin/python" -m compileall -q backend/app
+PYTHONPYCACHEPREFIX="${TMPDIR:-/tmp}/superbajaar-pycache-${TARGET_SHA}" "$venv/bin/python" -m compileall -q backend/app
 sudo systemctl restart "$SERVICE"
 for attempt in $(seq 1 18); do
   if curl --fail --silent --show-error --max-time 10 "$HEALTH_URL" >/dev/null; then break; fi
