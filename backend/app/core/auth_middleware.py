@@ -48,7 +48,7 @@ def _module_for_path(path: str, prefix: str = "/api") -> str | None:
         "pos": "pos", "customers": "crm", "orders": "orders", "payments": "payments",
         "razorpay": "payments", "fulfilment": "fulfillment", "delivery": "delivery",
         "pricing": "pricing", "loyalty": "loyalty", "hr": "hr_payroll",
-        "accounting": "accounting", "reports": "dashboard", "auth": "user_management", "portal-invitations": "user_management", "organisation-policies": "dashboard",
+        "accounting": "accounting", "reports": "dashboard", "auth": "user_management", "identity": "user_management", "portal-invitations": "user_management", "organisation-policies": "dashboard",
     }
     return aliases.get(route)
 
