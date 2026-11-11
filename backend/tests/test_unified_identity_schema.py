@@ -10,7 +10,7 @@ def test_unified_identity_foundation_defines_permanent_party_and_sbid():
     assert "sbid text not null unique" in sql
     assert "party_type" in sql
     assert "gen_random_uuid()" in sql
-    assert "identity_party_sbid_immutable" in sql
+    assert "identity_party_core_immutable_trigger" in sql
 
 
 def test_unified_identity_profiles_link_existing_domain_records_without_rekeying():
