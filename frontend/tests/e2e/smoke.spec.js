@@ -179,7 +179,7 @@ test("HR manager can access the HR workspace without admin-wide module access", 
   await expect(page.getByRole("heading", { name: "HR & Payroll" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Workforce at a glance" })).toBeVisible();
   await expect(page.getByText("Active workforce", { exact: true })).toBeVisible();
-  await expect(page.getByText("Gross payroll", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Gross payroll", exact: true })).toBeVisible();
   await expect(page.getByText("₹5,40,000")).toBeVisible();
   await expect(page.getByText("Employees without portal login", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Admin access required" })).toHaveCount(0);
