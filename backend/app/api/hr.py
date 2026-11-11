@@ -2225,6 +2225,49 @@ def file_statutory_remittance(remittance_id: int, payload: RemittanceFileInput, 
 
 
 # Additive HR workforce planning, leave ledger and employee lifecycle workflows.
+class AttendancePolicyInput(BaseModel):
+    establishment_id: int = Field(gt=0)
+    grace_minutes: int = Field(default=0, ge=0, le=240)
+    break_minutes: int = Field(default=0, ge=0, le=720)
+    geofence_enabled: bool = False
+    geofence_enforced: bool = False
+    require_location_on_clock_in: bool = False
+    require_location_on_clock_out: bool = False
+    effective_from: date
+    effective_to: date | None = None
+
+    @model_validator(mode="after")
+    def validate_policy(self):
+        if self.effective_to and self.effective_to < self.effective_from:
+            raise ValueError("Attendance policy end date cannot precede its start date")
+        if self.geofence_enforced and not self.geofence_enabled:
+            raise ValueError("Geofence enforcement requires geofencing to be enabled")
+        if (self.require_location_on_clock_in or self.require_location_on_clock_out) and not self.geofence_enabled:
+            raise ValueError("Required GPS capture needs geofencing to be enabled")
+        return self
+
+
+class AttendanceWorkLocationInput(BaseModel):
+    establishment_id: int = Field(gt=0)
+    code: str = Field(min_length=2, max_length=32)
+    name: str = Field(min_length=2, max_length=120)
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    radius_meters: int = Field(ge=10, le=10000)
+
+    @field_validator("code", "name")
+    @classmethod
+    def trim_location_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Work location code and name cannot be blank")
+        return value
+
+
+class AttendanceWorkLocationStatusInput(BaseModel):
+    is_active: bool
+
+
 class ShiftDefinitionInput(BaseModel):
     establishment_id: int = Field(gt=0)
     code: str = Field(min_length=2, max_length=32)
@@ -2390,6 +2433,77 @@ class LifecycleTaskUpdateInput(BaseModel):
     due_date: date | None = None
     evidence_reference: str | None = Field(default=None, max_length=500)
     completion_note: str | None = Field(default=None, max_length=1000)
+
+
+@router.get("/attendance/policies")
+def list_attendance_policies(request: Request, establishment_id: int | None = Query(default=None, gt=0)):
+    _manager(request)
+    with _hr_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM hr_attendance_policies WHERE (%s::bigint IS NULL OR establishment_id=%s) "
+            "ORDER BY establishment_id,effective_from DESC",
+            (establishment_id,establishment_id),
+        ).fetchall()
+        return {"items": rows}
+
+
+@router.post("/attendance/policies", status_code=201)
+def create_attendance_policy(payload: AttendancePolicyInput, request: Request):
+    actor = _manager(request)
+    with _hr_connection() as conn:
+        overlap = conn.execute(
+            "SELECT id FROM hr_attendance_policies WHERE establishment_id=%s "
+            "AND daterange(effective_from,COALESCE(effective_to,'infinity'::date),'[]') "
+            "&& daterange(%s,COALESCE(%s,'infinity'::date),'[]')",
+            (payload.establishment_id,payload.effective_from,payload.effective_to),
+        ).fetchone()
+        if overlap:
+            raise HTTPException(409, "An attendance policy already covers part of this effective period")
+        return conn.execute(
+            "INSERT INTO hr_attendance_policies(establishment_id,grace_minutes,break_minutes,geofence_enabled,"
+            "geofence_enforced,require_location_on_clock_in,require_location_on_clock_out,effective_from,effective_to,"
+            "created_by_user_id,updated_by_user_id) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *",
+            (payload.establishment_id,payload.grace_minutes,payload.break_minutes,payload.geofence_enabled,
+             payload.geofence_enforced,payload.require_location_on_clock_in,payload.require_location_on_clock_out,
+             payload.effective_from,payload.effective_to,actor,actor),
+        ).fetchone()
+
+
+@router.get("/attendance/work-locations")
+def list_attendance_work_locations(request: Request, establishment_id: int | None = Query(default=None, gt=0)):
+    _manager(request)
+    with _hr_connection() as conn:
+        return {"items": conn.execute(
+            "SELECT * FROM hr_attendance_work_locations WHERE (%s::bigint IS NULL OR establishment_id=%s) "
+            "ORDER BY establishment_id,name",
+            (establishment_id,establishment_id),
+        ).fetchall()}
+
+
+@router.post("/attendance/work-locations", status_code=201)
+def create_attendance_work_location(payload: AttendanceWorkLocationInput, request: Request):
+    actor = _manager(request)
+    with _hr_connection() as conn:
+        return conn.execute(
+            "INSERT INTO hr_attendance_work_locations(establishment_id,code,name,latitude,longitude,radius_meters,created_by_user_id) "
+            "VALUES(%s,%s,%s,%s,%s,%s,%s) RETURNING *",
+            (payload.establishment_id,payload.code,payload.name,payload.latitude,payload.longitude,
+             payload.radius_meters,actor),
+        ).fetchone()
+
+
+@router.patch("/attendance/work-locations/{location_id}")
+def update_attendance_work_location(location_id: int, payload: AttendanceWorkLocationStatusInput, request: Request):
+    _manager(request)
+    with _hr_connection() as conn:
+        row = conn.execute(
+            "UPDATE hr_attendance_work_locations SET is_active=%s,updated_at=now() "
+            "WHERE id=%s RETURNING *",
+            (payload.is_active,location_id),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(404, "Attendance work location not found")
+        return row
 
 
 @router.get("/shifts")
