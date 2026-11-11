@@ -333,6 +333,33 @@ def hr_overview(request: Request, month: str = Query(..., pattern=r"^\d{4}-(0[1-
                 "AND start_date < %s AND end_date >= %s",
                 (period_end, period_start),
             ).fetchone()["employees"]
+            scheduled_attendance = conn.execute(
+                "WITH scheduled AS ("
+                " SELECT sa.employee_id,sa.work_date,"
+                " EXISTS (SELECT 1 FROM hr_attendance_sessions hs "
+                "         WHERE hs.employee_id=sa.employee_id "
+                "           AND (hs.clock_in_at AT TIME ZONE sd.timezone)::date=sa.work_date) AS attended "
+                " FROM hr_shift_assignments sa "
+                " JOIN hr_shift_definitions sd ON sd.id=sa.shift_definition_id "
+                " WHERE sa.status='published' AND sa.work_date >= %s AND sa.work_date < %s "
+                "   AND NOT EXISTS (SELECT 1 FROM hr_holiday_calendars hc "
+                "                   JOIN hr_holidays h ON h.calendar_id=hc.id "
+                "                   WHERE hc.establishment_id=sd.establishment_id "
+                "                     AND hc.status='approved' "
+                "                     AND hc.effective_year=extract(year FROM sa.work_date)::int "
+                "                     AND h.holiday_date=sa.work_date) "
+                "   AND NOT EXISTS (SELECT 1 FROM hr_leave_requests lr "
+                "                   WHERE lr.employee_id=sa.employee_id AND lr.status='approved' "
+                "                     AND lr.start_date<=sa.work_date AND lr.end_date>=sa.work_date)"
+                ") "
+                "SELECT count(*)::int AS scheduled_days, "
+                "count(*) FILTER (WHERE attended)::int AS attended_days, "
+                "count(*) FILTER (WHERE NOT attended)::int AS absent_days, "
+                "count(DISTINCT employee_id) FILTER (WHERE attended)::int AS present_employees, "
+                "count(DISTINCT employee_id) FILTER (WHERE NOT attended)::int AS absent_employees "
+                "FROM scheduled",
+                (period_start, period_end),
+            ).fetchone()
             payroll = conn.execute(
                 "SELECT count(*)::int AS run_count, "
                 "COALESCE(sum(total_gross),0)::numeric(16,2) AS gross, "
@@ -391,11 +418,18 @@ def hr_overview(request: Request, month: str = Query(..., pattern=r"^\d{4}-(0[1-
                 "workforce": {**workforce, "departments": departments,
                               "department_count": len(departments)},
                 "attendance": {
-                    "available": False,
-                    "reason": "Absence and lateness require a published shift, approved holiday calendar and applicable attendance policy.",
-                    "present": attendance["present"], "absent": None, "late": None,
+                    "available": bool(scheduled_attendance["scheduled_days"]),
+                    "reason": None if scheduled_attendance["scheduled_days"] else
+                    "No published shift schedule exists for this month; absence and attendance rate cannot be calculated.",
+                    "present": (scheduled_attendance["present_employees"] if scheduled_attendance["scheduled_days"] else attendance["present"]),
+                    "absent": scheduled_attendance["absent_employees"] if scheduled_attendance["scheduled_days"] else None,
+                    "late": None,
+                    "scheduled_shift_days": scheduled_attendance["scheduled_days"],
+                    "attended_shift_days": scheduled_attendance["attended_days"],
+                    "absent_shift_days": scheduled_attendance["absent_days"],
                     "on_leave": on_leave, "open_sessions": attendance["open_sessions"],
-                    "rate": None,
+                    "rate": round(scheduled_attendance["attended_days"] * 100 / scheduled_attendance["scheduled_days"], 1)
+                        if scheduled_attendance["scheduled_days"] else None,
                 },
                 "payroll": {**payroll, "run_statuses": run_statuses,
                             "accounting_status": accounting_status,
@@ -406,8 +440,7 @@ def hr_overview(request: Request, month: str = Query(..., pattern=r"^\d{4}-(0[1-
                            "attendance": {"available": False, "reason": "Reliable shift and holiday history is required."}},
                 "data_quality": {
                     "partial": True,
-                    "unavailable_metrics": ["attendance.absent", "attendance.late", "attendance.rate",
-                                            "attendance.trend", "statutory_policy_readiness"],
+                    "unavailable_metrics": ["attendance.late", "attendance.trend", "statutory_policy_readiness"],
                 },
             }
     except HTTPException:
