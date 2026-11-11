@@ -394,6 +394,33 @@ def hr_overview(request: Request, month: str = Query(..., pattern=r"^\d{4}-(0[1-
                 "(SELECT count(*) FROM hr_employees WHERE status IN ('active','probation','on_leave','notice_period') "
                 "AND (department_id IS NULL OR length(trim(designation))=0))::int AS employee_data_issues"
             ).fetchone()
+            establishments = conn.execute(
+                "SELECT id,code,display_name FROM hr_establishments WHERE is_active=true ORDER BY display_name"
+            ).fetchall()
+            statutory_readiness = []
+            if establishments:
+                policy_rows = conn.execute(
+                    "SELECT establishment_id,component,effective_from,effective_to,status "
+                    "FROM hr_statutory_policy_versions WHERE effective_from <= %s "
+                    "AND (effective_to IS NULL OR effective_to >= %s)",
+                    (period_end - date.resolution, period_end - date.resolution),
+                ).fetchall()
+                for establishment in establishments:
+                    assessment = assess_policy_readiness(
+                        [policy for policy in policy_rows if policy["establishment_id"] == establishment["id"]],
+                        period_end - date.resolution,
+                    )
+                    statutory_readiness.append({
+                        "establishment_id": establishment["id"],
+                        "establishment": establishment["display_name"],
+                        **assessment,
+                    })
+            controls = dict(controls)
+            controls["statutory_readiness"] = (
+                "not_configured" if not establishments else
+                "ready" if all(item["ready"] for item in statutory_readiness) else "incomplete"
+            )
+            controls["establishments"] = statutory_readiness
             trend_start, _ = month_trend_period(month, 6)
             headcount_trend = conn.execute(
                 "SELECT to_char(months.month_start,'YYYY-MM') AS month, "
@@ -440,7 +467,7 @@ def hr_overview(request: Request, month: str = Query(..., pattern=r"^\d{4}-(0[1-
                            "attendance": {"available": False, "reason": "Reliable shift and holiday history is required."}},
                 "data_quality": {
                     "partial": True,
-                    "unavailable_metrics": ["attendance.late", "attendance.trend", "statutory_policy_readiness"],
+                    "unavailable_metrics": ["attendance.late", "attendance.trend"],
                 },
             }
     except HTTPException:
