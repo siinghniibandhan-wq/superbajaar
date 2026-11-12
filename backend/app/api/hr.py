@@ -718,6 +718,7 @@ def create_employee(payload: EmployeeInput, request: Request):
 @router.put("/employees/{employee_id}")
 def update_employee(employee_id: int, payload: EmployeeInput, request: Request):
     actor = _manager(request)
+    from app.services.identity import IdentityService
     try:
         with _hr_connection() as conn:
             _validate_reporting_manager(conn, employee_id, payload.reports_to_employee_id)
