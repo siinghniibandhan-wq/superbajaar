@@ -142,7 +142,7 @@ class LinkRequestIn(BaseModel):
 class ReviewIn(BaseModel):
     decision: str = Field(pattern=r"^(approve|reject)$")
     proof_verified: bool = False
-    proof_method: str | None = Field(default=None, max_length=40)
+    proof_method: str | None = Field(default=None, pattern=r"^(document_review|in_person|verified_account|business_registry)$", max_length=40)
     reason: str = Field(min_length=5, max_length=500)
 
 
