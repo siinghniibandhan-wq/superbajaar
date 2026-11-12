@@ -146,6 +146,11 @@ class ReviewIn(BaseModel):
     reason: str = Field(min_length=5, max_length=500)
 
 
+class ContactVerifyIn(BaseModel):
+    proof_method: str = Field(pattern=r"^(document_review|in_person|verified_account|business_registry)$")
+    reason: str = Field(min_length=5, max_length=500)
+
+
 @router.get("/reconciliation/preview")
 def legacy_reconciliation_preview(
     request: Request,
@@ -481,6 +486,44 @@ def review_link_request(request_id: int, payload: ReviewIn, request: Request):
         if getattr(exc, "sqlstate", None) == "23505":
             raise HTTPException(409, "That profile or relationship is already linked") from exc
         raise HTTPException(503, "Unable to review identity request") from exc
+
+
+@router.post("/contacts/{contact_id}/verify")
+def verify_contact(contact_id: int, payload: ContactVerifyIn, request: Request):
+    """Record an administrator's evidence-based verification of a current contact."""
+    _admin(request)
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                contact = conn.execute(
+                    """
+                    SELECT c.id,c.party_id,c.verification_status,c.valid_to,p.status AS party_status
+                    FROM identity_contacts c
+                    JOIN identity_parties p ON p.id=c.party_id
+                    WHERE c.id=%s
+                    FOR UPDATE OF c,p
+                    """,
+                    (contact_id,),
+                ).fetchone()
+                if contact is None:
+                    raise HTTPException(404, "Identity contact not found")
+                if contact["party_status"] != "active" or contact["valid_to"] is not None:
+                    raise HTTPException(409, "Only a current contact on an active identity can be verified")
+                if contact["verification_status"] not in {"unverified", "expired"}:
+                    raise HTTPException(409, "This contact is not eligible for verification")
+                result = IdentityService(conn).verify_contact(
+                    contact_id=contact_id,
+                    actor_user_id=request.state.user_id,
+                    proof_method=payload.proof_method,
+                    reason=payload.reason,
+                )
+                if result is None:
+                    raise HTTPException(409, "Contact verification state changed; refresh and retry")
+        return {"id": result["id"], "status": result["verification_status"], "verified_at": result["verified_at"]}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Unable to verify identity contact") from exc
 
 
 class LoyaltyLinkIn(BaseModel):
