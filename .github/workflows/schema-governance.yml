@@ -30,7 +30,6 @@ jobs:
           git cat-file -e "${BASE_SHA}^{commit}"
 
           python3 - <<'PY'
-          import hashlib
           import os
           import re
           import subprocess
@@ -85,13 +84,8 @@ jobs:
                       status == "M"
                       and path == "backend/schema/000_baseline_schema.sql"
                   ):
-                      restored = git("show", f"HEAD:{path}")
-                      restored_sha = hashlib.sha256(
-                          restored.encode("utf-8")
-                      ).hexdigest()
-                      if restored_sha == (
-                          "519e4467a6af9c1f87dd06cbdb80ef4545b1ae04edfe8937966799792168d938"
-                      ):
+                      restored_blob = git("rev-parse", f"HEAD:{path}").strip()
+                      if restored_blob == "54ccd721461682cf6d5349bf84a8767420544668":
                           print(
                               "Accepted exact immutable-baseline restoration "
                               f"for {path}."
