@@ -731,3 +731,37 @@ def test_hr_termination_deactivates_employee_portal_login(api):
     with psycopg.connect(TEST_DB) as conn:
         active=conn.execute("SELECT is_active FROM app_users WHERE id=%s",(staff_user_id,)).fetchone()[0]
     assert active is False
+
+def test_hr_employee_onboarding_rejects_login_already_linked_to_another_identity(api):
+    from app.services.identity import IdentityService
+
+    with psycopg.connect(TEST_DB) as conn:
+        existing_party = IdentityService(conn).create_party(
+            party_type="individual",
+            display_name="Existing staff identity " + api.suffix,
+            reason="Prepare identity conflict regression",
+        )
+        IdentityService(conn).link_auth_account(
+            party_id=existing_party["id"],
+            account_type="staff",
+            source_id=api.user_id,
+            link_method="admin_verified",
+        )
+
+    response = api.post("/api/hr/employees", json={
+        "user_id": api.user_id,
+        "employee_code": "CONFLICT-" + api.suffix,
+        "first_name": "Conflicting",
+        "last_name": "Employee",
+        "email": "conflict-" + api.suffix + "@test.local",
+        "designation": "Associate",
+        "joining_date": "2026-01-01",
+    })
+    assert response.status_code == 409
+    with psycopg.connect(TEST_DB) as conn:
+        count = conn.execute(
+            "SELECT count(*) FROM hr_employees WHERE employee_code=%s",
+            ("CONFLICT-" + api.suffix,),
+        ).fetchone()[0]
+    assert count == 0
+
