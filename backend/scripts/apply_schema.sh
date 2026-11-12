@@ -153,7 +153,18 @@ if [ "$MODE" = status ] || [ "$MODE" = dry ]; then
     req=""; [[ " ${REQUIRED[*]:-} " == *" $n "* ]] && req=" [required]"
     echo "  $n: $st$req"
   done
-  for k in "${!LED[@]}"; do [ -n "${FSUM[$k]:-}" ] || echo "  note: ledger has $k but the file is not in the folder (old record)"; done
+  for k in "${!LED[@]}"; do
+    [ -n "${FSUM[$k]:-}" ] && continue
+    # 036_super_admin_role.sql was intentionally replaced by 036_configurable_rbac.sql.
+    # Suppress only its historical ledger alias when the canonical migration is present
+    # and its recorded checksum matches the current canonical file.
+    if [ "$k" = "036_super_admin_role.sql" ] &&
+       [ -n "${FSUM[036_configurable_rbac.sql]:-}" ] &&
+       [ "${LED[036_configurable_rbac.sql]:-}" = "${FSUM[036_configurable_rbac.sql]}" ]; then
+      continue
+    fi
+    echo "  note: ledger has $k but the file is not in the folder (old record)"
+  done
   if [ "$HAVE_LEDGER" = t ] && [ "$(pg -c "select to_regclass('public.schema_migration_failures') is not null")" = t ]; then
     pg -c "select '  last error for '||filename||': '||left(regexp_replace(error,E'[\\r\\n|]+',' ','g'),200) from (select distinct on (filename) filename,error from schema_migration_failures order by filename, failed_at desc) t"
   fi
