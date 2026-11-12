@@ -48,7 +48,7 @@ test("customer can submit an existing SBID claim and see its review status", asy
   });
 
   await page.goto("/account");
-  await expect(page.getByRole("heading", { name: "My Account" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Hello, Identity" })).toBeVisible();
   await page.getByRole("button", { name: /Identity claims/ }).click();
   await expect(page.getByRole("heading", { name: "Claim an existing identity" })).toBeVisible();
 
