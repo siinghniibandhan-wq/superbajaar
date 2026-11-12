@@ -90,6 +90,11 @@ class DeployBackendConfigurationTests(unittest.TestCase):
         self.assertIn('Source SHA did not reach the triggering main commit', workflow)
         self.assertIn('Production baseline SHA-256 mismatch', workflow)
 
+    def test_production_source_guard_avoids_runner_expansion_of_awk_field(self):
+        workflow_path = REPO_ROOT / ".github" / "workflows" / "production-database-migrations.yml"
+        workflow = workflow_path.read_text(encoding="utf-8")
+        self.assertIn("cut -d", workflow)
+        self.assertNotIn("awk", workflow)
     def test_preserves_deployment_safety_guards(self):
         for guard in (
             'systemctl is-active --quiet "$SERVICE"',
