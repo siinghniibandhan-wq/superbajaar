@@ -151,6 +151,9 @@ def create_supplier(payload: SupplierCreate):
                                              value=row["phone"], source="supplier_master")
                     except ValueError:
                         pass
+                # The supplier is now linked to its canonical organisation identity.
+                # Return the SBID immediately so the admin UI can display and retain it.
+                row = {**row, "sbid": party["sbid"]}
         return row
     except psycopg.Error as exc:
         raise _db_error(exc) from exc
