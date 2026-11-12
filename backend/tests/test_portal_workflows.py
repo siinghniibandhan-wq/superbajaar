@@ -168,3 +168,36 @@ def test_vendor_invoice_document_verification_rejects_wrong_s3_metadata():
     with pytest.raises(HTTPException) as wrong_owner:
         _verify_vendor_document_object(S3(), "private-bucket", "s3://private-bucket/vendor-invoices/42/" + "a" * 32 + ".pdf", 42)
     assert wrong_owner.value.status_code == 403
+
+
+def test_vendor_profile_exposes_representative_sbid_only_through_active_scoped_relationship():
+    from types import SimpleNamespace
+
+    from app.api.vendor_portal import _vendor_user
+
+    class Result:
+        def fetchone(self):
+            return {
+                "supplier_id": 7,
+                "sbid": "SBID-ORGANISATION00001",
+                "representative_sbid": "SBID-INDIVIDUAL000001",
+            }
+
+    class Connection:
+        query = ""
+
+        def execute(self, query, params):
+            self.query = query
+            assert params == (42,)
+            return Result()
+
+    connection = Connection()
+    vendor = _vendor_user(connection, SimpleNamespace(state=SimpleNamespace(user_id=42)))
+
+    assert vendor["sbid"] == "SBID-ORGANISATION00001"
+    assert vendor["representative_sbid"] == "SBID-INDIVIDUAL000001"
+    assert "identity_auth_accounts" in connection.query
+    assert "identity_relationships" in connection.query
+    assert "authorised_vendor_user" in connection.query
+    assert "portal_access" in connection.query
+    assert "representative_link.status='active'" in connection.query
