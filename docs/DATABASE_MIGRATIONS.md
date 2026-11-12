@@ -247,3 +247,20 @@ Migration 045 remains pending. Its presence in Git and in `schema_required.txt` 
 The schema timer and service should continue to be treated as a status-monitoring mechanism only. Keep `--status` in the effective service command. Do not change the service to default/apply mode to make the status exit code green. A systemd service failure at exit code 10 is the current observed alert behaviour; inspect the runner output and logs to understand the actual migration state.
 
 This snapshot is evidence from 12 November 2026 at approximately 06:46 UTC. Re-run the checks before any later production operation; do not treat this dated status as live indefinitely.
+
+
+## 10. Production baseline checksum reconciliation (12 November 2026)
+
+A read-only production comparison identified the exact historical version of `000_baseline_schema.sql` recorded in the production migration ledger. The database ledger checksum is:
+
+```text
+519e4467a6af9c1f87dd06cbdb80ef4545b1ae04edfe8937966799792168d938
+```
+
+The checksum matches the historical file content in commits `12350a4513d2ddbf5f9107eb3f15625557e16b5a`, `3a5a0cf8bd63cd0d99f9f1e1b42dd1b388fd74a4` and `881f2e09beddf6f0a22b5ca6365e500ca81dadde`. The corresponding Git blob is `74cfc166c80b815186035abe61322efd5905575f`. The later baseline blob `54ccd721461682cf6d5349bf84a8767420544668` has SHA-256 `f95b15efed9e49e11e85bcf1786ae89ff10d29a60bb44774eedca3d82813a578` and does not match production.
+
+The baseline was changed to include `super_admin` in the `app_users_role_check` constraint. That was the wrong place for this role change: the already-versioned `036_configurable_rbac.sql` migration creates the Super Admin role and updates the constraint as part of the RBAC rollout. The baseline must remain the original production-matched schema snapshot. Restore it byte-for-byte; do not edit the production ledger, reapply the baseline, or add a second baseline migration.
+
+The schema-governance workflow permits this one recovery only when both the exact historical Git blob and its SHA-256 match the production-pinned values above. Every other edit to an existing migration remains prohibited. The baseline restoration is a repository correction, not a production database operation.
+
+**Production status at the time of comparison:** the status-only runner reported the baseline checksum mismatch, migrations 043 and 044 applied, and required migration 045 pending. No migration was applied during this comparison. Re-run the read-only status check after the repository sync to verify that the mismatch is resolved. Migration 045 still requires its separate production approval and readiness checks.
