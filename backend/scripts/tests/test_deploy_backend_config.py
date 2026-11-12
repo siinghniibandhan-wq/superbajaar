@@ -85,7 +85,7 @@ class DeployBackendConfigurationTests(unittest.TestCase):
         self.assertIn('git status --porcelain', workflow)
         self.assertIn('sha256sum', workflow)
         self.assertIn("git show", workflow)
-        self.assertIn(r"\\$EXPECTED_MAIN_SHA:backend/schema/000_baseline_schema.sql", workflow)
+        self.assertIn(r"\$EXPECTED_MAIN_SHA:backend/schema/000_baseline_schema.sql", workflow)
         self.assertIn('Source SHA did not reach the triggering main commit', workflow)
         self.assertIn('Production baseline SHA-256 mismatch', workflow)
 
