@@ -165,6 +165,8 @@ def test_customer_loyalty_response_reads_sbid_only_from_explicit_identity_link(m
             if "FROM loyalty_accounts la LEFT JOIN identity_loyalty_accounts" in sql:
                 assert "party.sbid" in sql
                 return Result()
+            if "FROM loyalty_transactions WHERE account_id=%s" in sql:
+                return Result()
             raise AssertionError(f"Unexpected SQL: {sql}")
 
     monkeypatch.setattr(loyalty, "_connection", Connection)
