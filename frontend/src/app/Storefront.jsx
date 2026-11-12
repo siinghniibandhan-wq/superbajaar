@@ -409,11 +409,25 @@ export default function Storefront() {
     finally { setReferralBusy(false); }
   };
 
-  const saveCustomerProfile = event => {
+  const saveCustomerProfile = async event => {
     event.preventDefault();
-    try { window.localStorage.setItem("sb-customer-profile", JSON.stringify(customer)); } catch {}
-    setNotice("Your profile details have been saved on this device.");
-    setError("");
+    if (!customerToken || !customerAuth) {
+      setError("Sign in to update your customer profile.");
+      return;
+    }
+    try {
+      const result = await customerRequest("/customer-auth/me", {
+        method: "PATCH",
+        body: JSON.stringify({ full_name: customer.name.trim() }),
+      });
+      if (!result?.customer) throw new Error("The profile update response was incomplete.");
+      setCustomerAuth(result.customer);
+      setCustomer(old => ({ ...old, name: result.customer.full_name || old.name }));
+      setNotice("Your name has been saved to your Super Bajaar account. Email and mobile changes require separate verification.");
+      setError("");
+    } catch (reason) {
+      setError(reason.message || "Could not save your customer profile.");
+    }
   };
   const openWishlist = () => {
     window.history.pushState({}, "", "/wishlist");
