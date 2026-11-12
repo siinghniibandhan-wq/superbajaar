@@ -110,5 +110,24 @@ class DeployBackendConfigurationTests(unittest.TestCase):
             self.assertIn(guard, self.source)
 
 
+    def test_production_deploy_push_is_limited_to_runtime_paths(self):
+        push_block = self.workflow.split("  push:\n", 1)[1].split("  workflow_dispatch:", 1)[0]
+        self.assertIn("paths:", push_block)
+        self.assertIn('"backend/app/**"', push_block)
+        self.assertIn('"frontend/**"', push_block)
+        self.assertIn('"src/**"', push_block)
+        self.assertNotIn('"docs/**"', push_block)
+
+    def test_production_migration_apply_verifies_required_ledger_after_exit_11(self):
+        workflow_path = REPO_ROOT / ".github" / "workflows" / "production-database-migrations.yml"
+        workflow = workflow_path.read_text(encoding="utf-8")
+        self.assertIn("migration_rc=$?", workflow)
+        self.assertIn('[ "$migration_rc" -ne 0 ] && [ "$migration_rc" -ne 11 ]', workflow)
+        self.assertIn("--status", workflow)
+        self.assertIn("[required]", workflow)
+        self.assertIn("required migration is not APPLIED", workflow)
+        self.assertIn("exit 20", workflow)
+
+
 if __name__ == "__main__":
     unittest.main()
