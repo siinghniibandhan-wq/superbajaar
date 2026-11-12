@@ -10,6 +10,7 @@ test("admin identity workspace exposes a legacy reconciliation report", () => {
   assert.match(workspace, /identity\/reconciliation\/preview/);
   assert.match(workspace, /tab === "review" \?/);
   assert.match(workspace, /identity-reconciliation/);
+  assert.match(workspace, /item\\.request_type === "claim_existing_identity" && !item\\.target_sbid/);
   assert.match(api, /manual_review_required/);
 });
 
