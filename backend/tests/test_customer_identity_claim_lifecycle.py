@@ -136,6 +136,11 @@ def test_admin_can_resolve_unmatched_customer_claim_for_evidence_review(monkeypa
     with psycopg.connect(TEST_DB, row_factory=dict_row) as conn:
         customer = _customer(conn, "claim-unmatched")
         target = _party(conn)
+        admin = conn.execute(
+            "INSERT INTO app_users(email,full_name,password_hash,role) "
+            "VALUES(%s,%s,%s,%s) RETURNING id",
+            (f"claim-admin-{uuid4().hex}@test.local", "Identity Claim Admin", "test-hash", "admin"),
+        ).fetchone()
     monkeypatch.setattr(customer_auth.settings, "database_url", TEST_DB)
     monkeypatch.setattr(identity.settings, "database_url", TEST_DB)
     customer_request = SimpleNamespace(state=SimpleNamespace(customer_id=customer["id"]))
@@ -144,7 +149,7 @@ def test_admin_can_resolve_unmatched_customer_claim_for_evidence_review(monkeypa
         customer_request,
     )
     claim = list_identity_claims(customer_request)["items"][0]
-    admin_request = SimpleNamespace(state=SimpleNamespace(user_id=999999, role="admin"))
+    admin_request = SimpleNamespace(state=SimpleNamespace(user_id=admin["id"], role="admin"))
 
     result = resolve_unmatched_claim_target(
         claim["id"],
