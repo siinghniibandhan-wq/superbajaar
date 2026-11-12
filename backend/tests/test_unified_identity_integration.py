@@ -464,6 +464,10 @@ def test_admin_can_request_owner_relationship_for_an_explicit_individual_identit
             "INSERT INTO app_users(email,full_name,password_hash,role) VALUES(%s,%s,%s,'admin') RETURNING id",
             (f"identity-admin-{suffix}@test.local", "Identity Admin", "test-hash"),
         ).fetchone()
+        reviewer = conn.execute(
+            "INSERT INTO app_users(email,full_name,password_hash,role) VALUES(%s,%s,%s,'admin') RETURNING id",
+            (f"identity-reviewer-{suffix}@test.local", "Independent Identity Reviewer", "test-hash"),
+        ).fetchone()
         individual = _party(conn, "individual")
         organisation = _party(conn, "organisation")
     monkeypatch.setattr(identity_api.settings, "database_url", TEST_DB)
@@ -478,6 +482,19 @@ def test_admin_can_request_owner_relationship_for_an_explicit_individual_identit
     )
     result = create_link_request(payload, request)
     assert result["request"]["status"] == "proof_required"
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as self_approval:
+        review_link_request(
+            result["request"]["id"],
+            ReviewIn(
+                decision="approve", proof_verified=True,
+                proof_method="document_review",
+                reason="Ownership evidence reviewed and approved",
+            ),
+            request,
+        )
+    assert self_approval.value.status_code == 403
+    request.state.user_id = reviewer["id"]
     approved = review_link_request(
         result["request"]["id"],
         ReviewIn(
