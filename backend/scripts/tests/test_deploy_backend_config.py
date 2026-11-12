@@ -86,7 +86,8 @@ class DeployBackendConfigurationTests(unittest.TestCase):
         self.assertIn('git status --porcelain', workflow)
         self.assertIn('sha256sum', workflow)
         self.assertIn("git show", workflow)
-        self.assertIn(r"\$EXPECTED_MAIN_SHA:backend/schema/000_baseline_schema.sql", workflow)
+        self.assertIn("git show", workflow)
+        self.assertIn("base64 -d | sudo -u ubuntu env EXPECTED_MAIN_SHA=", workflow)
         self.assertIn('Source SHA did not reach the triggering main commit', workflow)
         self.assertIn('Production baseline SHA-256 mismatch', workflow)
 
@@ -95,6 +96,8 @@ class DeployBackendConfigurationTests(unittest.TestCase):
         workflow = workflow_path.read_text(encoding="utf-8")
         self.assertIn("cut -d", workflow)
         self.assertNotIn("awk", workflow)
+        self.assertIn("REMOTE_SCRIPT", workflow)
+        self.assertIn("base64 -d | sudo -u ubuntu env", workflow)
     def test_preserves_deployment_safety_guards(self):
         for guard in (
             'systemctl is-active --quiet "$SERVICE"',
