@@ -73,7 +73,7 @@ class DeployBackendConfigurationTests(unittest.TestCase):
         self.assertIn("Apply reviewed production migrations", workflow)
         self.assertLess(workflow.index("Dry-run production migrations (no writes)"),
                         workflow.index("Apply reviewed production migrations"))
-        preflight = workflow.split("\\n  apply:\\n", 1)[0]
+        preflight = workflow.split("\n  apply:\n", 1)[0]
         self.assertNotIn("Approved Super Bajaar production schema apply", preflight)
 
     def test_preserves_deployment_safety_guards(self):
