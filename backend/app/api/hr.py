@@ -748,11 +748,18 @@ def update_employee(employee_id: int, payload: EmployeeInput, request: Request):
                     (employee_id,),
                 ).fetchone()
                 if party:
+                    party_id = party["id"]
                     conn.execute(
                         "UPDATE identity_parties SET display_name=%s,updated_at=now() WHERE id=%s",
-                        ((row["first_name"] + " " + row["last_name"]).strip(), party["id"]),
+                        ((row["first_name"] + " " + row["last_name"]).strip(), party_id),
                     )
                     row = {**row, "sbid": party["sbid"]}
+                    if row["email"]:
+                        try:
+                            from app.services.identity import IdentityService
+                            IdentityService(conn).add_contact(party_id=party_id,contact_type="email",value=row["email"],source="hr_employee_update")
+                        except ValueError:
+                            pass
                 else:
                     from app.services.identity import IdentityService
                     identity = IdentityService(conn)
