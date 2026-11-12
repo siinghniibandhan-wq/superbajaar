@@ -104,7 +104,7 @@ def _issue_session(conn, customer):
 
 def _public_customer(row):
     return {
-        "id": row["id"], "email": row["email"], "full_name": row["full_name"],
+        "id": row["id"], "sbid": row.get("sbid"), "email": row["email"], "full_name": row["full_name"],
         "phone": row["phone"], "referral_code": row["referral_code"],
     }
 
@@ -252,6 +252,8 @@ def register(payload: CustomerRegister):
                         "VALUES(%s,%s,'verified_customer_account')",
                         (party["id"], loyalty_account["id"]),
                     )
+                customer = dict(customer)
+                customer["sbid"] = party["sbid"]
                 session = _issue_session(conn, customer)
         return {**session, "customer": _public_customer(customer)}
     except HTTPException:
