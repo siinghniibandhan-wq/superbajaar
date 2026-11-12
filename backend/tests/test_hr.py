@@ -272,6 +272,8 @@ def test_employee_update_returns_and_preserves_canonical_sbid(monkeypatch):
         def __exit__(self, *args):
             return False
         def execute(self, sql, params=()):
+            if "SELECT id,user_id FROM hr_employees" in sql:
+                return Result({"id": 8, "user_id": None})
             if "UPDATE hr_employees SET" in sql:
                 return Result({"id": 8, "user_id": None, "employee_code": "EMP-8",
                                "first_name": "Asha", "last_name": "Rao",
