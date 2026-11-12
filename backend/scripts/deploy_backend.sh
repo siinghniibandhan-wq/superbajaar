@@ -31,7 +31,7 @@ for candidate in "$working_dir/venv" "$working_dir/.venv" "$REPO_DIR/backend/ven
 done
 [[ -n "$venv" ]] || fail "No existing application virtualenv found under backend/venv or supported .venv locations"
 [[ "$exec_start" == *"$venv/bin/"* ]] || fail "Service ExecStart does not use detected virtualenv; refusing to switch runtime"
-old_sha="$(git rev-parse HEAD)"
+old_sha="$(git rev-parse --verify -q refs/deploy/last-good || git rev-parse HEAD)"
 rollback_needed=0
 rollback(){
   rc=$?
@@ -62,5 +62,6 @@ done
 hr_code="$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 15 "$HR_ROUTE" || true)"
 case "$hr_code" in 2??|401|403) ;; *) fail "HR route check failed with HTTP $hr_code" ;; esac
 rollback_needed=0
+git update-ref refs/deploy/last-good "$(git rev-parse HEAD)"
 trap - EXIT
 log "Deployment verified: $(git rev-parse HEAD); health=OK; HR route HTTP $hr_code"
