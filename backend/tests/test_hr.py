@@ -278,6 +278,8 @@ def test_employee_update_returns_and_preserves_canonical_sbid(monkeypatch):
                                "email": None, "status": "active", "updated_at": None})
             if "FROM identity_profiles ip" in sql:
                 return Result({"id": 71, "sbid": "SBID-0123456789ABCDEF0123"})
+            if "SELECT id,party_id,contact_type,normalized_value" in sql:
+                return Result(None)
             if "UPDATE identity_parties SET display_name" in sql:
                 return Result(None)
             raise AssertionError(f"Unexpected SQL: {sql}")
