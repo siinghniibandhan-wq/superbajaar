@@ -66,7 +66,7 @@ def _action_for_request(method: str, path: str) -> str:
     # Keep GET review-queue access as read and other identity POSTs as create.
     if method == "POST" and segments[-4:-1] == ["identity", "review-queue", "requests"]:
         return "approve"
-    if method == "POST" and len(segments) >= 5 and segments[-4] == "identity" and segments[-3] == "contacts" and segments[-1] == "verify":
+    if method == "POST" and len(segments) >= 5 and segments[-4] == "identity" and segments[-3] in {"contacts", "relationships"} and segments[-1] in {"verify", "revoke"}:
         return "approve"
     workflow_actions = {"approve": "approve", "award": "approve", "post": "approve", "dispatch": "approve", "credit": "approve", "export": "export", "configure": "configure", "settings": "configure"}
     if any(segment in workflow_actions for segment in segments):
