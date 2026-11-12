@@ -154,7 +154,7 @@ export default function IdentityWorkspace() {
   return <section className="identity-workspace">
     <header className="identity-head"><div><span>MASTER DATA · ACCESS GOVERNANCE</span><h1>Unified Identity Register</h1><p>Permanent SBIDs, linked business profiles, relationships and controlled identity review.</p></div><button onClick={() => refresh(0)}>Refresh</button></header>
     <nav className="identity-tabs"><button className={tab==="register"?"active":""} onClick={()=>setTab("register")}>Identity register</button><button className={tab==="review"?"active":""} onClick={()=>setTab("review")}>Review queue <b>{queue.length}</b></button><button className={tab==="reconciliation"?"active":""} onClick={()=>{setTab("reconciliation");loadReconciliation();}}>Legacy reconciliation</button></nav>
-    {error && <p className={error.startsWith("Identity-link request submitted") ? "" : "identity-error"} role="status">{error}</p>}
+    {error && <p className={(error.startsWith("Identity-link request submitted") || error.startsWith("Organisation relationship submitted")) ? "" : "identity-error"} role="status">{error}</p>}
     {tab === "register" ? <>
       <div className="identity-list">
         <div className="identity-filters">
