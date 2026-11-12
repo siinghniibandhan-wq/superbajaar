@@ -3,10 +3,25 @@
 **Document owner:** Super Bajaar Engineering  
 **Status:** Current repository workflow reference  
 **Last verified:** 12 November 2026  
-**Source of truth:** `.github/workflows/*.yml`, application build configuration and verified runtime configuration  
+**Source of truth:** current Git tree, AWS-native runtime configuration and verified hosting configuration. GitHub Actions workflow definitions were removed by PR #77.  
 **Approval boundary:** This document explains automation. It does not authorize production deployment, database migration or infrastructure changes.
 
 ## 1. Executive summary
+
+> **Current-state correction — 12 November 2026:** The GitHub Actions automation was removed and PR [#77](https://github.com/siinghniibandhan-wq/superbajaar/pull/77) was merged into `main`. The historical GitHub Actions topology, workflow tables, triggers and path-filter explanations in Sections 2–5 below describe the pre-removal architecture only. They are retained as historical context and must not be used as current operating instructions. The current state and remaining deployment boundaries are recorded immediately below.
+
+### Current automation state after PR #77
+
+- The repository no longer contains the nine GitHub Actions workflow files removed by PR #77, nor `.github/dependabot.yml`.
+- Removed workflow files: `automation.yml`, `browser-quality.yml`, `ci.yml`, `deploy.yml`, `gitleaks.yml`, `migration-check.yml`, `production-database-migrations.yml`, `schema-governance.yml` and `semgrep.yml`.
+- GitHub Actions no longer provides this repository's CI, browser-quality, security-scan, backend-deployment or database-migration automation. Do not expect a push or pull request to trigger those deleted workflows.
+- The Dependabot repository configuration was also removed. This stops repository-configured Dependabot update scheduling; it does not remove application dependencies.
+- AWS-side automation was not removed by PR #77. EC2/systemd timers and services are separate from GitHub Actions and must be inspected on the host before describing their current state.
+- AWS Amplify's native Git-connected frontend deployment is independent of GitHub Actions. Its current connection and auto-build settings must be verified in Amplify; deleting GitHub Actions does not itself disable Amplify.
+- No replacement backend deployment or database migration automation is asserted by this document. The AWS-native replacement is a separate implementation and verification task.
+- Do not infer that a code commit deploys the backend or applies database migrations. Treat frontend publication, backend deployment and database migration as separate release paths.
+
+
 
 The repository currently demonstrates three execution contexts:
 
