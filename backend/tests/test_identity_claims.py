@@ -26,3 +26,8 @@ def test_customer_identity_claim_status_does_not_accept_another_customer_id():
 def test_legacy_identity_reconciliation_preview_requires_admin_session():
     response = client.get("/api/identity/reconciliation/preview")
     assert response.status_code == 403
+
+
+def test_customer_identity_claim_cancellation_requires_customer_session():
+    response = client.post("/api/customer-auth/identity-claims/123/cancel")
+    assert response.status_code == 401
