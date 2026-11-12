@@ -1,5 +1,9 @@
 # HR & Payroll Completion Implementation Plan
 
+**Plan date:** 11 November 2026  
+**Status:** Dated execution plan; verify current code, PRs and tests before treating any checklist item as outstanding.  
+**Related design:** [HR & Payroll completion design](../specs/2026-11-11-hr-payroll-completion-design.md)
+
 > **For agentic workers:** Use the host's available task-by-task implementation workflow. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Complete and harden the existing Super Bajaar HR & Payroll workspace with reliable management analytics, secure employee self-service, and fully tested connected HR/payroll workflows.
