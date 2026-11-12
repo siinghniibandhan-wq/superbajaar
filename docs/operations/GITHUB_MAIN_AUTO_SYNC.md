@@ -1,5 +1,11 @@
 # GitHub `main` to AWS EC2 automatic code synchronisation
 
+**Status:** Operational behaviour reference  
+**Last reviewed:** 12 November 2026  
+**Scope:** Source checkout synchronization only; not application deployment or database migration.
+
+> This document describes the repository automation. Confirm the installed systemd units on the EC2 host before relying on it; a script or unit file in Git is not proof that the timer is installed or active.
+
 ## Behaviour
 
 The EC2 host checks `origin/main` every two minutes using a dedicated systemd timer. If the remote branch has advanced and the production checkout is clean, the script performs a fast-forward-only update. If there is no new commit, it exits without changing the checkout.
