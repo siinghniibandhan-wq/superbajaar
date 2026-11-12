@@ -228,3 +228,94 @@ Every status statement must be labelled as one of:
 - **Open/unverified:** evidence has not yet been collected.
 
 Do not convert owner-reported or inferred settings into independently verified facts.
+---
+
+## 10. Live production audit update — 12 November 2026
+
+This section records the read-only EC2/database checks and the AWS Amplify console screenshot supplied by the owner on 12 November 2026. It supersedes earlier statements in this document that described backend deployment, migration 045, baseline checksum or migration 036 reconciliation as unverified/pending. It does not supersede the still-open Amplify details listed below.
+
+### EC2 source, backend and API
+
+| Check | Observed result |
+|---|---|
+| Production checkout | `/opt/superbajaar/source` |
+| EC2 `HEAD` | `9b7980954cf0550383e8c34b2fcd89be219bc17a` |
+| `origin/main` | Same SHA as EC2 `HEAD` |
+| Backend service | `superbajaar-backend.service`, active/running |
+| Service working directory | `/opt/superbajaar/source/backend` |
+| Local API health | HTTP 200; `{"status":"ok","database":"connected"}` |
+| Public API health | HTTP 200; `{"status":"ok","database":"connected"}` |
+
+The source checkout is aligned with GitHub `main` at the time of the supplied diagnostic. This is source alignment; it is not, by itself, proof that every commit was deployed through the controlled backend deployment workflow.
+
+### Backend last-good reference
+
+The EC2 ref `refs/deploy/last-good` exists and points to:
+
+```text
+4580ad3f2ed2155ba466932b2ac0bad229a5b0f1
+```
+
+Comparing that commit with EC2 `HEAD` showed only six documentation files changed: `README.md`, `docs/DATABASE_MIGRATIONS.md`, `docs/ENVIRONMENTS_AND_CICD.md`, `docs/PRODUCTION_GOVERNANCE_AND_READINESS.md`, `docs/README.md`, and `docs/operations/PRODUCTION_DEPLOYMENT.md`. The deployment-relevant path comparison was empty. Therefore the running application source has no code difference from `main` in this comparison. Do not advance the last-good ref solely to include documentation-only commits; it represents the last verified backend application release.
+
+### Database and migration runner
+
+| Check | Observed result |
+|---|---|
+| Production database | `superbajaar` |
+| Current schema SQL files | 40 |
+| Production `schema_migrations` rows | 41 |
+| Current files reported by `--status` | All APPLIED, including 045 |
+| Status runner exit code | 0 |
+| Migration 045 SHA-256 | `874886ce7aae2bc6c4f541e95f63bf231ac06b187a62aeb94cef6f58cbf2b948` |
+| Schema timer | `superbajaar-schema.timer`, enabled and active |
+| Timer cadence | Every 2 minutes |
+| Last observed status service execution | `superbajaar-schema.service`, exit 0 / SUCCESS |
+
+The timer service is a oneshot status check. Its being `inactive (dead)` after a successful run is normal; the timer remains active and schedules the next run. The correct installed unit names are `superbajaar-schema.timer` and `superbajaar-schema.service`; `sb-schema.timer` is not installed. The effective service command explicitly invokes `apply_schema.sh ... --status`, not apply mode.
+
+### Baseline checksum and historical failure record
+
+The current baseline file and production ledger row both have SHA-256:
+
+```text
+519e4467a6af9c1f87dd06cbdb80ef4545b1ae04edfe8937966799792168d938
+```
+
+The failure table retains an older record for `000_baseline_schema.sql` with SHA-256 `f95b15efed9e49e11e85bcf1786ae89ff10d29a60bb44774eedca3d82813a578` and error `changed after it was applied; not re-applied`. This is historical evidence for superseded file content; it is not a current baseline checksum mismatch. Preserve the historical failure row.
+
+### Historical duplicate migration prefix 036
+
+The 41st ledger row is explained by the historical migration `036_super_admin_role.sql`. Git history shows:
+
+- `7308938e7a811a4486079a65c8e6e11d82615103` — introduced the separate Super Admin role migration.
+- `5dbe8cf2a1ee9602953f92bce1cee60897a2c67` — removed that separate migration after the role work was consolidated.
+
+The production ledger retains both `036_super_admin_role.sql` and `036_configurable_rbac.sql`; the current schema directory contains only `036_configurable_rbac.sql`. A scan of current schema filenames found no duplicate numeric prefixes. This is a historical migration-history exception, not a current repository numbering duplicate. Do not delete ledger rows, restore the removed file to the active schema directory, or rename/edit applied migrations.
+
+### Amplify frontend evidence
+
+The owner supplied an AWS Amplify console screenshot showing:
+
+| Field | Screenshot observation |
+|---|---|
+| Deployment | 113 |
+| Status | Deployed |
+| Branch / repository | `main` / `superbajaar:main` |
+| Commit message | “Merge pull request #65 …” |
+| Deployment start shown | 12 Nov 2026, 15:28 (console timezone not independently established) |
+| Build duration | 1 minute 4 seconds |
+| Deploy duration | 42 seconds |
+| Amplify domain | `https://main.d334sr8jkx3zux.amplifyapp.com` |
+
+This establishes that Amplify reports deployment 113 as deployed for the connected `superbajaar:main` branch and that the displayed commit message refers to PR #65. It also demonstrates that Amplify published a deployment associated with the documentation PR, even though the GitHub `deploy.yml` application-path push filter excludes docs-only changes. Amplify's connected-repository trigger is therefore separate from that GitHub Actions path filter.
+
+**Not established from the screenshot:** exact commit SHA for deployment 113; Amplify app ID; native `enableAutoBuild` setting; build specification / monorepo app-root configuration; whether the live build contains the expected storefront and admin bundles; functional browser journeys. Do not infer these from the deployment card alone. The owner has access to AWS RunShell rather than CloudShell, so AWS CLI/CloudShell commands are not an available verification path in this audit.
+
+### Remaining verification
+
+1. Inspect the Amplify deployment 113 build details in the console/RunShell-accessible interface to capture the exact commit SHA and build configuration.
+2. Verify the deployed storefront and admin UI in a browser, including the actual route and static assets.
+3. Record the Amplify app ID and native branch auto-build setting if visible through the available AWS access.
+
+No production configuration, service, database, migration, IAM policy, timer or infrastructure changes were made during this audit. All EC2/database checks described above were read-only; the Amplify evidence was a screenshot supplied by the owner.
