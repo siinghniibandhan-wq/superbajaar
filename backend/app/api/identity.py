@@ -129,6 +129,7 @@ def _admin(request: Request):
 
 class LinkRequestIn(BaseModel):
     target_party_id: int = Field(gt=0)
+    requester_party_id: int | None = Field(default=None, gt=0)
     request_type: str = Field(pattern=r"^(claim_existing_identity|link_profile|organisation_relationship)$")
     requested_profile_type: str | None = Field(default=None, max_length=40)
     requested_source_id: str | None = Field(default=None, max_length=80)
@@ -327,11 +328,43 @@ def create_link_request(payload: LinkRequestIn, request: Request):
     try:
         with _connect() as conn:
             with conn.transaction():
+                requester_party_id = payload.requester_party_id
+                if payload.request_type == "organisation_relationship":
+                    if requester_party_id is None:
+                        requester = conn.execute(
+                            "SELECT party_id FROM identity_auth_accounts "
+                            "WHERE app_user_id=%s AND status='active'",
+                            (request.state.user_id,),
+                        ).fetchone()
+                        requester_party_id = requester["party_id"] if requester else None
+                    if requester_party_id is None:
+                        raise HTTPException(409, "Select the individual identity that is requesting this organisation relationship")
+                    parties = conn.execute(
+                        "SELECT id,party_type,status FROM identity_parties "
+                        "WHERE id IN (%s,%s) ORDER BY id FOR UPDATE",
+                        (requester_party_id, payload.target_party_id),
+                    ).fetchall()
+                    by_id = {party["id"]: party for party in parties}
+                    person = by_id.get(requester_party_id)
+                    organisation = by_id.get(payload.target_party_id)
+                    if not person or not organisation or person["status"] != "active" or organisation["status"] != "active":
+                        raise HTTPException(409, "Both selected identities must be active")
+                    if person["party_type"] != "individual" or organisation["party_type"] != "organisation":
+                        raise HTTPException(409, "An organisation relationship must connect an individual to an organisation")
+                elif requester_party_id is not None:
+                    raise HTTPException(422, "A requester identity can only be selected for organisation relationship requests")
+                else:
+                    requester = conn.execute(
+                        "SELECT party_id FROM identity_auth_accounts "
+                        "WHERE app_user_id=%s AND status='active'",
+                        (request.state.user_id,),
+                    ).fetchone()
+                    requester_party_id = requester["party_id"] if requester else None
                 row = conn.execute(
                     "INSERT INTO identity_link_requests(idempotency_key,requester_party_id,target_party_id,request_type,status,requested_profile_type,requested_source_id,expires_at,request_context) "
-                    "VALUES(%s,(SELECT party_id FROM identity_auth_accounts WHERE app_user_id=%s AND status='active'),%s,%s,'proof_required',%s,%s,%s,jsonb_build_object('reason',%s,'relationship_type',%s,'relationship_scope',%s::jsonb)) "
+                    "VALUES(%s,%s,%s,%s,'proof_required',%s,%s,%s,jsonb_build_object('reason',%s,'relationship_type',%s,'relationship_scope',%s::jsonb)) "
                     "ON CONFLICT(idempotency_key) DO NOTHING RETURNING id,status,created_at",
-                    (payload.idempotency_key, request.state.user_id, payload.target_party_id, payload.request_type, payload.requested_profile_type, payload.requested_source_id, datetime.now(timezone.utc)+timedelta(days=7), payload.reason, payload.relationship_type, __import__("json").dumps(payload.relationship_scope)),
+                    (payload.idempotency_key, requester_party_id, payload.target_party_id, payload.request_type, payload.requested_profile_type, payload.requested_source_id, datetime.now(timezone.utc)+timedelta(days=7), payload.reason, payload.relationship_type, __import__("json").dumps(payload.relationship_scope)),
                 ).fetchone()
                 if row is None:
                     raise HTTPException(409, "This request has already been submitted")
