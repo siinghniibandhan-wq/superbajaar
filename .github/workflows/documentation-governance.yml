@@ -1,0 +1,55 @@
+name: Documentation governance
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  documentation-required:
+    name: Documentation change required
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Require documentation alongside implementation changes
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            git fetch --no-tags origin "$BASE_REF"
+            base="origin/$BASE_REF"
+          elif [[ "$BEFORE_SHA" =~ ^0+$ ]] || ! git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null; then
+            base="$(git rev-parse "$HEAD_SHA^" 2>/dev/null || true)"
+          else
+            base="$BEFORE_SHA"
+          fi
+          if [[ -z "${base:-}" ]]; then
+            echo "Cannot determine the comparison base; refusing to silently skip documentation governance."
+            exit 1
+          fi
+          changed="$(git diff --name-only "$base...$HEAD_SHA")"
+          printf '%s\n' "$changed"
+          implementation_changed="$(printf '%s\n' "$changed" | grep -E '^(backend/|frontend/|src/|public/|\.github/workflows/|\.github/actions/|scripts/|infra/|infrastructure/|terraform/|amplify\.yml$|package\.json$|package-lock\.json$|vite\.config\.)' || true)"
+          [[ -n "$implementation_changed" ]] || { echo "No governed implementation/configuration paths changed; documentation update not required."; exit 0; }
+          documentation_changed="$(printf '%s\n' "$changed" | grep -E '(^docs/|(^|/)README([^/]*)$|(^|/)CHANGELOG([^/]*)$)' || true)"
+          if [[ -z "$documentation_changed" ]]; then
+            echo "ERROR: Implementation/configuration changes require a documentation update in this same PR/commit."
+            echo "Update docs/**, a relevant README, or CHANGELOG.md. Do not defer it to a later change."
+            exit 1
+          fi
+          echo "Documentation governance passed. Relevant documentation changes:"
+          printf '%s\n' "$documentation_changed"
