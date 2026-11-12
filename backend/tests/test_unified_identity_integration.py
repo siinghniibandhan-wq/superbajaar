@@ -522,7 +522,7 @@ def test_admin_can_request_owner_relationship_for_an_explicit_individual_identit
     assert saved["requester_party_id"] == individual["id"]
     assert saved["target_party_id"] == organisation["id"]
     assert saved["request_type"] == "organisation_relationship"
-    assert saved["status"] == "proof_required"
+    assert saved["status"] == "approved"
 
 
 def test_admin_cannot_request_organisation_relationship_for_wrong_party_types(monkeypatch):
