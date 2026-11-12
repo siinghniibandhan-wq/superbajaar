@@ -56,7 +56,7 @@ class DeployBackendConfigurationTests(unittest.TestCase):
         self.assertEqual(len(job_permissions), 2)
         self.assertTrue(all("<AMPLIFY_APP_ID>" in s["Resource"] for s in job_permissions))
 
-    def test_production_database_workflow_auto_detects_main_schema_changes_and_requires_review(self):
+    def test_production_database_workflow_requires_explicit_manual_apply(self):
         workflow_path = REPO_ROOT / ".github" / "workflows" / "production-database-migrations.yml"
         workflow = workflow_path.read_text(encoding="utf-8")
         self.assertIn("workflow_dispatch:", workflow)
@@ -75,9 +75,9 @@ class DeployBackendConfigurationTests(unittest.TestCase):
         self.assertIn("needs: preflight", workflow)
         self.assertIn("environment: production-database", workflow)
         self.assertIn("Dry-run production migrations (no writes)", workflow)
-        self.assertIn("Apply reviewed production migrations", workflow)
+        self.assertIn("Apply explicitly authorized production migrations", workflow)
         self.assertLess(workflow.index("Dry-run production migrations (no writes)"),
-                        workflow.index("Apply reviewed production migrations"))
+                        workflow.index("Apply explicitly authorized production migrations"))
         preflight = workflow.split("\n  apply:\n", 1)[0]
         self.assertNotIn("Approved Super Bajaar production schema apply", preflight)
         self.assertIn('EXPECTED_MAIN_SHA: ${{ github.sha }}', workflow)
