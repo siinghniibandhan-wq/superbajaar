@@ -237,3 +237,102 @@ def test_merge_consolidates_duplicate_contacts_without_losing_verification_histo
         assert active[0]["verified_at"] is not None
         assert len(historical) == 1 and historical[0]["party_id"] == source["id"]
         assert historical[0]["source"] == "crm_customer"
+
+@pytest.mark.parametrize(
+    "relationship_type",
+    ["owner", "director", "representative", "authorised_vendor_user"],
+)
+def test_individual_to_organisation_relationships_are_audited_and_unique(relationship_type):
+    from app.services.identity import IdentityService
+
+    with psycopg.connect(TEST_DB, row_factory=dict_row) as conn:
+        individual = _party(conn, "individual")
+        organisation = _party(conn, "organisation")
+        service = IdentityService(conn)
+        relationship = service.create_relationship(
+            from_party_id=individual["id"],
+            to_party_id=organisation["id"],
+            relationship_type=relationship_type,
+            scope={"organisation_unit": "head_office"},
+            reason="Verified organisation relationship",
+        )
+        assert relationship["relationship_type"] == relationship_type
+        assert relationship["status"] == "active"
+        assert relationship["scope"] == {"organisation_unit": "head_office"}
+        event = conn.execute(
+            "SELECT event_type,event_data FROM identity_events WHERE party_id=%s ORDER BY id DESC LIMIT 1",
+            (individual["id"],),
+        ).fetchone()
+        assert event["event_type"] == "relationship_created"
+        assert event["event_data"]["relationship_type"] == relationship_type
+
+        with pytest.raises(UniqueViolation):
+            with conn.transaction():
+                service.create_relationship(
+                    from_party_id=individual["id"],
+                    to_party_id=organisation["id"],
+                    relationship_type=relationship_type,
+                    reason="Duplicate active relationship",
+                )
+
+
+def test_identity_relationship_rejects_self_relationship():
+    from app.services.identity import IdentityService
+
+    with psycopg.connect(TEST_DB, row_factory=dict_row) as conn:
+        party = _party(conn)
+        with pytest.raises(ValueError, match="two distinct valid parties"):
+            IdentityService(conn).create_relationship(
+                from_party_id=party["id"],
+                to_party_id=party["id"],
+                relationship_type="owner",
+                reason="Invalid self relationship",
+            )
+
+
+def test_hr_employee_and_supplier_profiles_reject_conflicting_identity_links():
+    from app.services.identity import IdentityService
+
+    suffix = uuid4().hex
+    with psycopg.connect(TEST_DB, row_factory=dict_row) as conn:
+        employee = conn.execute(
+            "INSERT INTO hr_employees(employee_code,first_name,last_name,email,designation,joining_date) "
+            "VALUES(%s,%s,%s,%s,%s,%s) RETURNING id",
+            ("ID-" + suffix[:12], "Identity", "Employee", f"hr-{suffix}@test.local", "Associate", "2026-01-01"),
+        ).fetchone()
+        supplier = conn.execute(
+            "INSERT INTO suppliers(name,email) VALUES(%s,%s) RETURNING id",
+            ("Identity Supplier " + suffix, f"supplier-{suffix}@test.local"),
+        ).fetchone()
+        employee_party = _party(conn, "individual")
+        other_employee_party = _party(conn, "individual")
+        supplier_party = _party(conn, "organisation")
+        other_supplier_party = _party(conn, "organisation")
+        service = IdentityService(conn)
+
+        service.link_profile(
+            party_id=employee_party["id"], profile_type="employee",
+            source_id=employee["id"], link_method="admin_verified",
+            reason="Verified HR onboarding identity",
+        )
+        with pytest.raises(UniqueViolation):
+            with conn.transaction():
+                service.link_profile(
+                    party_id=other_employee_party["id"], profile_type="employee",
+                    source_id=employee["id"], link_method="admin_verified",
+                    reason="Conflicting employee identity",
+                )
+
+        service.link_profile(
+            party_id=supplier_party["id"], profile_type="vendor_organisation",
+            source_id=supplier["id"], link_method="admin_verified",
+            reason="Verified supplier onboarding identity",
+        )
+        with pytest.raises(UniqueViolation):
+            with conn.transaction():
+                service.link_profile(
+                    party_id=other_supplier_party["id"], profile_type="vendor_organisation",
+                    source_id=supplier["id"], link_method="admin_verified",
+                    reason="Conflicting supplier identity",
+                )
+
