@@ -56,6 +56,40 @@ class DeployBackendConfigurationTests(unittest.TestCase):
         self.assertEqual(len(job_permissions), 2)
         self.assertTrue(all("<AMPLIFY_APP_ID>" in s["Resource"] for s in job_permissions))
 
+    def test_production_database_workflow_requires_explicit_manual_apply(self):
+        workflow_path = REPO_ROOT / ".github" / "workflows" / "production-database-migrations.yml"
+        workflow = workflow_path.read_text(encoding="utf-8")
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertIn("push:", workflow)
+        self.assertIn("branches: [main]", workflow)
+        self.assertIn("backend/schema/**", workflow)
+        self.assertIn("backend/schema_required.txt", workflow)
+        self.assertIn("github.event_name == 'push'", workflow)
+        self.assertIn("apply_requested=false", workflow)
+        self.assertIn("environment: production-database", workflow)
+        self.assertIn("SB_DB=superbajaar", workflow)
+        self.assertIn("SB_PSQL=/usr/local/bin/sb-psql", workflow)
+        self.assertIn("APPLY SUPERBAJAAR", workflow)
+        self.assertIn("--status", workflow)
+        self.assertIn("apply_schema.sh", workflow)
+        self.assertIn("needs: preflight", workflow)
+        self.assertIn("environment: production-database", workflow)
+        self.assertIn("Dry-run production migrations (no writes)", workflow)
+        self.assertIn("Apply explicitly authorized production migrations", workflow)
+        self.assertLess(workflow.index("Dry-run production migrations (no writes)"),
+                        workflow.index("Apply explicitly authorized production migrations"))
+        preflight = workflow.split("\n  apply:\n", 1)[0]
+        self.assertNotIn("Approved Super Bajaar production schema apply", preflight)
+        self.assertIn('EXPECTED_MAIN_SHA: ${{ github.sha }}', workflow)
+        self.assertIn('EXPECTED_BASELINE_SHA: 519e4467a6af9c1f87dd06cbdb80ef4545b1ae04edfe8937966799792168d938', workflow)
+        self.assertIn('git rev-parse HEAD', workflow)
+        self.assertIn('git status --porcelain', workflow)
+        self.assertIn('sha256sum', workflow)
+        self.assertIn("git show", workflow)
+        self.assertIn(r"\$EXPECTED_MAIN_SHA:backend/schema/000_baseline_schema.sql", workflow)
+        self.assertIn('Source SHA did not reach the triggering main commit', workflow)
+        self.assertIn('Production baseline SHA-256 mismatch', workflow)
+
     def test_preserves_deployment_safety_guards(self):
         for guard in (
             'systemctl is-active --quiet "$SERVICE"',

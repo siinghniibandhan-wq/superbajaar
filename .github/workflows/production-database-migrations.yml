@@ -1,0 +1,187 @@
+name: Production database migrations
+
+# Schema changes merged to main trigger a production dry-run automatically.
+# Actual application waits for required reviewers AFTER the dry-run is visible.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/schema/**"
+      - "backend/schema_required.txt"
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: "Read-only status, or prepare an explicitly approved apply"
+        type: choice
+        required: true
+        default: status
+        options: [status, apply]
+      confirmation:
+        description: "For apply only, type exactly: APPLY SUPERBAJAAR"
+        type: string
+        required: false
+        default: "NO"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: production-database-migrations
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Read-only status or migration dry-run
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      apply_requested: ${{ steps.gate.outputs.apply_requested }}
+    steps:
+      - name: Validate explicit apply request
+        id: gate
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          OPERATION: ${{ inputs.operation }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "push" ]; then
+            echo "apply_requested=false" >> "$GITHUB_OUTPUT"
+          elif [ "$OPERATION" = "apply" ]; then
+            test "$CONFIRMATION" = "APPLY SUPERBAJAAR" || {
+              echo "::error::Apply refused. Type exactly APPLY SUPERBAJAAR."
+              exit 1
+            }
+            echo "apply_requested=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "apply_requested=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure AWS credentials using GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION }}
+
+      - name: Verify EC2 source commit and immutable baseline
+        if: ${{ github.event_name == 'push' || inputs.operation == 'apply' || inputs.operation == 'status' }}
+        env:
+          INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID || secrets.EC2_INSTANCE_ID }}
+          EXPECTED_MAIN_SHA: ${{ github.sha }}
+          EXPECTED_BASELINE_SHA: 519e4467a6af9c1f87dd06cbdb80ef4545b1ae04edfe8937966799792168d938
+        run: |
+          set -euo pipefail
+          test -n "$INSTANCE_ID"
+          remote_command="sudo -u ubuntu bash -lc 'set -euo pipefail; cd /opt/superbajaar/source; EXPECTED_MAIN_SHA=${EXPECTED_MAIN_SHA}; EXPECTED_BASELINE_SHA=${EXPECTED_BASELINE_SHA}; actual=; for attempt in \$(seq 1 60); do actual=\$(git rev-parse HEAD); [ \"\$actual\" = \"\$EXPECTED_MAIN_SHA\" ] && break; sleep 10; done; [ \"\$actual\" = \"\$EXPECTED_MAIN_SHA\" ] || { echo \"Source SHA did not reach the triggering main commit: \$actual\"; exit 1; }; [ -z \"\$(git status --porcelain)\" ] || { echo \"EC2 source worktree is not clean\"; exit 1; }; actual_baseline=\$(sha256sum backend/schema/000_baseline_schema.sql | awk '\''{print $1}'\''); git_baseline=\$(git show \"\$EXPECTED_MAIN_SHA:backend/schema/000_baseline_schema.sql\" | sha256sum | awk '\''{print $1}'\''); [ \"\$actual_baseline\" = \"\$EXPECTED_BASELINE_SHA\" ] && [ \"\$git_baseline\" = \"\$EXPECTED_BASELINE_SHA\" ] || { echo \"Production baseline SHA-256 mismatch: file=\$actual_baseline git=\$git_baseline expected=\$EXPECTED_BASELINE_SHA\"; exit 1; }; echo \"Source commit and immutable baseline verified: \$actual\"'"
+          parameters="$(jq -n --arg command "$remote_command" '{commands: [$command]}')"
+          command_id="$(aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript --comment "Verify Super Bajaar production schema source" --parameters "$parameters" --query 'Command.CommandId' --output text)"
+          for attempt in $(seq 1 60); do
+            status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+            case "$status" in
+              Success) aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID"; exit 0 ;;
+              Failed|Cancelled|TimedOut) aws ssm get-command-invocation --command-id \"$command_id\" --instance-id \"$INSTANCE_ID\"; exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo \"::error::Timed out waiting for production source verification command $command_id\"
+          exit 1
+
+      - name: Run read-only production migration status
+        if: ${{ inputs.operation == 'status' }}
+        env:
+          INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID || secrets.EC2_INSTANCE_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$INSTANCE_ID"
+          remote_command="sudo -u ubuntu bash -lc 'set -euo pipefail; cd /opt/superbajaar/source; set +e; SB_DB=superbajaar SB_PSQL=/usr/local/bin/sb-psql SB_BACKUP_DIR=/var/lib/superbajaar/backups SB_LOG=/var/log/superbajaar/schema.log bash backend/scripts/apply_schema.sh /opt/superbajaar/source/backend/schema --status; rc=\$?; if [ \$rc -eq 10 ]; then exit 0; else exit \$rc; fi'"
+          parameters="$(jq -n --arg command "$remote_command" '{commands: [$command]}')"
+          command_id="$(aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript --comment "Super Bajaar production schema status" --parameters "$parameters" --query 'Command.CommandId' --output text)"
+          for attempt in $(seq 1 60); do
+            status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+            case "$status" in
+              Success) aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID"; exit 0 ;;
+              Failed|Cancelled|TimedOut) aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID"; exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo "::error::Timed out waiting for production status command $command_id"
+          exit 1
+
+      - name: Dry-run production migrations (no writes)
+        if: ${{ github.event_name == 'push' || inputs.operation == 'apply' }}
+        env:
+          INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID || secrets.EC2_INSTANCE_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$INSTANCE_ID"
+          remote_command="sudo -u ubuntu bash -lc 'set -euo pipefail; cd /opt/superbajaar/source; SB_DB=superbajaar SB_PSQL=/usr/local/bin/sb-psql SB_BACKUP_DIR=/var/lib/superbajaar/backups SB_LOG=/var/log/superbajaar/schema.log bash backend/scripts/apply_schema.sh /opt/superbajaar/source/backend/schema --dry-run'"
+          parameters="$(jq -n --arg command "$remote_command" '{commands: [$command]}')"
+          command_id="$(aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript --comment "Super Bajaar production schema dry run" --parameters "$parameters" --query 'Command.CommandId' --output text)"
+          for attempt in $(seq 1 60); do
+            status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+            case "$status" in
+              Success) aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID"; exit 0 ;;
+              Failed|Cancelled|TimedOut) aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID"; exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo "::error::Timed out waiting for production dry-run command $command_id"
+          exit 1
+
+  apply:
+    name: Apply explicitly authorized production migrations
+    needs: preflight
+    if: ${{ needs.preflight.outputs.apply_requested == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # Required reviewers approve only after inspecting the preflight dry-run.
+    environment: production-database
+    steps:
+      - name: Configure AWS credentials using GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION }}
+
+      - name: Verify EC2 source commit and immutable baseline
+        env:
+          INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID || secrets.EC2_INSTANCE_ID }}
+          EXPECTED_MAIN_SHA: ${{ github.sha }}
+          EXPECTED_BASELINE_SHA: 519e4467a6af9c1f87dd06cbdb80ef4545b1ae04edfe8937966799792168d938
+        run: |
+          set -euo pipefail
+          test -n "$INSTANCE_ID"
+          remote_command="sudo -u ubuntu bash -lc 'set -euo pipefail; cd /opt/superbajaar/source; EXPECTED_MAIN_SHA=${EXPECTED_MAIN_SHA}; EXPECTED_BASELINE_SHA=${EXPECTED_BASELINE_SHA}; actual=; for attempt in \$(seq 1 60); do actual=\$(git rev-parse HEAD); [ \"\$actual\" = \"\$EXPECTED_MAIN_SHA\" ] && break; sleep 10; done; [ \"\$actual\" = \"\$EXPECTED_MAIN_SHA\" ] || { echo \"Source SHA did not reach the triggering main commit: \$actual\"; exit 1; }; [ -z \"\$(git status --porcelain)\" ] || { echo \"EC2 source worktree is not clean\"; exit 1; }; actual_baseline=\$(sha256sum backend/schema/000_baseline_schema.sql | awk '\''{print $1}'\''); git_baseline=\$(git show \"\$EXPECTED_MAIN_SHA:backend/schema/000_baseline_schema.sql\" | sha256sum | awk '\''{print $1}'\''); [ \"\$actual_baseline\" = \"\$EXPECTED_BASELINE_SHA\" ] && [ \"\$git_baseline\" = \"\$EXPECTED_BASELINE_SHA\" ] || { echo \"Production baseline SHA-256 mismatch: file=\$actual_baseline git=\$git_baseline expected=\$EXPECTED_BASELINE_SHA\"; exit 1; }; echo \"Source commit and immutable baseline verified: \$actual\"'"
+          parameters="$(jq -n --arg command "$remote_command" '{commands: [$command]}')"
+          command_id="$(aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript --comment "Verify Super Bajaar production schema source" --parameters "$parameters" --query 'Command.CommandId' --output text)"
+          for attempt in $(seq 1 60); do
+            status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+            case "$status" in
+              Success) aws ssm get-command-invocation --command-id \"$command_id\" --instance-id \"$INSTANCE_ID\"; exit 0 ;;
+              Failed|Cancelled|TimedOut) aws ssm get-command-invocation --command-id \"$command_id\" --instance-id \"$INSTANCE_ID\"; exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo \"::error::Timed out waiting for production source verification command $command_id\"
+          exit 1
+
+      - name: Apply migrations with verified-backup gate
+        env:
+          INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID || secrets.EC2_INSTANCE_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$INSTANCE_ID"
+          remote_command="sudo -u ubuntu bash -lc 'set -euo pipefail; cd /opt/superbajaar/source; SB_DB=superbajaar SB_PSQL=/usr/local/bin/sb-psql SB_BACKUP_DIR=/var/lib/superbajaar/backups SB_LOG=/var/log/superbajaar/schema.log SB_ON_FAILURE=stop bash backend/scripts/apply_schema.sh /opt/superbajaar/source/backend/schema'"
+          parameters="$(jq -n --arg command "$remote_command" '{commands: [$command]}')"
+          command_id="$(aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript --comment "Approved Super Bajaar production schema apply" --parameters "$parameters" --query 'Command.CommandId' --output text)"
+          for attempt in $(seq 1 60); do
+            status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+            case "$status" in
+              Success) aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID"; exit 0 ;;
+              Failed|Cancelled|TimedOut) aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID"; exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo "::error::Timed out waiting for production apply command $command_id"
+          exit 1
