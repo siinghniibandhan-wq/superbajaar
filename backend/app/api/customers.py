@@ -170,13 +170,21 @@ class SupportSlaPolicyIn(BaseModel):
 
 @router.get("")
 def list_customers(search:str|None=Query(default=None,max_length=200),limit:int=Query(default=100,ge=1,le=500),offset:int=Query(default=0,ge=0)):
-    where="";params=[]
+    where="";count_where="";params=[]
     if search and search.strip():
-        term="%"+search.strip()+"%";where=" WHERE name ILIKE %s OR COALESCE(phone,'') ILIKE %s OR COALESCE(email,'') ILIKE %s";params=[term,term,term]
+        term="%"+search.strip()+"%"
+        where=" WHERE c.name ILIKE %s OR COALESCE(c.phone,'') ILIKE %s OR COALESCE(c.email,'') ILIKE %s"
+        count_where=" WHERE name ILIKE %s OR COALESCE(phone,'') ILIKE %s OR COALESCE(email,'') ILIKE %s"
+        params=[term,term,term]
     try:
         with _connect() as c:
-            items=c.execute("SELECT id,name,phone,email,pin_code,address,notes,is_active,created_at,updated_at FROM customers"+where+" ORDER BY created_at DESC LIMIT %s OFFSET %s",(*params,limit,offset)).fetchall()
-            total=c.execute("SELECT count(*) AS total FROM customers"+where,params).fetchone()["total"]
+            items=c.execute(
+                "SELECT c.id,c.name,c.phone,c.email,c.pin_code,c.address,c.notes,c.is_active,c.created_at,c.updated_at,party.sbid "
+                "FROM customers c LEFT JOIN identity_profiles ip ON ip.crm_customer_id=c.id "
+                "AND ip.profile_type='crm_customer' AND ip.status='active' "
+                "LEFT JOIN identity_parties party ON party.id=ip.party_id"
+                +where+" ORDER BY c.created_at DESC LIMIT %s OFFSET %s",(*params,limit,offset)).fetchall()
+            total=c.execute("SELECT count(*) AS total FROM customers"+count_where,params).fetchone()["total"]
         return {"items":items,"total":total,"limit":limit,"offset":offset}
     except psycopg.Error as e:raise _error(e) from e
 
@@ -203,16 +211,29 @@ def create_customer(p:CustomerIn):
                     identity.add_contact(party_id=party["id"], contact_type="email", value=customer["email"], source="crm_customer")
                 if customer["phone"]:
                     identity.add_contact(party_id=party["id"], contact_type="phone", value=customer["phone"], source="crm_customer")
-        return customer
+        return {**customer, "sbid": party["sbid"]}
     except psycopg.Error as e:raise _error(e) from e
 
 @router.patch("/{customer_id}")
 def update_customer(customer_id:int,p:CustomerUpdate):
     try:
         with _connect() as c:
-            row=c.execute("UPDATE customers SET name=%s,phone=%s,email=%s,pin_code=%s,address=%s,notes=%s,is_active=%s,updated_at=now() WHERE id=%s RETURNING id,name,phone,email,pin_code,address,notes,is_active,created_at,updated_at",(p.name,p.phone,p.email.lower() if p.email else None,p.pin_code,p.address,p.notes,p.is_active,customer_id)).fetchone()
-            if not row:raise HTTPException(404,"Customer not found")
-            return row
+            with c.transaction():
+                row=c.execute(
+                    "UPDATE customers SET name=%s,phone=%s,email=%s,pin_code=%s,address=%s,notes=%s,is_active=%s,updated_at=now() "
+                    "WHERE id=%s RETURNING id,name,phone,email,pin_code,address,notes,is_active,created_at,updated_at",
+                    (p.name,p.phone,p.email.lower() if p.email else None,p.pin_code,p.address,p.notes,p.is_active,customer_id),
+                ).fetchone()
+                if not row:raise HTTPException(404,"Customer not found")
+                party=c.execute(
+                    "SELECT party.id,party.sbid FROM identity_profiles ip "
+                    "JOIN identity_parties party ON party.id=ip.party_id "
+                    "WHERE ip.crm_customer_id=%s AND ip.profile_type='crm_customer' "
+                    "AND ip.status='active' FOR UPDATE OF party",(customer_id,),
+                ).fetchone()
+                if party:
+                    c.execute("UPDATE identity_parties SET display_name=%s WHERE id=%s",(row["name"],party["id"]))
+                return {**row,"sbid":party["sbid"] if party else None}
     except HTTPException:raise
     except psycopg.Error as e:raise _error(e) from e
 
