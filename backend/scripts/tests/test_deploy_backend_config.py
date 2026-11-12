@@ -118,6 +118,14 @@ class DeployBackendConfigurationTests(unittest.TestCase):
         self.assertIn('"src/**"', push_block)
         self.assertNotIn('"docs/**"', push_block)
 
+    def test_schema_governance_only_allows_exact_immutable_baseline_restoration(self):
+        workflow_path = REPO_ROOT / ".github" / "workflows" / "schema-governance.yml"
+        workflow = workflow_path.read_text(encoding="utf-8")
+        self.assertIn('path == "backend/schema/000_baseline_schema.sql"', workflow)
+        self.assertIn("54ccd721461682cf6d5349bf84a8767420544668", workflow)
+        self.assertIn('git("rev-parse", f"HEAD:{path}")', workflow)
+        self.assertIn("Existing schema file changed or removed", workflow)
+
     def test_production_migration_apply_verifies_required_ledger_after_exit_11(self):
         workflow_path = REPO_ROOT / ".github" / "workflows" / "production-database-migrations.yml"
         workflow = workflow_path.read_text(encoding="utf-8")

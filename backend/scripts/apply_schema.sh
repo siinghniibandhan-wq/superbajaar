@@ -184,6 +184,27 @@ if [ ${#PENDING[@]} -eq 0 ]; then
   done
   log "no new files to apply (${#FILES[@]} files known)"; finish
 fi
+
+# Fail closed before taking a backup or applying ANY pending migration when a
+# required migration is already known to be changed or failed. Required files
+# that are genuinely pending are allowed through so this run can apply them.
+REQUIRED_BLOCKERS=()
+for r in "${REQUIRED[@]}"; do
+  [ -n "$r" ] || continue
+  [ "${LED[$r]:-}" = "${FSUM[$r]}" ] && continue
+  if [[ " ${CHANGED[*]:-} " == *" $r "* ]] || [[ " ${KNOWN_FAILED[*]:-} " == *" $r "* ]]; then
+    REQUIRED_BLOCKERS+=("$r")
+  elif [[ " ${PENDING[*]:-} " != *" $r "* ]]; then
+    REQUIRED_BLOCKERS+=("$r")
+  fi
+done
+if [ ${#REQUIRED_BLOCKERS[@]} -gt 0 ]; then
+  blockers="${REQUIRED_BLOCKERS[*]}"
+  alert "Super Bajaar: required database migration blocked" "No migrations were applied because required file(s) are changed or previously failed: $blockers"
+  log "RESULT code=20 required_migration_blockers=$blockers; no migration was applied"
+  exit 20
+fi
+
 log "pending: ${PENDING[*]}"
 
 mkdir -p "$BK" 2>/dev/null || { alert "Super Bajaar: backup failed" "Cannot create $BK. Nothing was changed."; die 30 "cannot create backup folder"; }

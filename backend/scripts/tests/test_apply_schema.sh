@@ -67,6 +67,7 @@ check "alert about edit" "$(grep -c 'edited after it was applied' "$T/alerts")" 
 run "$T/s3" >/dev/null; check "no repeat alert" "$(grep -c 'edited after it was applied' "$T/alerts")" 1
 
 echo "T9 backup failure stops everything"
+export SB_REQUIRED_FILE="$T/none.txt"
 printf "CREATE TABLE IF NOT EXISTS t_after_backup_fail(id int);\n" > "$T/s3/999_backup_fail.sql"
 check "exit 30" "$(SB_PGDUMP=false run "$T/s3")" 30
 check "nothing applied" "$(q "select count(*) from schema_migrations where filename='999_backup_fail.sql'")" 0
@@ -178,5 +179,20 @@ fi
 check "status exit 0 for reconciled legacy alias" "$status_rc" 0
 grep -q "036_configurable_rbac.sql: APPLIED" "$T/out" && ok "canonical RBAC migration remains visible" || bad "canonical RBAC migration missing from status"
 if grep -q "ledger has 036_super_admin_role.sql" "$T/out"; then bad "reconciled historical alias still reported"; else ok "historical alias is suppressed only after canonical checksum match"; fi
+
+echo "T23 a changed required migration blocks every other pending migration before backup"
+newdb
+mkdir -p "$T/s23"
+cp "$REAL_DIR/000_baseline_schema.sql" "$T/s23/"
+printf "CREATE TABLE IF NOT EXISTS t23_must_not_apply(id int);\\n" > "$T/s23/001_unrelated_pending.sql"
+$SB_PSQL -X -q -d "$SB_DB" -c "CREATE TABLE schema_migrations(filename text primary key, sha256 text not null, applied_at timestamptz not null default now(), baseline boolean not null default false); INSERT INTO schema_migrations(filename,sha256) VALUES ('000_baseline_schema.sql','historical-different-checksum');" >/dev/null
+printf '%s\n' "000_baseline_schema.sql" "001_unrelated_pending.sql" > "$T/req23.txt"
+export SB_REQUIRED_FILE="$T/req23.txt"
+r23=$(run "$T/s23")
+if [ "$r23" != 20 ]; then echo "  DEBUG: T23 runner output follows"; cat "$T/out"; fi
+check "required checksum mismatch exits 20" "$r23" 20
+check "no backup taken when required migration is changed" "$(dumps)" 0
+check "unrelated pending migration was not applied" "$(q "select to_regclass('public.t23_must_not_apply') is null")" t
+grep -q "required file(s) are changed" "$T/out" && ok "preflight explains why all migration work was blocked" || bad "missing required-migration preflight explanation"
 
 echo; echo "RESULT: $pass passed, $fail failed"; rm -rf "$T"; [ $fail -eq 0 ]
