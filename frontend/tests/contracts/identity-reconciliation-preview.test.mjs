@@ -20,3 +20,30 @@ test("legacy reconciliation is a read-only preview and never merges candidates",
   assert.match(api, /automatic_merging.*False/);
   assert.match(api, /_admin\(request\)/);
 });
+
+test("legacy reconciliation falls back when preferred contact columns are blank", () => {
+  const normalizedApi = api.toLowerCase();
+  for (const alias of ["ca", "c", "e", "s"]) {
+    assert.ok(
+      normalizedApi.includes(`nullif(trim(to_jsonb(${alias})->>'`),
+      `expected blank-safe contact fallback for ${alias}`,
+    );
+  }
+});
+
+
+test("admin can resolve an unmatched customer claim to a selected individual SBID", () => {
+  assert.match(api, /def resolve_unmatched_claim_target/);
+  assert.match(api, /target_party_id/);
+  assert.match(api, /target\["party_type"\] != "individual"/);
+  assert.match(workspace, /resolveClaimTarget/);
+  assert.match(workspace, /Resolve claim target/);
+  assert.match(workspace, /identity\/review-queue\/requests\/\$\{id\}\/resolve-target/);
+});
+
+
+test("identity review offers only implemented manual evidence methods", () => {
+  assert.match(api, /document_review\|in_person\|verified_account\|business_registry/);
+  assert.doesNotMatch(workspace, /value="email_otp"|value="phone_otp"/);
+  assert.match(workspace, /value="business_registry"/);
+});

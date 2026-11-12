@@ -2,7 +2,7 @@
 
 **Documentation status:** Current implementation reference for the merged source on `main`  
 **Last updated:** 12 November 2026  
-**Code baseline:** PR #58 merge commit `f0182f083a4e34d3c07411b8433c9217b7c4024b`  
+**Code baseline:** `main` at `7e624cc06426d13a099382635b7e7b1a54e38c91` (identity foundation PRs #54, #55, #57 and #58)  
 **Production status:** Not verified by this document. No production migration, deployment, data backfill or AWS operation is authorised here.
 
 > This guide supersedes the implementation-status conclusions in the Phase 1 audit and the proposed-work sequencing in the Phase 2 architecture specification. Those documents are retained as historical design/audit records, not as the current status.

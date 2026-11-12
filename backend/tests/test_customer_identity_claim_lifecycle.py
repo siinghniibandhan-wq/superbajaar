@@ -125,3 +125,73 @@ def test_reviewed_customer_claim_cannot_be_cancelled(monkeypatch):
     with pytest.raises(HTTPException) as rejected:
         cancel_identity_claim(claim["id"], customer_request)
     assert rejected.value.status_code == 409
+
+
+
+def test_admin_can_resolve_unmatched_customer_claim_for_evidence_review(monkeypatch):
+    from app.api import customer_auth, identity
+    from app.api.customer_auth import IdentityClaimIn, list_identity_claims, request_identity_claim
+    from app.api.identity import ResolveClaimTargetIn, resolve_unmatched_claim_target
+
+    with psycopg.connect(TEST_DB, row_factory=dict_row) as conn:
+        customer = _customer(conn, "claim-unmatched")
+        target = _party(conn)
+        admin = conn.execute(
+            "INSERT INTO app_users(email,full_name,password_hash,role) "
+            "VALUES(%s,%s,%s,%s) RETURNING id",
+            (f"claim-admin-{uuid4().hex}@test.local", "Identity Claim Admin", "test-hash", "admin"),
+        ).fetchone()
+    monkeypatch.setattr(customer_auth.settings, "database_url", TEST_DB)
+    monkeypatch.setattr(identity.settings, "database_url", TEST_DB)
+    customer_request = SimpleNamespace(state=SimpleNamespace(customer_id=customer["id"]))
+    request_identity_claim(
+        IdentityClaimIn(target_sbid="SBID-FFFFFFFFFFFFFFFFFFFF", reason="I need my old customer identity"),
+        customer_request,
+    )
+    claim = list_identity_claims(customer_request)["items"][0]
+    admin_request = SimpleNamespace(state=SimpleNamespace(user_id=admin["id"], role="admin"))
+
+    result = resolve_unmatched_claim_target(
+        claim["id"],
+        ResolveClaimTargetIn(target_party_id=target["id"], reason="Matched against customer supplied proof"),
+        admin_request,
+    )
+
+    assert result["status"] == "proof_required"
+    with psycopg.connect(TEST_DB, row_factory=dict_row) as conn:
+        resolved = conn.execute(
+            "SELECT target_party_id,status FROM identity_link_requests WHERE id=%s",
+            (claim["id"],),
+        ).fetchone()
+    assert resolved["target_party_id"] == target["id"]
+    assert resolved["status"] == "proof_required"
+
+
+def test_admin_cannot_resolve_unmatched_customer_claim_to_organisation(monkeypatch):
+    from app.api import customer_auth, identity
+    from app.api.customer_auth import IdentityClaimIn, list_identity_claims, request_identity_claim
+    from app.api.identity import ResolveClaimTargetIn, resolve_unmatched_claim_target
+
+    with psycopg.connect(TEST_DB, row_factory=dict_row) as conn:
+        customer = _customer(conn, "claim-org-target")
+        organisation = conn.execute(
+            "INSERT INTO identity_parties(party_type,display_name) VALUES('organisation',%s) RETURNING id",
+            ("Claim organisation " + uuid4().hex,),
+        ).fetchone()
+    monkeypatch.setattr(customer_auth.settings, "database_url", TEST_DB)
+    monkeypatch.setattr(identity.settings, "database_url", TEST_DB)
+    customer_request = SimpleNamespace(state=SimpleNamespace(customer_id=customer["id"]))
+    request_identity_claim(
+        IdentityClaimIn(target_sbid="SBID-EEEEEEEEEEEEEEEEEEEE", reason="I need my old customer identity"),
+        customer_request,
+    )
+    claim = list_identity_claims(customer_request)["items"][0]
+    admin_request = SimpleNamespace(state=SimpleNamespace(user_id=999999, role="admin"))
+
+    with pytest.raises(HTTPException) as rejected:
+        resolve_unmatched_claim_target(
+            claim["id"],
+            ResolveClaimTargetIn(target_party_id=organisation["id"], reason="Checked supplied documents"),
+            admin_request,
+        )
+    assert rejected.value.status_code == 409

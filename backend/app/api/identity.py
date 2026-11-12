@@ -142,7 +142,7 @@ class LinkRequestIn(BaseModel):
 class ReviewIn(BaseModel):
     decision: str = Field(pattern=r"^(approve|reject)$")
     proof_verified: bool = False
-    proof_method: str | None = Field(default=None, max_length=40)
+    proof_method: str | None = Field(default=None, pattern=r"^(document_review|in_person|verified_account|business_registry)$", max_length=40)
     reason: str = Field(min_length=5, max_length=500)
 
 
@@ -166,29 +166,29 @@ def legacy_reconciliation_preview(
         WITH source_records AS (
             SELECT 'customer_account'::text AS profile_type, ca.id AS source_id,
                    NULLIF(lower(trim(to_jsonb(ca)->>'email')), '') AS email_value,
-                   NULLIF(regexp_replace(coalesce(to_jsonb(ca)->>'phone',
-                       to_jsonb(ca)->>'mobile', to_jsonb(ca)->>'mobile_number', ''), '[^0-9]', '', 'g'), '') AS phone_digits
+                   NULLIF(regexp_replace(coalesce(nullif(trim(to_jsonb(ca)->>'phone'), ''),
+                       nullif(trim(to_jsonb(ca)->>'mobile'), ''), nullif(trim(to_jsonb(ca)->>'mobile_number'), '')), '[^0-9]', '', 'g'), '') AS phone_digits
             FROM customer_accounts ca
             UNION ALL
             SELECT 'crm_customer', c.id,
-                   NULLIF(lower(trim(coalesce(to_jsonb(c)->>'email',
-                       to_jsonb(c)->>'customer_email'))), ''),
-                   NULLIF(regexp_replace(coalesce(to_jsonb(c)->>'phone',
-                       to_jsonb(c)->>'customer_phone', to_jsonb(c)->>'mobile',
-                       to_jsonb(c)->>'mobile_number', ''), '[^0-9]', '', 'g'), '')
+                   NULLIF(lower(trim(coalesce(nullif(trim(to_jsonb(c)->>'email'), ''),
+                       nullif(trim(to_jsonb(c)->>'customer_email'), '')))), ''),
+                   NULLIF(regexp_replace(coalesce(nullif(trim(to_jsonb(c)->>'phone'), ''),
+                       nullif(trim(to_jsonb(c)->>'customer_phone'), ''), nullif(trim(to_jsonb(c)->>'mobile'), ''),
+                       nullif(trim(to_jsonb(c)->>'mobile_number'), '')), '[^0-9]', '', 'g'), '')
             FROM customers c
             UNION ALL
             SELECT 'employee', e.id,
-                   NULLIF(lower(trim(coalesce(to_jsonb(e)->>'email',
-                       to_jsonb(e)->>'work_email'))), ''),
-                   NULLIF(regexp_replace(coalesce(to_jsonb(e)->>'phone',
-                       to_jsonb(e)->>'mobile', to_jsonb(e)->>'mobile_number', ''), '[^0-9]', '', 'g'), '')
+                   NULLIF(lower(trim(coalesce(nullif(trim(to_jsonb(e)->>'email'), ''),
+                       nullif(trim(to_jsonb(e)->>'work_email'), '')))), ''),
+                   NULLIF(regexp_replace(coalesce(nullif(trim(to_jsonb(e)->>'phone'), ''),
+                       nullif(trim(to_jsonb(e)->>'mobile'), ''), nullif(trim(to_jsonb(e)->>'mobile_number'), '')), '[^0-9]', '', 'g'), '')
             FROM hr_employees e
             UNION ALL
             SELECT 'vendor_organisation', s.id,
                    NULLIF(lower(trim(to_jsonb(s)->>'email')), ''),
-                   NULLIF(regexp_replace(coalesce(to_jsonb(s)->>'phone',
-                       to_jsonb(s)->>'mobile', to_jsonb(s)->>'mobile_number', ''), '[^0-9]', '', 'g'), '')
+                   NULLIF(regexp_replace(coalesce(nullif(trim(to_jsonb(s)->>'phone'), ''),
+                       nullif(trim(to_jsonb(s)->>'mobile'), ''), nullif(trim(to_jsonb(s)->>'mobile_number'), '')), '[^0-9]', '', 'g'), '')
             FROM suppliers s
         ),
         contact_candidates AS (
@@ -383,6 +383,78 @@ def create_link_request(payload: LinkRequestIn, request: Request):
         raise
     except psycopg.Error as exc:
         raise HTTPException(503, "Unable to create identity link request") from exc
+
+
+class ResolveClaimTargetIn(BaseModel):
+    target_party_id: int = Field(gt=0)
+    reason: str = Field(min_length=5, max_length=500)
+
+
+@router.post("/review-queue/requests/{request_id}/resolve-target")
+def resolve_unmatched_claim_target(request_id: int, payload: ResolveClaimTargetIn, request: Request):
+    """Attach an unmatched customer claim to a verified candidate SBID for admin review."""
+    _admin(request)
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                item = conn.execute(
+                    """
+                    SELECT id,requester_party_id,target_party_id,request_type,status
+                    FROM identity_link_requests
+                    WHERE id=%s FOR UPDATE
+                    """,
+                    (request_id,),
+                ).fetchone()
+                if item is None:
+                    raise HTTPException(404, "Identity claim not found")
+                if item["request_type"] != "claim_existing_identity":
+                    raise HTTPException(409, "Only customer identity claims can be resolved")
+                if item["status"] not in {"pending", "proof_required"}:
+                    raise HTTPException(409, "Only an open identity claim can be resolved")
+                if item["target_party_id"] is not None:
+                    raise HTTPException(409, "This claim already has a target identity")
+                parties = conn.execute(
+                    """
+                    SELECT id,party_type,status
+                    FROM identity_parties
+                    WHERE id IN (%s,%s)
+                    ORDER BY id FOR UPDATE
+                    """,
+                    (item["requester_party_id"], payload.target_party_id),
+                ).fetchall()
+                by_id = {party["id"]: party for party in parties}
+                requester = by_id.get(item["requester_party_id"])
+                target = by_id.get(payload.target_party_id)
+                if not requester or requester["status"] != "active" or requester["party_type"] != "individual":
+                    raise HTTPException(409, "The requesting customer identity is not active")
+                if not target or target["status"] != "active" or target["party_type"] != "individual":
+                    raise HTTPException(409, "The selected target must be an active individual identity")
+                if requester["id"] == target["id"]:
+                    raise HTTPException(409, "A customer cannot claim their own current identity")
+                updated = conn.execute(
+                    """
+                    UPDATE identity_link_requests
+                    SET target_party_id=%s,updated_at=now()
+                    WHERE id=%s AND target_party_id IS NULL
+                    RETURNING id,target_party_id,status
+                    """,
+                    (payload.target_party_id, request_id),
+                ).fetchone()
+                if updated is None:
+                    raise HTTPException(409, "Claim target changed; refresh and retry")
+                IdentityService(conn)._event(
+                    party_id=payload.target_party_id,
+                    event_type="link_requested",
+                    event_data={"request_id": request_id, "request_type": "claim_existing_identity",
+                                "target_resolved_by_admin": True},
+                    actor_user_id=request.state.user_id,
+                    reason=payload.reason,
+                )
+        return {"id": request_id, "target_party_id": payload.target_party_id, "status": "proof_required"}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Unable to resolve identity claim target") from exc
 
 
 @router.post("/review-queue/requests/{request_id}")
