@@ -231,9 +231,21 @@ def update_customer(customer_id:int,p:CustomerUpdate):
                     "WHERE ip.crm_customer_id=%s AND ip.profile_type='crm_customer' "
                     "AND ip.status='active' FOR UPDATE OF party",(customer_id,),
                 ).fetchone()
+                identity = IdentityService(c)
                 if party:
-                    c.execute("UPDATE identity_parties SET display_name=%s WHERE id=%s",(row["name"],party["id"]))
-                return {**row,"sbid":party["sbid"] if party else None}
+                    c.execute("UPDATE identity_parties SET display_name=%s,updated_at=now() WHERE id=%s",(row["name"],party["id"]))
+                    party_id, sbid = party["id"], party["sbid"]
+                else:
+                    created = identity.create_party(party_type="individual",display_name=row["name"],reason="Legacy CRM record assigned an identity during an explicit admin edit")
+                    party_id, sbid = created["id"], created["sbid"]
+                    identity.link_profile(party_id=party_id,profile_type="crm_customer",source_id=customer_id,link_method="admin_verified",reason="Legacy CRM record assigned an identity during an explicit admin edit")
+                for contact_type, value in (("email", row["email"]), ("phone", row["phone"])):
+                    if value:
+                        try:
+                            identity.add_contact(party_id=party_id,contact_type=contact_type,value=value,source="crm_customer_update")
+                        except ValueError:
+                            pass
+                return {**row,"sbid":sbid}
     except HTTPException:raise
     except psycopg.Error as e:raise _error(e) from e
 
