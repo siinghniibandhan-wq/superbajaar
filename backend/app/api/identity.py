@@ -362,7 +362,7 @@ def create_link_request(payload: LinkRequestIn, request: Request):
                     requester_party_id = requester["party_id"] if requester else None
                 row = conn.execute(
                     "INSERT INTO identity_link_requests(idempotency_key,requester_party_id,target_party_id,request_type,status,requested_profile_type,requested_source_id,expires_at,request_context) "
-                    "VALUES(%s,%s,%s,%s,'proof_required',%s,%s,%s,jsonb_build_object('reason',%s,'relationship_type',%s,'relationship_scope',%s::jsonb,'submitted_by_user_id',%s)) "
+                    "VALUES(%s,%s,%s,%s,'proof_required',%s,%s,%s,jsonb_build_object('reason',%s::text,'relationship_type',%s::text,'relationship_scope',%s::jsonb,'submitted_by_user_id',%s::bigint)) "
                     "ON CONFLICT(idempotency_key) DO NOTHING RETURNING id,status,created_at",
                     (payload.idempotency_key, requester_party_id, payload.target_party_id, payload.request_type, payload.requested_profile_type, payload.requested_source_id, datetime.now(timezone.utc)+timedelta(days=7), payload.reason, payload.relationship_type, __import__("json").dumps(payload.relationship_scope), request.state.user_id),
                 ).fetchone()
