@@ -1,8 +1,16 @@
 # Production deployment automation
 
-## What happens
+## Trigger and release scope
 
-A push to `main` runs backend tests/compile, admin tests, both frontend production builds, Gitleaks and Semgrep. Only after verification does GitHub Actions assume the configured AWS role through OIDC and ask the EC2 instance to deploy the exact commit using Systems Manager (SSM).
+The authoritative trigger configuration is `.github/workflows/deploy.yml`.
+
+- Pull requests targeting `main` run source verification only; deployment jobs do not run for pull-request events.
+- Pushes to `main` start this workflow only when configured application paths change. Documentation-only and schema-only pushes are excluded by the push path filter.
+- Manual workflow dispatch is also supported and must be treated as a production-capable operation.
+
+For a qualifying application push, the workflow runs backend tests/compile, admin tests, both frontend production builds, Gitleaks and Semgrep. Only after verification does GitHub Actions assume the configured AWS role through OIDC and ask the EC2 instance to deploy the exact commit using Systems Manager (SSM). The separate [environment and CI/CD guide](../ENVIRONMENTS_AND_CICD.md) documents every workflow and trigger.
+
+
 
 The EC2 script fast-forwards the existing `/opt/superbajaar/source` checkout, installs backend requirements into the service's existing virtualenv, compiles the backend, restarts only `superbajaar-new.service`, and checks the public API health endpoint plus the HR attendance-corrections route. A failed deployment attempts to restore the previous Git commit, reinstall its requirements, restart the service and verify health.
 
