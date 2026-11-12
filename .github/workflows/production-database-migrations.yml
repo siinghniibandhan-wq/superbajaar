@@ -73,7 +73,25 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$INSTANCE_ID"
-          remote_command="sudo -u ubuntu bash -lc 'set -euo pipefail; cd /opt/superbajaar/source; EXPECTED_MAIN_SHA=${EXPECTED_MAIN_SHA}; EXPECTED_BASELINE_SHA=${EXPECTED_BASELINE_SHA}; actual=; for attempt in \$(seq 1 60); do actual=\$(git rev-parse HEAD); [ \"\$actual\" = \"\$EXPECTED_MAIN_SHA\" ] && break; sleep 10; done; [ \"\$actual\" = \"\$EXPECTED_MAIN_SHA\" ] || { echo \"Source SHA did not reach the triggering main commit: \$actual\"; exit 1; }; [ -z \"\$(git status --porcelain)\" ] || { echo \"EC2 source worktree is not clean\"; exit 1; }; actual_baseline=\$(sha256sum backend/schema/000_baseline_schema.sql | cut -d ' ' -f1); git_baseline=\$(git show \"\$EXPECTED_MAIN_SHA:backend/schema/000_baseline_schema.sql\" | sha256sum | cut -d ' ' -f1); [ \"\$actual_baseline\" = \"\$EXPECTED_BASELINE_SHA\" ] && [ \"\$git_baseline\" = \"\$EXPECTED_BASELINE_SHA\" ] || { echo \"Production baseline SHA-256 mismatch: file=\$actual_baseline git=\$git_baseline expected=\$EXPECTED_BASELINE_SHA\"; exit 1; }; echo \"Source commit and immutable baseline verified: \$actual\"'"
+          remote_script="$(cat <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          cd /opt/superbajaar/source
+          actual=""
+          for attempt in $(seq 1 60); do
+            actual=$(git rev-parse HEAD)
+            [ "$actual" = "$EXPECTED_MAIN_SHA" ] && break
+            sleep 10
+          done
+          [ "$actual" = "$EXPECTED_MAIN_SHA" ] || { echo "Source SHA did not reach the triggering main commit: $actual"; exit 1; }
+          [ -z "$(git status --porcelain)" ] || { echo "EC2 source worktree is not clean"; exit 1; }
+          actual_baseline=$(sha256sum backend/schema/000_baseline_schema.sql | cut -d " " -f1)
+          git_baseline=$(git show "$EXPECTED_MAIN_SHA:backend/schema/000_baseline_schema.sql" | sha256sum | cut -d " " -f1)
+          [ "$actual_baseline" = "$EXPECTED_BASELINE_SHA" ] && [ "$git_baseline" = "$EXPECTED_BASELINE_SHA" ] || { echo "Production baseline SHA-256 mismatch: file=$actual_baseline git=$git_baseline expected=$EXPECTED_BASELINE_SHA"; exit 1; }
+          echo "Source commit and immutable baseline verified: $actual"
+          REMOTE_SCRIPT
+          )"
+          encoded_script="$(printf "%s" "$remote_script" | base64 -w0)"
+          remote_command="printf '%s' \"$encoded_script\" | base64 -d | sudo -u ubuntu env EXPECTED_MAIN_SHA='$EXPECTED_MAIN_SHA' EXPECTED_BASELINE_SHA='$EXPECTED_BASELINE_SHA' bash"
           parameters="$(jq -n --arg command "$remote_command" '{commands: [$command]}')"
           command_id="$(aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript --comment "Verify Super Bajaar production schema source" --parameters "$parameters" --query 'Command.CommandId' --output text)"
           for attempt in $(seq 1 60); do
@@ -152,7 +170,25 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$INSTANCE_ID"
-          remote_command="sudo -u ubuntu bash -lc 'set -euo pipefail; cd /opt/superbajaar/source; EXPECTED_MAIN_SHA=${EXPECTED_MAIN_SHA}; EXPECTED_BASELINE_SHA=${EXPECTED_BASELINE_SHA}; actual=; for attempt in \$(seq 1 60); do actual=\$(git rev-parse HEAD); [ \"\$actual\" = \"\$EXPECTED_MAIN_SHA\" ] && break; sleep 10; done; [ \"\$actual\" = \"\$EXPECTED_MAIN_SHA\" ] || { echo \"Source SHA did not reach the triggering main commit: \$actual\"; exit 1; }; [ -z \"\$(git status --porcelain)\" ] || { echo \"EC2 source worktree is not clean\"; exit 1; }; actual_baseline=\$(sha256sum backend/schema/000_baseline_schema.sql | cut -d ' ' -f1); git_baseline=\$(git show \"\$EXPECTED_MAIN_SHA:backend/schema/000_baseline_schema.sql\" | sha256sum | cut -d ' ' -f1); [ \"\$actual_baseline\" = \"\$EXPECTED_BASELINE_SHA\" ] && [ \"\$git_baseline\" = \"\$EXPECTED_BASELINE_SHA\" ] || { echo \"Production baseline SHA-256 mismatch: file=\$actual_baseline git=\$git_baseline expected=\$EXPECTED_BASELINE_SHA\"; exit 1; }; echo \"Source commit and immutable baseline verified: \$actual\"'"
+          remote_script="$(cat <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          cd /opt/superbajaar/source
+          actual=""
+          for attempt in $(seq 1 60); do
+            actual=$(git rev-parse HEAD)
+            [ "$actual" = "$EXPECTED_MAIN_SHA" ] && break
+            sleep 10
+          done
+          [ "$actual" = "$EXPECTED_MAIN_SHA" ] || { echo "Source SHA did not reach the triggering main commit: $actual"; exit 1; }
+          [ -z "$(git status --porcelain)" ] || { echo "EC2 source worktree is not clean"; exit 1; }
+          actual_baseline=$(sha256sum backend/schema/000_baseline_schema.sql | cut -d " " -f1)
+          git_baseline=$(git show "$EXPECTED_MAIN_SHA:backend/schema/000_baseline_schema.sql" | sha256sum | cut -d " " -f1)
+          [ "$actual_baseline" = "$EXPECTED_BASELINE_SHA" ] && [ "$git_baseline" = "$EXPECTED_BASELINE_SHA" ] || { echo "Production baseline SHA-256 mismatch: file=$actual_baseline git=$git_baseline expected=$EXPECTED_BASELINE_SHA"; exit 1; }
+          echo "Source commit and immutable baseline verified: $actual"
+          REMOTE_SCRIPT
+          )"
+          encoded_script="$(printf "%s" "$remote_script" | base64 -w0)"
+          remote_command="printf '%s' \"$encoded_script\" | base64 -d | sudo -u ubuntu env EXPECTED_MAIN_SHA='$EXPECTED_MAIN_SHA' EXPECTED_BASELINE_SHA='$EXPECTED_BASELINE_SHA' bash"
           parameters="$(jq -n --arg command "$remote_command" '{commands: [$command]}')"
           command_id="$(aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript --comment "Verify Super Bajaar production schema source" --parameters "$parameters" --query 'Command.CommandId' --output text)"
           for attempt in $(seq 1 60); do
