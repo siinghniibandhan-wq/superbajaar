@@ -5,6 +5,8 @@
 **Scope:** Repository source, schema migrations, API and test coverage  
 **Production status:** Not inspected or changed. No live database query, migration, deployment, service restart or AWS change was performed.
 
+> **Historical audit snapshot — superseded for current implementation status.** This document records the Phase 1 baseline before implementation. The Unified Identity System has since been implemented incrementally and merged through PRs #54, #55, #57 and #58. For current capabilities, limitations and rollout status, use [the implementation guide](UNIFIED_IDENTITY_SYSTEM_IMPLEMENTATION.md). The original findings below are preserved as the historical audit record.
+
 ## Executive conclusion
 
 The repository has separate identity and access paths for customer accounts, staff/admin users, employee records and vendor portal access. There is useful existing functionality to preserve, but no unified master identity/SBID register or central identity-resolution service.

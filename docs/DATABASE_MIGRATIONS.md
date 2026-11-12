@@ -144,7 +144,26 @@ Rules:
 
 The CI migration governance workflow and `docs/SCHEMA_MIGRATION_CRITICAL_RULE.md` provide additional repository-side controls. CI checks must actually run and pass; a workflow file existing in Git is not proof that branch protection enforces it.
 
-## 6. Historical duplicate-036 reconciliation (10 November 2026)
+## 6. Unified Identity System migrations 043–045 (12 November 2026)
+
+The Unified Identity System code is merged into `main` through PRs #54, #55, #57 and #58. The required release list contains all three identity migrations:
+
+| File | Purpose |
+|---|---|
+| `043_unified_identity_foundation.sql` | Adds identity parties, typed profiles, authentication-account links, contacts, relationships, link requests, events and aliases |
+| `044_identity_loyalty_referral_links.sql` | Adds representative metadata to portal invitations and association tables for existing loyalty accounts and referral records |
+| `045_identity_claim_cancellation_event.sql` | Adds the `link_cancelled` event type to the identity audit-event constraint |
+
+All three filenames are present in `backend/schema_required.txt`. Their SQL is additive. Migration 044 explicitly preserves existing loyalty accounts, cards, balances, ledgers, referral codes and rewards; it does not perform a historical data backfill. Migration 045 only changes the permitted identity event types.
+
+**Source status:** merged into GitHub `main`.  
+**Production migration status:** not verified by the repository commit. Confirm the intended production database ledger and schema before calling these migrations applied.
+
+The current schema directory contains 40 SQL migration files, with unique prefixes through 045. Do not infer that all 40 are applied in production from their presence in Git.
+
+See [Unified Identity System implementation](UNIFIED_IDENTITY_SYSTEM_IMPLEMENTATION.md) and its [production rollout runbook](UNIFIED_IDENTITY_SYSTEM_PRODUCTION_ROLLOUT.md).
+
+## 7. Historical duplicate-036 reconciliation (10 November 2026)
 
 Two different migration files historically used prefix `036`:
 
@@ -164,7 +183,7 @@ The repository reconciliation is:
 
 This is a documented historical migration-history exception, not a reason to alter applied SQL or production ledger records. The current `backend/schema_required.txt` list does not include `036_configurable_rbac.sql`; do not silently change that release-gate policy as part of documenting this incident. Any future decision to make it release-required must be reviewed as a separate change.
 
-## 7. Backup and recovery discipline
+## 8. Backup and recovery discipline
 
 Before any approved production migration, confirm the backup destination has sufficient space and that the resulting dump is non-empty and readable by `pg_restore --list`. Retain the exact backup identifier and timestamp in the change record.
 
@@ -172,7 +191,7 @@ If a migration fails, stop and inspect the runner log, failure ledger, database 
 
 The confirmed 10 November backup above is historical evidence for that migration event; it is not proof that a current backup exists for a future change.
 
-## 8. Related files
+## 9. Related files
 
 - `backend/schema/` — versioned PostgreSQL schema SQL.
 - `backend/schema_required.txt` — release-critical subset of migrations.

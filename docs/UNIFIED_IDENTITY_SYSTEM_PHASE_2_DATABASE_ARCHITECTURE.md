@@ -5,6 +5,8 @@
 **Baseline:** `main` at `ef1de4682e8416edfd0db7d63ee3ecc7bab7bf41`  
 **Production:** No live database or service changes are authorised by this document.
 
+> **Historical design specification — implementation status has moved on.** The proposed schema/service design below is retained as the original Phase 2 architecture record. The implemented scope, current limitations and production gates are documented in [the current implementation guide](UNIFIED_IDENTITY_SYSTEM_IMPLEMENTATION.md) and [production rollout runbook](UNIFIED_IDENTITY_SYSTEM_PRODUCTION_ROLLOUT.md). Do not treat proposed steps below as evidence that they remain unimplemented or as permission to change production.
+
 ## 1. Design principles
 
 1. SBID is a permanent platform identity for one individual or one organisation.

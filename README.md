@@ -19,6 +19,13 @@ The root Vite project is retained as a compatibility entry point. In particular,
 
 ## Product areas
 
+### Unified Identity System
+
+The Unified Identity System implementation is merged into `main` through PRs [#54](https://github.com/siinghniibandhan-wq/superbajaar/pull/54), [#55](https://github.com/siinghniibandhan-wq/superbajaar/pull/55), [#57](https://github.com/siinghniibandhan-wq/superbajaar/pull/57) and [#58](https://github.com/siinghniibandhan-wq/superbajaar/pull/58). It introduces permanent SBIDs for individual and organisation parties, typed profile links, identity register/review workflows, manual legacy reconciliation preview, customer claim history and cancellation, administrator-reviewed contact verification, organisation relationship lifecycle controls, and loyalty/referral association tables. Existing customer/staff authentication IDs and business-domain primary keys remain authoritative. This is a code-merged status only: production deployment, migrations 043–045, and legacy data reconciliation are not confirmed as complete.
+
+Read the [Unified Identity System implementation and operations guide](docs/UNIFIED_IDENTITY_SYSTEM_IMPLEMENTATION.md) and the [production rollout runbook](docs/UNIFIED_IDENTITY_SYSTEM_PRODUCTION_ROLLOUT.md).
+
+
 The current frontend source contains workspaces for:
 
 - Catalogue
@@ -279,9 +286,14 @@ Examples from the current schema directory:
 038_hr_variable_payroll_earnings.sql
 039_hr_multi_establishment_payroll_accruals.sql
 040_hr_final_settlement_earning_types.sql
+041_portal_access_foundation.sql
+042_hr_attendance_controls.sql
+043_unified_identity_foundation.sql
+044_identity_loyalty_referral_links.sql
+045_identity_claim_cancellation_event.sql
 ```
 
-The current committed schema directory contains **35 SQL files**, with unique three-digit numeric prefixes. The numbering is not required to be consecutive: gaps are intentional historical/versioning space and must not be filled by renumbering existing files.
+The current committed schema directory contains **40 SQL files** (through `045_identity_claim_cancellation_event.sql`), with unique three-digit numeric prefixes. The numbering is not required to be consecutive: gaps are intentional historical/versioning space and must not be filled by renumbering existing files.
 
 The previous duplicate-prefix problem has been addressed in the current migration set. Duplicate numbering is also actively rejected by the migration tooling and CI:
 
@@ -293,7 +305,7 @@ The previous duplicate-prefix problem has been addressed in the current migratio
 **When adding a migration:**
 
 - Inspect the complete current `backend/schema/` directory and the history on the target branch first.
-- Select a new, unused three-digit prefix. The current highest committed prefix is `040`; `041` is only the next candidate if it is still unused when the change is prepared and reviewed.
+- Select a new, unused three-digit prefix. The current highest committed prefix is `045`; choose the next unused prefix only after checking the complete directory, branch history and migration governance checks.
 - Never reuse a prefix, rename or renumber an already-applied migration, or edit an applied migration to change its effect. Create a new numbered migration for a later correction.
 - Use lowercase letters, digits and underscores after the prefix.
 - Keep SQL files focused on database schema/data changes. Do not put shell commands, deployment tooling, CI configuration or service-management changes inside SQL.
