@@ -53,6 +53,12 @@ The backend deployment script deliberately fails closed unless:
 
 If the current unit uses a different layout, adapt the deployment script to the actual unit before enabling production deployment. Do not guess or change the service unit blindly.
 
+## Amplify trigger boundary
+
+The GitHub `deploy.yml` path filter controls when its verification/monitoring workflow starts; it does not configure AWS Amplify's native connected-repository auto-build trigger. The repository root listing reviewed on 12 November 2026 did not contain an `amplify.yml` build specification. Confirm Amplify's connected branch, build settings and any monorepo/path-ignore rules in the AWS Amplify console. Until that is verified, do not promise that a docs-only commit can never start an Amplify build.
+
+The EC2 `main` auto-sync timer documented in [GitHub main auto-sync](GITHUB_MAIN_AUTO_SYNC.md) updates the source checkout only. It does not build, migrate or restart the application service.
+
 ## Database safety
 
 This workflow never runs SQL migrations or schema apply commands. Existing schema governance and the status-only migration timer remain separate and unchanged.
