@@ -79,6 +79,14 @@ class DeployBackendConfigurationTests(unittest.TestCase):
                         workflow.index("Apply reviewed production migrations"))
         preflight = workflow.split("\n  apply:\n", 1)[0]
         self.assertNotIn("Approved Super Bajaar production schema apply", preflight)
+        self.assertIn('EXPECTED_MAIN_SHA: ${{ github.sha }}', workflow)
+        self.assertIn('EXPECTED_BASELINE_SHA: 519e4467a6af9c1f87dd06cbdb80ef4545b1ae04edfe8937966799792168d938', workflow)
+        self.assertIn('git rev-parse HEAD', workflow)
+        self.assertIn('git status --porcelain', workflow)
+        self.assertIn('sha256sum', workflow)
+        self.assertIn('git show "$EXPECTED_MAIN_SHA:backend/schema/000_baseline_schema.sql"', workflow)
+        self.assertIn('Source SHA did not reach the triggering main commit', workflow)
+        self.assertIn('Production baseline SHA-256 mismatch', workflow)
 
     def test_preserves_deployment_safety_guards(self):
         for guard in (
