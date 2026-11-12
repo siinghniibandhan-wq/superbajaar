@@ -110,7 +110,7 @@ def test_revoked_or_historic_contact_cannot_be_verified(monkeypatch):
 
 def test_admin_can_revoke_an_active_organisation_relationship_with_audit_reason(monkeypatch):
     from app.api import identity as identity_api
-    from app.api.identity import RelationshipRevokeIn, revoke_relationship
+    from app.api.identity import RelationshipRevokeIn, revoke_relationship, identity_detail
     from app.services.identity import IdentityService
 
     suffix = uuid4().hex
@@ -163,3 +163,5 @@ def test_admin_can_revoke_an_active_organisation_relationship_with_audit_reason(
     assert event["actor_user_id"] == admin["id"]
     assert event["reason"] == "Vendor authority has been withdrawn"
     assert event["event_data"]["relationship_id"] == relationship["id"]
+    organisation_detail = identity_detail(organisation["id"], request)
+    assert any(item["event_type"] == "relationship_revoked" for item in organisation_detail["events"])
