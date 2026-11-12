@@ -151,6 +151,10 @@ class ContactVerifyIn(BaseModel):
     reason: str = Field(min_length=5, max_length=500)
 
 
+class RelationshipRevokeIn(BaseModel):
+    reason: str = Field(min_length=5, max_length=500)
+
+
 @router.get("/reconciliation/preview")
 def legacy_reconciliation_preview(
     request: Request,
@@ -486,6 +490,35 @@ def review_link_request(request_id: int, payload: ReviewIn, request: Request):
         if getattr(exc, "sqlstate", None) == "23505":
             raise HTTPException(409, "That profile or relationship is already linked") from exc
         raise HTTPException(503, "Unable to review identity request") from exc
+
+
+@router.post("/relationships/{relationship_id}/revoke")
+def revoke_relationship(relationship_id: int, payload: RelationshipRevokeIn, request: Request):
+    """Revoke an active organisation relationship without deleting its history."""
+    _admin(request)
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                relationship = conn.execute(
+                    "SELECT id,from_party_id,status,valid_to FROM identity_relationships WHERE id=%s FOR UPDATE",
+                    (relationship_id,),
+                ).fetchone()
+                if relationship is None:
+                    raise HTTPException(404, "Identity relationship not found")
+                if relationship["status"] != "active" or relationship["valid_to"] is not None:
+                    raise HTTPException(409, "Only an active relationship can be revoked")
+                result = IdentityService(conn).revoke_relationship(
+                    relationship_id=relationship_id,
+                    actor_user_id=request.state.user_id,
+                    reason=payload.reason,
+                )
+                if result is None:
+                    raise HTTPException(409, "Relationship state changed; refresh and retry")
+        return {"id": result["id"], "status": result["status"], "valid_to": result["valid_to"]}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Unable to revoke identity relationship") from exc
 
 
 @router.post("/contacts/{contact_id}/verify")
