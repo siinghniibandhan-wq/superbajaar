@@ -23,6 +23,6 @@ test("legacy reconciliation is a read-only preview and never merges candidates",
 
 test("legacy reconciliation falls back when preferred contact columns are blank", () => {
   for (const alias of ["c", "e", "s"]) {
-    assert.match(api, new RegExp("NULLIF\\(trim\\(to_jsonb\\(" + alias + "\\)->>'"));
+    assert.match(api, new RegExp("nullif\\(trim\\(to_jsonb\\(" + alias + "\\)->>'", "i"));
   }
 });
