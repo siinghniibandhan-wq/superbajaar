@@ -170,7 +170,12 @@ printf "SELECT 1;\\n" > "$T/s22/036_configurable_rbac.sql"
 canonical_sha=$(sha256sum "$T/s22/036_configurable_rbac.sql" | cut -d' ' -f1)
 $SB_PSQL -X -q -d "$SB_DB" -c "CREATE TABLE schema_migrations(filename text primary key, sha256 text not null, applied_at timestamptz not null default now(), baseline boolean not null default false)"
 $SB_PSQL -X -q -d "$SB_DB" -c "INSERT INTO schema_migrations(filename,sha256) VALUES ('036_super_admin_role.sql','historical-checksum'),('036_configurable_rbac.sql','$canonical_sha')"
-check "status exit 0 for reconciled legacy alias" "$(run "$T/s22" --status)" 0
+status_rc=$(run "$T/s22" --status)
+if [ "$status_rc" != 0 ]; then
+  echo "  DEBUG: T22 runner output follows"
+  cat "$T/out"
+fi
+check "status exit 0 for reconciled legacy alias" "$status_rc" 0
 grep -q "036_configurable_rbac.sql: APPLIED" "$T/out" && ok "canonical RBAC migration remains visible" || bad "canonical RBAC migration missing from status"
 if grep -q "ledger has 036_super_admin_role.sql" "$T/out"; then bad "reconciled historical alias still reported"; else ok "historical alias is suppressed only after canonical checksum match"; fi
 
