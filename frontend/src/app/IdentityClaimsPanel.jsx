@@ -18,6 +18,7 @@ export default function IdentityClaimsPanel({ customerToken }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [cancellingId, setCancellingId] = useState(null);
 
   const request = useCallback((path, options = {}) => apiRequest(path, {
     ...options,
@@ -76,6 +77,22 @@ export default function IdentityClaimsPanel({ customerToken }) {
     }
   };
 
+  const cancelClaim = async claimId => {
+    if (!window.confirm("Cancel this identity claim? Its review history will be retained.")) return;
+    setCancellingId(claimId);
+    setError("");
+    setMessage("");
+    try {
+      await request(`/customer-auth/identity-claims/${claimId}/cancel`, { method: "POST" });
+      setMessage("Your identity claim has been cancelled.");
+      await loadClaims();
+    } catch (cause) {
+      setError(cause.message || "Could not cancel this identity claim.");
+    } finally {
+      setCancellingId(null);
+    }
+  };
+
   return <section className="storefront-account-section storefront-identity-claims">
     <span className="storefront-kicker">YOUR SUPER BAJAAR IDENTITY</span>
     <h2>Claim an existing identity</h2>
@@ -109,6 +126,7 @@ export default function IdentityClaimsPanel({ customerToken }) {
             <small>Claim #{item.id} · {new Date(item.created_at).toLocaleString("en-IN")}</small>
             <strong>{statusLabels[item.status] || "Status unavailable"}</strong>
             <span>{item.reviewed_at ? "Reviewed " + new Date(item.reviewed_at).toLocaleString("en-IN") : item.expires_at ? "Review window ends " + new Date(item.expires_at).toLocaleDateString("en-IN") : "Awaiting review"}</span>
+            {["pending", "proof_required"].includes(item.status) && <button type="button" className="storefront-inline-link" onClick={() => cancelClaim(item.id)} disabled={cancellingId === item.id}>{cancellingId === item.id ? "Cancelling…" : "Cancel request"}</button>}
           </div>)}
         </div> : <p className="storefront-account-empty">You have not submitted any identity claims yet.</p>}
     </div>
