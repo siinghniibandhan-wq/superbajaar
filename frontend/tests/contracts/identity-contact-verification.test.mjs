@@ -12,6 +12,10 @@ test("identity register records reviewed contact verification with an audit even
   assert.match(api, /def verify_contact/);
   assert.match(api, /_admin\(request\)/);
   assert.match(service, /event_type="contact_verified"/);
+  assert.match(workspace, /identity\/relationships\/.*\/revoke/);
+  assert.match(workspace, /Revoke relationship/);
+  assert.match(api, /def revoke_relationship/);
+  assert.match(service, /event_type="relationship_revoked"/);
 });
 
 test("contact verification requires an evidence method and documented reason", () => {
