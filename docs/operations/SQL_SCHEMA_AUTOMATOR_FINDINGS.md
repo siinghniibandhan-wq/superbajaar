@@ -7,6 +7,8 @@
 
 This document records the live-environment details observed during the SQL Schema Automator investigation. It distinguishes confirmed facts from items that still require verification. It is not authorization to apply the pending SQL files.
 
+> **Historical investigation record — superseded for current operational procedure.** This file preserves the original discovery/specification notes from 10 November 2026. Later verification evidence is recorded in [Schema Automator Verification](SCHEMA_AUTOMATOR_VERIFICATION_2026-11-10.md). For current migration commands, database identity, timer safety and approval requirements, use the canonical [Database Migrations runbook](../DATABASE_MIGRATIONS.md). Do not use this historical document as authorization to operate production.
+
 ## 1. Objective
 
 Operate the existing SQL migration runner automatically every two minutes, while preserving its database safety controls.
