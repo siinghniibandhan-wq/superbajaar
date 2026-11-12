@@ -518,3 +518,111 @@ def test_admin_cannot_request_organisation_relationship_for_wrong_party_types(mo
         create_link_request(payload, request)
     assert invalid.value.status_code == 409
 
+def test_customer_identity_claim_is_reviewed_and_history_survives_merge(monkeypatch):
+    from types import SimpleNamespace
+    from app.api import customer_auth, identity as identity_api
+    from app.api.customer_auth import IdentityClaimIn, list_identity_claims, request_identity_claim
+    from app.api.identity import ReviewIn, review_link_request
+
+    suffix = uuid4().hex
+    with psycopg.connect(TEST_DB, row_factory=dict_row) as conn:
+        customer = conn.execute(
+            "INSERT INTO customer_accounts(email,full_name,phone,password_hash,referral_code) "
+            "VALUES(%s,%s,%s,%s,%s) RETURNING id",
+            (f"claim-{suffix}@test.local", "Claim Customer", "+9198" + suffix[:8], "test-hash", "CL" + suffix[:10].upper()),
+        ).fetchone()
+        target = _party(conn, "individual")
+        admin = conn.execute(
+            "INSERT INTO app_users(email,full_name,password_hash,role) VALUES(%s,%s,%s,'admin') RETURNING id",
+            (f"claim-admin-{suffix}@test.local", "Claim Reviewer", "test-hash"),
+        ).fetchone()
+    monkeypatch.setattr(customer_auth.settings, "database_url", TEST_DB)
+    monkeypatch.setattr(identity_api.settings, "database_url", TEST_DB)
+    customer_request = SimpleNamespace(state=SimpleNamespace(customer_id=customer["id"]))
+    submitted = request_identity_claim(
+        IdentityClaimIn(target_sbid=target["sbid"], reason="This is my historical customer identity"),
+        customer_request,
+    )
+    assert submitted["status"] == "submitted"
+    history = list_identity_claims(customer_request)
+    assert len(history["items"]) == 1
+    assert history["items"][0]["status"] == "proof_required"
+    assert "requested_sbid" not in history["items"][0]
+
+    with psycopg.connect(TEST_DB, row_factory=dict_row) as conn:
+        request_row = conn.execute(
+            "SELECT id,requester_party_id,target_party_id FROM identity_link_requests "
+            "WHERE request_type='claim_existing_identity' AND requester_party_id IS NOT NULL "
+            "ORDER BY id DESC LIMIT 1",
+        ).fetchone()
+    reviewer_request = SimpleNamespace(state=SimpleNamespace(user_id=admin["id"], role="admin"))
+    reviewed = review_link_request(
+        request_row["id"],
+        ReviewIn(
+            decision="approve", proof_verified=True,
+            proof_method="document_review",
+            reason="Government identity evidence verified",
+        ),
+        reviewer_request,
+    )
+    assert reviewed["status"] == "approved"
+    history_after_merge = list_identity_claims(customer_request)
+    assert history_after_merge["items"][0]["status"] == "approved"
+    with psycopg.connect(TEST_DB, row_factory=dict_row) as conn:
+        alias = conn.execute(
+            "SELECT canonical_party_id FROM identity_aliases WHERE source_party_id=%s",
+            (request_row["requester_party_id"],),
+        ).fetchone()
+    assert alias["canonical_party_id"] == target["id"]
+
+
+def test_unmatched_customer_identity_claim_can_be_rejected_without_disclosing_target(monkeypatch):
+    from types import SimpleNamespace
+    from app.api import customer_auth, identity as identity_api
+    from app.api.customer_auth import IdentityClaimIn, list_identity_claims, request_identity_claim
+    from app.api.identity import ReviewIn, review_link_request
+
+    suffix = uuid4().hex
+    with psycopg.connect(TEST_DB, row_factory=dict_row) as conn:
+        customer = conn.execute(
+            "INSERT INTO customer_accounts(email,full_name,phone,password_hash,referral_code) "
+            "VALUES(%s,%s,%s,%s,%s) RETURNING id",
+            (f"unmatched-{suffix}@test.local", "Unmatched Customer", "+9197" + suffix[:8], "test-hash", "UN" + suffix[:10].upper()),
+        ).fetchone()
+        admin = conn.execute(
+            "INSERT INTO app_users(email,full_name,password_hash,role) VALUES(%s,%s,%s,'admin') RETURNING id",
+            (f"unmatched-admin-{suffix}@test.local", "Unmatched Reviewer", "test-hash"),
+        ).fetchone()
+    monkeypatch.setattr(customer_auth.settings, "database_url", TEST_DB)
+    monkeypatch.setattr(identity_api.settings, "database_url", TEST_DB)
+    customer_request = SimpleNamespace(state=SimpleNamespace(customer_id=customer["id"]))
+    request_identity_claim(
+        IdentityClaimIn(
+            target_sbid="SBID-FFFFFFFFFFFFFFFFFFFF",
+            reason="I believe this old account belongs to me",
+        ),
+        customer_request,
+    )
+    history = list_identity_claims(customer_request)
+    assert len(history["items"]) == 1
+    assert history["items"][0]["status"] == "proof_required"
+    assert "requested_sbid" not in history["items"][0]
+
+    with psycopg.connect(TEST_DB, row_factory=dict_row) as conn:
+        request_row = conn.execute(
+            "SELECT id,target_party_id FROM identity_link_requests "
+            "WHERE request_type='claim_existing_identity' AND requester_party_id IN "
+            "(SELECT party_id FROM identity_profiles WHERE customer_account_id=%s) "
+            "ORDER BY id DESC LIMIT 1",
+            (customer["id"],),
+        ).fetchone()
+    assert request_row["target_party_id"] is None
+    reviewer_request = SimpleNamespace(state=SimpleNamespace(user_id=admin["id"], role="admin"))
+    reviewed = review_link_request(
+        request_row["id"],
+        ReviewIn(decision="reject", reason="No matching identity record or evidence supplied"),
+        reviewer_request,
+    )
+    assert reviewed["status"] == "rejected"
+    assert list_identity_claims(customer_request)["items"][0]["status"] == "rejected"
+
