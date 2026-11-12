@@ -65,6 +65,7 @@ class DeployBackendConfigurationTests(unittest.TestCase):
         self.assertIn("backend/schema/**", workflow)
         self.assertIn("backend/schema_required.txt", workflow)
         self.assertIn("github.event_name == 'push'", workflow)
+        self.assertIn("apply_requested=false", workflow)
         self.assertIn("environment: production-database", workflow)
         self.assertIn("SB_DB=superbajaar", workflow)
         self.assertIn("SB_PSQL=/usr/local/bin/sb-psql", workflow)
