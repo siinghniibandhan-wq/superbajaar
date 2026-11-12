@@ -195,14 +195,31 @@ def update_supplier(supplier_id: int, payload: SupplierCreate):
                     "AND ip.status='active' FOR UPDATE OF iparty",
                     (supplier_id,),
                 ).fetchone()
+                identity = IdentityService(conn)
                 if party:
                     conn.execute(
-                        "UPDATE identity_parties SET display_name=%s WHERE id=%s",
+                        "UPDATE identity_parties SET display_name=%s,updated_at=now() WHERE id=%s",
                         (row["name"], party["id"]),
                     )
-                # Legacy suppliers without a verified identity link are not
-                # silently assigned or merged during an ordinary edit.
-                return {**row, "sbid": party["sbid"] if party else None}
+                    party_id, sbid = party["id"], party["sbid"]
+                else:
+                    created = identity.create_party(
+                        party_type="organisation", display_name=row["name"],
+                        reason="Legacy supplier assigned an identity during an explicit admin edit",
+                    )
+                    party_id, sbid = created["id"], created["sbid"]
+                    identity.link_profile(
+                        party_id=party_id, profile_type="vendor_organisation",
+                        source_id=supplier_id, link_method="admin_verified",
+                        reason="Legacy supplier assigned an identity during an explicit admin edit",
+                    )
+                for contact_type, value in (("email", row["email"]), ("phone", row["phone"])):
+                    if value:
+                        try:
+                            identity.add_contact(party_id=party_id,contact_type=contact_type,value=value,source="supplier_update")
+                        except ValueError:
+                            pass
+                return {**row, "sbid": sbid}
     except HTTPException:
         raise
     except psycopg.Error as exc:
