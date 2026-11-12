@@ -6,10 +6,9 @@ Super Bajaar is a React/Vite and FastAPI application backed by PostgreSQL. The r
 
 This README describes the code currently committed on `main`. It is an engineering guide, not a claim that every module is complete or that the latest code is deployed to production.
 
-## Current source of truth
-
 ## Engineering documentation
 
+- [Production governance and readiness](docs/PRODUCTION_GOVERNANCE_AND_READINESS.md) — current owner decisions, IAM/self-approval risk, migration 045, deployment rollback, backup posture and open checks.
 - [Documentation index](docs/README.md) — canonical document catalogue and precedence rules.
 - [Environments and CI/CD](docs/ENVIRONMENTS_AND_CICD.md) — local, CI and production contexts; commit triggers; frontend/backend/database release separation.
 - [Database migration operations](docs/DATABASE_MIGRATIONS.md) — migration runner, backup gate, numbering and production controls.
@@ -29,7 +28,7 @@ The root Vite project is retained as a compatibility entry point. In particular,
 
 ### Unified Identity System
 
-The Unified Identity System implementation is merged into `main` through PRs [#54](https://github.com/siinghniibandhan-wq/superbajaar/pull/54), [#55](https://github.com/siinghniibandhan-wq/superbajaar/pull/55), [#57](https://github.com/siinghniibandhan-wq/superbajaar/pull/57) and [#58](https://github.com/siinghniibandhan-wq/superbajaar/pull/58). It introduces permanent SBIDs for individual and organisation parties, typed profile links, identity register/review workflows, manual legacy reconciliation preview, customer claim history and cancellation, administrator-reviewed contact verification, organisation relationship lifecycle controls, and loyalty/referral association tables. Existing customer/staff authentication IDs and business-domain primary keys remain authoritative. This is a code-merged status only: production deployment, migrations 043–045, and legacy data reconciliation are not confirmed as complete.
+The Unified Identity System implementation is merged into `main` through PRs [#54](https://github.com/siinghniibandhan-wq/superbajaar/pull/54), [#55](https://github.com/siinghniibandhan-wq/superbajaar/pull/55), [#57](https://github.com/siinghniibandhan-wq/superbajaar/pull/57) and [#58](https://github.com/siinghniibandhan-wq/superbajaar/pull/58). It introduces permanent SBIDs for individual and organisation parties, typed profile links, identity register/review workflows, manual legacy reconciliation preview, customer claim history and cancellation, administrator-reviewed contact verification, organisation relationship lifecycle controls, and loyalty/referral association tables. Existing customer/staff authentication IDs and business-domain primary keys remain authoritative. This is a code-merged status. As reported and verified by the owner on 12 November 2026, migration 045 is applied (ledger count 41; checksum recorded in the production governance guide). Production deployment of the identity application and legacy data reconciliation remain separate verification items.
 
 Read the [Unified Identity System implementation and operations guide](docs/UNIFIED_IDENTITY_SYSTEM_IMPLEMENTATION.md) and the [production rollout runbook](docs/UNIFIED_IDENTITY_SYSTEM_PRODUCTION_ROLLOUT.md).
 
@@ -370,7 +369,7 @@ To inspect current results, open the repository's [GitHub Actions](https://githu
 
 ## Change and release discipline
 
-**Production trigger warning:** `.github/workflows/deploy.yml` currently runs on every push to `main` (not only application-code paths) and can deploy the backend to EC2 and verify/restore the Amplify frontend after its verification job. A documentation-only push can therefore start a production deployment workflow. Do not push documentation or code to `main` casually; inspect and explicitly control the resulting workflow. The workflow does not itself apply database migrations. The separate `.github/workflows/production-database-migrations.yml` performs a production dry-run on schema-file pushes and only enters its apply job after a manual `workflow_dispatch` apply request, exact confirmation text and the protected `production-database` environment review.
+**Production trigger boundary:** `.github/workflows/deploy.yml` uses application-path filters on pushes to `main`. Documentation-only and schema-only pushes do not match its push path filter. Pull requests still run source verification, but deploy jobs are conditioned on eligible main/manual events. A matching application-path push can trigger backend deployment and Amplify verification. The workflow does not apply database migrations. The separate `.github/workflows/production-database-migrations.yml` performs read-only preflight on schema-path pushes and only enters its apply job after a manual `workflow_dispatch` apply request, exact confirmation text and the protected `production-database` environment review. Always inspect the current workflow YAML before relying on these boundaries.
 
 
 1. Read the existing implementation and relevant tests before editing.

@@ -85,3 +85,39 @@ A read-only host diagnostic at 06:46 UTC reported:
 | Git object directory | Writable by `ubuntu` |
 
 This is a timestamped observation, not a guarantee of current state. Re-run the read-only host checks before an operational change. Do not use the legacy `superbajaar-new.service` name in deployment commands or runbooks unless a future verified host configuration actually installs it.
+
+
+---
+
+## Last-good backend rollback reference — 12 November 2026
+
+The backend deployment script now persists the last verified deployment SHA in the EC2 checkout under `refs/deploy/last-good`. This change was merged in PR #63, commit `4580ad3f2ed2155ba466932b2ac0bad229a5b0f1`.
+
+### Why the ref is required
+
+The two-minute source-sync timer can fast-forward `/opt/superbajaar/source` before the deployment workflow acquires the shared lock. The lock prevents simultaneous operations but does not enforce scheduling order. If deployment used current `HEAD` as its rollback point after sync had advanced it, rollback could target the same failing revision.
+
+### Behaviour
+
+- At deployment start, use `refs/deploy/last-good` if present.
+- If no ref exists, fall back to `HEAD` (first-deployment behaviour).
+- Deploy the exact target SHA, install dependencies, compile, restart `superbajaar-backend.service`, and run health plus HR-route checks.
+- On failure, reset to the saved last-good SHA, restore dependencies, restart the service and check health.
+- Only after all checks pass, update `refs/deploy/last-good` to the verified `HEAD`.
+
+The ref is saved in the EC2 Git repository; it is not a database backup and does not reverse schema changes.
+
+### Live verification checklist
+
+The fix being merged is not proof that it has been exercised successfully in production. Confirm the GitHub `Deploy Super Bajaar backend` run and that its EC2 SSM job actually ran (not skipped). Then inspect:
+
+```bash
+sudo -u ubuntu git -C /opt/superbajaar/source rev-parse HEAD
+sudo -u ubuntu git -C /opt/superbajaar/source rev-parse refs/deploy/last-good
+sudo systemctl is-active superbajaar-backend.service
+curl --fail --silent --show-error https://superappkart.duckdns.org/api/health
+```
+
+The first successful deployment after this change establishes the ref; before it exists, the script falls back to `HEAD`. As of the owner report dated 12 November 2026, the run result for commit `4580ad3` and the server values were still unverified. Do not report the fix as live until those checks are recorded.
+
+See [Production governance and readiness](../PRODUCTION_GOVERNANCE_AND_READINESS.md) for the consolidated accepted risks and open verification list.

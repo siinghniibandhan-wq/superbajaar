@@ -191,3 +191,20 @@ Never publish credentials, tokens, customer data or raw secrets in release evide
 - [Production deployment runbook](operations/PRODUCTION_DEPLOYMENT.md)
 - [Unified Identity implementation](UNIFIED_IDENTITY_SYSTEM_IMPLEMENTATION.md)
 - [Unified Identity production rollout](UNIFIED_IDENTITY_SYSTEM_PRODUCTION_ROLLOUT.md)
+
+
+---
+
+## 10. Production approval model and owner-accepted risks — 12 November 2026
+
+The owner has explicitly accepted the current single-owner review model. The owner is the sole required reviewer on the GitHub environment `production-database` and retains authority to approve their own production migration.
+
+- Run #10 attempt 2 was re-run by `siinghniibandhan-wq` and approved by the same account.
+- The "Prevent self-review" setting page was not inspected; its off state is inferred.
+- The owner decision is to keep "Prevent self-review" off because there is no team and enabling it with one reviewer would block all approvals.
+- The owner reports that "Allow administrators to bypass" was unticked; this has not been independently verified from a screenshot.
+- The owner-only reviewer configuration is intentional and accepted as a risk: no independent second-person review currently occurs. Revisit when a second reviewer is added.
+
+The IAM trust arrangement also currently accepts a risk: the main-ref OIDC subject can assume the deployment role, whose SSM permissions allow AWS-RunShellScript on the production EC2 instance. The environment reviewer gate is a GitHub workflow control, not an IAM trust boundary. A separate apply role trusted only by the exact `production-database` environment subject is deferred by owner decision.
+
+Do not describe either owner-reported settings as independently inspected. Do not claim that CI is staging or that the protected environment alone guarantees IAM isolation. The detailed evidence, trade-offs and future hardening actions are recorded in [Production governance and readiness](PRODUCTION_GOVERNANCE_AND_READINESS.md).
