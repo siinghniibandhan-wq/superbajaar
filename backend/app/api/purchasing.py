@@ -174,6 +174,7 @@ def create_supplier(payload: SupplierCreate):
 @router.put("/suppliers/{supplier_id}")
 def update_supplier(supplier_id: int, payload: SupplierCreate):
     """Update supplier master data without deleting or replacing the supplier record."""
+    from app.services.identity import IdentityService
     try:
         with _connect() as conn:
             with conn.transaction():
