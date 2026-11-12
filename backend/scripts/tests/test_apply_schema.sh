@@ -163,4 +163,15 @@ check "lock open failure exit 50" "$(SB_LOCK_FILE="$T/locked/runner.lock" run "$
 grep -q "cannot open lock file" "$T/out" && ok "lock failure explains fail-closed behavior" || bad "lock failure message missing"
 chmod 700 "$T/locked"
 
+echo "T22 reconciled historical Super Admin migration alias is not reported as unresolved"
+newdb
+mkdir -p "$T/s22"
+printf "SELECT 1;\\n" > "$T/s22/036_configurable_rbac.sql"
+canonical_sha=$(sha256sum "$T/s22/036_configurable_rbac.sql" | cut -d' ' -f1)
+$SB_PSQL -X -q -d "$SB_DB" -c "CREATE TABLE schema_migrations(filename text primary key, sha256 text not null, applied_at timestamptz not null default now(), baseline boolean not null default false)"
+$SB_PSQL -X -q -d "$SB_DB" -c "INSERT INTO schema_migrations(filename,sha256) VALUES ('036_super_admin_role.sql','historical-checksum'),('036_configurable_rbac.sql','$canonical_sha')"
+check "status exit 0 for reconciled legacy alias" "$(run "$T/s22" --status)" 0
+grep -q "036_configurable_rbac.sql: APPLIED" "$T/out" && ok "canonical RBAC migration remains visible" || bad "canonical RBAC migration missing from status"
+if grep -q "ledger has 036_super_admin_role.sql" "$T/out"; then bad "reconciled historical alias still reported"; else ok "historical alias is suppressed only after canonical checksum match"; fi
+
 echo; echo "RESULT: $pass passed, $fail failed"; rm -rf "$T"; [ $fail -eq 0 ]
