@@ -1,4 +1,7 @@
-## Verification record: 2026-11-10 (append to SQL_SCHEMA_AUTOMATOR_FINDINGS.md)
+# Schema automator verification record — 10 November 2026
+
+> **Dated evidence snapshot.** The values below describe the host and database observed during this specific verification session. They are not a live status check. Current operating instructions are maintained in [Database Migrations](../DATABASE_MIGRATIONS.md). This record supersedes earlier discovery assumptions only for the exact checks and timestamp it documents.
+
 
 Server: EC2 `i-08814a9225c19ee91` (t3.small, Ubuntu 26.04, PostgreSQL 18.6), us-east-1.
 Production database: `superbajaar`, owner `superbajaar_app`. `sb_app` does not exist on this server.
