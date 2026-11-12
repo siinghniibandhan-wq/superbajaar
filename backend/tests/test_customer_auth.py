@@ -65,3 +65,73 @@ def test_customer_profile_update_requires_customer_session():
 def test_customer_profile_update_rejects_blank_name():
     response = client.patch("/api/customer-auth/me", json={"full_name": "  "})
     assert response.status_code == 422
+
+
+
+def test_authenticated_customer_identity_is_provisioned_from_exact_account_id(monkeypatch):
+    from app.api import customer_auth
+
+    calls = []
+
+    class Identity:
+        def __init__(self, conn):
+            pass
+
+        def create_party(self, **kwargs):
+            calls.append(("create_party", kwargs))
+            return {"id": 91, "sbid": "SBID-0123456789ABCDEF0123"}
+
+        def link_profile(self, **kwargs):
+            calls.append(("link_profile", kwargs))
+
+        def link_auth_account(self, **kwargs):
+            calls.append(("link_auth_account", kwargs))
+
+    class Connection:
+        def execute(self, query, params=()):
+            if "FROM identity_profiles" in query:
+                return type("Result", (), {"fetchone": lambda self: None})()
+            if "FROM identity_auth_accounts" in query:
+                return type("Result", (), {"fetchone": lambda self: None})()
+            if "FROM identity_parties" in query:
+                return type("Result", (), {"fetchone": lambda self: {
+                    "id": 91, "sbid": "SBID-0123456789ABCDEF0123",
+                    "party_type": "individual", "status": "active",
+                }})()
+            raise AssertionError(f"Unexpected query: {query}")
+
+    monkeypatch.setattr(customer_auth, "IdentityService", Identity)
+    result = customer_auth._ensure_customer_identity(Connection(), 42, "Existing Customer")
+
+    assert result == "SBID-0123456789ABCDEF0123"
+    assert calls[0][0] == "create_party"
+    assert calls[1][0] == "link_profile"
+    assert calls[1][1]["source_id"] == 42
+    assert calls[2][0] == "link_auth_account"
+    assert calls[2][1]["source_id"] == 42
+
+
+def test_authenticated_customer_identity_rejects_conflicting_profile_and_login_links(monkeypatch):
+    from fastapi import HTTPException
+    from app.api import customer_auth
+
+    class Identity:
+        def __init__(self, conn):
+            raise AssertionError("IdentityService must not be used for conflicting links")
+
+    class Connection:
+        def execute(self, query, params=()):
+            if "FROM identity_profiles" in query:
+                return type("Result", (), {"fetchone": lambda self: {"party_id": 10, "status": "active"}})()
+            if "FROM identity_auth_accounts" in query:
+                return type("Result", (), {"fetchone": lambda self: {"party_id": 11, "status": "active"}})()
+            raise AssertionError(f"Unexpected query: {query}")
+
+    monkeypatch.setattr(customer_auth, "IdentityService", Identity)
+    try:
+        customer_auth._ensure_customer_identity(Connection(), 42, "Existing Customer")
+    except HTTPException as exc:
+        assert exc.status_code == 409
+        assert "conflict" in exc.detail
+    else:
+        raise AssertionError("Conflicting identity links must be rejected")
