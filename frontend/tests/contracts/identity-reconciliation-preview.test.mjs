@@ -1,0 +1,19 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+const workspace = readFileSync(new URL("../../src/features/identity/IdentityWorkspace.jsx", import.meta.url), "utf8");
+const api = readFileSync(new URL("../../../backend/app/api/identity.py", import.meta.url), "utf8");
+
+test("admin identity workspace exposes a legacy reconciliation report", () => {
+  assert.match(workspace, /Legacy reconciliation/);
+  assert.match(workspace, /identity\/reconciliation\/preview/);
+  assert.match(workspace, /manual_review_required/);
+});
+
+test("legacy reconciliation is a read-only preview and never merges candidates", () => {
+  assert.match(api, /def legacy_reconciliation_preview/);
+  assert.match(api, /automatic_linking.*False/);
+  assert.match(api, /automatic_merging.*False/);
+  assert.match(api, /_admin\(request\)/);
+});
