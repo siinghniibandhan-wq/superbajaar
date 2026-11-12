@@ -417,7 +417,7 @@ def login(payload: CustomerLogin):
                     "LEFT JOIN identity_profiles ip ON ip.customer_account_id=ca.id "
                     "AND ip.profile_type='customer_account' AND ip.status='active' "
                     "LEFT JOIN identity_parties iparty ON iparty.id=ip.party_id "
-                    "WHERE ca.email=%s",
+                    "WHERE ca.email=%s FOR UPDATE OF ca",
                     (email,),
                 ).fetchone()
                 if not customer or not customer["is_active"] or not _password_matches(payload.password, customer["password_hash"]):
