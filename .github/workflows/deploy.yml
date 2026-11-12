@@ -108,6 +108,10 @@ jobs:
     needs: verify
     runs-on: ubuntu-24.04
     steps:
+      - name: Check out exact deployment source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
       - name: Configure AWS credentials using GitHub OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -120,7 +124,8 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$INSTANCE_ID"
-          remote_command="sudo -u ubuntu bash -lc 'set -euo pipefail; cd /opt/superbajaar/source; git fetch --quiet origin main; git show ${TARGET_SHA}:backend/scripts/deploy_backend.sh > /tmp/sb-deploy-${TARGET_SHA}.sh; chmod 700 /tmp/sb-deploy-${TARGET_SHA}.sh; bash /tmp/sb-deploy-${TARGET_SHA}.sh ${TARGET_SHA}; rm -f /tmp/sb-deploy-${TARGET_SHA}.sh'"
+          SCRIPT_B64="$(base64 -w0 backend/scripts/deploy_backend.sh)"
+          remote_command="sudo -u ubuntu bash -lc 'set -euo pipefail; script=/tmp/sb-deploy-${TARGET_SHA}.sh; printf \"%s\" \"${SCRIPT_B64}\" | base64 -d > \"\$script\"; chmod 700 \"\$script\"; if bash \"\$script\" ${TARGET_SHA}; then rc=0; else rc=\$?; fi; rm -f \"\$script\"; exit \"\$rc\"'"
           parameters="$(jq -n --arg command "$remote_command" '{commands: [$command]}')"
           command_id="$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
