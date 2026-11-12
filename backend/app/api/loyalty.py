@@ -164,7 +164,9 @@ def get_my_loyalty_account(request: Request):
     try:
         with _connection() as conn:
             account = conn.execute(
-                "SELECT id, customer_email, card_number, created_at FROM loyalty_accounts WHERE customer_email=%s",
+                "SELECT la.id,la.customer_email,la.card_number,la.created_at,party.sbid "
+                "FROM loyalty_accounts la LEFT JOIN identity_loyalty_accounts ila ON ila.loyalty_account_id=la.id "
+                "LEFT JOIN identity_parties party ON party.id=ila.party_id WHERE la.customer_email=%s",
                 (email,),
             ).fetchone()
             if account is None:
