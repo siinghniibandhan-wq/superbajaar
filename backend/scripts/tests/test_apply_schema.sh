@@ -170,7 +170,7 @@ printf "SELECT 1;\\n" > "$T/s22/036_configurable_rbac.sql"
 canonical_sha=$(sha256sum "$T/s22/036_configurable_rbac.sql" | cut -d' ' -f1)
 $SB_PSQL -X -q -d "$SB_DB" -c "CREATE TABLE schema_migrations(filename text primary key, sha256 text not null, applied_at timestamptz not null default now(), baseline boolean not null default false)"
 $SB_PSQL -X -q -d "$SB_DB" -c "INSERT INTO schema_migrations(filename,sha256) VALUES ('036_super_admin_role.sql','historical-checksum'),('036_configurable_rbac.sql','$canonical_sha')"
-status_rc=$(run "$T/s22" --status)
+status_rc=$(SB_REQUIRED_FILE="$T/none.txt" run "$T/s22" --status)
 if [ "$status_rc" != 0 ]; then
   echo "  DEBUG: T22 runner output follows"
   cat "$T/out"
