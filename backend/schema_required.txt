@@ -39,3 +39,4 @@
 040_hr_final_settlement_earning_types.sql
 041_portal_access_foundation.sql
 042_hr_attendance_controls.sql
+045_identity_claim_cancellation_event.sql
