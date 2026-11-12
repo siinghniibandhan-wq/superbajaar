@@ -452,3 +452,69 @@ def test_employee_portal_activation_backfills_identity_for_legacy_employee():
             (employee["id"], party_id),
         ).fetchone()["n"] == 1
 
+def test_admin_can_request_owner_relationship_for_an_explicit_individual_identity(monkeypatch):
+    from types import SimpleNamespace
+    from app.api import identity as identity_api
+    from app.api.identity import LinkRequestIn, create_link_request
+    from app.services.identity import IdentityService
+
+    suffix = uuid4().hex
+    with psycopg.connect(TEST_DB, row_factory=dict_row) as conn:
+        admin = conn.execute(
+            "INSERT INTO app_users(email,full_name,password_hash,role) VALUES(%s,%s,%s,'admin') RETURNING id",
+            (f"identity-admin-{suffix}@test.local", "Identity Admin", "test-hash"),
+        ).fetchone()
+        individual = _party(conn, "individual")
+        organisation = _party(conn, "organisation")
+    monkeypatch.setattr(identity_api.settings, "database_url", TEST_DB)
+    request = SimpleNamespace(state=SimpleNamespace(user_id=admin["id"], role="admin"))
+    payload = LinkRequestIn(
+        target_party_id=organisation["id"],
+        requester_party_id=individual["id"],
+        request_type="organisation_relationship",
+        relationship_type="owner",
+        idempotency_key="identity-owner-" + suffix,
+        reason="Verified ownership documentation submitted",
+    )
+    result = create_link_request(payload, request)
+    assert result["request"]["status"] == "proof_required"
+    with psycopg.connect(TEST_DB, row_factory=dict_row) as conn:
+        saved = conn.execute(
+            "SELECT requester_party_id,target_party_id,request_type,status "
+            "FROM identity_link_requests WHERE idempotency_key=%s",
+            ("identity-owner-" + suffix,),
+        ).fetchone()
+    assert saved["requester_party_id"] == individual["id"]
+    assert saved["target_party_id"] == organisation["id"]
+    assert saved["request_type"] == "organisation_relationship"
+    assert saved["status"] == "proof_required"
+
+
+def test_admin_cannot_request_organisation_relationship_for_wrong_party_types(monkeypatch):
+    from types import SimpleNamespace
+    from fastapi import HTTPException
+    from app.api import identity as identity_api
+    from app.api.identity import LinkRequestIn, create_link_request
+
+    suffix = uuid4().hex
+    with psycopg.connect(TEST_DB, row_factory=dict_row) as conn:
+        admin = conn.execute(
+            "INSERT INTO app_users(email,full_name,password_hash,role) VALUES(%s,%s,%s,'admin') RETURNING id",
+            (f"identity-admin-invalid-{suffix}@test.local", "Identity Admin", "test-hash"),
+        ).fetchone()
+        first = _party(conn, "organisation")
+        second = _party(conn, "individual")
+    monkeypatch.setattr(identity_api.settings, "database_url", TEST_DB)
+    request = SimpleNamespace(state=SimpleNamespace(user_id=admin["id"], role="admin"))
+    payload = LinkRequestIn(
+        target_party_id=second["id"],
+        requester_party_id=first["id"],
+        request_type="organisation_relationship",
+        relationship_type="director",
+        idempotency_key="identity-invalid-" + suffix,
+        reason="Attempted invalid relationship direction",
+    )
+    with pytest.raises(HTTPException) as invalid:
+        create_link_request(payload, request)
+    assert invalid.value.status_code == 409
+
