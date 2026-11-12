@@ -30,6 +30,8 @@ Every governed implementation or configuration change must include its correspon
 5. Do not defer a required documentation change to a later PR. The Documentation governance check enforces a documentation file in the same PR for governed changes.
 6. Documentation-only changes do not require artificial code changes.
 
+**Automation status:** The former documentation-governance GitHub Actions check was removed by PR #77 along with the other GitHub Actions workflows. The same-PR documentation policy remains an engineering rule, but it is no longer automatically enforced by that deleted workflow. Review documentation completeness during PR review or through a separately approved replacement check.
+
 ## Documentation catalogue
 
 ### Current operational references
