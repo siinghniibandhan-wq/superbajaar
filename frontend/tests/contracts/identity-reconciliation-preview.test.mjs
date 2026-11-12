@@ -8,7 +8,9 @@ const api = readFileSync(new URL("../../../backend/app/api/identity.py", import.
 test("admin identity workspace exposes a legacy reconciliation report", () => {
   assert.match(workspace, /Legacy reconciliation/);
   assert.match(workspace, /identity\/reconciliation\/preview/);
-  assert.match(workspace, /manual_review_required/);
+  assert.match(workspace, /tab === "review" \?/);
+  assert.match(workspace, /identity-reconciliation/);
+  assert.match(api, /manual_review_required/);
 });
 
 test("legacy reconciliation is a read-only preview and never merges candidates", () => {
