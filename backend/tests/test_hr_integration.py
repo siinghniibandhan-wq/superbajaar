@@ -5,6 +5,7 @@ from datetime import date
 from decimal import Decimal
 
 import psycopg
+from psycopg.rows import dict_row
 import pytest
 from fastapi import Request
 from fastapi.testclient import TestClient
@@ -735,7 +736,7 @@ def test_hr_termination_deactivates_employee_portal_login(api):
 def test_hr_employee_onboarding_rejects_login_already_linked_to_another_identity(api):
     from app.services.identity import IdentityService
 
-    with psycopg.connect(TEST_DB) as conn:
+    with psycopg.connect(TEST_DB, row_factory=dict_row) as conn:
         existing_party = IdentityService(conn).create_party(
             party_type="individual",
             display_name="Existing staff identity " + api.suffix,
