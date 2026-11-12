@@ -80,11 +80,11 @@ jobs:
             status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
             case "$status" in
               Success) aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID"; exit 0 ;;
-              Failed|Cancelled|TimedOut) aws ssm get-command-invocation --command-id \"$command_id\" --instance-id \"$INSTANCE_ID\"; exit 1 ;;
+              Failed|Cancelled|TimedOut) aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID"; exit 1 ;;
             esac
             sleep 10
           done
-          echo \"::error::Timed out waiting for production source verification command $command_id\"
+          echo "::error::Timed out waiting for production source verification command $command_id"
           exit 1
 
       - name: Run read-only production migration status
@@ -158,12 +158,12 @@ jobs:
           for attempt in $(seq 1 60); do
             status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
             case "$status" in
-              Success) aws ssm get-command-invocation --command-id \"$command_id\" --instance-id \"$INSTANCE_ID\"; exit 0 ;;
-              Failed|Cancelled|TimedOut) aws ssm get-command-invocation --command-id \"$command_id\" --instance-id \"$INSTANCE_ID\"; exit 1 ;;
+              Success) aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID"; exit 0 ;;
+              Failed|Cancelled|TimedOut) aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID"; exit 1 ;;
             esac
             sleep 10
           done
-          echo \"::error::Timed out waiting for production source verification command $command_id\"
+          echo "::error::Timed out waiting for production source verification command $command_id"
           exit 1
 
       - name: Apply migrations with verified-backup gate
