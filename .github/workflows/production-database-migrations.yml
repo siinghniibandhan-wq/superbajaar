@@ -208,7 +208,45 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$INSTANCE_ID"
-          remote_command="sudo -u ubuntu bash -lc 'set -euo pipefail; cd /opt/superbajaar/source; SB_DB=superbajaar SB_PSQL=/usr/local/bin/sb-psql SB_BACKUP_DIR=/var/lib/superbajaar/backups SB_LOG=/var/log/superbajaar/schema.log SB_ON_FAILURE=stop bash backend/scripts/apply_schema.sh /opt/superbajaar/source/backend/schema'"
+          remote_script="$(cat <<'REMOTE_SCRIPT'
+          set -uo pipefail
+          cd /opt/superbajaar/source
+          SB_DB=superbajaar SB_PSQL=/usr/local/bin/sb-psql SB_BACKUP_DIR=/var/lib/superbajaar/backups SB_LOG=/var/log/superbajaar/schema.log SB_ON_FAILURE=stop bash backend/scripts/apply_schema.sh /opt/superbajaar/source/backend/schema
+          migration_rc=$?
+          echo "Migration runner exit code: $migration_rc"
+          if [ "$migration_rc" -ne 0 ] && [ "$migration_rc" -ne 11 ]; then
+            echo "Migration runner blocked/failed; refusing to continue."
+            exit "$migration_rc"
+          fi
+
+          set +e
+          status_output="$(SB_DB=superbajaar SB_PSQL=/usr/local/bin/sb-psql SB_BACKUP_DIR=/var/lib/superbajaar/backups SB_LOG=/var/log/superbajaar/schema.log bash backend/scripts/apply_schema.sh /opt/superbajaar/source/backend/schema --status 2>&1)"
+          status_rc=$?
+          set -e
+          printf '%s\n' "$status_output"
+          if [ "$status_rc" -ne 0 ] && [ "$status_rc" -ne 10 ]; then
+            echo "Post-apply status check failed with exit code $status_rc"
+            exit "$status_rc"
+          fi
+
+          while IFS= read -r required; do
+            required="${required%%#*}"
+            required="$(printf '%s' "$required" | xargs)"
+            [ -z "$required" ] && continue
+            if ! printf '%s\n' "$status_output" | grep -Fq "  $required: APPLIED [required]"; then
+              echo "::error::required migration is not APPLIED: $required"
+              exit 20
+            fi
+          done < backend/schema_required.txt
+
+          if [ "$migration_rc" -eq 11 ]; then
+            echo "Runner reported historical non-required migration issues (exit 11); every required migration is independently verified APPLIED."
+          fi
+          echo "Post-apply verification passed: every required migration is APPLIED."
+          REMOTE_SCRIPT
+          )"
+          encoded_script="$(printf '%s' "$remote_script" | base64 -w0)"
+          remote_command="printf '%s' \"$encoded_script\" | base64 -d | sudo -u ubuntu bash"
           parameters="$(jq -n --arg command "$remote_command" '{commands: [$command]}')"
           command_id="$(aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript --comment "Approved Super Bajaar production schema apply" --parameters "$parameters" --query 'Command.CommandId' --output text)"
           for attempt in $(seq 1 60); do
