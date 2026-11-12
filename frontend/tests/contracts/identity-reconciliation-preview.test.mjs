@@ -30,3 +30,13 @@ test("legacy reconciliation falls back when preferred contact columns are blank"
     );
   }
 });
+
+
+test("admin can resolve an unmatched customer claim to a selected individual SBID", () => {
+  assert.match(api, /def resolve_unmatched_claim_target/);
+  assert.match(api, /target_party_id/);
+  assert.match(api, /target\["party_type"\] != "individual"/);
+  assert.match(workspace, /resolveClaimTarget/);
+  assert.match(workspace, /Resolve claim target/);
+  assert.match(workspace, /identity\/review-queue\/requests\/\$\{id\}\/resolve-target/);
+});
