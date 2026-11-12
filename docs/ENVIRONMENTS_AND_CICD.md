@@ -105,6 +105,7 @@ The workflow file is not itself proof that the environment protection reviewers 
 | Workflow | Trigger | Responsibility | Can change production? |
 |---|---|---|---|
 | `ci.yml` | PR/push as defined in file | General build and test checks | No |
+| `documentation-governance.yml` | PR/push to main or manual | Fails when governed implementation/configuration changes lack a same-change documentation update | No |
 | `browser-quality.yml` | PR/push as defined in file | Browser-level quality checks | No |
 | `migration-check.yml` | PR and push to main | Disposable PostgreSQL validation and migration-runner tests | No |
 | `schema-governance.yml` | PR to main | Prevent migration edits, renames, deletions and duplicate numbering | No |
@@ -114,7 +115,7 @@ The workflow file is not itself proof that the environment protection reviewers 
 | `production-database-migrations.yml` | Schema-path push or manual dispatch | Read-only preflight by default; gated production apply | Yes, only through the separately approved apply path |
 | `automation.yml` | Workflow-defined automation trigger | Repository automation | Depends on its job permissions; inspect before relying on it |
 
-The trigger and job conditions in the YAML are authoritative. This table is an orientation summary, not a replacement for reviewing the workflow file.
+The trigger and job conditions in the YAML are authoritative. The documentation-governance check makes a relevant documentation change part of the same PR/commit as governed implementation and configuration changes. The PR must update `docs/**`, a relevant README, or `CHANGELOG.md`; do not defer it to a later release. This table is an orientation summary, not a replacement for reviewing the workflow file.
 
 ## 5. Release types
 
