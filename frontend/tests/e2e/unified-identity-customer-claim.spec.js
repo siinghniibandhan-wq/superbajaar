@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 
 test("customer can submit an existing SBID claim and see its review status", async ({ page }) => {
   const submitted = [];
+  const cancelled = [];
   let claims = [];
   await page.addInitScript(() => {
     localStorage.setItem("sb-customer.access_token", "customer-identity-e2e-token");
@@ -44,6 +45,18 @@ test("customer can submit an existing SBID claim and see its review status", asy
       } });
     }
 
+    if (url.pathname === "/api/customer-auth/identity-claims/901/cancel" && method === "POST") {
+      cancelled.push(901);
+      claims = [{
+        id: 901,
+        status: "cancelled",
+        created_at: "2026-11-12T03:00:00Z",
+        expires_at: "2026-11-19T03:00:00Z",
+        reviewed_at: "2026-11-12T03:10:00Z",
+      }];
+      return route.fulfill({ status: 200, json: { id: 901, status: "cancelled" } });
+    }
+
     return route.fulfill({ status: 404, json: { detail: "Unexpected identity E2E API request" } });
   });
 
@@ -66,4 +79,9 @@ test("customer can submit an existing SBID claim and see its review status", asy
     target_sbid: "SBID-0123456789ABCDEF0123",
     reason: "This existing identity belongs to my customer profile.",
   }]);
+
+  page.once("dialog", dialog => dialog.accept());
+  await page.getByRole("button", { name: "Cancel request" }).click();
+  await expect(page.getByText("Cancelled", { exact: true })).toBeVisible();
+  expect(cancelled).toEqual([901]);
 });
