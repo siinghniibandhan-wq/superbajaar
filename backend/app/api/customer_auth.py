@@ -306,7 +306,7 @@ def me(request: Request):
 
 
 class IdentityClaimIn(BaseModel):
-    target_sbid: str = Field(min_length=8, max_length=40)
+    target_sbid: str = Field(pattern=r"(?i)^SBID-[A-F0-9]{20}$")
     reason: str = Field(min_length=5, max_length=500)
 
 
