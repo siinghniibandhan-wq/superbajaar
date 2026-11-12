@@ -253,13 +253,13 @@ export default function CustomersWorkspace({ onBack }) {
       </form>
       <div className="sb-customer-toolbar"><input aria-label="Search customers" placeholder="Search name, phone or email" value={search} onChange={e => setSearch(e.target.value)} /><button type="button" onClick={load} disabled={loading}>{loading ? "Loading…" : "Refresh"}</button></div>
       {loading ? <p className="sb-empty">Loading customers…</p> : customers.length ? <div className="sb-customer-list">{customers.map(c => <article className="sb-customer-card" key={c.id}>
-        <div className="sb-customer-avatar">{(c.name || "?").trim().slice(0, 1).toUpperCase()}</div><div className="sb-customer-info"><strong>{c.name}</strong><small>{c.phone || "No phone"}{c.email ? " · " + c.email : ""}</small><small>{[c.pin_code, c.address].filter(Boolean).join(" · ") || "No address saved"}</small><span className={"sb-order-status " + (c.is_active ? "status-delivered" : "status-cancelled")}>{c.is_active ? "Active" : "Inactive"}</span></div>
+        <div className="sb-customer-avatar">{(c.name || "?").trim().slice(0, 1).toUpperCase()}</div><div className="sb-customer-info"><strong>{c.name}</strong><small>{c.phone || "No phone"}{c.email ? " · " + c.email : ""}</small><small>SBID: {c.sbid || "Not linked"}</small><small>{[c.pin_code, c.address].filter(Boolean).join(" · ") || "No address saved"}</small><span className={"sb-order-status " + (c.is_active ? "status-delivered" : "status-cancelled")}>{c.is_active ? "Active" : "Inactive"}</span></div>
         <div className="sb-customer-row-actions"><button type="button" onClick={() => viewCustomer360(c)}>360 view</button><button type="button" onClick={() => startEdit(c)}>Edit</button><button type="button" disabled={saving} onClick={() => toggleActive(c)}>{c.is_active ? "Deactivate" : "Activate"}</button></div>
       </article>)}</div> : <p className="sb-empty">No customers found.</p>}
       {customer360Loading && <p className="sb-empty" role="status">Loading customer 360…</p>}
       {customer360 && <section className="sb-customer-360" aria-label="Customer 360">
         <div className="sb-customer-360-heading">
-          <div><p className="sb-eyebrow">CUSTOMER 360</p><h2>{customer360.customer.name}</h2><small>{customer360.customer.email || "No email"} · {customer360.customer.phone || "No phone"}</small></div>
+          <div><p className="sb-eyebrow">CUSTOMER 360</p><h2>{customer360.customer.name}</h2><small>{customer360.customer.email || "No email"} · {customer360.customer.phone || "No phone"}</small><small>SBID: {customer360.customer.sbid || "Not linked"}</small></div>
           <button type="button" onClick={() => setCustomer360(null)}>Close</button>
         </div>
         <div className="sb-customer-360-stats">

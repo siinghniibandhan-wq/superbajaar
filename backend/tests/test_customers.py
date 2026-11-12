@@ -53,3 +53,36 @@ def test_customer_support_ticket_uses_database_handler_not_contact_lookup():
     response = client.get("/api/customers/support-portal/tickets/SUP-ABC123")
     assert response.status_code == 503
     assert response.json()["detail"] == "Customer database is not configured"
+
+
+def test_crm_creation_returns_canonical_sbid(monkeypatch):
+    from app.api import customers
+
+    class Result:
+        def fetchone(self):
+            return {"id": 12, "name": "Test Customer", "email": None, "phone": None}
+
+    class Connection:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def transaction(self):
+            from contextlib import nullcontext
+            return nullcontext()
+        def execute(self, sql, params=()):
+            assert "INSERT INTO customers" in sql
+            return Result()
+
+    class Identity:
+        def __init__(self, conn):
+            pass
+        def create_party(self, **kwargs):
+            return {"id": 77, "sbid": "SBID-0123456789ABCDEF0123"}
+        def link_profile(self, **kwargs):
+            return {"id": 3}
+
+    monkeypatch.setattr(customers, "_connect", Connection)
+    monkeypatch.setattr(customers, "IdentityService", Identity)
+    row = customers.create_customer(customers.CustomerIn(name="Test Customer"))
+    assert row["sbid"] == "SBID-0123456789ABCDEF0123"

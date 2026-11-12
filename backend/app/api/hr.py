@@ -717,35 +717,98 @@ def create_employee(payload: EmployeeInput, request: Request):
 
 @router.put("/employees/{employee_id}")
 def update_employee(employee_id: int, payload: EmployeeInput, request: Request):
-    _manager(request)
+    actor = _manager(request)
+    from app.services.identity import IdentityService
     try:
         with _hr_connection() as conn:
             _validate_reporting_manager(conn, employee_id, payload.reports_to_employee_id)
-            row = conn.execute(
-                "UPDATE hr_employees SET user_id=%s,employee_code=%s,first_name=%s,last_name=%s,email=%s,phone=%s,"
-                "department_id=%s,designation=%s,reports_to_employee_id=%s,employment_type=%s,status=%s,"
-                "joining_date=%s,exit_date=%s,updated_at=now() "
-                "WHERE id=%s RETURNING id,user_id,employee_code,first_name,last_name,email,status,updated_at",
-                (payload.user_id,payload.employee_code.strip(),payload.first_name.strip(),payload.last_name.strip(),
-                 payload.email,payload.phone.strip(),payload.department_id,payload.designation.strip(),
-                 payload.reports_to_employee_id,payload.employment_type,payload.status,payload.joining_date,
-                 payload.exit_date,employee_id),
-            ).fetchone()
-            if row is None:
-                raise HTTPException(404, "Employee not found")
-            if row["status"] == "terminated" and row["user_id"] is not None:
-                # Termination closes employee self-service access without disabling
-                # a shared administrator identity.
-                conn.execute(
-                    "UPDATE app_users SET is_active=FALSE WHERE id=%s AND role='staff'",
-                    (row["user_id"],),
-                )
-                conn.execute(
-                    "UPDATE portal_invitations SET revoked_at=now() WHERE employee_id=%s "
-                    "AND accepted_at IS NULL AND revoked_at IS NULL",
+            with conn.transaction():
+                previous = conn.execute(
+                    "SELECT id,user_id FROM hr_employees WHERE id=%s FOR UPDATE",
                     (employee_id,),
-                )
-            return row
+                ).fetchone()
+                if previous is None:
+                    raise HTTPException(404, "Employee not found")
+                row = conn.execute(
+                    "UPDATE hr_employees SET user_id=%s,employee_code=%s,first_name=%s,last_name=%s,email=%s,phone=%s,"
+                    "department_id=%s,designation=%s,reports_to_employee_id=%s,employment_type=%s,status=%s,"
+                    "joining_date=%s,exit_date=%s,updated_at=now() "
+                    "WHERE id=%s RETURNING id,user_id,employee_code,first_name,last_name,email,status,updated_at",
+                    (payload.user_id,payload.employee_code.strip(),payload.first_name.strip(),payload.last_name.strip(),
+                     payload.email,payload.phone.strip(),payload.department_id,payload.designation.strip(),
+                     payload.reports_to_employee_id,payload.employment_type,payload.status,payload.joining_date,
+                     payload.exit_date,employee_id),
+                ).fetchone()
+                if row is None:
+                    raise HTTPException(404, "Employee not found")
+                party = conn.execute(
+                    "SELECT party.id,party.sbid FROM identity_profiles ip "
+                    "JOIN identity_parties party ON party.id=ip.party_id "
+                    "WHERE ip.employee_id=%s AND ip.profile_type='employee' AND ip.status='active' "
+                    "FOR UPDATE OF party",
+                    (employee_id,),
+                ).fetchone()
+                if party:
+                    party_id = party["id"]
+                    conn.execute(
+                        "UPDATE identity_parties SET display_name=%s,updated_at=now() WHERE id=%s",
+                        ((row["first_name"] + " " + row["last_name"]).strip(), party_id),
+                    )
+                    row = {**row, "sbid": party["sbid"]}
+                    if row["email"]:
+                        try:
+                            from app.services.identity import IdentityService
+                            IdentityService(conn).add_contact(party_id=party_id,contact_type="email",value=row["email"],source="hr_employee_update")
+                        except ValueError:
+                            pass
+                else:
+                    from app.services.identity import IdentityService
+                    identity = IdentityService(conn)
+                    created = identity.create_party(
+                        party_type="individual",
+                        display_name=(row["first_name"] + " " + row["last_name"]).strip(),
+                        actor_user_id=actor,
+                        reason="Legacy employee assigned an identity during an explicit HR edit",
+                    )
+                    party_id = created["id"]
+                    identity.link_profile(
+                        party_id=party_id, profile_type="employee", source_id=employee_id,
+                        link_method="admin_verified", actor_user_id=actor,
+                        reason="Legacy employee assigned an identity during an explicit HR edit",
+                    )
+                    sbid = created["sbid"]
+                    for contact_type, value in (("email", row["email"]),):
+                        if value:
+                            try:
+                                identity.add_contact(party_id=party_id,contact_type=contact_type,value=value,source="hr_employee_update")
+                            except ValueError:
+                                pass
+                    row = {**row, "sbid": sbid}
+                if previous["user_id"] and previous["user_id"] != row["user_id"]:
+                    old_link = conn.execute(
+                        "UPDATE identity_auth_accounts SET status='revoked' WHERE app_user_id=%s AND party_id=%s AND status='active' RETURNING id",
+                        (previous["user_id"], party_id),
+                    ).fetchone()
+                    if old_link:
+                        IdentityService(conn)._event(
+                            party_id=party_id,event_type="auth_account_unlinked",
+                            event_data={"auth_account_id":old_link["id"],"account_type":"staff","source_id":previous["user_id"]},
+                            actor_user_id=actor,reason="Employee login changed by HR administrator",
+                        )
+                if row["user_id"]:
+                    from app.services.identity import IdentityService
+                    _link_employee_login_identity(conn, IdentityService(conn), party_id, row["user_id"], actor)
+                if row["status"] == "terminated" and row["user_id"] is not None:
+                    conn.execute(
+                        "UPDATE app_users SET is_active=FALSE WHERE id=%s AND role='staff'",
+                        (row["user_id"],),
+                    )
+                    conn.execute(
+                        "UPDATE portal_invitations SET revoked_at=now() WHERE employee_id=%s "
+                        "AND accepted_at IS NULL AND revoked_at IS NULL",
+                        (employee_id,),
+                    )
+                return row
     except HTTPException:
         raise
     except psycopg.Error as exc:

@@ -130,6 +130,14 @@ class IdentityService:
         shown = display_value.strip() if display_value else value.strip()
         if not shown:
             raise ValueError("display_value cannot be empty")
+        existing = self.connection.execute(
+            "SELECT id,party_id,contact_type,normalized_value,display_value,verification_status,is_primary,created_at "
+            "FROM identity_contacts WHERE party_id=%s AND contact_type=%s AND normalized_value=%s "
+            "AND valid_to IS NULL AND verification_status <> 'revoked' LIMIT 1",
+            (party_id, contact_type, normalized),
+        ).fetchone()
+        if existing:
+            return dict(existing)
         row = self.connection.execute(
             """
             INSERT INTO identity_contacts

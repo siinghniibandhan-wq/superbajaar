@@ -55,3 +55,13 @@ def test_public_customer_response_includes_generated_sbid():
     })
 
     assert customer["sbid"] == "SBID-0123456789ABCDEF0123"
+
+
+def test_customer_profile_update_requires_customer_session():
+    response = client.patch("/api/customer-auth/me", json={"full_name": "Updated Buyer"})
+    assert response.status_code == 401
+
+
+def test_customer_profile_update_rejects_blank_name():
+    response = client.patch("/api/customer-auth/me", json={"full_name": "  "})
+    assert response.status_code == 422

@@ -142,3 +142,36 @@ def test_admin_can_update_partner_enquiry_status(monkeypatch):
     )
     assert response["id"] == 12
     assert response["status"] == "reviewing"
+
+
+def test_customer_loyalty_response_reads_sbid_only_from_explicit_identity_link(monkeypatch):
+    from app.api import loyalty
+    from starlette.requests import Request
+
+    class Result:
+        def fetchone(self):
+            return {"id": 7, "customer_email": "person@example.com",
+                    "card_number": "SB-0007", "created_at": None,
+                    "sbid": "SBID-0123456789ABCDEF0123"}
+        def fetchall(self):
+            return []
+
+    class Connection:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def execute(self, sql, params=()):
+            if "FROM loyalty_accounts la LEFT JOIN identity_loyalty_accounts" in sql:
+                assert "party.sbid" in sql
+                return Result()
+            if "FROM loyalty_transactions WHERE account_id=%s" in sql:
+                return Result()
+            raise AssertionError(f"Unexpected SQL: {sql}")
+
+    monkeypatch.setattr(loyalty, "_connection", Connection)
+    monkeypatch.setattr(loyalty, "available_balance", lambda conn, account_id: 5)
+    request = Request({"type": "http", "method": "GET", "path": "/api/loyalty/customer/me",
+                       "headers": [], "query_string": b"", "state": {"customer_email": "person@example.com"}})
+    result = loyalty.get_my_loyalty_account(request)
+    assert result["account"]["sbid"] == "SBID-0123456789ABCDEF0123"

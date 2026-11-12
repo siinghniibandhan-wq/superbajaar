@@ -109,6 +109,90 @@ def _public_customer(row):
     }
 
 
+class CustomerProfileUpdate(BaseModel):
+    full_name: str = Field(min_length=2, max_length=200)
+
+    @field_validator("full_name")
+    @classmethod
+    def clean_full_name(cls, value):
+        value = " ".join(value.split())
+        if len(value) < 2:
+            raise ValueError("Full name must contain at least two characters")
+        return value
+
+
+@router.patch("/me")
+def update_my_profile(payload: CustomerProfileUpdate, request: Request):
+    customer_id = getattr(request.state, "customer_id", None)
+    if not customer_id:
+        raise HTTPException(status_code=401, detail="Customer sign-in required")
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                customer = conn.execute(
+                    "UPDATE customer_accounts SET full_name=%s,updated_at=now() "
+                    "WHERE id=%s AND is_active=TRUE RETURNING id,email,full_name,phone,referral_code",
+                    (payload.full_name, customer_id),
+                ).fetchone()
+                if customer is None:
+                    raise HTTPException(status_code=404, detail="Customer account not found")
+                from app.services.identity import IdentityService
+                identity = IdentityService(conn)
+                profile = conn.execute(
+                    "SELECT party_id FROM identity_profiles WHERE customer_account_id=%s "
+                    "AND profile_type='customer_account' AND status='active' FOR UPDATE",
+                    (customer_id,),
+                ).fetchone()
+                if profile:
+                    party_id = profile["party_id"]
+                    party = conn.execute(
+                        "SELECT sbid FROM identity_parties WHERE id=%s FOR UPDATE", (party_id,)
+                    ).fetchone()
+                    if party is None:
+                        raise HTTPException(status_code=409, detail="Customer identity link is invalid")
+                    sbid = party["sbid"]
+                    conn.execute(
+                        "UPDATE identity_parties SET display_name=%s,updated_at=now() WHERE id=%s",
+                        (payload.full_name, party_id),
+                    )
+                else:
+                    party = identity.create_party(
+                        party_type="individual", display_name=payload.full_name,
+                        reason="Authenticated customer profile update assigned missing legacy identity",
+                    )
+                    party_id, sbid = party["id"], party["sbid"]
+                    identity.link_profile(
+                        party_id=party_id, profile_type="customer_account",
+                        source_id=customer_id, link_method="authenticated_claim",
+                        reason="Authenticated customer profile update assigned missing legacy identity",
+                    )
+                linked = conn.execute(
+                    "SELECT party_id,status FROM identity_auth_accounts "
+                    "WHERE account_type='customer' AND customer_account_id=%s FOR UPDATE",
+                    (customer_id,),
+                ).fetchone()
+                if linked and (linked["party_id"] != party_id or linked["status"] != "active"):
+                    raise HTTPException(status_code=409, detail="Customer login identity conflict requires administrator review")
+                if not linked:
+                    identity.link_auth_account(
+                        party_id=party_id, account_type="customer", source_id=customer_id,
+                        link_method="authenticated_claim",
+                    )
+                for contact_type, value in (("email", customer["email"]), ("phone", customer["phone"])):
+                    if value:
+                        try:
+                            identity.add_contact(party_id=party_id, contact_type=contact_type,
+                                                 value=value, source="authenticated_customer_profile")
+                        except ValueError:
+                            pass
+                customer = {**customer, "sbid": sbid}
+        return {"customer": _public_customer(customer)}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(status_code=503, detail="Could not update customer profile") from exc
+
+
 @router.post("/register", status_code=201)
 def register(payload: CustomerRegister):
     if len(settings.jwt_secret_key) < 32:

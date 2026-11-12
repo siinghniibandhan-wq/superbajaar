@@ -255,3 +255,45 @@ def test_hr_termination_accepts_exit_date_not_before_joining():
         joining_date="2026-01-01", exit_date="2026-11-30", status="terminated",
     )
     assert employee.exit_date.isoformat() == "2026-11-30"
+
+
+def test_employee_update_returns_and_preserves_canonical_sbid(monkeypatch):
+    from app.api import hr
+
+    class Result:
+        def __init__(self, row):
+            self.row = row
+        def fetchone(self):
+            return self.row
+
+    class Connection:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def transaction(self):
+            from contextlib import nullcontext
+            return nullcontext()
+        def execute(self, sql, params=()):
+            if "SELECT id,user_id FROM hr_employees" in sql:
+                return Result({"id": 8, "user_id": None})
+            if "UPDATE hr_employees SET" in sql:
+                return Result({"id": 8, "user_id": None, "employee_code": "EMP-8",
+                               "first_name": "Asha", "last_name": "Rao",
+                               "email": None, "status": "active", "updated_at": None})
+            if "FROM identity_profiles ip" in sql:
+                return Result({"id": 71, "sbid": "SBID-0123456789ABCDEF0123"})
+            if "SELECT id,party_id,contact_type,normalized_value" in sql:
+                return Result(None)
+            if "UPDATE identity_parties SET display_name" in sql:
+                return Result(None)
+            raise AssertionError(f"Unexpected SQL: {sql}")
+
+    monkeypatch.setattr(hr, "_hr_connection", Connection)
+    monkeypatch.setattr(hr, "_manager", lambda request: 3)
+    payload = hr.EmployeeInput(
+        employee_code="EMP-8", first_name="Asha", last_name="Rao", email="asha@example.com",
+        designation="Associate", joining_date="2026-11-01",
+    )
+    result = hr.update_employee(8, payload, None)
+    assert result["sbid"] == "SBID-0123456789ABCDEF0123"

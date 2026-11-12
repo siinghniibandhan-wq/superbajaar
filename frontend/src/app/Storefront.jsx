@@ -409,11 +409,25 @@ export default function Storefront() {
     finally { setReferralBusy(false); }
   };
 
-  const saveCustomerProfile = event => {
+  const saveCustomerProfile = async event => {
     event.preventDefault();
-    try { window.localStorage.setItem("sb-customer-profile", JSON.stringify(customer)); } catch {}
-    setNotice("Your profile details have been saved on this device.");
-    setError("");
+    if (!customerToken || !customerAuth) {
+      setError("Sign in to update your customer profile.");
+      return;
+    }
+    try {
+      const result = await customerRequest("/customer-auth/me", {
+        method: "PATCH",
+        body: JSON.stringify({ full_name: customer.name.trim() }),
+      });
+      if (!result?.customer) throw new Error("The profile update response was incomplete.");
+      setCustomerAuth(result.customer);
+      setCustomer(old => ({ ...old, name: result.customer.full_name || old.name }));
+      setNotice("Your name has been saved to your Super Bajaar account. Email and mobile changes require separate verification.");
+      setError("");
+    } catch (reason) {
+      setError(reason.message || "Could not save your customer profile.");
+    }
   };
   const openWishlist = () => {
     window.history.pushState({}, "", "/wishlist");
@@ -837,7 +851,7 @@ export default function Storefront() {
         <div className="storefront-account-panel">
           {accountSection==="overview" && <div className="storefront-account-section">
             <div className="storefront-account-section-heading"><div><h2>Personal details</h2><p>Your saved contact information.</p></div><span className="storefront-account-avatar">{customer.name.trim()?customer.name.trim().slice(0,1).toUpperCase():"S"}</span></div>
-            {(customer.name||customer.email||customer.phone) ? <div className="storefront-account-summary">{customer.name&&<div><small>Full name</small><strong>{customer.name}</strong></div>}{customer.email&&<div><small>Email address</small><strong>{customer.email}</strong></div>}{customer.phone&&<div><small>Mobile number</small><strong>{customer.phone}</strong></div>}</div> : <p className="storefront-account-empty">Your profile is not filled in yet. Add your details below so they are ready at checkout.</p>}
+            {(customer.name||customer.email||customer.phone) ? <div className="storefront-account-summary">{customerAuth?.sbid&&<div><small>Super Bajaar ID</small><strong>{customerAuth.sbid}</strong></div>}{customer.name&&<div><small>Full name</small><strong>{customer.name}</strong></div>}{customer.email&&<div><small>Email address</small><strong>{customer.email}</strong></div>}{customer.phone&&<div><small>Mobile number</small><strong>{customer.phone}</strong></div>}</div> : <p className="storefront-account-empty">Your profile is not filled in yet. Add your details below so they are ready at checkout.</p>}
             <form className="storefront-account-form" onSubmit={saveCustomerProfile}><label>Full name<input autoComplete="name" required maxLength="200" value={customer.name} onChange={event=>setCustomer(old=>({...old,name:event.target.value}))}/></label><label>Mobile number<input autoComplete="tel" maxLength="20" value={customer.phone} onChange={event=>setCustomer(old=>({...old,phone:event.target.value}))}/></label><label>Email address<input type="email" autoComplete="email" maxLength="254" value={customer.email} onChange={event=>setCustomer(old=>({...old,email:event.target.value}))}/></label><button className="storefront-primary" type="submit">Save profile</button><p className="storefront-account-note">Your sign-in identity is stored securely by Super Bajaar. Address syncing is a separate feature.</p><button type="button" className="storefront-primary" onClick={signOutCustomer}>Sign out</button></form>
           </div>}
           {accountSection==="identity-claims" && <IdentityClaimsPanel customerToken={customerToken} />}

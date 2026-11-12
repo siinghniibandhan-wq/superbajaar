@@ -45,8 +45,10 @@ def _vendor_user(conn, request: Request):
     if not user_id:
         raise HTTPException(401, "Sign in to the Vendor Portal")
     row = conn.execute(
-        "SELECT vpu.supplier_id,s.name AS supplier_name,s.email,s.phone,s.gstin,s.address "
+        "SELECT vpu.supplier_id,s.name AS supplier_name,s.email,s.phone,s.gstin,s.address,party.sbid "
         "FROM vendor_portal_users vpu JOIN suppliers s ON s.id=vpu.supplier_id "
+        "LEFT JOIN identity_profiles ip ON ip.supplier_id=s.id AND ip.profile_type='vendor_organisation' AND ip.status='active' "
+        "LEFT JOIN identity_parties party ON party.id=ip.party_id "
         "JOIN app_users u ON u.id=vpu.user_id "
         "WHERE vpu.user_id=%s AND vpu.is_active=TRUE AND u.is_active=TRUE AND s.is_active=TRUE "
         "ORDER BY vpu.id LIMIT 1",
