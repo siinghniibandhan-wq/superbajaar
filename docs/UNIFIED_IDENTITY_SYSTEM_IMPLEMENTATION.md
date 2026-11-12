@@ -173,7 +173,7 @@ The following must not be represented as complete merely because the identity fo
 - [Phase 2 database architecture (design specification)](UNIFIED_IDENTITY_SYSTEM_PHASE_2_DATABASE_ARCHITECTURE.md)
 
 
-## 6.1 Reconciliation preview fallback correction (PR #56)
+## 9. Reconciliation preview fallback correction (PR #56)
 
 The reconciliation preview reads optional legacy contact fields through JSON access so it can tolerate schema variations across historical customer, CRM, employee and supplier tables. Contact fallback must treat an empty or whitespace-only preferred field as absent; SQL `COALESCE` alone does not do this because an empty string is non-NULL.
 
