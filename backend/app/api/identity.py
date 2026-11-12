@@ -166,29 +166,29 @@ def legacy_reconciliation_preview(
         WITH source_records AS (
             SELECT 'customer_account'::text AS profile_type, ca.id AS source_id,
                    NULLIF(lower(trim(to_jsonb(ca)->>'email')), '') AS email_value,
-                   NULLIF(regexp_replace(coalesce(to_jsonb(ca)->>'phone',
-                       to_jsonb(ca)->>'mobile', to_jsonb(ca)->>'mobile_number', ''), '[^0-9]', '', 'g'), '') AS phone_digits
+                   NULLIF(regexp_replace(coalesce(nullif(trim(to_jsonb(ca)->>'phone'), ''),
+                       nullif(trim(to_jsonb(ca)->>'mobile'), ''), nullif(trim(to_jsonb(ca)->>'mobile_number'), '')), '[^0-9]', '', 'g'), '') AS phone_digits
             FROM customer_accounts ca
             UNION ALL
             SELECT 'crm_customer', c.id,
-                   NULLIF(lower(trim(coalesce(to_jsonb(c)->>'email',
-                       to_jsonb(c)->>'customer_email'))), ''),
-                   NULLIF(regexp_replace(coalesce(to_jsonb(c)->>'phone',
-                       to_jsonb(c)->>'customer_phone', to_jsonb(c)->>'mobile',
-                       to_jsonb(c)->>'mobile_number', ''), '[^0-9]', '', 'g'), '')
+                   NULLIF(lower(trim(coalesce(nullif(trim(to_jsonb(c)->>'email'), ''),
+                       nullif(trim(to_jsonb(c)->>'customer_email'), '')))), ''),
+                   NULLIF(regexp_replace(coalesce(nullif(trim(to_jsonb(c)->>'phone'), ''),
+                       nullif(trim(to_jsonb(c)->>'customer_phone'), ''), nullif(trim(to_jsonb(c)->>'mobile'), ''),
+                       nullif(trim(to_jsonb(c)->>'mobile_number'), '')), '[^0-9]', '', 'g'), '')
             FROM customers c
             UNION ALL
             SELECT 'employee', e.id,
-                   NULLIF(lower(trim(coalesce(to_jsonb(e)->>'email',
-                       to_jsonb(e)->>'work_email'))), ''),
-                   NULLIF(regexp_replace(coalesce(to_jsonb(e)->>'phone',
-                       to_jsonb(e)->>'mobile', to_jsonb(e)->>'mobile_number', ''), '[^0-9]', '', 'g'), '')
+                   NULLIF(lower(trim(coalesce(nullif(trim(to_jsonb(e)->>'email'), ''),
+                       nullif(trim(to_jsonb(e)->>'work_email'), '')))), ''),
+                   NULLIF(regexp_replace(coalesce(nullif(trim(to_jsonb(e)->>'phone'), ''),
+                       nullif(trim(to_jsonb(e)->>'mobile'), ''), nullif(trim(to_jsonb(e)->>'mobile_number'), '')), '[^0-9]', '', 'g'), '')
             FROM hr_employees e
             UNION ALL
             SELECT 'vendor_organisation', s.id,
                    NULLIF(lower(trim(to_jsonb(s)->>'email')), ''),
-                   NULLIF(regexp_replace(coalesce(to_jsonb(s)->>'phone',
-                       to_jsonb(s)->>'mobile', to_jsonb(s)->>'mobile_number', ''), '[^0-9]', '', 'g'), '')
+                   NULLIF(regexp_replace(coalesce(nullif(trim(to_jsonb(s)->>'phone'), ''),
+                       nullif(trim(to_jsonb(s)->>'mobile'), ''), nullif(trim(to_jsonb(s)->>'mobile_number'), '')), '[^0-9]', '', 'g'), '')
             FROM suppliers s
         ),
         contact_candidates AS (
