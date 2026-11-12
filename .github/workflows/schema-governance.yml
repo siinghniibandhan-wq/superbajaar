@@ -30,6 +30,7 @@ jobs:
           git cat-file -e "${BASE_SHA}^{commit}"
 
           python3 - <<'PY'
+          import hashlib
           import os
           import re
           import subprocess
@@ -85,10 +86,18 @@ jobs:
                       and path == "backend/schema/000_baseline_schema.sql"
                   ):
                       restored_blob = git("rev-parse", f"HEAD:{path}").strip()
-                      if restored_blob == "74cfc166c80b815186035abe61322efd5905575f":
+                      restored_content = git("show", f"HEAD:{path}")
+                      restored_checksum = hashlib.sha256(
+                          restored_content.encode("utf-8")
+                      ).hexdigest()
+                      if (
+                          restored_blob == "74cfc166c80b815186035abe61322efd5905575f"
+                          and restored_checksum == "519e4467a6af9c1f87dd06cbdb80ef4545b1ae04edfe8937966799792168d938"
+                      ):
                           print(
-                              "Accepted exact immutable-baseline restoration "
-                              f"for {path}."
+                              "Accepted exact production-matched immutable "
+                              f"baseline restoration for {path} "
+                              f"(SHA-256 {restored_checksum})."
                           )
                           continue
                   errors.append(
