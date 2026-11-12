@@ -619,6 +619,22 @@ def list_employees(request: Request, limit: int = Query(100, ge=1, le=500), offs
         raise _db_error(exc) from exc
 
 
+def _link_employee_login_identity(conn, identity, party_id: int, user_id: int, actor_user_id: int):
+    """Link an employee login only when it is not already owned by another SBID."""
+    linked = conn.execute(
+        "SELECT party_id,status FROM identity_auth_accounts WHERE app_user_id=%s",
+        (user_id,),
+    ).fetchone()
+    if linked:
+        if linked["party_id"] != party_id or linked["status"] != "active":
+            raise HTTPException(409, "This staff login is already linked to another or inactive identity; resolve the identity conflict before onboarding")
+        return
+    identity.link_auth_account(
+        party_id=party_id, account_type="staff", source_id=user_id,
+        link_method="admin_verified", actor_user_id=actor_user_id,
+    )
+
+
 @router.post("/employees", status_code=201)
 def create_employee(payload: EmployeeInput, request: Request):
     actor = _manager(request)
@@ -685,15 +701,7 @@ def create_employee(payload: EmployeeInput, request: Request):
                         # block employee onboarding over optional contact normalisation.
                         pass
             if row["user_id"]:
-                linked = conn.execute(
-                    "SELECT id FROM identity_auth_accounts WHERE app_user_id=%s AND status='active'",
-                    (row["user_id"],),
-                ).fetchone()
-                if not linked:
-                    identity.link_auth_account(
-                        party_id=party_id, account_type="staff", source_id=row["user_id"],
-                        link_method="admin_verified", actor_user_id=actor,
-                    )
+                _link_employee_login_identity(conn, identity, party_id, row["user_id"], actor)
             return row
     except psycopg.Error as exc:
         raise _db_error(exc) from exc
