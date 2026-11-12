@@ -310,3 +310,41 @@ class IdentityService:
             reason=reason.strip(),
         )
         return result
+
+
+    def revoke_relationship(
+        self,
+        *,
+        relationship_id: int,
+        actor_user_id: int,
+        reason: str,
+    ) -> dict[str, Any] | None:
+        """Revoke an active organisation relationship and preserve its audit history."""
+        if not reason or len(reason.strip()) < 5:
+            raise ValueError("A documented relationship revocation reason is required")
+        row = self.connection.execute(
+            """
+            UPDATE identity_relationships
+            SET status='revoked',
+                valid_to=GREATEST(now(), valid_from),
+                updated_at=now()
+            WHERE id=%s AND status='active' AND valid_to IS NULL
+            RETURNING id,from_party_id,to_party_id,relationship_type,status,valid_to
+            """,
+            (relationship_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        result = dict(row)
+        self._event(
+            party_id=result["from_party_id"],
+            event_type="relationship_revoked",
+            event_data={
+                "relationship_id": result["id"],
+                "to_party_id": result["to_party_id"],
+                "relationship_type": result["relationship_type"],
+            },
+            actor_user_id=actor_user_id,
+            reason=reason.strip(),
+        )
+        return result
