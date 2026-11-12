@@ -53,3 +53,12 @@ def test_identity_review_submission_requires_approve_permission():
     assert _action_for_request("GET", "/api/identity/review-queue/requests") == "read"
     assert _action_for_request("POST", "/api/identity/link-requests") == "create"
     assert _action_for_request("POST", "/api/identity/parties/42/merge") == "create"
+
+def test_customer_identity_claim_routes_are_allowed_for_customer_sessions_only():
+    from app.core.auth_middleware import is_customer_identity_claim_route
+
+    assert is_customer_identity_claim_route("GET", "/api/customer-auth/identity-claims")
+    assert is_customer_identity_claim_route("POST", "/api/customer-auth/identity-claims")
+    assert not is_customer_identity_claim_route("DELETE", "/api/customer-auth/identity-claims")
+    assert not is_customer_identity_claim_route("GET", "/api/identity")
+
