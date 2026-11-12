@@ -100,3 +100,28 @@ def test_customer_claim_submission_is_rate_limited_per_identity(monkeypatch):
     with pytest.raises(HTTPException) as limited:
         request_identity_claim(payload, customer_request)
     assert limited.value.status_code == 429
+
+
+def test_reviewed_customer_claim_cannot_be_cancelled(monkeypatch):
+    from app.api import customer_auth
+    from app.api.customer_auth import IdentityClaimIn, cancel_identity_claim, list_identity_claims, request_identity_claim
+
+    with psycopg.connect(TEST_DB, row_factory=dict_row) as conn:
+        customer = _customer(conn, "claim-reviewed")
+        target = _party(conn)
+    monkeypatch.setattr(customer_auth.settings, "database_url", TEST_DB)
+    customer_request = SimpleNamespace(state=SimpleNamespace(customer_id=customer["id"]))
+    request_identity_claim(
+        IdentityClaimIn(target_sbid=target["sbid"], reason="This historical identity belongs to me"),
+        customer_request,
+    )
+    claim = list_identity_claims(customer_request)["items"][0]
+    with psycopg.connect(TEST_DB, row_factory=dict_row) as conn:
+        conn.execute(
+            "UPDATE identity_link_requests SET status='approved',reviewed_at=now() WHERE id=%s",
+            (claim["id"],),
+        )
+
+    with pytest.raises(HTTPException) as rejected:
+        cancel_identity_claim(claim["id"], customer_request)
+    assert rejected.value.status_code == 409
