@@ -1262,3 +1262,164 @@
 .storefront-identity-claim-history .storefront-account-summary > div { padding:14px 0; border-bottom:1px solid #eee8f4; }
 .storefront-identity-claim-history .storefront-account-summary > div:last-child { border-bottom:0; }
 .storefront-identity-claim-history .storefront-account-summary strong { color:#37234f; }
+
+
+/* Customer account: spacious desktop canvas with purpose-built rewards panels. */
+.storefront-account-page {
+  width: min(1240px, calc(100% - 48px));
+  max-width: 1240px;
+  box-sizing: border-box;
+  margin: 28px auto 56px;
+  padding: clamp(26px, 3.2vw, 42px);
+}
+.storefront-account-welcome { margin-bottom: 26px; }
+.storefront-account-layout {
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 26px;
+}
+.storefront-account-nav { position: sticky; top: 18px; }
+.storefront-account-panel { padding: clamp(24px, 3vw, 38px); }
+.storefront-account-section--loyalty,
+.storefront-account-section--referrals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  column-gap: 22px;
+  row-gap: 14px;
+}
+.storefront-account-section--loyalty > .storefront-kicker,
+.storefront-account-section--loyalty > h2,
+.storefront-account-section--loyalty > p,
+.storefront-account-section--loyalty > button,
+.storefront-account-section--loyalty > .storefront-account-note,
+.storefront-account-section--referrals > .storefront-kicker,
+.storefront-account-section--referrals > h2,
+.storefront-account-section--referrals > p,
+.storefront-account-section--referrals > .storefront-account-note,
+.storefront-account-section--referrals > .storefront-account-empty {
+  grid-column: 1 / -1;
+}
+.storefront-account-section--loyalty > p,
+.storefront-account-section--referrals > p { max-width: 850px; margin: 0 0 4px; }
+.storefront-account-section--loyalty > button { justify-self: start; }
+.storefront-account-section--loyalty .storefront-loyalty-card,
+.storefront-account-section--referrals .storefront-loyalty-card {
+  width: 100%;
+  max-width: none;
+  min-height: 190px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  margin: 0;
+}
+.storefront-account-section--loyalty .storefront-loyalty-card { grid-column: 1; }
+.storefront-account-section--loyalty .storefront-loyalty-summary {
+  grid-column: 2;
+  grid-row: span 1;
+  grid-template-columns: minmax(0, 1fr);
+  max-width: none;
+  align-self: stretch;
+}
+.storefront-account-section--loyalty .storefront-loyalty-summary article { min-height: 0; }
+.storefront-account-section--loyalty .storefront-loyalty-activity,
+.storefront-account-section--loyalty .storefront-loyalty-note {
+  grid-column: 1 / -1;
+  max-width: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+.storefront-account-section--loyalty .storefront-loyalty-activity {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  margin: 0;
+}
+.storefront-account-section--loyalty .storefront-loyalty-activity > h3 { margin: 0; }
+.storefront-account-section--loyalty .storefront-loyalty-activity > div {
+  display: grid;
+  grid-template-columns: minmax(150px, .8fr) minmax(180px, 1fr) minmax(180px, 1.2fr);
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #eee8f4;
+  border-radius: 12px;
+  background: #fff;
+}
+.storefront-account-section--loyalty .storefront-loyalty-activity > p { margin: 0; }
+.storefront-account-section--loyalty .storefront-loyalty-note { margin-top: 0; }
+.storefront-account-section--referrals .storefront-loyalty-card { grid-column: 1; }
+.storefront-account-section--referrals .storefront-referral-link {
+  display: grid;
+  grid-column: 2;
+  align-content: end;
+  gap: 8px;
+  min-width: 0;
+  color: #625873;
+  font-size: 12px;
+  font-weight: 700;
+}
+.storefront-account-section--referrals .storefront-referral-link input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 13px 14px;
+  border: 1px solid #e7dced;
+  border-radius: 12px;
+  background: #fff;
+  color: var(--sb-ink);
+  font: inherit;
+  font-size: 12px;
+}
+.storefront-account-section--referrals > button { grid-column: 2; justify-self: start; }
+.storefront-account-section--referrals .storefront-referral-summary {
+  grid-column: 2;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-self: start;
+  margin: 0;
+}
+.storefront-account-section--referrals > .storefront-account-note { margin: 0; }
+.storefront-account-section--referrals > .storefront-account-summary:not(.storefront-referral-summary) {
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr);
+}
+.storefront-account-section--referrals > .storefront-account-summary:not(.storefront-referral-summary) > h3 {
+  margin: 0 0 4px;
+}
+.storefront-account-section--referrals > .storefront-account-empty {
+  margin: 0;
+}
+@media (min-width: 761px) {
+  .storefront-account-page { min-height: 0; }
+}
+@media (max-width: 1000px) and (min-width: 761px) {
+  .storefront-account-layout { grid-template-columns: 210px minmax(0, 1fr); gap: 18px; }
+  .storefront-account-section--loyalty,
+  .storefront-account-section--referrals { column-gap: 16px; }
+  .storefront-account-section--referrals .storefront-referral-summary { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  .storefront-account-page {
+    width: calc(100% - 24px);
+    max-width: none;
+    margin: 14px 12px 34px;
+    padding: 18px 14px;
+  }
+  .storefront-account-layout { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .storefront-account-nav { position: static; }
+  .storefront-account-section--loyalty,
+  .storefront-account-section--referrals { grid-template-columns: minmax(0, 1fr); }
+  .storefront-account-section--loyalty > *,
+  .storefront-account-section--referrals > * { grid-column: 1 / -1 !important; }
+  .storefront-account-section--loyalty .storefront-loyalty-summary,
+  .storefront-account-section--referrals .storefront-referral-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .storefront-account-section--loyalty .storefront-loyalty-activity > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+}
+@media (max-width: 480px) {
+  .storefront-account-section--loyalty .storefront-loyalty-summary,
+  .storefront-account-section--referrals .storefront-referral-summary { grid-template-columns: minmax(0, 1fr); }
+  .storefront-account-section--loyalty .storefront-loyalty-card,
+  .storefront-account-section--referrals .storefront-loyalty-card { min-height: 160px; padding: 18px; }
+}
