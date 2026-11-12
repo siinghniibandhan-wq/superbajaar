@@ -11,7 +11,7 @@
 
 The repository has separate identity and access paths for customer accounts, staff/admin users, employee records and vendor portal access. There is useful existing functionality to preserve, but no unified master identity/SBID register or central identity-resolution service.
 
-The feature is therefore **not implemented yet**. Existing links are relationship-specific and must not be mistaken for a unified identity model:
+At the 11 November 2026 audit baseline, the feature was **not implemented yet**. This statement is historical and must not be used as the current status; see the implementation guide linked above. Existing links are relationship-specific and must not be mistaken for a unified identity model:
 
 - Customer storefront login is held in `customer_accounts`.
 - Staff/admin login is held in `app_users`.
