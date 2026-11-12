@@ -92,6 +92,7 @@ jobs:
           grep -Fq "name=\"sb-release\" content=\"$GITHUB_SHA\"" dist/index.html
           cd frontend
           npm run build
+          grep -Fq "name=\"sb-release\" content=\"$GITHUB_SHA\"" dist/index.html
       - name: Secret scan
         uses: gitleaks/gitleaks-action@v2
         env:
