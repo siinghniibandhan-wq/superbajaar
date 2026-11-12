@@ -289,7 +289,7 @@ def test_employee_update_returns_and_preserves_canonical_sbid(monkeypatch):
     monkeypatch.setattr(hr, "_hr_connection", Connection)
     monkeypatch.setattr(hr, "_manager", lambda request: 3)
     payload = hr.EmployeeInput(
-        employee_code="EMP-8", first_name="Asha", last_name="Rao",
+        employee_code="EMP-8", first_name="Asha", last_name="Rao", email="asha@example.com",
         designation="Associate", joining_date="2026-11-01",
     )
     result = hr.update_employee(8, payload, None)
