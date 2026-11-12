@@ -163,6 +163,20 @@ The current schema directory contains 40 SQL migration files, with unique prefix
 
 See [Unified Identity System implementation](UNIFIED_IDENTITY_SYSTEM_IMPLEMENTATION.md) and its [production rollout runbook](UNIFIED_IDENTITY_SYSTEM_PRODUCTION_ROLLOUT.md).
 
+## 6.1 Baseline checksum reconciliation — open preflight item
+
+The 12 November 2026 production preflight record reports that `000_baseline_schema.sql` does not match the checksum recorded in the production migration ledger. This is a release-blocking reconciliation item until the exact production ledger value, repository blob and host file have been compared and the approved immutable baseline has been restored or a documented recovery decision has been made.
+
+Required handling:
+
+1. Do not edit the production `schema_migrations` ledger or manually replace its checksum.
+2. Do not rewrite the historical baseline to match a drifted host copy.
+3. Compare the baseline Git blob, the file on the production checkout and the checksum recorded for the baseline in the production ledger.
+4. Preserve the verified original baseline and its provenance; if the repository copy is incorrect, restore the exact approved immutable blob through a reviewed PR.
+5. Re-run source/baseline preflight and record the evidence before any production migration apply.
+
+The previously recorded production preflight identifies migrations 043 and 044 as applied and 045 as pending, while also flagging this baseline checksum mismatch. Reconfirm all of these facts against the current production ledger before acting. Migration 045 remains subject to separate production approval and readiness checks.
+
 ## 7. Historical duplicate-036 reconciliation (10 November 2026)
 
 Two different migration files historically used prefix `036`:
