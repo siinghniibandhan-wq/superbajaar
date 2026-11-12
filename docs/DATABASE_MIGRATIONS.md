@@ -213,3 +213,37 @@ The confirmed 10 November backup above is historical evidence for that migration
 - `backend/scripts/tests/test_apply_schema.sh` — runner tests.
 - `docs/SCHEMA_MIGRATION_CRITICAL_RULE.md` — immutable migration filename rule.
 - `README.md` — repository overview and migration entry point.
+
+
+## 8. Verified production migration status — 12 November 2026
+
+A read-only EC2 diagnostic at 06:46 UTC targeted database `superbajaar`, found 40 SQL files and reported:
+
+| Migration / check | Observed production state |
+|---|---|
+| `000_baseline_schema.sql` | Failed/changed: current file checksum differs from the checksum recorded when it was applied; runner reports `changed after it was applied; not re-applied` |
+| Migrations `043` and `044` | Applied and marked required |
+| Migration `045_identity_claim_cancellation_event.sql` | Pending and marked required |
+| Status runner exit code | `10` — attention required |
+| Schema timer | Active and waiting |
+| Schema service | Last run failed with exit code `10` |
+| Effective schema command | Explicitly includes `--status`; no SQL apply was run |
+
+The installed schema service's effective command was confirmed through `systemctl cat` and included the explicit production target (`SB_DB=superbajaar`) and `--status`. The service is therefore configured as a read-only status check in this snapshot. Its non-zero status is reporting the database attention condition; it is not evidence that the timer applied SQL.
+
+### Required reconciliation and release block
+
+The baseline checksum mismatch is the first database blocker. Before attempting migration 045 or any other production apply:
+
+1. Compare the exact Git blob for `000_baseline_schema.sql`, the EC2 checkout file and the SHA-256 recorded in the production `schema_migrations` row.
+2. Establish which immutable baseline version was originally applied and preserve its provenance and backup evidence.
+3. If the repository baseline is wrong, restore the approved historical blob through a reviewed change. If the production host file alone is wrong, correct the source checkout through the normal reviewed Git process.
+4. Re-run read-only source/baseline verification and `--status`; record the outputs.
+
+**Never** update, delete or insert rows in `schema_migrations` merely to silence the mismatch. Never reapply the baseline. Never use `--retry` for this changed-applied-file condition as a substitute for checksum reconciliation.
+
+Migration 045 remains pending. Its presence in Git and in `schema_required.txt` does not authorize production application. It requires a separate explicit production approval after the baseline blocker is resolved and backup/readiness checks pass.
+
+The schema timer and service should continue to be treated as a status-monitoring mechanism only. Keep `--status` in the effective service command. Do not change the service to default/apply mode to make the status exit code green. A systemd service failure at exit code 10 is the current observed alert behaviour; inspect the runner output and logs to understand the actual migration state.
+
+This snapshot is evidence from 12 November 2026 at approximately 06:46 UTC. Re-run the checks before any later production operation; do not treat this dated status as live indefinitely.
