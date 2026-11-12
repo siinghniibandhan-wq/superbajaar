@@ -146,6 +146,15 @@ class ReviewIn(BaseModel):
     reason: str = Field(min_length=5, max_length=500)
 
 
+class ContactVerifyIn(BaseModel):
+    proof_method: str = Field(pattern=r"^(document_review|in_person|verified_account|business_registry)$")
+    reason: str = Field(min_length=5, max_length=500)
+
+
+class RelationshipRevokeIn(BaseModel):
+    reason: str = Field(min_length=5, max_length=500)
+
+
 @router.get("/reconciliation/preview")
 def legacy_reconciliation_preview(
     request: Request,
@@ -294,7 +303,7 @@ def identity_detail(party_id: int, request: Request):
             loyalty = conn.execute("SELECT l.id,l.loyalty_account_id,left(a.card_number,3)||'******'||right(a.card_number,2) AS masked_card_number,l.link_method,l.linked_at FROM identity_loyalty_accounts l JOIN loyalty_accounts a ON a.id=l.loyalty_account_id WHERE l.party_id=%s ORDER BY l.linked_at DESC", (party_id,)).fetchall()
             referrals = conn.execute("SELECT r.id,r.referral_id,r.referrer_party_id,r.referred_party_id,r.linked_at,fp.sbid AS referrer_sbid,tp.sbid AS referred_sbid FROM identity_referral_links r JOIN identity_parties fp ON fp.id=r.referrer_party_id JOIN identity_parties tp ON tp.id=r.referred_party_id WHERE r.referrer_party_id=%s OR r.referred_party_id=%s ORDER BY r.linked_at DESC", (party_id,party_id)).fetchall()
             relationships = conn.execute("SELECT r.id,r.relationship_type,r.status,r.scope,r.valid_from,r.valid_to,fp.sbid AS from_sbid,fp.display_name AS from_name,tp.sbid AS to_sbid,tp.display_name AS to_name FROM identity_relationships r JOIN identity_parties fp ON fp.id=r.from_party_id JOIN identity_parties tp ON tp.id=r.to_party_id WHERE r.from_party_id=%s OR r.to_party_id=%s ORDER BY r.created_at DESC", (party_id, party_id)).fetchall()
-            events = conn.execute("SELECT id,event_type,reason,event_data,created_at FROM identity_events WHERE party_id=%s ORDER BY created_at DESC,id DESC LIMIT 100", (party_id,)).fetchall()
+            events = conn.execute("SELECT id,event_type,reason,event_data,created_at FROM identity_events WHERE party_id=%s OR event_data->>'to_party_id'=%s ORDER BY created_at DESC,id DESC LIMIT 100", (party_id, str(party_id))).fetchall()
         return {"party": party, "profiles": profiles, "contacts": contacts, "auth_accounts": accounts, "loyalty_accounts": loyalty, "referrals": referrals, "relationships": relationships, "events": events}
     except HTTPException:
         raise
@@ -481,6 +490,73 @@ def review_link_request(request_id: int, payload: ReviewIn, request: Request):
         if getattr(exc, "sqlstate", None) == "23505":
             raise HTTPException(409, "That profile or relationship is already linked") from exc
         raise HTTPException(503, "Unable to review identity request") from exc
+
+
+@router.post("/relationships/{relationship_id}/revoke")
+def revoke_relationship(relationship_id: int, payload: RelationshipRevokeIn, request: Request):
+    """Revoke an active organisation relationship without deleting its history."""
+    _admin(request)
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                relationship = conn.execute(
+                    "SELECT id,from_party_id,status,valid_to FROM identity_relationships WHERE id=%s FOR UPDATE",
+                    (relationship_id,),
+                ).fetchone()
+                if relationship is None:
+                    raise HTTPException(404, "Identity relationship not found")
+                if relationship["status"] != "active" or relationship["valid_to"] is not None:
+                    raise HTTPException(409, "Only an active relationship can be revoked")
+                result = IdentityService(conn).revoke_relationship(
+                    relationship_id=relationship_id,
+                    actor_user_id=request.state.user_id,
+                    reason=payload.reason,
+                )
+                if result is None:
+                    raise HTTPException(409, "Relationship state changed; refresh and retry")
+        return {"id": result["id"], "status": result["status"], "valid_to": result["valid_to"]}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Unable to revoke identity relationship") from exc
+
+
+@router.post("/contacts/{contact_id}/verify")
+def verify_contact(contact_id: int, payload: ContactVerifyIn, request: Request):
+    """Record an administrator's evidence-based verification of a current contact."""
+    _admin(request)
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                contact = conn.execute(
+                    """
+                    SELECT c.id,c.party_id,c.verification_status,c.valid_to,p.status AS party_status
+                    FROM identity_contacts c
+                    JOIN identity_parties p ON p.id=c.party_id
+                    WHERE c.id=%s
+                    FOR UPDATE OF c,p
+                    """,
+                    (contact_id,),
+                ).fetchone()
+                if contact is None:
+                    raise HTTPException(404, "Identity contact not found")
+                if contact["party_status"] != "active" or contact["valid_to"] is not None:
+                    raise HTTPException(409, "Only a current contact on an active identity can be verified")
+                if contact["verification_status"] not in {"unverified", "expired"}:
+                    raise HTTPException(409, "This contact is not eligible for verification")
+                result = IdentityService(conn).verify_contact(
+                    contact_id=contact_id,
+                    actor_user_id=request.state.user_id,
+                    proof_method=payload.proof_method,
+                    reason=payload.reason,
+                )
+                if result is None:
+                    raise HTTPException(409, "Contact verification state changed; refresh and retry")
+        return {"id": result["id"], "status": result["verification_status"], "verified_at": result["verified_at"]}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Unable to verify identity contact") from exc
 
 
 class LoyaltyLinkIn(BaseModel):

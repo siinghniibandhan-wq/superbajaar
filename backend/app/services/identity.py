@@ -269,3 +269,82 @@ class IdentityService:
             actor_user_id=actor_user_id,
         )
         return result
+
+
+    def verify_contact(
+        self,
+        *,
+        contact_id: int,
+        actor_user_id: int,
+        proof_method: str,
+        reason: str,
+    ) -> dict[str, Any] | None:
+        """Mark a current contact verified after an administrator reviews evidence."""
+        allowed_methods = {"document_review", "in_person", "verified_account", "business_registry"}
+        if proof_method not in allowed_methods:
+            raise ValueError("Unsupported contact verification method")
+        if not reason or len(reason.strip()) < 5:
+            raise ValueError("A documented verification reason is required")
+        row = self.connection.execute(
+            """
+            UPDATE identity_contacts
+            SET verification_status='verified', verified_at=now(), updated_at=now()
+            WHERE id=%s AND valid_to IS NULL
+              AND verification_status IN ('unverified','expired')
+            RETURNING id,party_id,contact_type,verification_status,verified_at
+            """,
+            (contact_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        result = dict(row)
+        self._event(
+            party_id=result["party_id"],
+            event_type="contact_verified",
+            event_data={
+                "contact_id": result["id"],
+                "contact_type": result["contact_type"],
+                "proof_method": proof_method,
+            },
+            actor_user_id=actor_user_id,
+            reason=reason.strip(),
+        )
+        return result
+
+
+    def revoke_relationship(
+        self,
+        *,
+        relationship_id: int,
+        actor_user_id: int,
+        reason: str,
+    ) -> dict[str, Any] | None:
+        """Revoke an active organisation relationship and preserve its audit history."""
+        if not reason or len(reason.strip()) < 5:
+            raise ValueError("A documented relationship revocation reason is required")
+        row = self.connection.execute(
+            """
+            UPDATE identity_relationships
+            SET status='revoked',
+                valid_to=GREATEST(now(), valid_from),
+                updated_at=now()
+            WHERE id=%s AND status='active' AND valid_to IS NULL
+            RETURNING id,from_party_id,to_party_id,relationship_type,status,valid_to
+            """,
+            (relationship_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        result = dict(row)
+        self._event(
+            party_id=result["from_party_id"],
+            event_type="relationship_revoked",
+            event_data={
+                "relationship_id": result["id"],
+                "to_party_id": result["to_party_id"],
+                "relationship_type": result["relationship_type"],
+            },
+            actor_user_id=actor_user_id,
+            reason=reason.strip(),
+        )
+        return result
