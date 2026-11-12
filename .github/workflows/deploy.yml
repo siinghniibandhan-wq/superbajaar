@@ -5,6 +5,18 @@ on:
     branches: [main]
   push:
     branches: [main]
+    # Documentation, tests and schema-only commits must never start a production deploy.
+    paths:
+      - "backend/app/**"
+      - "backend/requirements.txt"
+      - "backend/scripts/deploy_backend.sh"
+      - "frontend/**"
+      - "src/**"
+      - "public/**"
+      - "index.html"
+      - "package.json"
+      - "package-lock.json"
+      - "vite.config.*"
   workflow_dispatch:
 
 concurrency:
