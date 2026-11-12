@@ -145,6 +145,110 @@ class ReviewIn(BaseModel):
     reason: str = Field(min_length=5, max_length=500)
 
 
+@router.get("/reconciliation/preview")
+def legacy_reconciliation_preview(
+    request: Request,
+    limit: int = Query(default=100, ge=1, le=200),
+):
+    """Read-only exact-contact candidate report; matching never links or merges records."""
+    _admin(request)
+    query = """
+        WITH source_records AS (
+            SELECT 'customer_account'::text AS profile_type, ca.id AS source_id,
+                   NULLIF(lower(trim(to_jsonb(ca)->>'email')), '') AS email_value,
+                   NULLIF(regexp_replace(coalesce(to_jsonb(ca)->>'phone',
+                       to_jsonb(ca)->>'mobile', to_jsonb(ca)->>'mobile_number', ''), '[^0-9]', '', 'g'), '') AS phone_digits
+            FROM customer_accounts ca
+            UNION ALL
+            SELECT 'crm_customer', c.id,
+                   NULLIF(lower(trim(coalesce(to_jsonb(c)->>'email',
+                       to_jsonb(c)->>'customer_email'))), ''),
+                   NULLIF(regexp_replace(coalesce(to_jsonb(c)->>'phone',
+                       to_jsonb(c)->>'customer_phone', to_jsonb(c)->>'mobile',
+                       to_jsonb(c)->>'mobile_number', ''), '[^0-9]', '', 'g'), '')
+            FROM customers c
+            UNION ALL
+            SELECT 'employee', e.id,
+                   NULLIF(lower(trim(coalesce(to_jsonb(e)->>'email',
+                       to_jsonb(e)->>'work_email'))), ''),
+                   NULLIF(regexp_replace(coalesce(to_jsonb(e)->>'phone',
+                       to_jsonb(e)->>'mobile', to_jsonb(e)->>'mobile_number', ''), '[^0-9]', '', 'g'), '')
+            FROM hr_employees e
+            UNION ALL
+            SELECT 'vendor_organisation', s.id,
+                   NULLIF(lower(trim(to_jsonb(s)->>'email')), ''),
+                   NULLIF(regexp_replace(coalesce(to_jsonb(s)->>'phone',
+                       to_jsonb(s)->>'mobile', to_jsonb(s)->>'mobile_number', ''), '[^0-9]', '', 'g'), '')
+            FROM suppliers s
+        ),
+        contact_candidates AS (
+            SELECT profile_type, source_id, 'email'::text AS contact_type,
+                   email_value AS normalized_value
+            FROM source_records WHERE email_value IS NOT NULL
+            UNION ALL
+            SELECT profile_type, source_id, 'phone',
+                   CASE
+                     WHEN length(phone_digits)=12 AND left(phone_digits,2)='91' THEN right(phone_digits,10)
+                     WHEN length(phone_digits)=11 AND left(phone_digits,1)='0' THEN right(phone_digits,10)
+                     ELSE phone_digits
+                   END
+            FROM source_records
+            WHERE phone_digits IS NOT NULL AND length(phone_digits) BETWEEN 7 AND 15
+        ),
+        duplicate_contacts AS (
+            SELECT contact_type, normalized_value,
+                   count(*) AS match_count,
+                   count(DISTINCT profile_type) AS profile_type_count
+            FROM contact_candidates
+            GROUP BY contact_type, normalized_value
+            HAVING count(*) > 1
+        )
+        SELECT d.contact_type,
+               CASE WHEN d.contact_type='email'
+                    THEN left(d.normalized_value,2)||'***@'||split_part(d.normalized_value,'@',2)
+                    ELSE left(d.normalized_value,3)||'******'||right(d.normalized_value,2)
+               END AS masked_contact,
+               d.match_count,
+               d.profile_type_count,
+               'manual_review_required'::text AS classification,
+               'An exact contact match is only a candidate signal, not proof that records belong to the same person or organisation.'::text AS review_note,
+               jsonb_agg(jsonb_build_object(
+                   'profile_type', c.profile_type,
+                   'source_id', c.source_id,
+                   'sbid', p.sbid,
+                   'profile_status', ip.status
+               ) ORDER BY c.profile_type, c.source_id) AS records
+        FROM duplicate_contacts d
+        JOIN contact_candidates c
+          ON c.contact_type=d.contact_type AND c.normalized_value=d.normalized_value
+        LEFT JOIN identity_profiles ip
+          ON ip.profile_type=c.profile_type
+         AND CASE c.profile_type
+             WHEN 'customer_account' THEN ip.customer_account_id
+             WHEN 'crm_customer' THEN ip.crm_customer_id
+             WHEN 'employee' THEN ip.employee_id
+             ELSE ip.supplier_id
+         END = c.source_id
+        LEFT JOIN identity_parties p ON p.id=ip.party_id
+        GROUP BY d.contact_type,d.normalized_value,d.match_count,d.profile_type_count
+        ORDER BY d.match_count DESC,d.contact_type,d.normalized_value
+        LIMIT %s
+    """
+    try:
+        with _connect() as conn:
+            rows = conn.execute(query, (limit,)).fetchall()
+        return {
+            "items": rows,
+            "count": len(rows),
+            "limit": limit,
+            "read_only": True,
+            "automatic_linking": False,
+            "automatic_merging": False,
+        }
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Unable to generate the legacy identity reconciliation preview") from exc
+
+
 @router.get("")
 def identity_register(request: Request, search: str | None = Query(default=None, max_length=120), party_type: str | None = None, limit: int = Query(default=50, ge=1, le=200), offset: int = Query(default=0, ge=0)):
     _admin(request)
