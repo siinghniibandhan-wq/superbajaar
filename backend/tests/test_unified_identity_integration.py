@@ -336,3 +336,119 @@ def test_hr_employee_and_supplier_profiles_reject_conflicting_identity_links():
                     reason="Conflicting supplier identity",
                 )
 
+def test_employee_portal_activation_reuses_hr_identity_without_duplicate_profile():
+    from app.api.portal_invitations import _ensure_employee_portal_identity
+    from app.services.identity import IdentityService
+
+    suffix = uuid4().hex
+    with psycopg.connect(TEST_DB, row_factory=dict_row) as conn:
+        employee = conn.execute(
+            "INSERT INTO hr_employees(employee_code,first_name,last_name,email,designation,joining_date) "
+            "VALUES(%s,%s,%s,%s,%s,%s) RETURNING id",
+            ("PORTAL-" + suffix[:12], "Portal", "Employee", f"portal-{suffix}@test.local", "Associate", "2026-01-01"),
+        ).fetchone()
+        user = conn.execute(
+            "INSERT INTO app_users(email,full_name,password_hash,role) VALUES(%s,%s,%s,'staff') RETURNING id",
+            (f"portal-{suffix}@test.local", "Portal Employee", "test-hash"),
+        ).fetchone()
+        identity = IdentityService(conn)
+        party = identity.create_party(
+            party_type="individual", display_name="Portal Employee",
+            reason="HR onboarding created permanent identity",
+        )
+        identity.link_profile(
+            party_id=party["id"], profile_type="employee",
+            source_id=employee["id"], link_method="admin_verified",
+            reason="HR onboarding employee profile",
+        )
+        identity.add_contact(
+            party_id=party["id"], contact_type="email",
+            value=f"portal-{suffix}@test.local", source="hr_employee",
+        )
+
+        linked_party_id = _ensure_employee_portal_identity(
+            conn, identity, employee["id"], user["id"],
+            f"portal-{suffix}@test.local", "Portal Employee",
+        )
+        assert linked_party_id == party["id"]
+        assert conn.execute(
+            "SELECT count(*) AS n FROM identity_profiles WHERE profile_type='employee' AND employee_id=%s",
+            (employee["id"],),
+        ).fetchone()["n"] == 1
+        assert conn.execute(
+            "SELECT count(*) AS n FROM identity_auth_accounts WHERE app_user_id=%s AND party_id=%s AND status='active'",
+            (user["id"], party["id"]),
+        ).fetchone()["n"] == 1
+        assert conn.execute(
+            "SELECT count(*) AS n FROM identity_contacts WHERE party_id=%s AND contact_type='email' AND valid_to IS NULL",
+            (party["id"],),
+        ).fetchone()["n"] == 1
+
+
+def test_employee_portal_activation_rejects_login_owned_by_another_identity():
+    from fastapi import HTTPException
+    from app.api.portal_invitations import _ensure_employee_portal_identity
+    from app.services.identity import IdentityService
+
+    suffix = uuid4().hex
+    with psycopg.connect(TEST_DB, row_factory=dict_row) as conn:
+        employee = conn.execute(
+            "INSERT INTO hr_employees(employee_code,first_name,last_name,email,designation,joining_date) "
+            "VALUES(%s,%s,%s,%s,%s,%s) RETURNING id",
+            ("PORTAL-CONFLICT-" + suffix[:8], "Portal", "Conflict", f"portal-conflict-{suffix}@test.local", "Associate", "2026-01-01"),
+        ).fetchone()
+        user = conn.execute(
+            "INSERT INTO app_users(email,full_name,password_hash,role) VALUES(%s,%s,%s,'staff') RETURNING id",
+            (f"portal-user-conflict-{suffix}@test.local", "Existing Portal User", "test-hash"),
+        ).fetchone()
+        identity = IdentityService(conn)
+        employee_party = identity.create_party(
+            party_type="individual", display_name="Employee Party",
+            reason="Employee identity for portal conflict",
+        )
+        identity.link_profile(
+            party_id=employee_party["id"], profile_type="employee",
+            source_id=employee["id"], link_method="admin_verified",
+            reason="Employee identity link",
+        )
+        other_party = identity.create_party(
+            party_type="individual", display_name="Other Party",
+            reason="Existing login identity",
+        )
+        identity.link_auth_account(
+            party_id=other_party["id"], account_type="staff",
+            source_id=user["id"], link_method="admin_verified",
+        )
+
+        with pytest.raises(HTTPException) as conflict:
+            _ensure_employee_portal_identity(
+                conn, identity, employee["id"], user["id"],
+                f"portal-conflict-{suffix}@test.local", "Portal Conflict",
+            )
+        assert conflict.value.status_code == 409
+
+
+def test_employee_portal_activation_backfills_identity_for_legacy_employee():
+    from app.api.portal_invitations import _ensure_employee_portal_identity
+    from app.services.identity import IdentityService
+
+    suffix = uuid4().hex
+    with psycopg.connect(TEST_DB, row_factory=dict_row) as conn:
+        employee = conn.execute(
+            "INSERT INTO hr_employees(employee_code,first_name,last_name,email,designation,joining_date) "
+            "VALUES(%s,%s,%s,%s,%s,%s) RETURNING id",
+            ("LEGACY-PORTAL-" + suffix[:8], "Legacy", "Employee", f"legacy-portal-{suffix}@test.local", "Associate", "2026-01-01"),
+        ).fetchone()
+        user = conn.execute(
+            "INSERT INTO app_users(email,full_name,password_hash,role) VALUES(%s,%s,%s,'staff') RETURNING id",
+            (f"legacy-portal-{suffix}@test.local", "Legacy Employee", "test-hash"),
+        ).fetchone()
+        party_id = _ensure_employee_portal_identity(
+            conn, IdentityService(conn), employee["id"], user["id"],
+            f"legacy-portal-{suffix}@test.local", "Legacy Employee",
+        )
+        assert conn.execute(
+            "SELECT count(*) AS n FROM identity_profiles WHERE profile_type='employee' AND employee_id=%s AND party_id=%s",
+            (employee["id"], party_id),
+        ).fetchone()["n"] == 1
+
