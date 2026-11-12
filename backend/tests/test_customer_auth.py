@@ -40,3 +40,18 @@ def test_customer_identity_claim_rejects_malformed_sbid_before_authentication():
     )
     assert response.status_code == 422
 
+
+
+def test_public_customer_response_includes_generated_sbid():
+    from app.api.customer_auth import _public_customer
+
+    customer = _public_customer({
+        "id": 7,
+        "sbid": "SBID-0123456789ABCDEF0123",
+        "email": "buyer@example.com",
+        "full_name": "Test Buyer",
+        "phone": "+919876543210",
+        "referral_code": "SB12345678",
+    })
+
+    assert customer["sbid"] == "SBID-0123456789ABCDEF0123"
