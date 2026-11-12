@@ -264,3 +264,24 @@ The baseline was changed to include `super_admin` in the `app_users_role_check` 
 The schema-governance workflow permits this one recovery only when both the exact historical Git blob and its SHA-256 match the production-pinned values above. Every other edit to an existing migration remains prohibited. The baseline restoration is a repository correction, not a production database operation.
 
 **Production status at the time of comparison:** the status-only runner reported the baseline checksum mismatch, migrations 043 and 044 applied, and required migration 045 pending. No migration was applied during this comparison. Re-run the read-only status check after the repository sync to verify that the mismatch is resolved. Migration 045 still requires its separate production approval and readiness checks.
+
+
+## 11. Historical failure checksum reporting correction (12 November 2026)
+
+The production baseline reconciliation was verified read-only on EC2 after commit `84a3792a675d0587d51db4acd1a4c0fd4ac3e7d3` reached `main`. The checked-out baseline SHA-256 and the production `schema_migrations` checksum both equal:
+
+```text
+519e4467a6af9c1f87dd06cbdb80ef4545b1ae04edfe8937966799792168d938
+```
+
+The production failure table retains an older audit record for the same filename with checksum `f95b15efed9e49e11e85bcf1786ae89ff10d29a60bb44774eedca3d82813a578`. This record describes the superseded baseline content and is not an active failure for the restored file. The runner correctly classified the baseline as APPLIED, but its status output previously printed the latest failure by filename alone, which made the old record look current.
+
+The runner now reports failure details only when the failure record's filename **and checksum** match the current schema file. Historical rows are preserved in `schema_migration_failures` for audit; no production ledger or failure rows are deleted or edited.
+
+Read-only production status after the source sync confirmed:
+- `000_baseline_schema.sql`: APPLIED; current file checksum matches the applied ledger checksum.
+- Migrations 001–044: APPLIED.
+- `045_identity_claim_cancellation_event.sql`: PENDING and required.
+- Status exit code: 10 because migration 045 remains pending; this is not a baseline failure.
+
+This repository correction changes reporting only. It does not apply SQL, retry migrations, alter the production ledger, change systemd configuration, or authorize migration 045. The pending migration still requires separate review, readiness checks and explicit production approval.
