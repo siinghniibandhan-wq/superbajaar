@@ -547,3 +547,50 @@ def test_supplier_return_dispatch_only_selects_batches_from_purchase_establishme
     assert error.value.status_code == 409
     assert "sl.establishment_id=%s" in conn.calls[0][0]
     assert conn.calls[0][1] == (44, 12)
+
+
+def test_supplier_creation_returns_the_generated_sbid(monkeypatch):
+    from datetime import datetime, timezone
+    from app.api import purchasing
+    from app.services import identity
+
+    class Result:
+        def fetchone(self):
+            return {
+                "id": 41, "name": "Verified Supplier", "contact_name": None,
+                "phone": None, "email": None, "gstin": None, "address": None,
+                "is_active": True, "created_at": datetime.now(timezone.utc),
+            }
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def transaction(self):
+            from contextlib import nullcontext
+            return nullcontext()
+
+        def execute(self, query, params=()):
+            assert "INSERT INTO suppliers" in query
+            return Result()
+
+    class FakeIdentityService:
+        def __init__(self, conn):
+            pass
+
+        def create_party(self, **kwargs):
+            return {"id": 900, "sbid": "SBID-0123456789ABCDEF0123"}
+
+        def link_profile(self, **kwargs):
+            return {"id": 1}
+
+    monkeypatch.setattr(purchasing, "_connect", Connection)
+    monkeypatch.setattr(identity, "IdentityService", FakeIdentityService)
+
+    result = purchasing.create_supplier(purchasing.SupplierCreate(name="Verified Supplier"))
+
+    assert result["id"] == 41
+    assert result["sbid"] == "SBID-0123456789ABCDEF0123"
