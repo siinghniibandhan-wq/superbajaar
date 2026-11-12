@@ -166,7 +166,15 @@ if [ "$MODE" = status ] || [ "$MODE" = dry ]; then
     echo "  note: ledger has $k but the file is not in the folder (old record)"
   done
   if [ "$HAVE_LEDGER" = t ] && [ "$(pg -c "select to_regclass('public.schema_migration_failures') is not null")" = t ]; then
-    pg -c "select '  last error for '||filename||': '||left(regexp_replace(error,E'[\\r\\n|]+',' ','g'),200) from (select distinct on (filename) filename,error from schema_migration_failures order by filename, failed_at desc) t"
+    # Report only failures for the exact current file checksum. Older checksum
+    # failures remain in the audit table but must not appear as active errors
+    # after a file has been restored or otherwise changed.
+    for n in "${FILES[@]}"; do
+      sm=${FSUM[$n]}
+      if [ -n "${KF["$n|$sm"]:-}" ]; then
+        pg -c "select '  last error for $n: '||left(regexp_replace(error,E'[\\r\\n|]+',' ','g'),200) from schema_migration_failures where filename='$n' and sha256='$sm' order by failed_at desc limit 1"
+      fi
+    done
   fi
   PENDING_LEFT=("${PENDING[@]:-}"); [ -z "${PENDING[*]:-}" ] && PENDING_LEFT=()
   p=$(( ${#CHANGED[@]} + ${#KNOWN_FAILED[@]} )); miss=$(missing_required)
