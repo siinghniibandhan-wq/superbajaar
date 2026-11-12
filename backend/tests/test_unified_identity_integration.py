@@ -661,3 +661,67 @@ def test_unmatched_customer_identity_claim_can_be_rejected_without_disclosing_ta
     assert reviewed["status"] == "rejected"
     assert list_identity_claims(customer_request)["items"][0]["status"] == "rejected"
 
+@pytest.mark.parametrize("portal_type", ["employee", "vendor"])
+def test_portal_invitation_rejects_existing_login_without_auto_linking(monkeypatch, portal_type):
+    from datetime import datetime, timedelta, timezone
+    from fastapi import HTTPException
+    from app.api import portal_invitations
+    from app.api.portal_invitations import InvitationAccept, accept_invitation
+    from app.services.portal_invitation import issue_invitation_token
+
+    suffix = uuid4().hex
+    email = f"existing-{portal_type}-{suffix}@test.local"
+    raw_token, token_hash = issue_invitation_token()
+    with psycopg.connect(TEST_DB, row_factory=dict_row) as conn:
+        existing_user = conn.execute(
+            "INSERT INTO app_users(email,full_name,password_hash,role) VALUES(%s,%s,%s,'staff') RETURNING id",
+            (email, "Existing Portal Account", "test-hash"),
+        ).fetchone()
+        supplier_id = None
+        employee_id = None
+        if portal_type == "employee":
+            employee = conn.execute(
+                "INSERT INTO hr_employees(employee_code,first_name,last_name,email,designation,joining_date) "
+                "VALUES(%s,%s,%s,%s,%s,%s) RETURNING id",
+                ("EXISTING-EMP-" + suffix[:8], "Existing", "Employee", email, "Associate", "2026-01-01"),
+            ).fetchone()
+            employee_id = employee["id"]
+        else:
+            supplier = conn.execute(
+                "INSERT INTO suppliers(name,email) VALUES(%s,%s) RETURNING id",
+                ("Existing Supplier " + suffix, email),
+            ).fetchone()
+            supplier_id = supplier["id"]
+        conn.execute(
+            "INSERT INTO portal_invitations(portal_type,email,supplier_id,employee_id,representative_name,token_hash,expires_at) "
+            "VALUES(%s,%s,%s,%s,%s,%s,%s)",
+            (
+                portal_type, email, supplier_id, employee_id,
+                "Authorised Representative" if portal_type == "vendor" else None,
+                token_hash, datetime.now(timezone.utc) + timedelta(hours=1),
+            ),
+        )
+
+    monkeypatch.setattr(portal_invitations.settings, "database_url", TEST_DB)
+    monkeypatch.setattr(portal_invitations.settings, "jwt_secret_key", "test-secret-" + "x" * 40)
+    with pytest.raises(HTTPException) as conflict:
+        accept_invitation(InvitationAccept(token=raw_token, password="A-secure-test-password-2026"))
+    assert conflict.value.status_code == 409
+
+    with psycopg.connect(TEST_DB, row_factory=dict_row) as conn:
+        invitation = conn.execute(
+            "SELECT accepted_at FROM portal_invitations WHERE token_hash=%s",
+            (token_hash,),
+        ).fetchone()
+        identity_links = conn.execute(
+            "SELECT count(*) AS n FROM identity_auth_accounts WHERE app_user_id=%s",
+            (existing_user["id"],),
+        ).fetchone()["n"]
+        vendor_links = conn.execute(
+            "SELECT count(*) AS n FROM vendor_portal_users WHERE user_id=%s",
+            (existing_user["id"],),
+        ).fetchone()["n"]
+    assert invitation["accepted_at"] is None
+    assert identity_links == 0
+    assert vendor_links == 0
+
