@@ -12,7 +12,7 @@ For a qualifying application push, the workflow runs backend tests/compile, admi
 
 
 
-The EC2 script fast-forwards the existing `/opt/superbajaar/source` checkout, installs backend requirements into the service's existing virtualenv, compiles the backend, restarts only `superbajaar-new.service`, and checks the public API health endpoint plus the HR attendance-corrections route. A failed deployment attempts to restore the previous Git commit, reinstall its requirements, restart the service and verify health.
+The EC2 script fast-forwards the existing `/opt/superbajaar/source` checkout, installs backend requirements into the service's existing virtualenv, compiles the backend, restarts only `superbajaar-backend.service`, and checks the public API health endpoint plus the HR attendance-corrections route. A failed deployment attempts to restore the previous Git commit, reinstall its requirements, restart the service and verify health. The 12 November 2026 EC2 diagnostic confirmed that `superbajaar-backend.service` is the installed, active production unit; `superbajaar-new.service` is not installed.
 
 ## Amplify publish protection and automatic recovery
 
@@ -41,15 +41,15 @@ Set these repository/environment values:
 
 The GitHub OIDC role needs the existing SSM permissions plus the narrowly scoped Amplify permissions shown in `docs/operations/amplify-rollback-iam-policy.json`. Replace the placeholders in that policy with the account ID, region, and app ID, then add the statement to the existing `SuperBajaarGitHubDeployPolicy`. Do not replace the existing SSM statement. The EC2 instance profile and SSM agent configuration remain unchanged.
 
-The EC2 instance must allow the `ubuntu` user to restart `superbajaar-new.service` without an interactive password.
+The EC2 instance must allow the `ubuntu` user to restart `superbajaar-backend.service` without an interactive password.
 
 ## EC2 preflight (one-time)
 
 The backend deployment script deliberately fails closed unless:
 
 - checkout exists at `/opt/superbajaar/source`, is on `main`, and is clean;
-- `superbajaar-new.service` is active and its WorkingDirectory is the repository root or `backend/`;
-- the service ExecStart uses an existing `.venv` at `backend/.venv` or repository `.venv`.
+- `superbajaar-backend.service` is active and its WorkingDirectory is exactly `/opt/superbajaar/source/backend`;
+- the service ExecStart uses the existing backend virtual environment (the 12 November 2026 diagnostic observed `/opt/superbajaar/source/backend/venv/bin/gunicorn`).
 
 If the current unit uses a different layout, adapt the deployment script to the actual unit before enabling production deployment. Do not guess or change the service unit blindly.
 
@@ -66,3 +66,22 @@ This workflow never runs SQL migrations or schema apply commands. Existing schem
 ## Recovery limitations
 
 Amplify rollback retries a prior successful job, so it relies on the source commit remaining available in the connected Git repository and on Amplify being able to rebuild that commit. It retains current Amplify environment settings. If the previous build is no longer available or its source cannot be retrieved, the workflow fails and reports that manual recovery is required. No production database migration is attempted by this pipeline.
+
+
+## Verified EC2 runtime snapshot — 12 November 2026
+
+A read-only host diagnostic at 06:46 UTC reported:
+
+| Item | Observed state |
+|---|---|
+| Production backend unit | `superbajaar-backend.service` — loaded, active, running |
+| Legacy unit name | `superbajaar-new.service` — not found |
+| Backend working directory | `/opt/superbajaar/source/backend` |
+| Runtime user | `ubuntu` |
+| Gunicorn executable | `/opt/superbajaar/source/backend/venv/bin/gunicorn` |
+| Bind address | `127.0.0.1:8001` |
+| Git branch / checkout | `main` at `bf01a6d40ec5801cdb3ba98a99e410b421411c5d` |
+| Git sync timer | Active; latest observed sync exited 0 and found checkout current with `origin/main` |
+| Git object directory | Writable by `ubuntu` |
+
+This is a timestamped observation, not a guarantee of current state. Re-run the read-only host checks before an operational change. Do not use the legacy `superbajaar-new.service` name in deployment commands or runbooks unless a future verified host configuration actually installs it.
