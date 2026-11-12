@@ -39,3 +39,26 @@ def test_customer_claim_cancel_route_is_scoped_to_numeric_claim_ids():
     assert is_customer_identity_claim_route("POST", "/api/customer-auth/identity-claims/123/cancel")
     assert not is_customer_identity_claim_route("POST", "/api/customer-auth/identity-claims/not-a-number/cancel")
     assert not is_customer_identity_claim_route("DELETE", "/api/customer-auth/identity-claims/123/cancel")
+
+
+
+def test_identity_review_rejects_unimplemented_otp_proof_methods():
+    from pydantic import ValidationError
+    from app.api.identity import ReviewIn
+
+    for method in ("email_otp", "phone_otp", "automated_otp"):
+        try:
+            ReviewIn(decision="approve", proof_verified=True, proof_method=method,
+                     reason="Evidence was checked by an administrator")
+        except ValidationError:
+            continue
+        raise AssertionError(f"unsupported proof method was accepted: {method}")
+
+
+def test_identity_review_accepts_documented_manual_evidence_methods():
+    from app.api.identity import ReviewIn
+
+    for method in ("document_review", "in_person", "verified_account", "business_registry"):
+        payload = ReviewIn(decision="approve", proof_verified=True, proof_method=method,
+                           reason="Evidence was checked by an administrator")
+        assert payload.proof_method == method
