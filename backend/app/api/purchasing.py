@@ -110,7 +110,7 @@ def list_suppliers(search: str | None = Query(default=None, max_length=200), lim
     where = " WHERE " + " AND ".join(clauses)
     try:
         with _connect() as conn:
-            items = conn.execute("SELECT id,name,contact_name,phone,email,gstin,address,is_active,created_at FROM suppliers" + where + " ORDER BY name LIMIT %s OFFSET %s", (*params, limit, offset)).fetchall()
+            items = conn.execute("SELECT s.id,s.name,s.contact_name,s.phone,s.email,s.gstin,s.address,s.is_active,s.created_at,iparty.sbid FROM suppliers s LEFT JOIN identity_profiles ip ON ip.supplier_id=s.id AND ip.profile_type='vendor_organisation' AND ip.status='active' LEFT JOIN identity_parties iparty ON iparty.id=ip.party_id" + where.replace("is_active=TRUE","s.is_active=TRUE").replace("(name ILIKE","(s.name ILIKE").replace("COALESCE(phone,","COALESCE(s.phone,").replace("COALESCE(gstin,","COALESCE(s.gstin,") + " ORDER BY s.name LIMIT %s OFFSET %s", (*params, limit, offset)).fetchall()
             total = conn.execute("SELECT count(*) AS total FROM suppliers" + where, params).fetchone()["total"]
         return {"items": items, "total": total, "limit": limit, "offset": offset}
     except psycopg.Error as exc:
