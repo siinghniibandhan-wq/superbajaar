@@ -385,15 +385,23 @@ def list_identity_claims(request: Request):
         with _connect() as conn:
             rows = conn.execute(
                 """
+                WITH RECURSIVE customer_identity_parties(party_id) AS (
+                    SELECT party_id
+                    FROM identity_profiles
+                    WHERE profile_type = 'customer_account'
+                      AND customer_account_id = %s
+                      AND status = 'active'
+                    UNION
+                    SELECT alias.source_party_id
+                    FROM identity_aliases alias
+                    JOIN customer_identity_parties current_party
+                      ON alias.canonical_party_id = current_party.party_id
+                )
                 SELECT r.id, r.status, r.created_at, r.updated_at,
                        r.reviewed_at, r.review_reason, r.proof_method, r.expires_at
                 FROM identity_link_requests r
-                JOIN identity_profiles ip
-                  ON ip.party_id = r.requester_party_id
-                 AND ip.profile_type = 'customer_account'
-                 AND ip.customer_account_id = %s
-                 AND ip.status = 'active'
                 WHERE r.request_type = 'claim_existing_identity'
+                  AND r.requester_party_id IN (SELECT party_id FROM customer_identity_parties)
                 ORDER BY r.created_at DESC, r.id DESC
                 LIMIT 50
                 """,
