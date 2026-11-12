@@ -56,6 +56,18 @@ class DeployBackendConfigurationTests(unittest.TestCase):
         self.assertEqual(len(job_permissions), 2)
         self.assertTrue(all("<AMPLIFY_APP_ID>" in s["Resource"] for s in job_permissions))
 
+    def test_production_database_workflow_is_manual_and_explicitly_gated(self):
+        workflow_path = REPO_ROOT / ".github" / "workflows" / "production-database-migrations.yml"
+        workflow = workflow_path.read_text(encoding="utf-8")
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertNotIn("push:", workflow)
+        self.assertIn("environment: production-database", workflow)
+        self.assertIn("SB_DB=superbajaar", workflow)
+        self.assertIn("SB_PSQL=/usr/local/bin/sb-psql", workflow)
+        self.assertIn("APPLY SUPERBAJAAR", workflow)
+        self.assertIn("--status", workflow)
+        self.assertIn("apply_schema.sh", workflow)
+
     def test_preserves_deployment_safety_guards(self):
         for guard in (
             'systemctl is-active --quiet "$SERVICE"',
