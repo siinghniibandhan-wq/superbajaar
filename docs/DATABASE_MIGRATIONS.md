@@ -34,7 +34,7 @@ Production service configuration supplied by the project owner:
   `/opt/superbajaar/source/backend/scripts/apply_schema.sh /opt/superbajaar/source/backend/schema --status`
 - Explicit environment includes `SB_DB=superbajaar`, `SB_PSQL=/usr/local/bin/sb-psql`, `SB_BACKUP_DIR=/var/lib/superbajaar/backups`, and `SB_LOG=/var/log/superbajaar/schema.log`.
 
-The service's `SuccessExitStatus=0 10` treats status code 10 as a successful systemd oneshot execution, because code 10 means the status check found migration attention is required. It does **not** mean the schema is fully up to date. Inspect the service output and log to understand the reported state.
+The intended status-check semantics are that exit code 10 means migration attention is required; it is not equivalent to a clean schema. However, the read-only EC2 diagnostic on 12 November 2026 inspected the merged unit with `systemctl cat` and did **not** show `SuccessExitStatus=0 10` in either the base unit or its drop-in. The installed service therefore treated exit code 10 as a failed oneshot (`Result=exit-code`). Do not assume the documented success-exit override is installed; verify the effective unit on the host. Keep this alert-visible behaviour until the operator explicitly chooses and documents a different monitoring policy.
 
 Do not remove `--status` from the effective `ExecStart`. The runner's default mode (no option) applies pending SQL. A timer running without `--status` can therefore make database changes automatically.
 
