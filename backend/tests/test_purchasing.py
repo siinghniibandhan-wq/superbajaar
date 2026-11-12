@@ -594,3 +594,34 @@ def test_supplier_creation_returns_the_generated_sbid(monkeypatch):
 
     assert result["id"] == 41
     assert result["sbid"] == "SBID-0123456789ABCDEF0123"
+
+
+def test_supplier_update_preserves_and_returns_existing_sbid(monkeypatch):
+    from app.api import purchasing
+
+    class Result:
+        def __init__(self, row):
+            self.row = row
+        def fetchone(self):
+            return self.row
+
+    class Connection:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def transaction(self):
+            from contextlib import nullcontext
+            return nullcontext()
+        def execute(self, sql, params=()):
+            if "UPDATE suppliers SET" in sql:
+                return Result({"id": 41, "name": "Updated Supplier", "email": None, "phone": None})
+            if "FROM identity_profiles ip" in sql:
+                return Result({"id": 900, "sbid": "SBID-0123456789ABCDEF0123"})
+            if "UPDATE identity_parties SET display_name" in sql:
+                return Result(None)
+            raise AssertionError(f"Unexpected SQL: {sql}")
+
+    monkeypatch.setattr(purchasing, "_connect", Connection)
+    result = purchasing.update_supplier(41, purchasing.SupplierCreate(name="Updated Supplier"))
+    assert result["sbid"] == "SBID-0123456789ABCDEF0123"
