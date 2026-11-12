@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Heart, ShoppingBag, Search, Sparkles, Flame, Clock3, ChevronLeft, ChevronRight, UserRound, MapPin, X, Coins, CreditCard, CalendarClock } from "lucide-react";
 import { apiRequest } from "../services/api.js";
 import GoogleAnalytics, { getAnalyticsConsent, setAnalyticsConsent, trackAnalyticsEvent } from "./GoogleAnalytics.jsx";
+import IdentityClaimsPanel from "./IdentityClaimsPanel.jsx";
 import "./storefront.css";
 import "./storefront-responsive.css";
 
@@ -831,7 +832,7 @@ export default function Storefront() {
       <div className="storefront-account-welcome"><span className="storefront-kicker">YOUR SUPER BAJAAR</span><h1>{customer.name.trim() ? `Hello, ${customer.name.trim().split(/\s+/)[0]}` : "My Account"}</h1><p>Manage your profile, purchases and support in one place.</p></div>
       <div className="storefront-account-layout">
         <nav className="storefront-account-nav" aria-label="Customer account sections">
-          {[["overview","Overview","user-round"],["loyalty","Loyalty Card & Coins","coins"],["referrals","Refer & Earn","users"],["orders","My Orders","package"],["tickets","My Tickets","ticket"],["wishlist","My Wishlist","heart"],["addresses","Addresses","map-pin"],["security","Security","shield-check"],["privacy","Privacy & Analytics","shield-check"]].map(([key,label])=><button key={key} type="button" className={accountSection===key?"is-active":""} onClick={()=>{if(key==="wishlist"){openWishlist();return;}setAccountSection(key);setNotice("");setError("");if(key==="referrals") loadReferrals();if(key==="loyalty") loadCustomerLoyalty();if(key==="orders") loadMyOrders();}}>{label}<span aria-hidden="true">›</span></button>)}
+          {[["overview","Overview","user-round"],["identity-claims","Identity claims","shield-check"],["loyalty","Loyalty Card & Coins","coins"],["referrals","Refer & Earn","users"],["orders","My Orders","package"],["tickets","My Tickets","ticket"],["wishlist","My Wishlist","heart"],["addresses","Addresses","map-pin"],["security","Security","shield-check"],["privacy","Privacy & Analytics","shield-check"]].map(([key,label])=><button key={key} type="button" className={accountSection===key?"is-active":""} onClick={()=>{if(key==="wishlist"){openWishlist();return;}setAccountSection(key);setNotice("");setError("");if(key==="referrals") loadReferrals();if(key==="loyalty") loadCustomerLoyalty();if(key==="orders") loadMyOrders();}}>{label}<span aria-hidden="true">›</span></button>)}
         </nav>
         <div className="storefront-account-panel">
           {accountSection==="overview" && <div className="storefront-account-section">
@@ -839,6 +840,7 @@ export default function Storefront() {
             {(customer.name||customer.email||customer.phone) ? <div className="storefront-account-summary">{customer.name&&<div><small>Full name</small><strong>{customer.name}</strong></div>}{customer.email&&<div><small>Email address</small><strong>{customer.email}</strong></div>}{customer.phone&&<div><small>Mobile number</small><strong>{customer.phone}</strong></div>}</div> : <p className="storefront-account-empty">Your profile is not filled in yet. Add your details below so they are ready at checkout.</p>}
             <form className="storefront-account-form" onSubmit={saveCustomerProfile}><label>Full name<input autoComplete="name" required maxLength="200" value={customer.name} onChange={event=>setCustomer(old=>({...old,name:event.target.value}))}/></label><label>Mobile number<input autoComplete="tel" maxLength="20" value={customer.phone} onChange={event=>setCustomer(old=>({...old,phone:event.target.value}))}/></label><label>Email address<input type="email" autoComplete="email" maxLength="254" value={customer.email} onChange={event=>setCustomer(old=>({...old,email:event.target.value}))}/></label><button className="storefront-primary" type="submit">Save profile</button><p className="storefront-account-note">Your sign-in identity is stored securely by Super Bajaar. Address syncing is a separate feature.</p><button type="button" className="storefront-primary" onClick={signOutCustomer}>Sign out</button></form>
           </div>}
+          {accountSection==="identity-claims" && <IdentityClaimsPanel customerToken={customerToken} />}
           {accountSection==="loyalty" && <div className="storefront-account-section">
             <span className="storefront-kicker">REWARDS FOR EVERYDAY SHOPPING</span>
             <h2>Loyalty Card &amp; Super Coins</h2>
