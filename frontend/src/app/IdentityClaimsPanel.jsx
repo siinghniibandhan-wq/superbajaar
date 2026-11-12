@@ -49,7 +49,7 @@ export default function IdentityClaimsPanel({ customerToken }) {
     event.preventDefault();
     const sbid = targetSbid.trim().toUpperCase();
     const claimReason = reason.trim();
-    if (!/^SBID-[A-Z0-9]{20}$/.test(sbid)) {
+    if (!/^SBID-[A-F0-9]{20}$/.test(sbid)) {
       setError("Enter a valid SBID in the format SBID- followed by 20 letters or numbers.");
       return;
     }
