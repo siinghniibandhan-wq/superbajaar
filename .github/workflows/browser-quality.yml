@@ -87,9 +87,24 @@ jobs:
           done
           cat /tmp/superbajaar-preview.log
           exit 1
+      - name: Install pinned Lighthouse CLI
+        run: |
+          mkdir -p "$RUNNER_TEMP/lighthouse"
+          cat > "$RUNNER_TEMP/lighthouse/package.json" <<'EOF'
+          {
+            "private": true,
+            "dependencies": {
+              "lighthouse": "12.8.2"
+            },
+            "overrides": {
+              "tldts-core": "7.4.16"
+            }
+          }
+          EOF
+          npm install --prefix "$RUNNER_TEMP/lighthouse" --no-audit --no-fund
       - name: Run Lighthouse audit
         run: |
-          npx --yes lighthouse@12.8.2 http://127.0.0.1:4173/ \
+          "$RUNNER_TEMP/lighthouse/node_modules/.bin/lighthouse" http://127.0.0.1:4173/ \
             --only-categories=performance,accessibility,best-practices,seo \
             --chrome-flags="--headless=new --no-sandbox --disable-dev-shm-usage --disable-gpu" \
             --output=json --output=html \
