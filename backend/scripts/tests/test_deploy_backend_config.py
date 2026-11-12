@@ -32,6 +32,11 @@ class DeployBackendConfigurationTests(unittest.TestCase):
         self.assertIn("https://github.com/siinghniibandhan-wq/superbajaar", self.workflow)
         self.assertIn("Exactly one matching Amplify app is required", self.workflow)
 
+    def test_amplify_health_check_uses_canonical_branch_domain_from_app_metadata(self):
+        self.assertIn('echo "site_url=https://${BRANCH_NAME}.${DEFAULT_DOMAIN}" >> "$GITHUB_OUTPUT"', self.workflow)
+        self.assertIn("SITE_URL: ${{ steps.amplify.outputs.site_url }}", self.workflow)
+        self.assertNotIn("vars.AMPLIFY_SITE_URL || secrets.AMPLIFY_SITE_URL", self.workflow)
+
     def test_discovered_amplify_app_id_is_exported_for_later_steps(self):
         self.assertIn('echo "app_id=$APP_ID" >> "$GITHUB_OUTPUT"', self.workflow)
 
