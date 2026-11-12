@@ -356,12 +356,25 @@ def request_identity_claim(payload: IdentityClaimIn, request: Request):
                 if target and target["id"] != own_party_id:
                     conn.execute(
                         "INSERT INTO identity_link_requests(idempotency_key,requester_party_id,target_party_id,request_type,status,expires_at,request_context) "
-                        "VALUES(%s,%s,%s,'claim_existing_identity','proof_required',now()+interval '7 days',jsonb_build_object('reason',%s))",
-                        (secrets.token_urlsafe(24), own_party_id, target["id"], payload.reason),
+                        "VALUES(%s,%s,%s,'claim_existing_identity','proof_required',now()+interval '7 days',jsonb_build_object('reason',%s,'requested_sbid',%s))",
+                        (secrets.token_urlsafe(24), own_party_id, target["id"], payload.reason, requested_sbid),
                     )
                     IdentityService(conn)._event(
                         party_id=target["id"], event_type="link_requested",
                         event_data={"request_type":"claim_existing_identity"},
+                        actor_party_id=own_party_id, reason="Authenticated customer identity claim submitted",
+                    )
+                elif target is None:
+                    # Keep a customer-visible, non-enumerating submission history even
+                    # when no current SBID matches. Admins can review and close it safely.
+                    conn.execute(
+                        "INSERT INTO identity_link_requests(idempotency_key,requester_party_id,target_party_id,request_type,status,expires_at,request_context) "
+                        "VALUES(%s,%s,NULL,'claim_existing_identity','proof_required',now()+interval '7 days',jsonb_build_object('reason',%s,'requested_sbid',%s))",
+                        (secrets.token_urlsafe(24), own_party_id, payload.reason, requested_sbid),
+                    )
+                    IdentityService(conn)._event(
+                        party_id=own_party_id, event_type="link_requested",
+                        event_data={"request_type":"claim_existing_identity","target_resolution":"unmatched"},
                         actor_party_id=own_party_id, reason="Authenticated customer identity claim submitted",
                     )
         return {"status": "submitted", "message": "If the identity can be matched, the request will be reviewed. We will not disclose identity details here."}
