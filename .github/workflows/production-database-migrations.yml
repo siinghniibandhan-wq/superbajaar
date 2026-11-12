@@ -47,7 +47,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "push" ]; then
-            echo "apply_requested=true" >> "$GITHUB_OUTPUT"
+            echo "apply_requested=false" >> "$GITHUB_OUTPUT"
           elif [ "$OPERATION" = "apply" ]; then
             test "$CONFIRMATION" = "APPLY SUPERBAJAAR" || {
               echo "::error::Apply refused. Type exactly APPLY SUPERBAJAAR."
