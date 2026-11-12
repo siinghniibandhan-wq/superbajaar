@@ -306,7 +306,7 @@ def me(request: Request):
 
 
 class IdentityClaimIn(BaseModel):
-    target_sbid: str = Field(min_length=8, max_length=40)
+    target_sbid: str = Field(pattern=r"(?i)^SBID-[A-F0-9]{20}$")
     reason: str = Field(min_length=5, max_length=500)
 
 
@@ -356,12 +356,25 @@ def request_identity_claim(payload: IdentityClaimIn, request: Request):
                 if target and target["id"] != own_party_id:
                     conn.execute(
                         "INSERT INTO identity_link_requests(idempotency_key,requester_party_id,target_party_id,request_type,status,expires_at,request_context) "
-                        "VALUES(%s,%s,%s,'claim_existing_identity','proof_required',now()+interval '7 days',jsonb_build_object('reason',%s))",
-                        (secrets.token_urlsafe(24), own_party_id, target["id"], payload.reason),
+                        "VALUES(%s,%s,%s,'claim_existing_identity','proof_required',now()+interval '7 days',jsonb_build_object('reason',%s::text,'requested_sbid',%s::text))",
+                        (secrets.token_urlsafe(24), own_party_id, target["id"], payload.reason, requested_sbid),
                     )
                     IdentityService(conn)._event(
                         party_id=target["id"], event_type="link_requested",
                         event_data={"request_type":"claim_existing_identity"},
+                        actor_party_id=own_party_id, reason="Authenticated customer identity claim submitted",
+                    )
+                elif target is None:
+                    # Keep a customer-visible, non-enumerating submission history even
+                    # when no current SBID matches. Admins can review and close it safely.
+                    conn.execute(
+                        "INSERT INTO identity_link_requests(idempotency_key,requester_party_id,target_party_id,request_type,status,expires_at,request_context) "
+                        "VALUES(%s,%s,NULL,'claim_existing_identity','proof_required',now()+interval '7 days',jsonb_build_object('reason',%s::text,'requested_sbid',%s::text))",
+                        (secrets.token_urlsafe(24), own_party_id, payload.reason, requested_sbid),
+                    )
+                    IdentityService(conn)._event(
+                        party_id=own_party_id, event_type="link_requested",
+                        event_data={"request_type":"claim_existing_identity","target_resolution":"unmatched"},
                         actor_party_id=own_party_id, reason="Authenticated customer identity claim submitted",
                     )
         return {"status": "submitted", "message": "If the identity can be matched, the request will be reviewed. We will not disclose identity details here."}
@@ -369,6 +382,47 @@ def request_identity_claim(payload: IdentityClaimIn, request: Request):
         raise
     except psycopg.Error as exc:
         raise HTTPException(status_code=503, detail="Unable to submit identity claim") from exc
+
+
+@router.get("/identity-claims")
+def list_identity_claims(request: Request):
+    """Return only claim requests initiated by the signed-in customer.
+
+    Target SBIDs and target profile details are deliberately excluded so this
+    endpoint cannot be used to enumerate other customers or identities.
+    """
+    customer_id = getattr(request.state, "customer_id", None)
+    if not customer_id:
+        raise HTTPException(status_code=401, detail="Customer sign-in required")
+    try:
+        with _connect() as conn:
+            rows = conn.execute(
+                """
+                WITH RECURSIVE customer_identity_parties(party_id) AS (
+                    SELECT party_id
+                    FROM identity_profiles
+                    WHERE profile_type = 'customer_account'
+                      AND customer_account_id = %s
+                      AND status = 'active'
+                    UNION
+                    SELECT alias.source_party_id
+                    FROM identity_aliases alias
+                    JOIN customer_identity_parties current_party
+                      ON alias.canonical_party_id = current_party.party_id
+                )
+                SELECT r.id, r.status, r.created_at, r.updated_at,
+                       r.reviewed_at, r.review_reason, r.proof_method, r.expires_at
+                FROM identity_link_requests r
+                WHERE r.request_type = 'claim_existing_identity'
+                  AND r.requester_party_id IN (SELECT party_id FROM customer_identity_parties)
+                ORDER BY r.created_at DESC, r.id DESC
+                LIMIT 50
+                """,
+                (customer_id,),
+            ).fetchall()
+        return {"items": rows}
+    except psycopg.Error as exc:
+        raise HTTPException(status_code=503, detail="Could not load your identity claims") from exc
 
 
 @router.post("/logout")

@@ -129,6 +129,7 @@ def _admin(request: Request):
 
 class LinkRequestIn(BaseModel):
     target_party_id: int = Field(gt=0)
+    requester_party_id: int | None = Field(default=None, gt=0)
     request_type: str = Field(pattern=r"^(claim_existing_identity|link_profile|organisation_relationship)$")
     requested_profile_type: str | None = Field(default=None, max_length=40)
     requested_source_id: str | None = Field(default=None, max_length=80)
@@ -143,6 +144,110 @@ class ReviewIn(BaseModel):
     proof_verified: bool = False
     proof_method: str | None = Field(default=None, max_length=40)
     reason: str = Field(min_length=5, max_length=500)
+
+
+@router.get("/reconciliation/preview")
+def legacy_reconciliation_preview(
+    request: Request,
+    limit: int = Query(default=100, ge=1, le=200),
+):
+    """Read-only exact-contact candidate report; matching never links or merges records."""
+    _admin(request)
+    query = """
+        WITH source_records AS (
+            SELECT 'customer_account'::text AS profile_type, ca.id AS source_id,
+                   NULLIF(lower(trim(to_jsonb(ca)->>'email')), '') AS email_value,
+                   NULLIF(regexp_replace(coalesce(to_jsonb(ca)->>'phone',
+                       to_jsonb(ca)->>'mobile', to_jsonb(ca)->>'mobile_number', ''), '[^0-9]', '', 'g'), '') AS phone_digits
+            FROM customer_accounts ca
+            UNION ALL
+            SELECT 'crm_customer', c.id,
+                   NULLIF(lower(trim(coalesce(to_jsonb(c)->>'email',
+                       to_jsonb(c)->>'customer_email'))), ''),
+                   NULLIF(regexp_replace(coalesce(to_jsonb(c)->>'phone',
+                       to_jsonb(c)->>'customer_phone', to_jsonb(c)->>'mobile',
+                       to_jsonb(c)->>'mobile_number', ''), '[^0-9]', '', 'g'), '')
+            FROM customers c
+            UNION ALL
+            SELECT 'employee', e.id,
+                   NULLIF(lower(trim(coalesce(to_jsonb(e)->>'email',
+                       to_jsonb(e)->>'work_email'))), ''),
+                   NULLIF(regexp_replace(coalesce(to_jsonb(e)->>'phone',
+                       to_jsonb(e)->>'mobile', to_jsonb(e)->>'mobile_number', ''), '[^0-9]', '', 'g'), '')
+            FROM hr_employees e
+            UNION ALL
+            SELECT 'vendor_organisation', s.id,
+                   NULLIF(lower(trim(to_jsonb(s)->>'email')), ''),
+                   NULLIF(regexp_replace(coalesce(to_jsonb(s)->>'phone',
+                       to_jsonb(s)->>'mobile', to_jsonb(s)->>'mobile_number', ''), '[^0-9]', '', 'g'), '')
+            FROM suppliers s
+        ),
+        contact_candidates AS (
+            SELECT profile_type, source_id, 'email'::text AS contact_type,
+                   email_value AS normalized_value
+            FROM source_records WHERE email_value IS NOT NULL
+            UNION ALL
+            SELECT profile_type, source_id, 'phone',
+                   CASE
+                     WHEN length(phone_digits)=12 AND left(phone_digits,2)='91' THEN right(phone_digits,10)
+                     WHEN length(phone_digits)=11 AND left(phone_digits,1)='0' THEN right(phone_digits,10)
+                     ELSE phone_digits
+                   END
+            FROM source_records
+            WHERE phone_digits IS NOT NULL AND length(phone_digits) BETWEEN 7 AND 15
+        ),
+        duplicate_contacts AS (
+            SELECT contact_type, normalized_value,
+                   count(*) AS match_count,
+                   count(DISTINCT profile_type) AS profile_type_count
+            FROM contact_candidates
+            GROUP BY contact_type, normalized_value
+            HAVING count(*) > 1
+        )
+        SELECT d.contact_type,
+               CASE WHEN d.contact_type='email'
+                    THEN left(d.normalized_value,2)||'***@'||split_part(d.normalized_value,'@',2)
+                    ELSE left(d.normalized_value,3)||'******'||right(d.normalized_value,2)
+               END AS masked_contact,
+               d.match_count,
+               d.profile_type_count,
+               'manual_review_required'::text AS classification,
+               'An exact contact match is only a candidate signal, not proof that records belong to the same person or organisation.'::text AS review_note,
+               jsonb_agg(jsonb_build_object(
+                   'profile_type', c.profile_type,
+                   'source_id', c.source_id,
+                   'sbid', p.sbid,
+                   'profile_status', ip.status
+               ) ORDER BY c.profile_type, c.source_id) AS records
+        FROM duplicate_contacts d
+        JOIN contact_candidates c
+          ON c.contact_type=d.contact_type AND c.normalized_value=d.normalized_value
+        LEFT JOIN identity_profiles ip
+          ON ip.profile_type=c.profile_type
+         AND CASE c.profile_type
+             WHEN 'customer_account' THEN ip.customer_account_id
+             WHEN 'crm_customer' THEN ip.crm_customer_id
+             WHEN 'employee' THEN ip.employee_id
+             ELSE ip.supplier_id
+         END = c.source_id
+        LEFT JOIN identity_parties p ON p.id=ip.party_id
+        GROUP BY d.contact_type,d.normalized_value,d.match_count,d.profile_type_count
+        ORDER BY d.match_count DESC,d.contact_type,d.normalized_value
+        LIMIT %s
+    """
+    try:
+        with _connect() as conn:
+            rows = conn.execute(query, (limit,)).fetchall()
+        return {
+            "items": rows,
+            "count": len(rows),
+            "limit": limit,
+            "read_only": True,
+            "automatic_linking": False,
+            "automatic_merging": False,
+        }
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Unable to generate the legacy identity reconciliation preview") from exc
 
 
 @router.get("")
@@ -203,7 +308,7 @@ def review_queue(request: Request, limit: int = Query(default=100, ge=1, le=300)
     try:
         with _connect() as conn:
             rows = conn.execute(
-                "SELECT r.id,r.request_type,r.status,r.requested_profile_type,r.requested_source_id,r.proof_method,r.proof_verified_at,r.request_context->>'reason' AS reason,r.created_at,"
+                "SELECT r.id,r.request_type,r.status,r.requested_profile_type,r.requested_source_id,r.proof_method,r.proof_verified_at,r.request_context->>'reason' AS reason,r.request_context->>'requested_sbid' AS requested_sbid,r.created_at,"
                 "sp.sbid AS requester_sbid,tp.sbid AS target_sbid FROM identity_link_requests r "
                 "LEFT JOIN identity_parties sp ON sp.id=r.requester_party_id LEFT JOIN identity_parties tp ON tp.id=r.target_party_id "
                 "WHERE r.status IN ('pending','proof_required') ORDER BY r.created_at LIMIT %s", (limit,)
@@ -223,11 +328,43 @@ def create_link_request(payload: LinkRequestIn, request: Request):
     try:
         with _connect() as conn:
             with conn.transaction():
+                requester_party_id = payload.requester_party_id
+                if payload.request_type == "organisation_relationship":
+                    if requester_party_id is None:
+                        requester = conn.execute(
+                            "SELECT party_id FROM identity_auth_accounts "
+                            "WHERE app_user_id=%s AND status='active'",
+                            (request.state.user_id,),
+                        ).fetchone()
+                        requester_party_id = requester["party_id"] if requester else None
+                    if requester_party_id is None:
+                        raise HTTPException(409, "Select the individual identity that is requesting this organisation relationship")
+                    parties = conn.execute(
+                        "SELECT id,party_type,status FROM identity_parties "
+                        "WHERE id IN (%s,%s) ORDER BY id FOR UPDATE",
+                        (requester_party_id, payload.target_party_id),
+                    ).fetchall()
+                    by_id = {party["id"]: party for party in parties}
+                    person = by_id.get(requester_party_id)
+                    organisation = by_id.get(payload.target_party_id)
+                    if not person or not organisation or person["status"] != "active" or organisation["status"] != "active":
+                        raise HTTPException(409, "Both selected identities must be active")
+                    if person["party_type"] != "individual" or organisation["party_type"] != "organisation":
+                        raise HTTPException(409, "An organisation relationship must connect an individual to an organisation")
+                elif requester_party_id is not None:
+                    raise HTTPException(422, "A requester identity can only be selected for organisation relationship requests")
+                else:
+                    requester = conn.execute(
+                        "SELECT party_id FROM identity_auth_accounts "
+                        "WHERE app_user_id=%s AND status='active'",
+                        (request.state.user_id,),
+                    ).fetchone()
+                    requester_party_id = requester["party_id"] if requester else None
                 row = conn.execute(
                     "INSERT INTO identity_link_requests(idempotency_key,requester_party_id,target_party_id,request_type,status,requested_profile_type,requested_source_id,expires_at,request_context) "
-                    "VALUES(%s,(SELECT party_id FROM identity_auth_accounts WHERE app_user_id=%s AND status='active'),%s,%s,'proof_required',%s,%s,%s,jsonb_build_object('reason',%s,'relationship_type',%s,'relationship_scope',%s::jsonb)) "
+                    "VALUES(%s,%s,%s,%s,'proof_required',%s,%s,%s,jsonb_build_object('reason',%s::text,'relationship_type',%s::text,'relationship_scope',%s::jsonb,'submitted_by_user_id',%s::bigint)) "
                     "ON CONFLICT(idempotency_key) DO NOTHING RETURNING id,status,created_at",
-                    (payload.idempotency_key, request.state.user_id, payload.target_party_id, payload.request_type, payload.requested_profile_type, payload.requested_source_id, datetime.now(timezone.utc)+timedelta(days=7), payload.reason, payload.relationship_type, __import__("json").dumps(payload.relationship_scope)),
+                    (payload.idempotency_key, requester_party_id, payload.target_party_id, payload.request_type, payload.requested_profile_type, payload.requested_source_id, datetime.now(timezone.utc)+timedelta(days=7), payload.reason, payload.relationship_type, __import__("json").dumps(payload.relationship_scope), request.state.user_id),
                 ).fetchone()
                 if row is None:
                     raise HTTPException(409, "This request has already been submitted")
@@ -265,6 +402,9 @@ def review_link_request(request_id: int, payload: ReviewIn, request: Request):
                         (request_id,),
                     )
                     return {"id": request_id, "status": "expired"}
+                context = item["request_context"] or {}
+                if payload.decision == "approve" and context.get("submitted_by_user_id") == request.state.user_id:
+                    raise HTTPException(403, "A different administrator must review and approve this identity request")
                 if payload.decision == "approve":
                     service = IdentityService(conn)
                     if item["request_type"] == "link_profile":

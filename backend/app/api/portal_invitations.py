@@ -243,6 +243,57 @@ def create_invitation(payload: InvitationCreate, request: Request):
         raise HTTPException(503, "Unable to create portal invitation") from exc
 
 
+def _ensure_employee_portal_identity(conn, identity, employee_id: int, user_id: int, email: str, full_name: str) -> int:
+    """Reuse the employee's HR-created SBID when activating its portal login."""
+    employee_party = conn.execute(
+        "SELECT p.id FROM identity_profiles ip "
+        "JOIN identity_parties p ON p.id=ip.party_id "
+        "WHERE ip.profile_type='employee' AND ip.employee_id=%s "
+        "AND ip.status='active' AND p.status='active' FOR UPDATE OF p",
+        (employee_id,),
+    ).fetchone()
+    if employee_party:
+        party_id = employee_party["id"]
+    else:
+        party = identity.create_party(
+            party_type="individual", display_name=full_name,
+            reason="Legacy employee portal invitation accepted",
+        )
+        party_id = party["id"]
+        identity.link_profile(
+            party_id=party_id, profile_type="employee", source_id=employee_id,
+            link_method="verified_invitation",
+            reason="Legacy employee portal identity backfill",
+        )
+
+    existing_login = conn.execute(
+        "SELECT party_id,status FROM identity_auth_accounts WHERE app_user_id=%s",
+        (user_id,),
+    ).fetchone()
+    if existing_login:
+        if existing_login["party_id"] != party_id or existing_login["status"] != "active":
+            raise HTTPException(409, "This login is already linked to another or inactive identity")
+    else:
+        identity.link_auth_account(
+            party_id=party_id, account_type="staff", source_id=user_id,
+            link_method="verified_invitation",
+        )
+
+    normalized_email = (email or "").strip().lower()
+    if normalized_email:
+        existing_contact = conn.execute(
+            "SELECT id FROM identity_contacts WHERE party_id=%s AND contact_type='email' "
+            "AND normalized_value=%s AND valid_to IS NULL LIMIT 1",
+            (party_id, normalized_email),
+        ).fetchone()
+        if not existing_contact:
+            identity.add_contact(
+                party_id=party_id, contact_type="email",
+                value=normalized_email, source="employee_invitation",
+            )
+    return party_id
+
+
 @router.post("/accept", status_code=201)
 def accept_invitation(payload: InvitationAccept):
     if len(settings.jwt_secret_key) < 32:
@@ -304,14 +355,17 @@ def accept_invitation(payload: InvitationAccept):
                         (user["id"], invitation["supplier_id"]),
                     )
                 else:
-                    party = identity.create_party(party_type="individual", display_name=full_name, reason="Employee portal invitation accepted")
-                    identity.link_profile(party_id=party["id"], profile_type="employee", source_id=invitation["employee_id"], link_method="verified_invitation")
-                    identity.link_auth_account(party_id=party["id"], account_type="staff", source_id=user["id"], link_method="verified_invitation")
-                    identity.add_contact(party_id=party["id"], contact_type="email", value=invitation["email"], source="employee_invitation")
-                    conn.execute(
-                        "UPDATE hr_employees SET user_id=%s,updated_at=now() WHERE id=%s AND user_id IS NULL",
-                        (user["id"], invitation["employee_id"]),
+                    _ensure_employee_portal_identity(
+                        conn, identity, invitation["employee_id"], user["id"],
+                        invitation["email"], full_name,
                     )
+                    updated_employee = conn.execute(
+                        "UPDATE hr_employees SET user_id=%s,updated_at=now() "
+                        "WHERE id=%s AND user_id IS NULL RETURNING id",
+                        (user["id"], invitation["employee_id"]),
+                    ).fetchone()
+                    if updated_employee is None:
+                        raise HTTPException(409, "This employee was linked to a login account by another activation")
                 conn.execute("UPDATE portal_invitations SET accepted_at=now() WHERE id=%s", (invitation["id"],))
         return {"status": "activated", "portal_type": invitation["portal_type"], "user": user}
     except HTTPException:

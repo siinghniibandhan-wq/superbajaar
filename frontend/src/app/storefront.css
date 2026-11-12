@@ -1249,3 +1249,16 @@
 .storefront-checkout-form .storefront-checkout-consent { display:flex; align-items:flex-start; gap:10px; grid-column:1 / -1; color:#625873; font-size:12px; line-height:1.55; font-weight:600; }
 .storefront-checkout-form .storefront-checkout-consent input[type="checkbox"] { flex:0 0 auto; width:17px; height:17px; margin:1px 0 0; padding:0; accent-color:#6d35c5; }
 .storefront-checkout-form .storefront-checkout-consent a { color:#5c2bb4; text-decoration:underline; text-underline-offset:2px; }
+
+
+/* Customer identity claim and status history */
+.storefront-identity-claims { display:grid; gap:14px; }
+.storefront-identity-claims > p { max-width:760px; color:#655b70; line-height:1.65; }
+.storefront-identity-claims .storefront-account-form { max-width:680px; }
+.storefront-identity-claims .storefront-account-form small { color:#756b82; line-height:1.5; }
+.storefront-identity-claim-history { display:grid; gap:12px; margin-top:12px; }
+.storefront-identity-claim-history .storefront-account-section-heading { align-items:center; }
+.storefront-identity-claim-history .storefront-account-summary { display:grid; gap:0; }
+.storefront-identity-claim-history .storefront-account-summary > div { padding:14px 0; border-bottom:1px solid #eee8f4; }
+.storefront-identity-claim-history .storefront-account-summary > div:last-child { border-bottom:0; }
+.storefront-identity-claim-history .storefront-account-summary strong { color:#37234f; }
