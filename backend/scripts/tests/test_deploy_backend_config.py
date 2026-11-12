@@ -143,7 +143,7 @@ class DeployBackendConfigurationTests(unittest.TestCase):
 
     def test_ec2_deploy_transfers_checked_out_script_and_fetches_only_under_deploy_lock(self):
         dispatch = self.workflow.split("name: Dispatch deployment to EC2", 1)[1].split("  verify-amplify:", 1)[0]
-        self.assertIn("uses: actions/checkout@v4", dispatch)
+        self.assertIn("name: Check out exact deployment source\n        uses: actions/checkout@v4", self.workflow)
         self.assertIn('SCRIPT_B64="$(base64 -w0 backend/scripts/deploy_backend.sh)"', dispatch)
         self.assertIn("printf '%s' ${SCRIPT_B64} | base64 -d", dispatch)
         self.assertNotIn("git fetch --quiet origin main; git show", dispatch)
