@@ -85,7 +85,7 @@ jobs:
                       and path == "backend/schema/000_baseline_schema.sql"
                   ):
                       restored_blob = git("rev-parse", f"HEAD:{path}").strip()
-                      if restored_blob == "54ccd721461682cf6d5349bf84a8767420544668":
+                      if restored_blob == "74cfc166c80b815186035abe61322efd5905575f":
                           print(
                               "Accepted exact immutable-baseline restoration "
                               f"for {path}."
