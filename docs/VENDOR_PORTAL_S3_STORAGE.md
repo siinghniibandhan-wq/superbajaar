@@ -1,5 +1,11 @@
 # Vendor Portal private AWS S3 storage
 
+**Status:** Implementation and operations reference  
+**Last reviewed:** 12 November 2026  
+**Scope:** Private invoice/document storage for the Vendor Portal.
+
+> This guide documents application configuration and security requirements. It does not confirm that a bucket, IAM role or production integration is currently provisioned. Verify the live AWS resources and backend service environment before making changes.
+
 The Vendor Portal uploads invoice attachments through the FastAPI backend. Files are stored in a private Amazon S3 bucket; the browser never receives AWS credentials and does not upload directly to S3.
 
 ## Runtime configuration

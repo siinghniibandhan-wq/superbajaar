@@ -34,7 +34,7 @@ Production service configuration supplied by the project owner:
   `/opt/superbajaar/source/backend/scripts/apply_schema.sh /opt/superbajaar/source/backend/schema --status`
 - Explicit environment includes `SB_DB=superbajaar`, `SB_PSQL=/usr/local/bin/sb-psql`, `SB_BACKUP_DIR=/var/lib/superbajaar/backups`, and `SB_LOG=/var/log/superbajaar/schema.log`.
 
-The service's `SuccessExitStatus=0 10` treats status code 10 as a successful systemd oneshot execution, because code 10 means the status check found migration attention is required. It does **not** mean the schema is fully up to date. Inspect the service output and log to understand the reported state.
+The intended status-check semantics are that exit code 10 means migration attention is required; it is not equivalent to a clean schema. However, the read-only EC2 diagnostic on 12 November 2026 inspected the merged unit with `systemctl cat` and did **not** show `SuccessExitStatus=0 10` in either the base unit or its drop-in. The installed service therefore treated exit code 10 as a failed oneshot (`Result=exit-code`). Do not assume the documented success-exit override is installed; verify the effective unit on the host. Keep this alert-visible behaviour until the operator explicitly chooses and documents a different monitoring policy.
 
 Do not remove `--status` from the effective `ExecStart`. The runner's default mode (no option) applies pending SQL. A timer running without `--status` can therefore make database changes automatically.
 
@@ -163,6 +163,20 @@ The current schema directory contains 40 SQL migration files, with unique prefix
 
 See [Unified Identity System implementation](UNIFIED_IDENTITY_SYSTEM_IMPLEMENTATION.md) and its [production rollout runbook](UNIFIED_IDENTITY_SYSTEM_PRODUCTION_ROLLOUT.md).
 
+## 6.1 Baseline checksum reconciliation — open preflight item
+
+The 12 November 2026 production preflight record reports that `000_baseline_schema.sql` does not match the checksum recorded in the production migration ledger. This is a release-blocking reconciliation item until the exact production ledger value, repository blob and host file have been compared and the approved immutable baseline has been restored or a documented recovery decision has been made.
+
+Required handling:
+
+1. Do not edit the production `schema_migrations` ledger or manually replace its checksum.
+2. Do not rewrite the historical baseline to match a drifted host copy.
+3. Compare the baseline Git blob, the file on the production checkout and the checksum recorded for the baseline in the production ledger.
+4. Preserve the verified original baseline and its provenance; if the repository copy is incorrect, restore the exact approved immutable blob through a reviewed PR.
+5. Re-run source/baseline preflight and record the evidence before any production migration apply.
+
+The previously recorded production preflight identifies migrations 043 and 044 as applied and 045 as pending, while also flagging this baseline checksum mismatch. Reconfirm all of these facts against the current production ledger before acting. Migration 045 remains subject to separate production approval and readiness checks.
+
 ## 7. Historical duplicate-036 reconciliation (10 November 2026)
 
 Two different migration files historically used prefix `036`:
@@ -199,3 +213,54 @@ The confirmed 10 November backup above is historical evidence for that migration
 - `backend/scripts/tests/test_apply_schema.sh` — runner tests.
 - `docs/SCHEMA_MIGRATION_CRITICAL_RULE.md` — immutable migration filename rule.
 - `README.md` — repository overview and migration entry point.
+
+
+## 8. Verified production migration status — 12 November 2026
+
+A read-only EC2 diagnostic at 06:46 UTC targeted database `superbajaar`, found 40 SQL files and reported:
+
+| Migration / check | Observed production state |
+|---|---|
+| `000_baseline_schema.sql` | Failed/changed: current file checksum differs from the checksum recorded when it was applied; runner reports `changed after it was applied; not re-applied` |
+| Migrations `043` and `044` | Applied and marked required |
+| Migration `045_identity_claim_cancellation_event.sql` | Pending and marked required |
+| Status runner exit code | `10` — attention required |
+| Schema timer | Active and waiting |
+| Schema service | Last run failed with exit code `10` |
+| Effective schema command | Explicitly includes `--status`; no SQL apply was run |
+
+The installed schema service's effective command was confirmed through `systemctl cat` and included the explicit production target (`SB_DB=superbajaar`) and `--status`. The service is therefore configured as a read-only status check in this snapshot. Its non-zero status is reporting the database attention condition; it is not evidence that the timer applied SQL.
+
+### Required reconciliation and release block
+
+The baseline checksum mismatch is the first database blocker. Before attempting migration 045 or any other production apply:
+
+1. Compare the exact Git blob for `000_baseline_schema.sql`, the EC2 checkout file and the SHA-256 recorded in the production `schema_migrations` row.
+2. Establish which immutable baseline version was originally applied and preserve its provenance and backup evidence.
+3. If the repository baseline is wrong, restore the approved historical blob through a reviewed change. If the production host file alone is wrong, correct the source checkout through the normal reviewed Git process.
+4. Re-run read-only source/baseline verification and `--status`; record the outputs.
+
+**Never** update, delete or insert rows in `schema_migrations` merely to silence the mismatch. Never reapply the baseline. Never use `--retry` for this changed-applied-file condition as a substitute for checksum reconciliation.
+
+Migration 045 remains pending. Its presence in Git and in `schema_required.txt` does not authorize production application. It requires a separate explicit production approval after the baseline blocker is resolved and backup/readiness checks pass.
+
+The schema timer and service should continue to be treated as a status-monitoring mechanism only. Keep `--status` in the effective service command. Do not change the service to default/apply mode to make the status exit code green. A systemd service failure at exit code 10 is the current observed alert behaviour; inspect the runner output and logs to understand the actual migration state.
+
+This snapshot is evidence from 12 November 2026 at approximately 06:46 UTC. Re-run the checks before any later production operation; do not treat this dated status as live indefinitely.
+
+
+## 10. Production baseline checksum reconciliation (12 November 2026)
+
+A read-only production comparison identified the exact historical version of `000_baseline_schema.sql` recorded in the production migration ledger. The database ledger checksum is:
+
+```text
+519e4467a6af9c1f87dd06cbdb80ef4545b1ae04edfe8937966799792168d938
+```
+
+The checksum matches the historical file content in commits `12350a4513d2ddbf5f9107eb3f15625557e16b5a`, `3a5a0cf8bd63cd0d99f9f1e1b42dd1b388fd74a4` and `881f2e09beddf6f0a22b5ca6365e500ca81dadde`. The corresponding Git blob is `74cfc166c80b815186035abe61322efd5905575f`. The later baseline blob `54ccd721461682cf6d5349bf84a8767420544668` has SHA-256 `f95b15efed9e49e11e85bcf1786ae89ff10d29a60bb44774eedca3d82813a578` and does not match production.
+
+The baseline was changed to include `super_admin` in the `app_users_role_check` constraint. That was the wrong place for this role change: the already-versioned `036_configurable_rbac.sql` migration creates the Super Admin role and updates the constraint as part of the RBAC rollout. The baseline must remain the original production-matched schema snapshot. Restore it byte-for-byte; do not edit the production ledger, reapply the baseline, or add a second baseline migration.
+
+The schema-governance workflow permits this one recovery only when both the exact historical Git blob and its SHA-256 match the production-pinned values above. Every other edit to an existing migration remains prohibited. The baseline restoration is a repository correction, not a production database operation.
+
+**Production status at the time of comparison:** the status-only runner reported the baseline checksum mismatch, migrations 043 and 044 applied, and required migration 045 pending. No migration was applied during this comparison. Re-run the read-only status check after the repository sync to verify that the mismatch is resolved. Migration 045 still requires its separate production approval and readiness checks.

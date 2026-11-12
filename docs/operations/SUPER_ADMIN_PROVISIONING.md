@@ -1,5 +1,11 @@
 # Initial Super Admin provisioning
 
+**Status:** Restricted operational runbook  
+**Last reviewed:** 12 November 2026  
+**Scope:** Initial administrator bootstrap only.
+
+> Run only through an approved operator session on the intended environment. Never commit, message, log or pass the bootstrap password as a command-line argument. Confirm the target database and account state before execution; this guide is not authorization to provision production access.
+
 The first Super Admin is created by the operator-run script
 `backend/scripts/provision_super_admin.py`. It uses the same password hashing
 function as the normal staff login endpoint and does not add a backdoor login.

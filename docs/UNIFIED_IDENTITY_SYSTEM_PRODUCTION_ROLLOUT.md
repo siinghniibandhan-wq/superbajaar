@@ -27,11 +27,21 @@ Because infrastructure can change, re-verify these values on the host before an 
 
 ## 3. Understand the GitHub production workflow triggers
 
-The current `.github/workflows/deploy.yml` is configured for every push to `main` as well as manual dispatch. It first runs a full source verification job; after that succeeds, it can deploy the backend to EC2 through SSM and run the Amplify frontend verification/automatic-restore workflow. Its push trigger has no path filter, so a documentation-only push can start a production deployment. The backend deployment script does not apply database migrations; it fast-forwards the production checkout, installs backend requirements, compiles the backend, restarts the backend service and checks API/HR health. A push to `main` must therefore be treated as a potential production release until the workflow is explicitly cancelled or has completed and been inspected.
+The current `.github/workflows/deploy.yml` has three event paths:
 
-The separate `.github/workflows/production-database-migrations.yml` is path-filtered to changes under `backend/schema/**` or `backend/schema_required.txt`. Such a push starts production source verification and a read-only migration dry-run. Actual apply is not performed by a push: it requires `workflow_dispatch` with operation `apply`, the exact confirmation string `APPLY SUPERBAJAAR`, and approval through the protected GitHub environment `production-database`. Do not dispatch that apply workflow without separate explicit production approval.
+- **Pull request to `main`:** starts source verification. The deployment jobs are conditioned on a main-branch push or manual dispatch, so a PR does not deploy to EC2 or publish Amplify.
+- **Push to `main`:** starts the deployment workflow only when at least one configured application path changes: `backend/app/**`, backend requirements/deploy script, `frontend/**`, root frontend source/assets/HTML, package manifests or Vite configuration. The push path filter excludes documentation-only changes and schema-only changes.
+- **Manual dispatch:** can start the workflow on demand. Treat it as a production-capable operation and inspect the selected commit and AWS target before dispatch.
 
-**12 November 2026 documentation-push incident:** commit `dbe9a7949e72a961afda2a628eb24983c1b3d828` triggered deploy workflow run [43156606739](https://github.com/siinghniibandhan-wq/superbajaar/actions/runs/43156606739). It was cancelled while the verification job was still running and before the EC2 deployment and Amplify jobs started. The run's recorded final state was cancelled. This is recorded for transparency; it does not replace checking the current production release state.
+For a qualifying application push, the workflow verifies the source first. After verification, it can deploy the backend to EC2 through SSM and verify the Amplify build for the same commit, including its release marker and referenced assets. The backend deployment script does not apply database migrations. A successful workflow run is not a substitute for checking the exact EC2 deployment result, Amplify job and live release.
+
+A docs-only push to `main` does not match the `deploy.yml` push path filter. A documentation pull request can still run the workflow's verification job, but it cannot enter the production deployment jobs through the pull-request event.
+
+The separate `.github/workflows/production-database-migrations.yml` is triggered by pushes to `main` that change `backend/schema/**` or `backend/schema_required.txt`. A push starts production source/baseline verification and a read-only migration dry-run. It does **not** automatically apply SQL. Actual apply requires a manual `workflow_dispatch` with operation `apply`, the exact confirmation string `APPLY SUPERBAJAAR`, successful preflight and approval through the protected GitHub environment `production-database`. Verify that the required reviewers are configured in GitHub settings before relying on this control.
+
+**12 November 2026 documentation-push incident:** commit `dbe9a7949e72a961afda2a628eb24983c1b3d828` triggered deploy workflow run [43156606739](https://github.com/siinghniibandhan-wq/superbajaar/actions/runs/43156606739). The run was cancelled during source verification, before either the EC2 deployment or Amplify verification/restore job started. The current workflow now has application-path push filters; this historical run should not be interpreted as the current trigger configuration.
+
+See [Environments, CI/CD and release governance](ENVIRONMENTS_AND_CICD.md) for the complete trigger matrix and environment model.
 
 ## 4. Pre-deployment checks
 

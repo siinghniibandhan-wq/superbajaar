@@ -8,6 +8,14 @@ This README describes the code currently committed on `main`. It is an engineeri
 
 ## Current source of truth
 
+## Engineering documentation
+
+- [Documentation index](docs/README.md) — canonical document catalogue and precedence rules.
+- [Environments and CI/CD](docs/ENVIRONMENTS_AND_CICD.md) — local, CI and production contexts; commit triggers; frontend/backend/database release separation.
+- [Database migration operations](docs/DATABASE_MIGRATIONS.md) — migration runner, backup gate, numbering and production controls.
+- [Production deployment runbook](docs/operations/PRODUCTION_DEPLOYMENT.md) — EC2/SSM and Amplify release verification.
+
+
 - **Repository:** [siinghniibandhan-wq/superbajaar](https://github.com/siinghniibandhan-wq/superbajaar)
 - **Default branch:** `main`
 - **Canonical frontend application:** `frontend/`

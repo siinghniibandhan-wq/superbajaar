@@ -1,5 +1,9 @@
 # HR & Payroll Completion — Design
 
+**Design date:** 11 November 2026  
+**Status:** Dated design record; implementation status is determined by current source, merged PRs and verified tests.  
+**Related plan:** [HR & Payroll completion implementation plan](../plans/2026-11-11-hr-payroll-completion.md)
+
 **Status:** Proposed implementation design  
 **Branch:** `feature/hr-payroll-completion`  
 **Scope:** Complete and harden the existing HR & Payroll workspace without replacing working workflows.

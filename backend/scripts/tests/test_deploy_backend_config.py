@@ -122,8 +122,12 @@ class DeployBackendConfigurationTests(unittest.TestCase):
         workflow_path = REPO_ROOT / ".github" / "workflows" / "schema-governance.yml"
         workflow = workflow_path.read_text(encoding="utf-8")
         self.assertIn('path == "backend/schema/000_baseline_schema.sql"', workflow)
-        self.assertIn("54ccd721461682cf6d5349bf84a8767420544668", workflow)
+        self.assertIn("74cfc166c80b815186035abe61322efd5905575f", workflow)
+        self.assertIn("519e4467a6af9c1f87dd06cbdb80ef4545b1ae04edfe8937966799792168d938", workflow)
+        self.assertNotIn("54ccd721461682cf6d5349bf84a8767420544668", workflow)
         self.assertIn('git("rev-parse", f"HEAD:{path}")', workflow)
+        self.assertIn('git("show", f"HEAD:{path}")', workflow)
+        self.assertIn("hashlib.sha256", workflow)
         self.assertIn("Existing schema file changed or removed", workflow)
 
     def test_production_migration_apply_verifies_required_ledger_after_exit_11(self):
