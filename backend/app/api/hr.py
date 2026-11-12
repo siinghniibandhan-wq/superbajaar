@@ -594,12 +594,14 @@ def list_employees(request: Request, limit: int = Query(100, ge=1, le=500), offs
                 rows = conn.execute(
                     "SELECT e.id,e.user_id,e.employee_code,e.first_name,e.last_name,e.email,e.phone,"
                     "e.department_id,d.name AS department_name,e.designation,e.reports_to_employee_id,"
-                    "e.employment_type,e.status,e.joining_date,e.exit_date,"
+                    "e.employment_type,e.status,e.joining_date,e.exit_date,iparty.sbid,"
                     "COALESCE(sv.basic_salary,e.basic_salary) AS basic_salary,"
                     "COALESCE(sv.hra,e.hra) AS hra,"
                     "COALESCE(sv.special_allowance,e.special_allowance) AS special_allowance,"
                     "COALESCE(sv.other_allowance,e.other_allowance) AS other_allowance,e.created_at,e.updated_at "
                     "FROM hr_employees e LEFT JOIN hr_departments d ON d.id=e.department_id "
+                    "LEFT JOIN identity_profiles ip ON ip.employee_id=e.id AND ip.profile_type='employee' AND ip.status='active' "
+                    "LEFT JOIN identity_parties iparty ON iparty.id=ip.party_id "
                     "LEFT JOIN LATERAL (SELECT v.basic_salary,v.hra,v.special_allowance,v.other_allowance "
                     "FROM hr_employee_salary_versions v WHERE v.employee_id=e.id AND v.status='approved' "
                     "AND v.effective_from<=CURRENT_DATE AND (v.effective_to IS NULL OR v.effective_to>=CURRENT_DATE) "
@@ -610,8 +612,10 @@ def list_employees(request: Request, limit: int = Query(100, ge=1, le=500), offs
                 rows = conn.execute(
                     "SELECT e.id,e.user_id,e.employee_code,e.first_name,e.last_name,e.email,e.phone,"
                     "e.department_id,d.name AS department_name,e.designation,e.reports_to_employee_id,"
-                    "e.employment_type,e.status,e.joining_date,e.exit_date "
+                    "e.employment_type,e.status,e.joining_date,e.exit_date,iparty.sbid "
                     "FROM hr_employees e LEFT JOIN hr_departments d ON d.id=e.department_id "
+                    "LEFT JOIN identity_profiles ip ON ip.employee_id=e.id AND ip.profile_type='employee' AND ip.status='active' "
+                    "LEFT JOIN identity_parties iparty ON iparty.id=ip.party_id "
                     "WHERE e.user_id=%s", (actor,)
                 ).fetchall()
             return {"items": rows, "limit": limit, "offset": offset}
@@ -702,7 +706,11 @@ def create_employee(payload: EmployeeInput, request: Request):
                         pass
             if row["user_id"]:
                 _link_employee_login_identity(conn, identity, party_id, row["user_id"], actor)
-            return row
+            result = dict(row)
+            result["sbid"] = conn.execute(
+                "SELECT sbid FROM identity_parties WHERE id=%s", (party_id,)
+            ).fetchone()["sbid"]
+            return result
     except psycopg.Error as exc:
         raise _db_error(exc) from exc
 
