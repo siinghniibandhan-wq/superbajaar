@@ -31,3 +31,11 @@ def test_legacy_identity_reconciliation_preview_requires_admin_session():
 def test_customer_identity_claim_cancellation_requires_customer_session():
     response = client.post("/api/customer-auth/identity-claims/123/cancel")
     assert response.status_code == 401
+
+
+def test_customer_claim_cancel_route_is_scoped_to_numeric_claim_ids():
+    from app.core.auth_middleware import is_customer_identity_claim_route
+
+    assert is_customer_identity_claim_route("POST", "/api/customer-auth/identity-claims/123/cancel")
+    assert not is_customer_identity_claim_route("POST", "/api/customer-auth/identity-claims/not-a-number/cancel")
+    assert not is_customer_identity_claim_route("DELETE", "/api/customer-auth/identity-claims/123/cancel")
