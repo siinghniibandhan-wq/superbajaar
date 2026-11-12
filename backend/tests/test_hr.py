@@ -271,6 +271,9 @@ def test_employee_update_returns_and_preserves_canonical_sbid(monkeypatch):
             return self
         def __exit__(self, *args):
             return False
+        def transaction(self):
+            from contextlib import nullcontext
+            return nullcontext()
         def execute(self, sql, params=()):
             if "SELECT id,user_id FROM hr_employees" in sql:
                 return Result({"id": 8, "user_id": None})
