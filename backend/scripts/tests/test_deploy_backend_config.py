@@ -146,9 +146,14 @@ class DeployBackendConfigurationTests(unittest.TestCase):
         self.assertIn("name: Check out exact deployment source\n        uses: actions/checkout@v4", self.workflow)
         self.assertIn('SCRIPT_B64="$(base64 -w0 backend/scripts/deploy_backend.sh)"', dispatch)
         self.assertIn('${SCRIPT_B64}\\\" | base64 -d', dispatch)
-        self.assertNotIn("git fetch --quiet origin main; git show", dispatch)
+        self.assertNotIn("git fetch", dispatch)
         self.assertIn('flock -w 120 9', self.source)
         self.assertIn('git fetch --quiet origin main', self.source)
+        self.assertLess(
+            self.source.index('flock -w 120 9'),
+            self.source.index('git fetch --quiet origin main'),
+            "The deployment lock must be acquired before any origin/main fetch",
+        )
 
 
 if __name__ == "__main__":
