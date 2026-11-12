@@ -30,7 +30,7 @@ class DeployBackendConfigurationTests(unittest.TestCase):
     def test_amplify_workflow_can_discover_app_by_repository_when_variable_missing(self):
         self.assertIn("aws amplify list-apps", self.workflow)
         self.assertIn("https://github.com/siinghniibandhan-wq/superbajaar", self.workflow)
-        self.assertIn("Exactly one matching Amplify app is required", self.workflow)
+        self.assertIn("Unable to resolve the configured Super Bajaar Amplify app", self.workflow)
 
     def test_amplify_health_check_uses_canonical_branch_domain_from_app_metadata(self):
         self.assertIn('echo "site_url=https://${BRANCH_NAME}.${DEFAULT_DOMAIN}" >> "$GITHUB_OUTPUT"', self.workflow)
