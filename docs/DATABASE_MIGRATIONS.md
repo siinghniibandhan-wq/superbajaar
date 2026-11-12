@@ -285,3 +285,38 @@ Read-only production status after the source sync confirmed:
 - Status exit code: 10 because migration 045 remains pending; this is not a baseline failure.
 
 This repository correction changes reporting only. It does not apply SQL, retry migrations, alter the production ledger, change systemd configuration, or authorize migration 045. The pending migration still requires separate review, readiness checks and explicit production approval.
+
+
+---
+
+## 11. Authoritative production update — 12 November 2026
+
+This dated section supersedes earlier point-in-time statements in this file that identify migration 045 as pending. The following is the production state reported and verified by the owner on 12 November 2026; re-run read-only checks before a later database operation.
+
+### Migration 045
+
+| Field | Result |
+|---|---|
+| File | `045_identity_claim_cancellation_event.sql` |
+| State | Applied and verified |
+| Migration ledger count | 41 |
+| SHA-256 | `874886ce7aae2bc6c4f541e95f63bf231ac06b187a62aeb94cef6f58cbf2b948` |
+| Constraint | Includes `link_cancelled` |
+| `identity_events` rows | 0 at verification time |
+
+Do not reapply migration 045. A zero-row event table is an observed data count, not evidence that the migration failed.
+
+### Verified pre-045 recovery artifact
+
+- File: `superbajaar-pre-045-20261112T085030Z.dump`
+- Location: `/var/lib/superbajaar/backups` on the EC2 instance
+- SHA-256: `de8fadf361d29e195c37a75a7fc08b17fbd185c0a2793cda309422635d44b24e`
+- Owner reports the dump is restorable.
+
+The owner reports that a zero-byte dump was removed and the new dump and checksum file were assigned to `ubuntu`. The dump is on instance storage. **No off-instance mechanism was observed**; this does not establish that EBS snapshots, DLM, AWS Backup or S3 copies are absent. Those services and retention settings remain to be inspected.
+
+### Migration change control
+
+Migration numbering remains unique and immutable. Keep SQL files limited to schema/data changes. Do not renumber, edit or delete applied migrations. The status-only timer is not an apply authorization. Any future production migration still requires a reviewed change, fresh verified backup, explicit production approval and post-apply ledger/schema verification.
+
+For the consolidated current owner decisions, IAM/self-review risk, rollback design and open infrastructure checks, see [Production governance and readiness](PRODUCTION_GOVERNANCE_AND_READINESS.md).
