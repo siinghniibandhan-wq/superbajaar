@@ -362,6 +362,9 @@ To inspect current results, open the repository's [GitHub Actions](https://githu
 
 ## Change and release discipline
 
+**Production trigger warning:** `.github/workflows/deploy.yml` currently runs on every push to `main` (not only application-code paths) and can deploy the backend to EC2 and verify/restore the Amplify frontend after its verification job. A documentation-only push can therefore start a production deployment workflow. Do not push documentation or code to `main` casually; inspect and explicitly control the resulting workflow. The workflow does not itself apply database migrations. The separate `.github/workflows/production-database-migrations.yml` performs a production dry-run on schema-file pushes and only enters its apply job after a manual `workflow_dispatch` apply request, exact confirmation text and the protected `production-database` environment review.
+
+
 1. Read the existing implementation and relevant tests before editing.
 2. Keep changes scoped and preserve existing screens, forms, state, API calls, buttons, routes and business workflows unless a change is explicitly approved.
 3. Preserve storefront behaviour and existing category structure when working on admin modules.

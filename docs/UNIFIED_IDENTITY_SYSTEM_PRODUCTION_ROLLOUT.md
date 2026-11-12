@@ -25,7 +25,15 @@ The documented systemd timer is **status-only**. Its effective service command m
 
 Because infrastructure can change, re-verify these values on the host before an operation. This runbook does not claim a live EC2 inspection was performed.
 
-## 3. Pre-deployment checks
+## 3. Understand the GitHub production workflow triggers
+
+The current `.github/workflows/deploy.yml` is configured for every push to `main` as well as manual dispatch. It first runs a full source verification job; after that succeeds, it can deploy the backend to EC2 through SSM and run the Amplify frontend verification/automatic-restore workflow. Its push trigger has no path filter, so a documentation-only push can start a production deployment. The backend deployment script does not apply database migrations; it fast-forwards the production checkout, installs backend requirements, compiles the backend, restarts the backend service and checks API/HR health. A push to `main` must therefore be treated as a potential production release until the workflow is explicitly cancelled or has completed and been inspected.
+
+The separate `.github/workflows/production-database-migrations.yml` is path-filtered to changes under `backend/schema/**` or `backend/schema_required.txt`. Such a push starts production source verification and a read-only migration dry-run. Actual apply is not performed by a push: it requires `workflow_dispatch` with operation `apply`, the exact confirmation string `APPLY SUPERBAJAAR`, and approval through the protected GitHub environment `production-database`. Do not dispatch that apply workflow without separate explicit production approval.
+
+**12 November 2026 documentation-push incident:** commit `dbe9a7949e72a961afda2a628eb24983c1b3d828` triggered deploy workflow run [43156606739](https://github.com/siinghniibandhan-wq/superbajaar/actions/runs/43156606739). It was cancelled while the verification job was still running and before the EC2 deployment and Amplify jobs started. The run's recorded final state was cancelled. This is recorded for transparency; it does not replace checking the current production release state.
+
+## 4. Pre-deployment checks
 
 1. Confirm `main` points to the approved release commit.
 2. Confirm the intended backend deployment workflow, service target and frontend hosting workflow.
@@ -36,7 +44,7 @@ Because infrastructure can change, re-verify these values on the host before an 
 7. Confirm the exact database target from the live service configuration; never guess from a README or runner default.
 8. Confirm there is a tested rollback/recovery plan for application artifacts and a database restore decision-maker.
 
-## 4. Verify the schema timer is status-only
+## 5. Verify the schema timer is status-only
 
 On the production EC2 host:
 
@@ -58,7 +66,7 @@ sudo tail -n 200 /var/log/superbajaar/schema.log
 
 The systemd unit may treat runner exit code 10 as a successful oneshot execution. This is only a completed status check that found attention is needed; it is not proof all migrations are applied.
 
-## 5. Preflight database status and dry-run
+## 6. Preflight database status and dry-run
 
 Use the documented host paths and explicit database/client/backup/log settings. Run only after confirming the host and target database:
 
@@ -78,7 +86,7 @@ Both commands connect to the configured database. Confirm `SB_DB` and the effect
 
 Expected review: identify whether 043, 044 and 045 are pending, applied with matching checksums, failed, or changed after application. A changed applied migration is a stop condition; do not edit the ledger or force reapplication.
 
-## 6. Backup gate and approval
+## 7. Backup gate and approval
 
 Before apply:
 
@@ -91,7 +99,7 @@ Before apply:
 
 The runner itself creates and verifies a backup before applying pending files. If backup creation or verification fails, it exits with code 30 and does not apply SQL. Do not bypass this gate.
 
-## 7. Controlled apply
+## 8. Controlled apply
 
 Only after the preceding checks and separate explicit production approval, run:
 
@@ -104,7 +112,7 @@ No mode flag means apply mode. Never place this command in a timer or unattended
 
 Stop on exit codes 20, 30, 50 or 60. Code 11 means some non-required issue remains although all required migrations are applied; inspect and document the issue before deciding whether the application release can proceed. Do not interpret code 0 alone as complete end-to-end validation.
 
-## 8. Post-migration verification
+## 9. Post-migration verification
 
 1. Run `--status` again against the same explicitly confirmed database.
 2. Verify the ledger has exact filenames and SHA-256 values for 043, 044 and 045.
@@ -118,9 +126,9 @@ Stop on exit codes 20, 30, 50 or 60. Code 11 means some non-required issue remai
 10. Verify loyalty and referral associations without changing existing balances, cards, ledger rows or referral rewards.
 11. Verify backend and both relevant frontend releases independently; check storefront and admin browser smoke tests.
 
-## 9. Application deployment and ordering
+## 10. Application deployment and ordering
 
-Use the repository's approved GitHub Actions release workflows. Before dispatching any production workflow, inspect its exact trigger, target environment, skipped/conditional jobs and rollback behavior.
+Use the repository's approved GitHub Actions release workflows. The current deploy workflow is push-triggered on every `main` update, so do not create a new main push merely to initiate deployment. Inspect the exact run, target environment, skipped/conditional jobs and rollback behavior. The documentation-push incident above demonstrates this trigger.
 
 Recommended sequence:
 
@@ -133,7 +141,7 @@ Recommended sequence:
 
 If the current deployment workflow applies migrations automatically, stop and reconcile that behavior with this runbook before triggering it. Avoid duplicate or concurrent migration execution.
 
-## 10. Stop / rollback conditions
+## 11. Stop / rollback conditions
 
 Stop the release if:
 
@@ -147,7 +155,7 @@ Stop the release if:
 
 Application rollback and database rollback are not the same operation. Do not restore a pre-migration dump over production without an explicit database-owner decision, impact assessment and recovery plan. Prefer forward-compatible application rollback where schema compatibility permits.
 
-## 11. Release evidence record
+## 12. Release evidence record
 
 Record the following for each production rollout:
 

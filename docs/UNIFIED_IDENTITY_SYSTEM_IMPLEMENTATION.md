@@ -28,7 +28,7 @@ PR #58 was squash-merged as commit `f0182f083a4e34d3c07411b8433c9217b7c4024b`. T
 - **Migrated:** the target database's `schema_migrations` ledger records the exact migration filename and SHA-256.
 - **Reconciled/backfilled:** legacy records have been linked using an approved process and counts have been independently reconciled.
 
-Only the first two states are established by the PR records above. Deployment, production migration and production reconciliation must remain marked **not verified / pending** until fresh operational evidence is collected.
+Only the first two states are established by the PR records above. Deployment, production migration and production reconciliation must remain marked **not verified / pending** until fresh operational evidence is collected. The documentation commit `dbe9a7949e72a961afda2a628eb24983c1b3d828` triggered the broad `deploy.yml` push workflow; run `43156606739` was explicitly cancelled while only its source-verification job was running and before either EC2 deploy or Amplify verification/restore job started. No deployment was performed by that run.
 
 ## 2. Identity model and identifier ownership
 
