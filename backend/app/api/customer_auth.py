@@ -356,7 +356,7 @@ def request_identity_claim(payload: IdentityClaimIn, request: Request):
                 if target and target["id"] != own_party_id:
                     conn.execute(
                         "INSERT INTO identity_link_requests(idempotency_key,requester_party_id,target_party_id,request_type,status,expires_at,request_context) "
-                        "VALUES(%s,%s,%s,'claim_existing_identity','proof_required',now()+interval '7 days',jsonb_build_object('reason',%s,'requested_sbid',%s))",
+                        "VALUES(%s,%s,%s,'claim_existing_identity','proof_required',now()+interval '7 days',jsonb_build_object('reason',%s::text,'requested_sbid',%s::text))",
                         (secrets.token_urlsafe(24), own_party_id, target["id"], payload.reason, requested_sbid),
                     )
                     IdentityService(conn)._event(
@@ -369,7 +369,7 @@ def request_identity_claim(payload: IdentityClaimIn, request: Request):
                     # when no current SBID matches. Admins can review and close it safely.
                     conn.execute(
                         "INSERT INTO identity_link_requests(idempotency_key,requester_party_id,target_party_id,request_type,status,expires_at,request_context) "
-                        "VALUES(%s,%s,NULL,'claim_existing_identity','proof_required',now()+interval '7 days',jsonb_build_object('reason',%s,'requested_sbid',%s))",
+                        "VALUES(%s,%s,NULL,'claim_existing_identity','proof_required',now()+interval '7 days',jsonb_build_object('reason',%s::text,'requested_sbid',%s::text))",
                         (secrets.token_urlsafe(24), own_party_id, payload.reason, requested_sbid),
                     )
                     IdentityService(conn)._event(
