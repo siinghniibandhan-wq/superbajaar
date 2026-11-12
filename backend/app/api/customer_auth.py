@@ -102,6 +102,61 @@ def _issue_session(conn, customer):
     return {"access_token": token, "token_type": "bearer", "expires_at": expires.isoformat()}
 
 
+
+def _ensure_customer_identity(conn, customer_id: int, full_name: str) -> str:
+    """Provision or resolve the individual identity for this exact authenticated customer account."""
+    profile = conn.execute(
+        "SELECT party_id,status FROM identity_profiles "
+        "WHERE profile_type='customer_account' AND customer_account_id=%s FOR UPDATE",
+        (customer_id,),
+    ).fetchone()
+    auth_link = conn.execute(
+        "SELECT party_id,status FROM identity_auth_accounts "
+        "WHERE account_type='customer' AND customer_account_id=%s FOR UPDATE",
+        (customer_id,),
+    ).fetchone()
+
+    if profile and profile["status"] != "active":
+        raise HTTPException(status_code=409, detail="Customer identity link is inactive and requires administrator review")
+    if auth_link and auth_link["status"] != "active":
+        raise HTTPException(status_code=409, detail="Customer login identity is inactive and requires administrator review")
+    if profile and auth_link and profile["party_id"] != auth_link["party_id"]:
+        raise HTTPException(status_code=409, detail="Customer identity links conflict and require administrator review")
+
+    party_id = profile["party_id"] if profile else (auth_link["party_id"] if auth_link else None)
+    identity = IdentityService(conn)
+    if party_id is None:
+        party = identity.create_party(
+            party_type="individual",
+            display_name=full_name,
+            reason="Authenticated customer session assigned missing legacy identity",
+        )
+        party_id = party["id"]
+
+    party = conn.execute(
+        "SELECT id,sbid,party_type,status FROM identity_parties WHERE id=%s FOR UPDATE",
+        (party_id,),
+    ).fetchone()
+    if party is None or party["party_type"] != "individual" or party["status"] != "active":
+        raise HTTPException(status_code=409, detail="Customer identity is invalid or inactive and requires administrator review")
+
+    if not profile:
+        identity.link_profile(
+            party_id=party_id,
+            profile_type="customer_account",
+            source_id=customer_id,
+            link_method="authenticated_claim",
+            reason="Authenticated customer session linked exact customer account",
+        )
+    if not auth_link:
+        identity.link_auth_account(
+            party_id=party_id,
+            account_type="customer",
+            source_id=customer_id,
+            link_method="authenticated_claim",
+        )
+    return party["sbid"]
+
 def _public_customer(row):
     return {
         "id": row["id"], "sbid": row.get("sbid"), "email": row["email"], "full_name": row["full_name"],
@@ -362,11 +417,12 @@ def login(payload: CustomerLogin):
                     "LEFT JOIN identity_profiles ip ON ip.customer_account_id=ca.id "
                     "AND ip.profile_type='customer_account' AND ip.status='active' "
                     "LEFT JOIN identity_parties iparty ON iparty.id=ip.party_id "
-                    "WHERE ca.email=%s",
+                    "WHERE ca.email=%s FOR UPDATE OF ca",
                     (email,),
                 ).fetchone()
                 if not customer or not customer["is_active"] or not _password_matches(payload.password, customer["password_hash"]):
                     raise HTTPException(status_code=401, detail="Invalid email or password")
+                customer = {**customer, "sbid": _ensure_customer_identity(conn, customer["id"], customer["full_name"])}
                 session = _issue_session(conn, customer)
         return {**session, "customer": _public_customer(customer)}
     except HTTPException:
@@ -382,17 +438,15 @@ def me(request: Request):
         raise HTTPException(status_code=401, detail="Customer sign-in required")
     try:
         with _connect() as conn:
-            customer = conn.execute(
-                "SELECT ca.id,ca.email,ca.full_name,ca.phone,ca.referral_code,iparty.sbid "
-                "FROM customer_accounts ca "
-                "LEFT JOIN identity_profiles ip ON ip.customer_account_id=ca.id "
-                "AND ip.profile_type='customer_account' AND ip.status='active' "
-                "LEFT JOIN identity_parties iparty ON iparty.id=ip.party_id "
-                "WHERE ca.id=%s AND ca.is_active=TRUE",
-                (customer_id,),
-            ).fetchone()
-        if customer is None:
-            raise HTTPException(status_code=401, detail="Customer account is no longer active")
+            with conn.transaction():
+                customer = conn.execute(
+                    "SELECT id,email,full_name,phone,referral_code "
+                    "FROM customer_accounts WHERE id=%s AND is_active=TRUE FOR UPDATE",
+                    (customer_id,),
+                ).fetchone()
+                if customer is None:
+                    raise HTTPException(status_code=401, detail="Customer account is no longer active")
+                customer = {**customer, "sbid": _ensure_customer_identity(conn, customer_id, customer["full_name"])}
         return {"customer": _public_customer(customer)}
     except HTTPException:
         raise
