@@ -176,6 +176,8 @@ Never publish credentials, tokens, customer data or raw secrets in release evide
 - No repository-root `amplify.yml` build specification was found in the inspected root listing, and the Amplify app's native auto-build/path-filter settings are not visible in Git. Confirm those settings in the AWS Amplify console. The GitHub `deploy.yml` path filter does not control Amplify's own connected-repository trigger.
 - The current repository tree does not identify a dedicated staging application or staging environment configuration.
 - Workflow YAML does not prove the most recent run succeeded. Check the run history for the release commit.
+- A dated 10 November operations record reports PostgreSQL 18.6 on the EC2 host, while CI workflows explicitly test PostgreSQL 15 and 16. These are different facts (production host versus CI matrix); re-check the live production server version before documenting it as current.
+- The repository documents an EC2 source auto-sync timer that fast-forwards `/opt/superbajaar/source` every two minutes. It does not restart the service. Source files can therefore be synchronized before the backend deployment job performs its controlled restart; do not call source synchronization a live application release.
 - CI PostgreSQL containers are disposable test services, not production replicas and not staging databases.
 - The previous production deployment attempt recorded in project history failed at AWS OIDC role assumption. That historical result must not be treated as the current deployment status; verify the latest run.
 
