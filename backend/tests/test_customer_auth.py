@@ -32,3 +32,11 @@ def test_customer_referral_endpoint_requires_customer_session():
 def test_customer_order_history_requires_customer_session():
     assert client.get("/api/customer-auth/orders").status_code == 401
     assert client.get("/api/customer-auth/orders/SB-1").status_code == 401
+
+def test_customer_identity_claim_rejects_malformed_sbid_before_authentication():
+    response = client.post(
+        "/api/customer-auth/identity-claims",
+        json={"target_sbid": "SBID-NOT-A-REAL-ID", "reason": "I believe this belongs to me"},
+    )
+    assert response.status_code == 422
+
