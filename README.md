@@ -112,8 +112,7 @@ The repository includes AWS-related configuration fields and historical deployme
 
 ```text
 superbajaar/
-├── .github/
-│   └── workflows/                 # CI, browser quality, DB checks and security scans
+├── .github/                      # No GitHub Actions workflows after PR #77
 ├── backend/
 │   ├── app/
 │   │   ├── api/                   # FastAPI route modules
@@ -353,9 +352,9 @@ The migration runner tests are in `backend/scripts/tests/test_apply_schema.sh`. 
 
 ## CI, quality and security checks
 
-GitHub Actions currently defines these workflows:
+The following table is a **historical inventory only** of the checks removed by PR #77. None of these GitHub Actions workflows is currently active:
 
-| Workflow | What it checks |
+| Former workflow/check | What it checked |
 |---|---|
 | Super Bajaar CI | Backend tests on PostgreSQL 15, frontend unit/contract tests, route validation and builds for both frontend entry points |
 | Browser quality (Playwright + Lighthouse) | Frontend build, Playwright browser tests, and Lighthouse performance/accessibility/best-practices/SEO reports |
