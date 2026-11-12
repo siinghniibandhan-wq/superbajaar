@@ -618,6 +618,8 @@ def test_supplier_update_preserves_and_returns_existing_sbid(monkeypatch):
                 return Result({"id": 41, "name": "Updated Supplier", "email": None, "phone": None})
             if "FROM identity_profiles ip" in sql:
                 return Result({"id": 900, "sbid": "SBID-0123456789ABCDEF0123"})
+            if "SELECT id,party_id,contact_type,normalized_value" in sql:
+                return Result(None)
             if "UPDATE identity_parties SET display_name" in sql:
                 return Result(None)
             raise AssertionError(f"Unexpected SQL: {sql}")
