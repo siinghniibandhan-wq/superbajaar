@@ -208,3 +208,42 @@ The owner has explicitly accepted the current single-owner review model. The own
 The IAM trust arrangement also currently accepts a risk: the main-ref OIDC subject can assume the deployment role, whose SSM permissions allow AWS-RunShellScript on the production EC2 instance. The environment reviewer gate is a GitHub workflow control, not an IAM trust boundary. A separate apply role trusted only by the exact `production-database` environment subject is deferred by owner decision.
 
 Do not describe either owner-reported settings as independently inspected. Do not claim that CI is staging or that the protected environment alone guarantees IAM isolation. The detailed evidence, trade-offs and future hardening actions are recorded in [Production governance and readiness](PRODUCTION_GOVERNANCE_AND_READINESS.md).
+---
+
+## 12. Live deployment audit update — 12 November 2026
+
+This dated update records the owner-supplied production diagnostics and Amplify console screenshot. It supersedes earlier dated statements in this document that said the EC2 runtime, migration 045 or Amplify deployment were still wholly unverified. Older snapshots remain historical evidence.
+
+### Confirmed production components
+
+| Component | Latest observed evidence |
+|---|---|
+| GitHub main / EC2 source | Both at `9b7980954cf0550383e8c34b2fcd89be219bc17a` |
+| EC2 backend service | `superbajaar-backend.service` active/running |
+| Public and local API | HTTP 200; database reports connected |
+| PostgreSQL migration runner | Status mode exit 0; all 40 current SQL files reported APPLIED |
+| Migration ledger | 41 rows, including a historical removed migration with prefix 036 |
+| Schema status timer | `superbajaar-schema.timer` enabled/active, every 2 minutes; oneshot status service last exited 0 |
+| Amplify | Deployment 113 shown as Deployed for repository/branch `superbajaar:main`; commit message references PR #65 |
+
+### Amplify is an independent deployment trigger
+
+The Amplify console screenshot shows deployment 113 as deployed, with repository `superbajaar:main`, commit message beginning “Merge pull request #65”, domain `https://main.d334sr8jkx3zux.amplifyapp.com`, build duration 1:04 and deploy duration 0:42. The console displayed a start time of 12 Nov 2026, 15:28; timezone was not independently established.
+
+This is direct screenshot evidence that Amplify published a deployment associated with the PR #65 merge. The GitHub Actions `deploy.yml` push path filter excludes documentation-only paths, so this Amplify deployment demonstrates that Amplify's Git-connected trigger is separate from the GitHub backend deployment workflow. It does **not** establish the precise native auto-build setting or prove that every main commit always triggers a build.
+
+The exact deployment commit SHA, Amplify app ID, app-root/build specification, and live storefront/admin functional state have not yet been captured. Deployment status alone does not prove the expected frontend content or every user journey is working.
+
+### Release-path interpretation
+
+- A docs-only merge can update GitHub `main` and, as observed for PR #65, can also result in an Amplify deployment.
+- The GitHub Actions backend deployment workflow remains governed by its own application-path filters and job conditions.
+- EC2 source synchronization, backend service deployment, Amplify frontend publication and database migration are separate mechanisms. Do not treat one successful path as proof that the other three completed.
+- The latest EC2 checkout SHA matching `main` is source-sync evidence. The backend service was active and health checks passed, but this audit did not independently tie a specific GitHub Actions SSM deployment run to that running process.
+- Migration status is a separate read-only timer operation; it does not apply SQL.
+
+The user has access to AWS RunShell but not AWS CloudShell. CloudShell-only AWS CLI instructions are therefore not an accepted verification procedure for this operator.
+
+### Remaining release evidence
+
+To close the frontend release audit, capture the exact commit SHA and build/app-root details from Amplify deployment 113's build details, then inspect the live storefront and admin in a browser. Keep the Amplify app ID and `enableAutoBuild` setting marked unverified until visible evidence is obtained.
