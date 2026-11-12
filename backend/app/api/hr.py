@@ -644,6 +644,51 @@ def create_employee(payload: EmployeeInput, request: Request):
                 (row["id"],payload.joining_date,payload.basic_salary,payload.hra,
                  payload.special_allowance,payload.other_allowance,actor,actor),
             )
+            # Create the permanent identity at employee onboarding, not only when
+            # a portal invitation is accepted. Keep the HR employee ID unchanged.
+            from app.services.identity import IdentityService
+            identity = IdentityService(conn)
+            existing = conn.execute(
+                "SELECT party_id FROM identity_profiles WHERE profile_type='employee' "
+                "AND employee_id=%s AND status='active' FOR UPDATE",
+                (row["id"],),
+            ).fetchone()
+            if existing:
+                party_id = existing["party_id"]
+            else:
+                party = identity.create_party(
+                    party_type="individual",
+                    display_name=(row["first_name"] + " " + row["last_name"]).strip(),
+                    actor_user_id=actor,
+                    reason="HR employee created",
+                )
+                party_id = party["id"]
+                identity.link_profile(
+                    party_id=party_id, profile_type="employee", source_id=row["id"],
+                    link_method="admin_verified", actor_user_id=actor,
+                    reason="HR employee created",
+                )
+                if row["email"]:
+                    identity.add_contact(party_id=party_id, contact_type="email",
+                                         value=row["email"], source="hr_employee")
+                if row["phone"]:
+                    try:
+                        identity.add_contact(party_id=party_id, contact_type="phone",
+                                             value=row["phone"], source="hr_employee")
+                    except ValueError:
+                        # HR may hold landlines or non-E.164 extensions; do not
+                        # block employee onboarding over optional contact normalisation.
+                        pass
+            if row["user_id"]:
+                linked = conn.execute(
+                    "SELECT id FROM identity_auth_accounts WHERE app_user_id=%s AND status='active'",
+                    (row["user_id"],),
+                ).fetchone()
+                if not linked:
+                    identity.link_auth_account(
+                        party_id=party_id, account_type="staff", source_id=row["user_id"],
+                        link_method="admin_verified", actor_user_id=actor,
+                    )
             return row
     except psycopg.Error as exc:
         raise _db_error(exc) from exc
