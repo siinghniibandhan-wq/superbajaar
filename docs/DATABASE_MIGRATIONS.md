@@ -320,3 +320,70 @@ The owner reports that a zero-byte dump was removed and the new dump and checksu
 Migration numbering remains unique and immutable. Keep SQL files limited to schema/data changes. Do not renumber, edit or delete applied migrations. The status-only timer is not an apply authorization. Any future production migration still requires a reviewed change, fresh verified backup, explicit production approval and post-apply ledger/schema verification.
 
 For the consolidated current owner decisions, IAM/self-review risk, rollback design and open infrastructure checks, see [Production governance and readiness](PRODUCTION_GOVERNANCE_AND_READINESS.md).
+---
+
+## 12. Production migration reconciliation — 12 November 2026
+
+This dated section records the read-only production checks supplied from EC2 on 12 November 2026. It supersedes earlier sections in this file that report migration 045 pending or the baseline checksum mismatch as current. Those earlier sections remain historical snapshots.
+
+### Current production migration state
+
+| Check | Observed result |
+|---|---|
+| Database | `superbajaar` |
+| Current SQL files | 40 |
+| Production ledger rows | 41 |
+| Runner status | All 40 current files APPLIED |
+| Runner exit code | 0 |
+| Migration 045 | APPLIED |
+| Schema timer | `superbajaar-schema.timer`, enabled and active |
+| Timer schedule | Every 2 minutes |
+| Last observed oneshot status service | `superbajaar-schema.service`, exit 0 / SUCCESS |
+
+The 41st ledger row is explained by historical migration `036_super_admin_role.sql`, which was applied and later removed from the active repository migration directory. Git history confirms:
+
+- `7308938e7a811a4486079a65c8e6e11d82615103` — “Add Super Admin role and secure provisioning”.
+- `5dbe8cf2a1ee9602953f92bce1cee60897a2c67` — “Remove separate Super Admin role migration”.
+
+The current directory contains only `036_configurable_rbac.sql` for prefix 036. A scan of current SQL filenames found no duplicate numeric prefixes. The production ledger correctly retains both historical records. Do not delete ledger rows, restore the removed file into the active migration directory, or rename/edit either applied migration. This is a historical migration-history exception, not a current duplicate-number violation.
+
+### Baseline checksum reconciliation
+
+The current `backend/schema/000_baseline_schema.sql` SHA-256 and production `schema_migrations` row match exactly:
+
+```text
+519e4467a6af9c1f87dd06cbdb80ef4545b1ae04edfe8937966799792168d938
+```
+
+The failure table retains one historical record for the baseline with SHA-256:
+
+```text
+f95b15efed9e49e11e85bcf1786ae89ff10d29a60bb44774eedca3d82813a578
+```
+
+Its error is `changed after it was applied; not re-applied`. This record refers to older superseded file content. The current baseline is APPLIED and checksum-matched; the old failure record is retained for audit and must not be deleted or rewritten.
+
+### Migration 045
+
+| Field | Value |
+|---|---|
+| Filename | `045_identity_claim_cancellation_event.sql` |
+| State | APPLIED |
+| Ledger SHA-256 | `874886ce7aae2bc6c4f541e95f63bf231ac06b187a62aeb94cef6f58cbf2b948` |
+| Required manifest | Included in `backend/schema_required.txt` |
+
+Do not reapply migration 045.
+
+### Timer naming and behaviour
+
+The installed unit names are `superbajaar-schema.timer` and `superbajaar-schema.service`. The timer is enabled/active and configured with `OnCalendar=*:0/2`. The service is a static oneshot that explicitly runs the runner with `--status`. Its state `inactive (dead)` after a successful run is normal oneshot behaviour; the timer remains active. The similarly named `sb-schema.timer` does not exist on the host. The timer is a status monitor, not an automatic migration-apply mechanism.
+
+### Operational safeguards
+
+- Preserve the historical baseline failure row and both historical 036 ledger rows.
+- Do not renumber, edit, rename or delete applied migration files.
+- Keep the current migration directory's unique numeric prefixes.
+- Do not change the status timer into apply mode.
+- A future production migration still requires a reviewed migration, a fresh verified backup, separate explicit production approval and post-apply verification.
+
+No SQL was applied and no ledger/failure rows were modified during this audit.

@@ -121,3 +121,43 @@ curl --fail --silent --show-error https://superappkart.duckdns.org/api/health
 The first successful deployment after this change establishes the ref; before it exists, the script falls back to `HEAD`. As of the owner report dated 12 November 2026, the run result for commit `4580ad3` and the server values were still unverified. Do not report the fix as live until those checks are recorded.
 
 See [Production governance and readiness](../PRODUCTION_GOVERNANCE_AND_READINESS.md) for the consolidated accepted risks and open verification list.
+---
+
+## Verified production deployment snapshot — 12 November 2026
+
+This section records the read-only EC2 diagnostics and owner-supplied Amplify console screenshot from 12 November 2026. It supersedes older runtime snapshots where they conflict; those snapshots remain historical.
+
+### EC2 source and backend runtime
+
+- Checkout: `/opt/superbajaar/source`
+- EC2 `HEAD`: `9b7980954cf0550383e8c34b2fcd89be219bc17a`
+- `origin/main`: same SHA.
+- Service: `superbajaar-backend.service`, active/running.
+- Working directory: `/opt/superbajaar/source/backend`.
+- Local and public `/api/health`: HTTP 200; both return `{"status":"ok","database":"connected"}`.
+
+The checkout's `refs/deploy/last-good` points to `4580ad3f2ed2155ba466932b2ac0bad229a5b0f1`. Comparing that ref with `HEAD` showed only documentation files changed; the comparison restricted to deployment-relevant application paths was empty. Do not move the ref merely to match a docs-only `main` commit. It records the last verified backend application release.
+
+### Database status automation (deployment-adjacent operational check)
+
+The installed timer is `superbajaar-schema.timer`, not `sb-schema.timer`. It is enabled and active with `OnCalendar=*:0/2` (every two minutes). It triggers the static oneshot `superbajaar-schema.service`, whose effective command runs `apply_schema.sh ... --status`. Its last observed run completed with exit 0 / SUCCESS. An oneshot service being inactive/dead after successful completion is expected; the timer remains active.
+
+The runner reported all 40 current SQL files as APPLIED. The production ledger contains 41 rows because it retains the historical `036_super_admin_role.sql` entry in addition to current `036_configurable_rbac.sql`. Git history confirms the former was introduced in commit `7308938e7a811a4486079a65c8e6e11d82615103` and removed in `5dbe8cf2a1ee9602953f92bce1cee60897a2c67`. Current schema filenames have no duplicate numeric prefixes.
+
+The current baseline file and its production ledger checksum both equal `519e4467a6af9c1f87dd06cbdb80ef4545b1ae04edfe8937966799792168d938`. A failure-table row with older checksum `f95b15efed9e49e11e85bcf1786ae89ff10d29a60bb44774eedca3d82813a578` is retained as historical evidence and is not a current baseline mismatch.
+
+Migration `045_identity_claim_cancellation_event.sql` is APPLIED; its ledger SHA-256 is `874886ce7aae2bc6c4f541e95f63bf231ac06b187a62aeb94cef6f58cbf2b948`. The status runner exited 0. The timer is status-only; it does not authorize or automatically apply migrations.
+
+### Amplify deployment observed in console
+
+The owner-provided AWS Amplify screenshot shows deployment 113 with status **Deployed**, repository/branch `superbajaar:main`, and a commit message beginning “Merge pull request #65”. The displayed production branch domain is:
+
+`https://main.d334sr8jkx3zux.amplifyapp.com`
+
+The console shows a deployment start of 12 Nov 2026, 15:28 (timezone not independently confirmed), build duration 1 minute 4 seconds and deploy duration 42 seconds.
+
+This confirms the Amplify console reported deployment 113 as deployed for the connected main branch. It also shows a deployment associated with docs-only PR #65, even though the GitHub Actions `deploy.yml` push path filter excludes docs-only changes. Amplify's connected-repository build trigger is separate from the GitHub backend deployment workflow.
+
+The screenshot does not expose the exact commit SHA, app ID, native auto-build setting, build specification/app root, or prove that the live storefront and admin routes are functionally correct. These remain open. The owner has AWS RunShell access, not AWS CloudShell; do not ask them to run CloudShell-only CLI commands.
+
+No deployment, restart, migration, timer change, IAM change or AWS infrastructure mutation was performed as part of this audit.
