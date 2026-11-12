@@ -273,8 +273,12 @@ def login(payload: CustomerLogin):
         with _connect() as conn:
             with conn.transaction():
                 customer = conn.execute(
-                    "SELECT id,email,full_name,phone,password_hash,referral_code,is_active "
-                    "FROM customer_accounts WHERE email=%s",
+                    "SELECT ca.id,ca.email,ca.full_name,ca.phone,ca.password_hash,ca.referral_code,ca.is_active,iparty.sbid "
+                    "FROM customer_accounts ca "
+                    "LEFT JOIN identity_profiles ip ON ip.customer_account_id=ca.id "
+                    "AND ip.profile_type='customer_account' AND ip.status='active' "
+                    "LEFT JOIN identity_parties iparty ON iparty.id=ip.party_id "
+                    "WHERE ca.email=%s",
                     (email,),
                 ).fetchone()
                 if not customer or not customer["is_active"] or not _password_matches(payload.password, customer["password_hash"]):
@@ -295,7 +299,12 @@ def me(request: Request):
     try:
         with _connect() as conn:
             customer = conn.execute(
-                "SELECT id,email,full_name,phone,referral_code FROM customer_accounts WHERE id=%s AND is_active=TRUE",
+                "SELECT ca.id,ca.email,ca.full_name,ca.phone,ca.referral_code,iparty.sbid "
+                "FROM customer_accounts ca "
+                "LEFT JOIN identity_profiles ip ON ip.customer_account_id=ca.id "
+                "AND ip.profile_type='customer_account' AND ip.status='active' "
+                "LEFT JOIN identity_parties iparty ON iparty.id=ip.party_id "
+                "WHERE ca.id=%s AND ca.is_active=TRUE",
                 (customer_id,),
             ).fetchone()
         if customer is None:
