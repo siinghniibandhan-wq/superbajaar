@@ -1,20 +1,18 @@
 name: Production database migrations
 
-# Deliberately manual. Code deployment never applies SQL automatically.
-# Configure required reviewers on the GitHub "production-database" environment.
+# Manual only: normal code deployment never applies SQL.
+# The apply job waits for required reviewers AFTER the dry-run is visible.
 on:
   workflow_dispatch:
     inputs:
       operation:
-        description: "Read-only status, or explicitly apply reviewed pending migrations"
+        description: "Read-only status, or prepare an explicitly approved apply"
         type: choice
         required: true
         default: status
-        options:
-          - status
-          - apply
+        options: [status, apply]
       confirmation:
-        description: 'For apply only, type exactly: APPLY SUPERBAJAAR'
+        description: "For apply only, type exactly: APPLY SUPERBAJAAR"
         type: string
         required: false
         default: "NO"
@@ -28,22 +26,29 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  production-database:
-    name: Inspect or apply production schema migrations
+  preflight:
+    name: Read-only status or migration dry-run
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    environment: production-database
+    outputs:
+      apply_requested: ${{ steps.gate.outputs.apply_requested }}
     steps:
-      - name: Reject an apply request without explicit confirmation
-        if: ${{ inputs.operation == 'apply' }}
+      - name: Validate explicit apply request
+        id: gate
         env:
+          OPERATION: ${{ inputs.operation }}
           CONFIRMATION: ${{ inputs.confirmation }}
         run: |
           set -euo pipefail
-          test "$CONFIRMATION" = "APPLY SUPERBAJAAR" || {
-            echo "::error::Production apply refused. Re-run and type exactly APPLY SUPERBAJAAR after reviewing the pending SQL."
-            exit 1
-          }
+          if [ "$OPERATION" = "apply" ]; then
+            test "$CONFIRMATION" = "APPLY SUPERBAJAAR" || {
+              echo "::error::Apply refused. Type exactly APPLY SUPERBAJAAR."
+              exit 1
+            }
+            echo "apply_requested=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "apply_requested=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Configure AWS credentials using GitHub OIDC
         uses: aws-actions/configure-aws-credentials@v4
@@ -72,7 +77,7 @@ jobs:
           echo "::error::Timed out waiting for production status command $command_id"
           exit 1
 
-      - name: Dry-run production migrations before applying
+      - name: Dry-run production migrations (no writes)
         if: ${{ inputs.operation == 'apply' }}
         env:
           INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID || secrets.EC2_INSTANCE_ID }}
@@ -93,8 +98,22 @@ jobs:
           echo "::error::Timed out waiting for production dry-run command $command_id"
           exit 1
 
-      - name: Apply migrations with backup gate
-        if: ${{ inputs.operation == 'apply' && inputs.confirmation == 'APPLY SUPERBAJAAR' }}
+  apply:
+    name: Apply reviewed production migrations
+    needs: preflight
+    if: ${{ inputs.operation == 'apply' && needs.preflight.outputs.apply_requested == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # Required reviewers approve only after inspecting the preflight dry-run.
+    environment: production-database
+    steps:
+      - name: Configure AWS credentials using GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION }}
+
+      - name: Apply migrations with verified-backup gate
         env:
           INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID || secrets.EC2_INSTANCE_ID }}
         run: |
