@@ -18,7 +18,11 @@ The EC2 script fast-forwards the existing `/opt/superbajaar/source` checkout, in
 
 Amplify Hosting uses atomic deployments: it updates the hosted application only after the deployment is complete. A failed build/deployment job is not published as the live website; the previously successful version normally remains live. This is the first protection layer, not a substitute for checking the live site after deployment.
 
-The root Vite build embeds the Amplify-provided `AWS_COMMIT_ID` in `<meta name="sb-release">` (AWS documents this variable as the current build's commit ID). GitHub Actions then:
+AWS Amplify's connected application is configured in the Amplify Console as a monorepo application with `appRoot: frontend`. Its build specification runs `npm install`, then `npm run build`, and publishes `dist` relative to that app root (repository path `frontend/dist`). The root Vite project is a compatibility build; it is not the artifact Amplify publishes.
+
+The canonical `frontend/vite.config.js` injects the Amplify-provided `AWS_COMMIT_ID` into `<meta name="sb-release">`. The root Vite build retains its own release marker for compatibility-build verification. GitHub Actions checks the marker in both generated build outputs; its live Amplify check compares the published HTML marker with the exact pushed commit SHA.
+
+For an eligible `main` application release, GitHub Actions then:
 
 1. Finds the Amplify job for the exact pushed Git commit and records the latest earlier successful job as the rollback target.
 2. Waits for the current Amplify job to finish.
@@ -27,6 +31,16 @@ The root Vite build embeds the Amplify-provided `AWS_COMMIT_ID` in `<meta name="
 5. Waits for the rollback job to succeed and repeats the release-marker and asset checks against the previous commit.
 
 The workflow fails closed if it cannot identify a previous successful job or cannot prove that the restored release is healthy. The first rollback may target a pre-marker release from before this feature was introduced; in that one-time case, the previous successful Amplify job is pinned to the exact commit and its HTML plus all static bundles are checked, while subsequent rollbacks also require an exact HTML commit marker. It never treats an HTTP 200 homepage alone as proof of a healthy release. This HTTP-level verification checks the deployed HTML and static bundles; it does not prove every interactive user journey or backend integration.
+
+### Release-marker incident and verified correction — 12 November 2026
+
+The production verification failure was caused by a build-target mismatch: CI originally checked the root compatibility build's release marker, while Amplify publishes the canonical `frontend/` build. The live HTML therefore lacked the marker expected by the deployment health check, even though the Amplify build job itself had succeeded.
+
+PR [#67](https://github.com/siinghniibandhan-wq/superbajaar/pull/67), merged as commit `58ee8e2a64ad844cc45afdb02803c81c6c66a3b1`, corrected this by adding the release marker to `frontend/vite.config.js` and checking `frontend/dist/index.html` in CI. The root compatibility build and its existing marker check remain in place.
+
+The subsequent main-branch deployment run [#43206976831](https://github.com/siinghniibandhan-wq/superbajaar/actions/runs/43206976831) completed successfully: source verification passed, the EC2 SSM backend deployment job succeeded, Amplify job `116` reported `SUCCEED`, the live HTML marker matched the target commit, and both referenced JavaScript/CSS assets were verified. Automatic rollback was skipped. No database migration was part of this release.
+
+The separate documentation-governance workflow for the PR #67 merge failed because the implementation/workflow change did not include a documentation update in the same PR. This documentation-only follow-up records the release-marker design and incident resolution.
 
 ## One-time GitHub configuration
 
