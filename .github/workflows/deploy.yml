@@ -271,7 +271,7 @@ jobs:
       - name: Verify restored Amplify version is fully healthy
         if: ${{ always() && steps.restore.outcome == 'success' }}
         env:
-          SITE_URL: ${{ vars.AMPLIFY_SITE_URL || secrets.AMPLIFY_SITE_URL }}
+          SITE_URL: ${{ steps.amplify.outputs.site_url }}
           EXPECTED_SHA: ${{ steps.amplify.outputs.previous_sha }}
         run: |
           set -euo pipefail
