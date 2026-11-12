@@ -58,7 +58,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$INSTANCE_ID"
-          remote_command="sudo -u ubuntu bash -lc 'set -euo pipefail; cd /opt/superbajaar/source; SB_DB=superbajaar SB_PSQL=/usr/local/bin/sb-psql SB_BACKUP_DIR=/var/lib/superbajaar/backups SB_LOG=/var/log/superbajaar/schema.log bash backend/scripts/apply_schema.sh /opt/superbajaar/source/backend/schema --status'"
+          remote_command="sudo -u ubuntu bash -lc 'set -euo pipefail; cd /opt/superbajaar/source; set +e; SB_DB=superbajaar SB_PSQL=/usr/local/bin/sb-psql SB_BACKUP_DIR=/var/lib/superbajaar/backups SB_LOG=/var/log/superbajaar/schema.log bash backend/scripts/apply_schema.sh /opt/superbajaar/source/backend/schema --status; rc=$?; if [ "$rc" -eq 10 ]; then exit 0; else exit "$rc"; fi'"
           parameters="$(jq -n --arg command "$remote_command" '{commands: [$command]}')"
           command_id="$(aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript --comment "Super Bajaar production schema status" --parameters "$parameters" --query 'Command.CommandId' --output text)"
           for attempt in $(seq 1 60); do
@@ -100,7 +100,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$INSTANCE_ID"
-          remote_command="sudo -u ubuntu bash -lc 'set -euo pipefail; cd /opt/superbajaar/source; SB_DB=superbajaar SB_PSQL=/usr/local/bin/sb-psql SB_BACKUP_DIR=/var/lib/superbajaar/backups SB_LOG=/var/log/superbajaar/schema.log bash backend/scripts/apply_schema.sh /opt/superbajaar/source/backend/schema'"
+          remote_command="sudo -u ubuntu bash -lc 'set -euo pipefail; cd /opt/superbajaar/source; SB_DB=superbajaar SB_PSQL=/usr/local/bin/sb-psql SB_BACKUP_DIR=/var/lib/superbajaar/backups SB_LOG=/var/log/superbajaar/schema.log SB_ON_FAILURE=stop bash backend/scripts/apply_schema.sh /opt/superbajaar/source/backend/schema'"
           parameters="$(jq -n --arg command "$remote_command" '{commands: [$command]}')"
           command_id="$(aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript --comment "Approved Super Bajaar production schema apply" --parameters "$parameters" --query 'Command.CommandId' --output text)"
           for attempt in $(seq 1 60); do
