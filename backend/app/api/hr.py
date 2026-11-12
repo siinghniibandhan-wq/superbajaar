@@ -669,8 +669,13 @@ def create_employee(payload: EmployeeInput, request: Request):
                     reason="HR employee created",
                 )
                 if row["email"]:
-                    identity.add_contact(party_id=party_id, contact_type="email",
-                                         value=row["email"], source="hr_employee")
+                    try:
+                        identity.add_contact(party_id=party_id, contact_type="email",
+                                             value=row["email"], source="hr_employee")
+                    except ValueError:
+                        # Legacy HR email validation is intentionally retained;
+                        # malformed optional contact data must not block onboarding.
+                        pass
                 if row["phone"]:
                     try:
                         identity.add_contact(party_id=party_id, contact_type="phone",
