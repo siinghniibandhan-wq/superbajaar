@@ -78,7 +78,7 @@ jobs:
               status, path = line.split("\t", 1)
               if status != "A":
                   # One narrowly scoped recovery is permitted: restore the
-                  # baseline to the exact SHA-256 pinned by production
+                  # baseline to the exact Git blob pinned by production
                   # preflight. Any other baseline edit remains forbidden.
                   if (
                       status == "M"
