@@ -348,6 +348,27 @@ def request_identity_claim(payload: IdentityClaimIn, request: Request):
                     own_party_id = party["id"]
                 else:
                     own_party_id = own["party_id"]
+                conn.execute("SELECT id FROM identity_parties WHERE id=%s FOR UPDATE", (own_party_id,))
+                recent_claims = conn.execute(
+                    """
+                    WITH RECURSIVE customer_identity_parties(party_id) AS (
+                        SELECT %s::bigint
+                        UNION
+                        SELECT alias.source_party_id
+                        FROM identity_aliases alias
+                        JOIN customer_identity_parties current_party
+                          ON alias.canonical_party_id = current_party.party_id
+                    )
+                    SELECT count(*) AS total
+                    FROM identity_link_requests
+                    WHERE request_type='claim_existing_identity'
+                      AND requester_party_id IN (SELECT party_id FROM customer_identity_parties)
+                      AND created_at > now() - interval '1 hour'
+                    """,
+                    (own_party_id,),
+                ).fetchone()["total"]
+                if recent_claims >= 5:
+                    raise HTTPException(status_code=429, detail="Too many identity claims. Try again after the review limit resets.")
                 target = conn.execute(
                     "SELECT id FROM identity_parties WHERE upper(sbid)=%s AND status='active'",
                     (requested_sbid,),
@@ -423,6 +444,67 @@ def list_identity_claims(request: Request):
         return {"items": rows}
     except psycopg.Error as exc:
         raise HTTPException(status_code=503, detail="Could not load your identity claims") from exc
+
+
+@router.post("/identity-claims/{request_id}/cancel")
+def cancel_identity_claim(request_id: int, request: Request):
+    """Cancel only the signed-in customer's own unreviewed identity claim."""
+    customer_id = getattr(request.state, "customer_id", None)
+    if not customer_id:
+        raise HTTPException(status_code=401, detail="Customer sign-in required")
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                claim = conn.execute(
+                    """
+                    WITH RECURSIVE customer_identity_parties(party_id) AS (
+                        SELECT party_id
+                        FROM identity_profiles
+                        WHERE profile_type='customer_account'
+                          AND customer_account_id=%s AND status='active'
+                        UNION
+                        SELECT alias.source_party_id
+                        FROM identity_aliases alias
+                        JOIN customer_identity_parties current_party
+                          ON alias.canonical_party_id=current_party.party_id
+                    )
+                    SELECT r.id,r.requester_party_id,r.status
+                    FROM identity_link_requests r
+                    WHERE r.id=%s
+                      AND r.request_type='claim_existing_identity'
+                      AND r.requester_party_id IN (SELECT party_id FROM customer_identity_parties)
+                    FOR UPDATE OF r
+                    """,
+                    (customer_id, request_id),
+                ).fetchone()
+                if claim is None:
+                    raise HTTPException(404, "Identity claim not found")
+                if claim["status"] not in {"pending", "proof_required"}:
+                    raise HTTPException(409, "Only an unreviewed identity claim can be cancelled")
+                updated = conn.execute(
+                    """
+                    UPDATE identity_link_requests
+                    SET status='cancelled',reviewed_at=now(),
+                        review_reason='Cancelled by customer',updated_at=now()
+                    WHERE id=%s AND status IN ('pending','proof_required')
+                    RETURNING id
+                    """,
+                    (request_id,),
+                ).fetchone()
+                if updated is None:
+                    raise HTTPException(409, "Claim status changed; refresh and retry")
+                IdentityService(conn)._event(
+                    party_id=claim["requester_party_id"],
+                    event_type="link_cancelled",
+                    event_data={"request_id": request_id, "request_type": "claim_existing_identity"},
+                    actor_party_id=claim["requester_party_id"],
+                    reason="Customer cancelled their identity claim",
+                )
+        return {"id": request_id, "status": "cancelled"}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(status_code=503, detail="Unable to cancel identity claim") from exc
 
 
 @router.post("/logout")

@@ -41,3 +41,4 @@
 042_hr_attendance_controls.sql
 043_unified_identity_foundation.sql
 044_identity_loyalty_referral_links.sql
+045_identity_claim_cancellation_event.sql

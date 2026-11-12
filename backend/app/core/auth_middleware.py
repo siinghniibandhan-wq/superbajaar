@@ -37,9 +37,13 @@ def is_self_service_auth_route(method: str, path: str, prefix: str = "/api") -> 
 
 
 def is_customer_identity_claim_route(method: str, path: str, prefix: str = "/api") -> bool:
-    """Allow signed-in customers to submit and view only their own identity claims."""
+    """Allow signed-in customers to submit, view and cancel only their own identity claims."""
     route = prefix.rstrip("/") + "/customer-auth/identity-claims"
-    return (method, path) in {("GET", route), ("POST", route)}
+    if (method, path) in {("GET", route), ("POST", route)}:
+        return True
+    suffix = path[len(route) + 1:] if path.startswith(route + "/") else ""
+    parts = suffix.split("/")
+    return method == "POST" and len(parts) == 2 and parts[0].isdigit() and parts[1] == "cancel"
 
 
 def _module_for_path(path: str, prefix: str = "/api") -> str | None:

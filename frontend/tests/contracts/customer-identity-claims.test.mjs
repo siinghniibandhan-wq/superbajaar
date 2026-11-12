@@ -16,3 +16,10 @@ test("identity claim panel supports submit and customer-owned status history", (
   assert.match(panel, /status/i);
   assert.match(panel, /target_sbid/);
 });
+
+
+test("customer claim history can cancel only unreviewed claims", () => {
+  assert.match(panel, /identity-claims\/\$\{claimId\}\/cancel/);
+  assert.match(panel, /\["pending", "proof_required"\]\.includes\(item\.status\)/);
+  assert.match(panel, /Cancel request/);
+});
