@@ -172,6 +172,9 @@ Never publish credentials, tokens, customer data or raw secrets in release evide
 - No dedicated staging/pre-production tier is evidenced in the reviewed repository workflows.
 - The actual Amplify app ID, branch settings, build specification and public domain must be confirmed in AWS Amplify; workflow logic alone does not prove the live configuration.
 - The actual GitHub protected-environment reviewers and branch protection/ruleset settings must be confirmed in GitHub settings.
+- The repository has a separate EC2 `main` auto-sync timer documented in [GitHub main auto-sync](operations/GITHUB_MAIN_AUTO_SYNC.md). It fast-forwards the source checkout but does not build, apply SQL or restart the backend service; it is source synchronization, not a deployment release.
+- No repository-root `amplify.yml` build specification was found in the inspected root listing, and the Amplify app's native auto-build/path-filter settings are not visible in Git. Confirm those settings in the AWS Amplify console. The GitHub `deploy.yml` path filter does not control Amplify's own connected-repository trigger.
+- The current repository tree does not identify a dedicated staging application or staging environment configuration.
 - Workflow YAML does not prove the most recent run succeeded. Check the run history for the release commit.
 - CI PostgreSQL containers are disposable test services, not production replicas and not staging databases.
 - The previous production deployment attempt recorded in project history failed at AWS OIDC role assumption. That historical result must not be treated as the current deployment status; verify the latest run.
