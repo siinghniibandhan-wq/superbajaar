@@ -121,10 +121,36 @@ def list_suppliers(search: str | None = Query(default=None, max_length=200), lim
 def create_supplier(payload: SupplierCreate):
     try:
         with _connect() as conn:
-            row = conn.execute(
-                "INSERT INTO suppliers(name,contact_name,phone,email,gstin,address) VALUES(%s,%s,%s,%s,%s,%s) RETURNING id,name,contact_name,phone,email,gstin,address,is_active,created_at",
-                (payload.name, payload.contact_name.strip() if payload.contact_name else None, payload.phone.strip() if payload.phone else None, payload.email.strip().lower() if payload.email else None, payload.gstin, payload.address.strip() if payload.address else None),
-            ).fetchone()
+            with conn.transaction():
+                row = conn.execute(
+                    "INSERT INTO suppliers(name,contact_name,phone,email,gstin,address) VALUES(%s,%s,%s,%s,%s,%s) RETURNING id,name,contact_name,phone,email,gstin,address,is_active,created_at",
+                    (payload.name, payload.contact_name.strip() if payload.contact_name else None, payload.phone.strip() if payload.phone else None, payload.email.strip().lower() if payload.email else None, payload.gstin, payload.address.strip() if payload.address else None),
+                ).fetchone()
+                # Give every supplier organisation a permanent SBID immediately;
+                # vendor portal activation later adds the representative relationship.
+                from app.services.identity import IdentityService
+                identity = IdentityService(conn)
+                party = identity.create_party(
+                    party_type="organisation", display_name=row["name"],
+                    reason="Supplier master created",
+                )
+                identity.link_profile(
+                    party_id=party["id"], profile_type="vendor_organisation",
+                    source_id=row["id"], link_method="admin_verified",
+                    reason="Supplier master created",
+                )
+                if row["email"]:
+                    try:
+                        identity.add_contact(party_id=party["id"], contact_type="email",
+                                             value=row["email"], source="supplier_master")
+                    except ValueError:
+                        pass
+                if row["phone"]:
+                    try:
+                        identity.add_contact(party_id=party["id"], contact_type="phone",
+                                             value=row["phone"], source="supplier_master")
+                    except ValueError:
+                        pass
         return row
     except psycopg.Error as exc:
         raise _db_error(exc) from exc
