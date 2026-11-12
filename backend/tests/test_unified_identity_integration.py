@@ -513,7 +513,7 @@ def test_admin_can_request_owner_relationship_for_an_explicit_individual_identit
         ).fetchone()
         assert relationship["relationship_type"] == "owner"
         assert relationship["status"] == "active"
-        assert relationship["approved_by_user_id"] == admin["id"]
+        assert relationship["approved_by_user_id"] == reviewer["id"]
         saved = conn.execute(
             "SELECT requester_party_id,target_party_id,request_type,status "
             "FROM identity_link_requests WHERE idempotency_key=%s",
