@@ -62,3 +62,12 @@ def test_identity_review_accepts_documented_manual_evidence_methods():
         payload = ReviewIn(decision="approve", proof_verified=True, proof_method=method,
                            reason="Evidence was checked by an administrator")
         assert payload.proof_method == method
+
+
+
+def test_admin_unmatched_claim_target_resolution_requires_admin_session():
+    response = client.post(
+        "/api/identity/review-queue/requests/123/resolve-target",
+        json={"target_party_id": 456, "reason": "Candidate verified from supplied evidence"},
+    )
+    assert response.status_code == 403
