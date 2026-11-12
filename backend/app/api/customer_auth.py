@@ -371,6 +371,39 @@ def request_identity_claim(payload: IdentityClaimIn, request: Request):
         raise HTTPException(status_code=503, detail="Unable to submit identity claim") from exc
 
 
+@router.get("/identity-claims")
+def list_identity_claims(request: Request):
+    """Return only claim requests initiated by the signed-in customer.
+
+    Target SBIDs and target profile details are deliberately excluded so this
+    endpoint cannot be used to enumerate other customers or identities.
+    """
+    customer_id = getattr(request.state, "customer_id", None)
+    if not customer_id:
+        raise HTTPException(status_code=401, detail="Customer sign-in required")
+    try:
+        with _connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT r.id, r.status, r.created_at, r.updated_at,
+                       r.reviewed_at, r.review_reason, r.proof_method, r.expires_at
+                FROM identity_link_requests r
+                JOIN identity_profiles ip
+                  ON ip.party_id = r.requester_party_id
+                 AND ip.profile_type = 'customer_account'
+                 AND ip.customer_account_id = %s
+                 AND ip.status = 'active'
+                WHERE r.request_type = 'claim_existing_identity'
+                ORDER BY r.created_at DESC, r.id DESC
+                LIMIT 50
+                """,
+                (customer_id,),
+            ).fetchall()
+        return {"items": rows}
+    except psycopg.Error as exc:
+        raise HTTPException(status_code=503, detail="Could not load your identity claims") from exc
+
+
 @router.post("/logout")
 def logout(request: Request):
     token_id = getattr(request.state, "customer_token_id", None)
