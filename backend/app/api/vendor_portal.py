@@ -45,11 +45,22 @@ def _vendor_user(conn, request: Request):
     if not user_id:
         raise HTTPException(401, "Sign in to the Vendor Portal")
     row = conn.execute(
-        "SELECT vpu.supplier_id,s.name AS supplier_name,s.email,s.phone,s.gstin,s.address,party.sbid "
+        "SELECT vpu.supplier_id,s.name AS supplier_name,s.email,s.phone,s.gstin,s.address,party.sbid, "
+        "CASE WHEN representative_link.id IS NOT NULL THEN representative.sbid ELSE NULL END AS representative_sbid "
         "FROM vendor_portal_users vpu JOIN suppliers s ON s.id=vpu.supplier_id "
         "LEFT JOIN identity_profiles ip ON ip.supplier_id=s.id AND ip.profile_type='vendor_organisation' AND ip.status='active' "
         "LEFT JOIN identity_parties party ON party.id=ip.party_id "
         "JOIN app_users u ON u.id=vpu.user_id "
+        "LEFT JOIN identity_auth_accounts representative_auth ON representative_auth.app_user_id=vpu.user_id "
+        "AND representative_auth.account_type='staff' AND representative_auth.status='active' "
+        "LEFT JOIN identity_parties representative ON representative.id=representative_auth.party_id "
+        "AND representative.party_type='individual' AND representative.status='active' "
+        "LEFT JOIN identity_relationships representative_link ON representative_link.from_party_id=representative.id "
+        "AND representative_link.to_party_id=party.id "
+        "AND representative_link.relationship_type='authorised_vendor_user' "
+        "AND representative_link.status='active' AND representative_link.valid_from<=now() "
+        "AND (representative_link.valid_to IS NULL OR representative_link.valid_to>=now()) "
+        "AND representative_link.scope @> jsonb_build_object('supplier_id',s.id,'portal_access',true) "
         "WHERE vpu.user_id=%s AND vpu.is_active=TRUE AND u.is_active=TRUE AND s.is_active=TRUE "
         "ORDER BY vpu.id LIMIT 1",
         (user_id,),
