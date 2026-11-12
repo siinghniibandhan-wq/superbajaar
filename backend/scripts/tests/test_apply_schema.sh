@@ -195,4 +195,18 @@ check "no backup taken when required migration is changed" "$(dumps)" 0
 check "unrelated pending migration was not applied" "$(q "select to_regclass('public.t23_must_not_apply') is null")" t
 grep -q "required file(s) are changed" "$T/out" && ok "preflight explains why all migration work was blocked" || bad "missing required-migration preflight explanation"
 
+
+echo "T24 stale failure for an older checksum is not reported against the applied file"
+newdb
+mkdir -p "$T/s24"
+printf "SELECT 1;\\n" > "$T/s24/000_baseline_schema.sql"
+current_sha=$(sha256sum "$T/s24/000_baseline_schema.sql" | cut -d' ' -f1)
+$SB_PSQL -X -q -d "$SB_DB" -c "CREATE TABLE schema_migrations(filename text primary key, sha256 text not null, applied_at timestamptz not null default now(), baseline boolean not null default false); CREATE TABLE schema_migration_failures(id bigserial primary key, filename text not null, sha256 text not null, failed_at timestamptz not null default now(), error text not null); INSERT INTO schema_migrations(filename,sha256) VALUES ('000_baseline_schema.sql','$current_sha'); INSERT INTO schema_migration_failures(filename,sha256,error) VALUES ('000_baseline_schema.sql','old-checksum','obsolete checksum mismatch');" >/dev/null
+printf '%s\\n' "000_baseline_schema.sql" > "$T/req24.txt"
+export SB_REQUIRED_FILE="$T/req24.txt"
+r24=$(run "$T/s24" --status)
+check "status exit 0 for applied file with stale historical failure" "$r24" 0
+grep -q "000_baseline_schema.sql: APPLIED" "$T/out" && ok "baseline remains APPLIED" || bad "baseline status missing"
+if grep -q "last error for 000_baseline_schema.sql" "$T/out"; then bad "stale historical failure is still reported"; else ok "stale historical failure is suppressed"; fi
+
 echo; echo "RESULT: $pass passed, $fail failed"; rm -rf "$T"; [ $fail -eq 0 ]
