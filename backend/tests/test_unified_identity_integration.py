@@ -455,7 +455,7 @@ def test_employee_portal_activation_backfills_identity_for_legacy_employee():
 def test_admin_can_request_owner_relationship_for_an_explicit_individual_identity(monkeypatch):
     from types import SimpleNamespace
     from app.api import identity as identity_api
-    from app.api.identity import LinkRequestIn, create_link_request
+    from app.api.identity import LinkRequestIn, ReviewIn, create_link_request, review_link_request
     from app.services.identity import IdentityService
 
     suffix = uuid4().hex
@@ -478,7 +478,25 @@ def test_admin_can_request_owner_relationship_for_an_explicit_individual_identit
     )
     result = create_link_request(payload, request)
     assert result["request"]["status"] == "proof_required"
+    approved = review_link_request(
+        result["request"]["id"],
+        ReviewIn(
+            decision="approve", proof_verified=True,
+            proof_method="document_review",
+            reason="Ownership evidence reviewed and approved",
+        ),
+        request,
+    )
+    assert approved["status"] == "approved"
     with psycopg.connect(TEST_DB, row_factory=dict_row) as conn:
+        relationship = conn.execute(
+            "SELECT relationship_type,status,approved_by_user_id FROM identity_relationships "
+            "WHERE from_party_id=%s AND to_party_id=%s",
+            (individual["id"], organisation["id"]),
+        ).fetchone()
+        assert relationship["relationship_type"] == "owner"
+        assert relationship["status"] == "active"
+        assert relationship["approved_by_user_id"] == admin["id"]
         saved = conn.execute(
             "SELECT requester_party_id,target_party_id,request_type,status "
             "FROM identity_link_requests WHERE idempotency_key=%s",
