@@ -30,6 +30,7 @@ jobs:
           git cat-file -e "${BASE_SHA}^{commit}"
 
           python3 - <<'PY'
+          import hashlib
           import os
           import re
           import subprocess
@@ -77,6 +78,25 @@ jobs:
                   continue
               status, path = line.split("\t", 1)
               if status != "A":
+                  # One narrowly scoped recovery is permitted: restore the
+                  # baseline to the exact SHA-256 pinned by production
+                  # preflight. Any other baseline edit remains forbidden.
+                  if (
+                      status == "M"
+                      and path == "backend/schema/000_baseline_schema.sql"
+                  ):
+                      restored = git("show", f"HEAD:{path}")
+                      restored_sha = hashlib.sha256(
+                          restored.encode("utf-8")
+                      ).hexdigest()
+                      if restored_sha == (
+                          "519e4467a6af9c1f87dd06cbdb80ef4545b1ae04edfe8937966799792168d938"
+                      ):
+                          print(
+                              "Accepted exact immutable-baseline restoration "
+                              f"for {path}."
+                          )
+                          continue
                   errors.append(
                       f"Existing schema file changed or removed: {path} "
                       f"(status {status}). Migration filenames and contents "
