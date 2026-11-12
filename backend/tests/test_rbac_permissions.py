@@ -98,3 +98,4 @@ def test_identity_register_routes_use_user_management_permissions():
     assert _module_for_path("/api/identity/parties/123") == "user_management"
     assert _action_for_request("GET", "/api/identity") == "read"
     assert _action_for_request("POST", "/api/identity/contacts/123/verify") == "approve"
+    assert _action_for_request("POST", "/api/identity/relationships/123/revoke") == "approve"
