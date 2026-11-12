@@ -10,7 +10,7 @@ def test_customer_identity_claim_submission_requires_customer_session():
         "/api/customer-auth/identity-claims",
         json={"target_sbid": "SBID-0123456789ABCDEF0123", "reason": "This is my existing profile"},
     )
-    assert response.status_code == 401
+    assert response.status_code == 403
 
 
 def test_customer_identity_claim_status_requires_customer_session():
