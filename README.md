@@ -2,7 +2,7 @@
 
 **Retail commerce, omnichannel operations and business management platform**
 
-Super Bajaar is a React/Vite and FastAPI application backed by PostgreSQL. The repository contains the customer-facing application entry point, the operational/admin workspace, backend APIs, versioned database schema files, automated checks and deployment-support scripts.
+Super Bajaar is a React/Vite and FastAPI application backed by PostgreSQL. The repository contains the customer-facing application entry point, the operational/admin workspace, backend APIs, versioned database schema files and deployment-support scripts. GitHub Actions automation was removed by PR #77; do not assume repository CI/deployment workflows remain active.
 
 This README describes the code currently committed on `main`. It is an engineering guide, not a claim that every module is complete or that the latest code is deployed to production.
 
@@ -365,11 +365,11 @@ GitHub Actions currently defines these workflows:
 
 The database workflow uses disposable CI databases; it does not apply migrations to the production database. CI success is evidence for the checks that actually ran, not proof of production deployment or of every real-world business workflow.
 
-To inspect current results, open the repository's [GitHub Actions](https://github.com/siinghniibandhan-wq/superbajaar/actions) page. Do not report checks as passing without checking the relevant run.
+There are no current GitHub Actions runs for the deleted workflows. Do not report these checks as passing or active. Any replacement checks must be run manually or through a separately approved system and documented with actual evidence.
 
 ## Change and release discipline
 
-**Production trigger boundary:** `.github/workflows/deploy.yml` uses application-path filters on pushes to `main`. Documentation-only and schema-only pushes do not match its push path filter. Pull requests still run source verification, but deploy jobs are conditioned on eligible main/manual events. A matching application-path push can trigger backend deployment and Amplify verification. The workflow does not apply database migrations. The separate `.github/workflows/production-database-migrations.yml` performs read-only preflight on schema-path pushes and only enters its apply job after a manual `workflow_dispatch` apply request, exact confirmation text and the protected `production-database` environment review. Always inspect the current workflow YAML before relying on these boundaries.
+**Current production trigger boundary:** The former GitHub Actions backend deployment and production database migration workflows were deleted by PR #77. They must not be described as active triggers. AWS Amplify's native Git integration is independent and may continue to publish frontend changes if its repository connection and auto-build settings remain enabled; verify those settings in Amplify. Backend deployment and database migration require their own separately verified AWS-side mechanisms. A commit to `main` alone is not proof that either has deployed or applied.
 
 
 1. Read the existing implementation and relevant tests before editing.
