@@ -101,17 +101,27 @@ class GoodsReceipt(BaseModel):
 
 @router.get("/suppliers")
 def list_suppliers(search: str | None = Query(default=None, max_length=200), limit: int = Query(default=100, ge=1, le=500), offset: int = Query(default=0, ge=0)):
-    clauses = ["is_active=TRUE"]
+    clauses = ["s.is_active=TRUE"]
+    count_clauses = ["is_active=TRUE"]
     params = []
     if search and search.strip():
         term = "%" + search.strip() + "%"
-        clauses.append("(name ILIKE %s OR COALESCE(phone,'') ILIKE %s OR COALESCE(gstin,'') ILIKE %s)")
+        clauses.append("(s.name ILIKE %s OR COALESCE(s.phone,'') ILIKE %s OR COALESCE(s.gstin,'') ILIKE %s)")
+        count_clauses.append("(name ILIKE %s OR COALESCE(phone,'') ILIKE %s OR COALESCE(gstin,'') ILIKE %s)")
         params.extend([term, term, term])
     where = " WHERE " + " AND ".join(clauses)
+    count_where = " WHERE " + " AND ".join(count_clauses)
     try:
         with _connect() as conn:
-            items = conn.execute("SELECT s.id,s.name,s.contact_name,s.phone,s.email,s.gstin,s.address,s.is_active,s.created_at,iparty.sbid FROM suppliers s LEFT JOIN identity_profiles ip ON ip.supplier_id=s.id AND ip.profile_type='vendor_organisation' AND ip.status='active' LEFT JOIN identity_parties iparty ON iparty.id=ip.party_id" + where.replace("is_active=TRUE","s.is_active=TRUE").replace("(name ILIKE","(s.name ILIKE").replace("COALESCE(phone,","COALESCE(s.phone,").replace("COALESCE(gstin,","COALESCE(s.gstin,") + " ORDER BY s.name LIMIT %s OFFSET %s", (*params, limit, offset)).fetchall()
-            total = conn.execute("SELECT count(*) AS total FROM suppliers" + where, params).fetchone()["total"]
+            items = conn.execute(
+                "SELECT s.id,s.name,s.contact_name,s.phone,s.email,s.gstin,s.address,s.is_active,s.created_at,iparty.sbid "
+                "FROM suppliers s LEFT JOIN identity_profiles ip ON ip.supplier_id=s.id "
+                "AND ip.profile_type='vendor_organisation' AND ip.status='active' "
+                "LEFT JOIN identity_parties iparty ON iparty.id=ip.party_id"
+                + where + " ORDER BY s.name LIMIT %s OFFSET %s",
+                (*params, limit, offset),
+            ).fetchall()
+            total = conn.execute("SELECT count(*) AS total FROM suppliers" + count_where, params).fetchone()["total"]
         return {"items": items, "total": total, "limit": limit, "offset": offset}
     except psycopg.Error as exc:
         raise _db_error(exc) from exc
@@ -166,18 +176,33 @@ def update_supplier(supplier_id: int, payload: SupplierCreate):
     """Update supplier master data without deleting or replacing the supplier record."""
     try:
         with _connect() as conn:
-            row = conn.execute(
-                "UPDATE suppliers SET name=%s,contact_name=%s,phone=%s,email=%s,gstin=%s,address=%s,updated_at=now() "
-                "WHERE id=%s AND is_active=TRUE "
-                "RETURNING id,name,contact_name,phone,email,gstin,address,is_active,created_at,updated_at",
-                (payload.name, payload.contact_name.strip() if payload.contact_name else None,
-                 payload.phone.strip() if payload.phone else None,
-                 payload.email.strip().lower() if payload.email else None,
-                 payload.gstin, payload.address.strip() if payload.address else None, supplier_id),
-            ).fetchone()
-        if not row:
-            raise HTTPException(404, "Active supplier not found")
-        return row
+            with conn.transaction():
+                row = conn.execute(
+                    "UPDATE suppliers SET name=%s,contact_name=%s,phone=%s,email=%s,gstin=%s,address=%s,updated_at=now() "
+                    "WHERE id=%s AND is_active=TRUE "
+                    "RETURNING id,name,contact_name,phone,email,gstin,address,is_active,created_at,updated_at",
+                    (payload.name, payload.contact_name.strip() if payload.contact_name else None,
+                     payload.phone.strip() if payload.phone else None,
+                     payload.email.strip().lower() if payload.email else None,
+                     payload.gstin, payload.address.strip() if payload.address else None, supplier_id),
+                ).fetchone()
+                if not row:
+                    raise HTTPException(404, "Active supplier not found")
+                party = conn.execute(
+                    "SELECT iparty.id,iparty.sbid FROM identity_profiles ip "
+                    "JOIN identity_parties iparty ON iparty.id=ip.party_id "
+                    "WHERE ip.supplier_id=%s AND ip.profile_type='vendor_organisation' "
+                    "AND ip.status='active' FOR UPDATE OF iparty",
+                    (supplier_id,),
+                ).fetchone()
+                if party:
+                    conn.execute(
+                        "UPDATE identity_parties SET display_name=%s WHERE id=%s",
+                        (row["name"], party["id"]),
+                    )
+                # Legacy suppliers without a verified identity link are not
+                # silently assigned or merged during an ordinary edit.
+                return {**row, "sbid": party["sbid"] if party else None}
     except HTTPException:
         raise
     except psycopg.Error as exc:
