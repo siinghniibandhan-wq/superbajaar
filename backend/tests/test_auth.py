@@ -44,3 +44,12 @@ def test_only_super_admin_can_create_or_assign_super_admin_role():
     from app.api.auth import _can_manage_privileged_roles
     assert _can_manage_privileged_roles("super_admin")
     assert not _can_manage_privileged_roles("admin")
+
+
+def test_identity_review_submission_requires_approve_permission():
+    from app.core.auth_middleware import _action_for_request
+
+    assert _action_for_request("POST", "/api/identity/review-queue/requests/42") == "approve"
+    assert _action_for_request("GET", "/api/identity/review-queue/requests") == "read"
+    assert _action_for_request("POST", "/api/identity/link-requests") == "create"
+    assert _action_for_request("POST", "/api/identity/parties/42/merge") == "create"

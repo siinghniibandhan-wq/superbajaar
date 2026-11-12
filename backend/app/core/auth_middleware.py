@@ -56,6 +56,10 @@ def _module_for_path(path: str, prefix: str = "/api") -> str | None:
 def _action_for_request(method: str, path: str) -> str:
     """Translate workflow endpoints to granular actions before HTTP defaults."""
     segments = path.rstrip("/").lower().split("/")
+    # Identity review decisions are privileged approvals, not ordinary creates.
+    # Keep GET review-queue access as read and other identity POSTs as create.
+    if method == "POST" and segments[-4:-1] == ["identity", "review-queue", "requests"]:
+        return "approve"
     workflow_actions = {"approve": "approve", "award": "approve", "post": "approve", "dispatch": "approve", "credit": "approve", "export": "export", "configure": "configure", "settings": "configure"}
     if any(segment in workflow_actions for segment in segments):
         return next(workflow_actions[segment] for segment in reversed(segments) if segment in workflow_actions)
