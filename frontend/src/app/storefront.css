@@ -1457,3 +1457,10 @@
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
   .storefront-add:active, .storefront-primary:active, .storefront-cart:active, .storefront-wishlist:active { transform: none; }
 }
+
+/* Why choose us: fix grid collision with the older 42px/1fr rule */
+.storefront-benefits > .storefront-benefit-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; align-content:start; align-items:start; }
+.storefront-benefits > .storefront-benefit-grid > article { display:flex; align-items:flex-start; gap:12px; padding:16px; min-height:0; height:auto; }
+.storefront-benefits .benefit-icon { flex:0 0 40px; width:40px; height:40px; display:grid; place-items:center; border-radius:12px; background:#efe3ff; color:#6428c7; }
+@media (max-width:760px) { .storefront-benefits > .storefront-benefit-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:480px) { .storefront-benefits > .storefront-benefit-grid { grid-template-columns:minmax(0,1fr); } }
