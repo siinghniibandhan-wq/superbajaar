@@ -41,13 +41,17 @@ CREATE INDEX IF NOT EXISTS identity_otp_challenges_target_idx
     ON public.identity_otp_challenges(target_party_id, requested_profile_type, requested_source_id)
     WHERE consumed_at IS NULL;
 
-DO $$
+DO $
+DECLARE
+    app_role text;
 BEGIN
-    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='superbajaar_user') THEN
-        GRANT SELECT,INSERT,UPDATE ON public.identity_otp_challenges TO superbajaar_user;
-        GRANT USAGE,SELECT ON SEQUENCE public.identity_otp_challenges_id_seq TO superbajaar_user;
-    END IF;
-END $$;
+    FOREACH app_role IN ARRAY ARRAY['superbajaar_app','superbajaar_user'] LOOP
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname=app_role) THEN
+            EXECUTE format('GRANT SELECT,INSERT,UPDATE ON public.identity_otp_challenges TO %I', app_role);
+            EXECUTE format('GRANT USAGE,SELECT ON SEQUENCE public.identity_otp_challenges_id_seq TO %I', app_role);
+        END IF;
+    END LOOP;
+END $;
 
 
 -- Private proof files are stored in the existing private S3 bucket.
@@ -78,10 +82,14 @@ CREATE TABLE IF NOT EXISTS public.identity_verification_documents (
 CREATE INDEX IF NOT EXISTS identity_verification_documents_party_idx
     ON public.identity_verification_documents(party_id,created_at DESC);
 
-DO $$
+DO $
+DECLARE
+    app_role text;
 BEGIN
-    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='superbajaar_user') THEN
-        GRANT SELECT,INSERT,UPDATE ON public.identity_verification_documents TO superbajaar_user;
-        GRANT USAGE,SELECT ON SEQUENCE public.identity_verification_documents_id_seq TO superbajaar_user;
-    END IF;
-END $$;
+    FOREACH app_role IN ARRAY ARRAY['superbajaar_app','superbajaar_user'] LOOP
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname=app_role) THEN
+            EXECUTE format('GRANT SELECT,INSERT,UPDATE ON public.identity_verification_documents TO %I', app_role);
+            EXECUTE format('GRANT USAGE,SELECT ON SEQUENCE public.identity_verification_documents_id_seq TO %I', app_role);
+        END IF;
+    END LOOP;
+END $;
