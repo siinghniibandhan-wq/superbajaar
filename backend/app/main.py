@@ -85,8 +85,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     # Amplify URLs can have multiple labels, e.g. main.<app-id>.amplifyapp.com.
-    # Keep explicit configured origins and allow HTTPS Amplify app hostnames.
-    allow_origin_regex=r"https://(?:[a-zA-Z0-9-]+[.])+amplifyapp[.]com",
+    # Keep explicit configured origins and allow only this Amplify app (any branch).
+    allow_origin_regex=r"https://(?:[a-zA-Z0-9-]+[.])*d334sr8jkx3zux[.]amplifyapp[.]com",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
