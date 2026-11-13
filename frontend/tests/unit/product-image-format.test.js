@@ -49,6 +49,15 @@ test("converts JPEG and PNG files to resized WebP output", async () => {
   assert.deepEqual(browser.calls.drawn, [0, 0, 1920, 960]);
 });
 
+test("converts PNG files to WebP as well", async () => {
+  const browser = fakeBrowser({ width: 800, height: 1600 });
+  const source = { name: "catalogue-photo.png", type: "image/png", size: 2048 };
+  const result = await prepareProductImage(source, browser);
+  assert.equal(result.name, "catalogue-photo.webp");
+  assert.equal(result.type, "image/webp");
+  assert.deepEqual(browser.calls.drawn, [0, 0, 800, 1600]);
+});
+
 test("does not re-encode existing WebP files", async () => {
   const browser = fakeBrowser();
   const source = { name: "product.webp", type: "image/webp", size: 200 };
