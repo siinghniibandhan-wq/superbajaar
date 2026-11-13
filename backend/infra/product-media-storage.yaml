@@ -1,0 +1,109 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Private S3 product-image storage served through CloudFront, with upload permission for the Super Bajaar backend EC2 role.
+
+Parameters:
+  BackendInstanceRoleName:
+    Type: String
+    Description: Exact IAM role name attached to the EC2 instance running superbajaar-backend.service.
+
+Resources:
+  ProductMediaBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  ProductMediaOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${AWS::StackName}-product-media-oac"
+        Description: CloudFront-only read access to the product image bucket.
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  ProductMediaDistribution:
+    Type: AWS::CloudFront::Distribution
+    DependsOn: ProductMediaBucket
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: Super Bajaar public product image delivery
+        PriceClass: PriceClass_100
+        IPV6Enabled: true
+        HttpVersion: http2and3
+        Origins:
+          - Id: ProductMediaS3Origin
+            DomainName: !GetAtt ProductMediaBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt ProductMediaOriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+        DefaultCacheBehavior:
+          TargetOriginId: ProductMediaS3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+          MinTTL: 0
+          DefaultTTL: 31536000
+          MaxTTL: 31536000
+
+  ProductMediaBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ProductMediaBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontReadForProductImages
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${ProductMediaBucket.Arn}/products/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${ProductMediaDistribution}"
+
+  ProductMediaUploadPermission:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub "${AWS::StackName}-product-media-upload"
+      Roles:
+        - !Ref BackendInstanceRoleName
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: UploadProductImagesOnly
+            Effect: Allow
+            Action:
+              - s3:PutObject
+            Resource: !Sub "${ProductMediaBucket.Arn}/products/*"
+
+Outputs:
+  MediaBucketName:
+    Description: Set as MEDIA_BUCKET in the backend environment.
+    Value: !Ref ProductMediaBucket
+  MediaPublicBaseUrl:
+    Description: Set as MEDIA_PUBLIC_BASE_URL in the backend environment (no trailing slash required).
+    Value: !Sub "https://${ProductMediaDistribution.DomainName}"
+  MediaDistributionId:
+    Description: CloudFront distribution identifier.
+    Value: !Ref ProductMediaDistribution
