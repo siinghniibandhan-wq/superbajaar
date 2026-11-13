@@ -4,7 +4,11 @@ import { apiRequest } from "../../services/api.js";
 const roles = ["admin", "manager", "staff", "viewer"];
 export default function SettingsWorkspace({ onBack, currentUser, permissions = {} }) {
   const [users, setUsers] = useState([]);
-  const [form, setForm] = useState({ email: "", full_name: "", password: "", role: "staff", permissions: {} });
+  const [linkableRecords, setLinkableRecords] = useState({ employees: [], vendors: [] });
+  const [linkingAccount, setLinkingAccount] = useState(null);
+  const [linkForm, setLinkForm] = useState({ account_type: "employee", employee_id: "", supplier_id: "" });
+  const emptyForm = { email: "", full_name: "", password: "", role: "staff", permissions: {}, account_type: "internal", employee_id: "", supplier_id: "" };
+  const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -18,7 +22,11 @@ export default function SettingsWorkspace({ onBack, currentUser, permissions = {
   const [ruleForm, setRuleForm] = useState({ scope_type: "default", scope_id: "", coins_per_100: "1", is_active: true });
   const load = useCallback(async () => {
     setLoading(true); setError("");
-    try { const result = await apiRequest("/auth/users"); setUsers(result.items || []); }
+    try {
+      const [result, records] = await Promise.all([apiRequest("/auth/users"), apiRequest("/auth/linkable-records")]);
+      setUsers(result.items || []);
+      setLinkableRecords({ employees: records.employees || [], vendors: records.vendors || [] });
+    }
     catch (e) { setError(e.message || "Unable to load user accounts."); }
     finally { setLoading(false); }
   }, []);
@@ -34,9 +42,25 @@ export default function SettingsWorkspace({ onBack, currentUser, permissions = {
     event.preventDefault(); setSaving(true); setError(""); setNotice("");
     try {
       await apiRequest("/auth/users", { method: "POST", body: JSON.stringify(form) });
-      setForm({ email: "", full_name: "", password: "", role: "staff", permissions: {} });
-      setNotice("Staff account created."); await load();
+      setForm(emptyForm);
+      setNotice("Login account created and linked to the selected " + (form.account_type === "employee" ? "employee" : form.account_type === "vendor" ? "vendor" : "internal account") + "."); await load();
     } catch (e) { setError(e.message || "Unable to create account."); }
+    finally { setSaving(false); }
+  }
+  async function linkExistingAccount(event) {
+    event.preventDefault();
+    if (!linkingAccount) return;
+    setSaving(true); setError(""); setNotice("");
+    try {
+      await apiRequest("/auth/users/" + linkingAccount.id + "/link", { method: "POST", body: JSON.stringify({
+        account_type: linkForm.account_type,
+        ...(linkForm.account_type === "employee" ? { employee_id: Number(linkForm.employee_id) } : { supplier_id: Number(linkForm.supplier_id) }),
+      }) });
+      setNotice("Existing login account linked to the selected " + linkForm.account_type + ".");
+      setLinkingAccount(null);
+      setLinkForm({ account_type: "employee", employee_id: "", supplier_id: "" });
+      await load();
+    } catch (e) { setError(e.message || "Unable to link the existing login account."); }
     finally { setSaving(false); }
   }
   async function update(id, payload) {
@@ -83,12 +107,16 @@ export default function SettingsWorkspace({ onBack, currentUser, permissions = {
     <p>Manage staff accounts and roles. Only Super Admin and Admin accounts can access this workspace. Only Super Admin can grant the Admin or Super Admin role.</p>
     {error && <p className="sb-alert" role="alert">{error}</p>}{notice && <p className="sb-success" role="status">{notice}</p>}
     <form className="sb-form" onSubmit={create}>
-      <h2>Create staff account</h2><div className="sb-form-grid">
+      <h2>Create login account</h2><div className="sb-form-grid">
+        <label>Account belongs to<select value={form.account_type} onChange={e=>setForm(v=>({...v,account_type:e.target.value,employee_id:"",supplier_id:""}))}><option value="internal">Internal user</option><option value="employee">Employee</option><option value="vendor">Vendor</option></select></label>
+        {form.account_type === "employee" && <label>Employee record<select required value={form.employee_id} onChange={e=>{const selected=linkableRecords.employees.find(item=>String(item.id)===e.target.value);setForm(v=>({...v,employee_id:e.target.value,email:selected?.email||v.email,full_name:selected?[selected.first_name,selected.last_name].filter(Boolean).join(" "):v.full_name}));}}><option value="">Select employee</option>{linkableRecords.employees.map(item=><option key={item.id} value={item.id}>{item.employee_code} · {[item.first_name,item.last_name].filter(Boolean).join(" ")} · {item.email}</option>)}</select></label>}
+        {form.account_type === "vendor" && <label>Vendor record<select required value={form.supplier_id} onChange={e=>{const selected=linkableRecords.vendors.find(item=>String(item.id)===e.target.value);setForm(v=>({...v,supplier_id:e.target.value,email:selected?.email||v.email,full_name:selected?.name||v.full_name}));}}><option value="">Select vendor</option>{linkableRecords.vendors.map(item=><option key={item.id} value={item.id}>{item.name} · {item.email}</option>)}</select></label>}
         <label>Full name<input required minLength="1" maxLength="200" value={form.full_name} onChange={e=>setForm(v=>({...v,full_name:e.target.value}))}/></label>
         <label>Email<input required type="email" maxLength="254" value={form.email} onChange={e=>setForm(v=>({...v,email:e.target.value}))}/></label>
         <label>Temporary password (minimum 12 characters)<input required type="password" minLength="12" maxLength="1024" autoComplete="new-password" value={form.password} onChange={e=>setForm(v=>({...v,password:e.target.value}))}/></label>
         <label>Role<select value={form.role} onChange={e=>setForm(v=>({...v,role:e.target.value}))}><option value="staff">Staff</option><option value="manager">Manager</option><option value="viewer">Viewer</option>{currentUser?.role === "super_admin" && <><option value="admin">Admin</option><option value="super_admin">Super Admin</option></>}</select></label>
       </div>
+      {form.account_type !== "internal" && <p className="sb-muted">The login email must match the selected {form.account_type} record. Its portal link will be created automatically.</p>}
       <h3>Initial module access</h3>
       <p className="sb-muted">Choose module actions to assign at creation. Grants are restricted to your own authority.</p>
       <div className="sb-table-wrap"><table><thead><tr><th>Module</th>{permissionCatalog.actions.map(a=><th key={a.action_key}>{a.label}</th>)}</tr></thead><tbody>
@@ -97,8 +125,19 @@ export default function SettingsWorkspace({ onBack, currentUser, permissions = {
       <button className="sb-primary" type="submit" disabled={saving}>{saving ? "Saving…" : "Create account"}</button>
     </form>
     <div className="sb-data-card"><div className="sb-data-heading"><h2>Accounts ({users.length})</h2><button type="button" onClick={load} disabled={loading}>{loading ? "Loading…" : "Refresh"}</button></div>
-      {loading ? <p className="sb-empty">Loading user accounts…</p> : users.length ? <div className="sb-table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead><tbody>{users.map(u=><tr key={u.id}><td>{u.full_name}</td><td>{u.email}</td><td>{u.role}</td><td>{u.is_active ? "Active" : "Inactive"}</td><td><div className="sb-access-actions"><select aria-label={"Role for "+u.email} value={u.role} disabled={saving || (u.role === "super_admin" && currentUser?.role !== "super_admin")} onChange={e=>update(u.id,{role:e.target.value})}><option value="super_admin" disabled={currentUser?.role !== "super_admin"}>Super Admin</option><option value="admin" disabled={currentUser?.role !== "super_admin"}>Admin</option>{roles.filter(r=>r!=="admin").map(r=><option key={r} value={r}>{r}</option>)}</select><button type="button" disabled={saving || u.id === currentUser?.id} onClick={()=>update(u.id,{is_active:!u.is_active})}>{u.is_active ? "Deactivate" : "Activate"}</button><button type="button" disabled={saving || (u.role === "super_admin" && currentUser?.role !== "super_admin")} onClick={()=>openPermissions(u)}>Permissions</button></div></td></tr>)}</tbody></table></div> : <p className="sb-empty">No user accounts found.</p>}
+      {loading ? <p className="sb-empty">Loading user accounts…</p> : users.length ? <div className="sb-table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Account belongs to</th><th>Linked record</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead><tbody>{users.map(u=><tr key={u.id}><td>{u.full_name}</td><td>{u.email}</td><td>{u.account_type || "internal"}</td><td>{u.linked_record || "—"}</td><td>{u.role}</td><td>{u.is_active ? "Active" : "Inactive"}</td><td><div className="sb-access-actions"><select aria-label={"Role for "+u.email} value={u.role} disabled={saving || (u.role === "super_admin" && currentUser?.role !== "super_admin")} onChange={e=>update(u.id,{role:e.target.value})}><option value="super_admin" disabled={currentUser?.role !== "super_admin"}>Super Admin</option><option value="admin" disabled={currentUser?.role !== "super_admin"}>Admin</option>{roles.filter(r=>r!=="admin").map(r=><option key={r} value={r}>{r}</option>)}</select><button type="button" disabled={saving || u.id === currentUser?.id} onClick={()=>update(u.id,{is_active:!u.is_active})}>{u.is_active ? "Deactivate" : "Activate"}</button><button type="button" disabled={saving || (u.role === "super_admin" && currentUser?.role !== "super_admin")} onClick={()=>openPermissions(u)}>Permissions</button>{(u.account_type || "internal") === "internal" && <button type="button" disabled={saving} onClick={()=>{setLinkingAccount(u);setLinkForm({account_type:"employee",employee_id:"",supplier_id:""});}}>Link record</button>}</div></td></tr>)}</tbody></table></div> : <p className="sb-empty">No user accounts found.</p>}
     </div>
+    {linkingAccount && <form className="sb-form" onSubmit={linkExistingAccount}>
+      <h2>Link existing login: {linkingAccount.full_name}</h2>
+      <p className="sb-muted">The login email must match the selected employee or vendor record. The existing login credentials will not change.</p>
+      <div className="sb-form-grid">
+        <label>Account belongs to<select value={linkForm.account_type} onChange={e=>setLinkForm({account_type:e.target.value,employee_id:"",supplier_id:""})}><option value="employee">Employee</option><option value="vendor">Vendor</option></select></label>
+        {linkForm.account_type === "employee" && <label>Employee record<select required value={linkForm.employee_id} onChange={e=>setLinkForm(v=>({...v,employee_id:e.target.value}))}><option value="">Select employee</option>{linkableRecords.employees.map(item=><option key={item.id} value={item.id}>{item.employee_code} · {[item.first_name,item.last_name].filter(Boolean).join(" ")} · {item.email}</option>)}</select></label>}
+        {linkForm.account_type === "vendor" && <label>Vendor record<select required value={linkForm.supplier_id} onChange={e=>setLinkForm(v=>({...v,supplier_id:e.target.value}))}><option value="">Select vendor</option>{linkableRecords.vendors.map(item=><option key={item.id} value={item.id}>{item.name} · {item.email}</option>)}</select></label>}
+      </div>
+      <button className="sb-primary" type="submit" disabled={saving || (linkForm.account_type === "employee" ? !linkForm.employee_id : !linkForm.supplier_id)}>{saving ? "Linking…" : "Link login account"}</button>
+      <button type="button" disabled={saving} onClick={()=>setLinkingAccount(null)}>Cancel</button>
+    </form>}
     {editingPermissions && <section className="sb-form">
       <h2>Module permissions: {editingPermissions.full_name}</h2>
       <p>Only permissions within your own authority can be granted. Unchecked actions are denied.</p>
