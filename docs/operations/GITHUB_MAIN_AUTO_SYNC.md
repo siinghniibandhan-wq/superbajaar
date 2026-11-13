@@ -54,3 +54,17 @@ sudo systemctl disable --now superbajaar-github-sync.timer
 ```
 
 Disabling the timer does not revert any code already synchronised.
+
+
+---
+
+## Current three-lane deployment relationship — 13 November 2026
+
+The GitHub sync timer described above remains the original, unchanged source-sync lane. The owner reports that it continues to run every two minutes as `ubuntu`, using `backend/scripts/sync_main.sh` for fetch and fast-forward only. It requires a clean checkout and never builds, migrates or restarts the application.
+
+The schema apply and backend deployment lanes are separate timers:
+
+- `superbajaar-schema.timer`: even minutes; applies eligible migrations after verified backup.
+- `superbajaar-backend-deploy.timer`: odd minutes; deploys backend changes only after required migrations are present in the ledger.
+
+The intended total delay after a GitHub push is approximately 2–4 minutes. See the [three-lane deployment runbook](PRODUCTION_DEPLOYMENT.md#aws-native-three-lane-auto-deployment--13-november-2026). This relationship does not change the sync script's safety boundaries above.
