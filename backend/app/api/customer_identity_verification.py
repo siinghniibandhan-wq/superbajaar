@@ -157,6 +157,8 @@ def verify_identity_email_otp(payload: OTPVerifyIn, request: Request):
                     raise HTTPException(410, "Verification code has expired")
                 if challenge["attempts"] >= challenge["max_attempts"]:
                     raise HTTPException(429, "Too many incorrect codes. Request a new code.")
+                if challenge["normalized_contact"] != (party["email"] or "").strip().lower():
+                    raise HTTPException(409, "The account email changed. Request a new verification code.")
                 if not verify_otp_digest(payload.challenge_token, payload.code, challenge["otp_digest"]):
                     conn.execute(
                         "UPDATE identity_otp_challenges SET attempts=attempts+1 WHERE id=%s",
