@@ -1,7 +1,7 @@
 # Super Bajaar engineering documentation
 
 **Documentation owner:** Engineering  
-**Last reviewed:** 12 November 2026  
+**Last reviewed:** 13 November 2026  
 **Status:** Canonical documentation index
 
 This directory contains current engineering references, operational runbooks, historical audit/design records, implementation plans and supporting configuration. Source code and workflow YAML define implemented behaviour; live infrastructure and deployment state require timestamped evidence.
@@ -14,7 +14,8 @@ This directory contains current engineering references, operational runbooks, hi
 | Current production decisions, IAM approval model, self-approval, migration 045, backup evidence and open actions | [Production governance and readiness](PRODUCTION_GOVERNANCE_AND_READINESS.md) |
 | Environment tiers, CI/CD triggers and release types | [Environments and CI/CD](ENVIRONMENTS_AND_CICD.md) |
 | PostgreSQL migration policy, runner modes and production commands | [Database migrations](DATABASE_MIGRATIONS.md) |
-| EC2 backend, Amplify deployment and rollback | [Production deployment runbook](operations/PRODUCTION_DEPLOYMENT.md) |
+| AWS-native EC2 backend deployment, rollback and Amplify boundary | [Production deployment runbook](operations/PRODUCTION_DEPLOYMENT.md) |
+| Three-lane EC2 automation (Git sync, schema apply, backend deploy) | [AWS-native auto-deploy operations](operations/PRODUCTION_DEPLOYMENT.md#aws-native-three-lane-auto-deployment--13-november-2026) |
 | Migration filename immutability | [Schema migration critical rule](SCHEMA_MIGRATION_CRITICAL_RULE.md) |
 | Unified Identity implementation | [Identity implementation guide](UNIFIED_IDENTITY_SYSTEM_IMPLEMENTATION.md) |
 | Unified Identity production rollout | [Identity rollout runbook](UNIFIED_IDENTITY_SYSTEM_PRODUCTION_ROLLOUT.md) |
@@ -36,7 +37,7 @@ Every governed implementation or configuration change must include its correspon
 - [Production governance and readiness](PRODUCTION_GOVERNANCE_AND_READINESS.md) — canonical owner decisions, accepted risks, IAM boundaries, self-approval, migration 045, deployment rollback, backup posture and open verification.
 - [Database migrations](DATABASE_MIGRATIONS.md) — migration runner, immutable numbering, backup gates and dated production evidence.
 - [Environments and CI/CD](ENVIRONMENTS_AND_CICD.md) — local/CI/production distinctions, path filters, workflow responsibilities and release evidence.
-- [Production deployment](operations/PRODUCTION_DEPLOYMENT.md) — EC2/SSM and Amplify deployment/recovery.
+- [Production deployment](operations/PRODUCTION_DEPLOYMENT.md) — AWS-native EC2 backend deployment, rollback, Amplify boundary and three-lane automation.
 - [GitHub main auto-sync](operations/GITHUB_MAIN_AUTO_SYNC.md) — source synchronization behaviour; not a deployment.
 - [Super Admin provisioning](operations/SUPER_ADMIN_PROVISIONING.md) — controlled administrator provisioning.
 - [Vendor portal S3 storage](VENDOR_PORTAL_S3_STORAGE.md) — private document-storage design and rollout requirements.
