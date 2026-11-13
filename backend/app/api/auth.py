@@ -10,7 +10,7 @@ import psycopg
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from psycopg.rows import dict_row
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.config import settings
 
@@ -188,6 +188,9 @@ class UserCreate(BaseModel):
     password: str = Field(min_length=12, max_length=1024)
     role: str = "staff"
     permissions: dict[str, dict[str, bool]] = Field(default_factory=dict)
+    account_type: str = "internal"
+    employee_id: int | None = Field(default=None, gt=0)
+    supplier_id: int | None = Field(default=None, gt=0)
 
     @field_validator("email")
     @classmethod
@@ -212,6 +215,23 @@ class UserCreate(BaseModel):
             raise ValueError("Unsupported user role")
         return value
 
+    @field_validator("account_type")
+    @classmethod
+    def validate_account_type(cls, value):
+        if value not in {"internal", "employee", "vendor"}:
+            raise ValueError("Account belongs to must be internal, employee or vendor")
+        return value
+
+    @model_validator(mode="after")
+    def validate_account_link(self):
+        if self.account_type == "employee" and (self.employee_id is None or self.supplier_id is not None):
+            raise ValueError("Select one employee record for an employee login")
+        if self.account_type == "vendor" and (self.supplier_id is None or self.employee_id is not None):
+            raise ValueError("Select one supplier record for a vendor login")
+        if self.account_type == "internal" and (self.employee_id is not None or self.supplier_id is not None):
+            raise ValueError("Internal accounts cannot be linked to an employee or vendor record")
+        return self
+
 
 class UserUpdate(BaseModel):
     role: str | None = None
@@ -231,7 +251,12 @@ def list_users(user=Depends(current_user)):
     try:
         with _connect() as conn:
             rows = conn.execute(
-                "SELECT id,email,full_name,role,is_active,created_at,updated_at FROM app_users ORDER BY created_at,id"
+                "SELECT u.id,u.email,u.full_name,u.role,u.is_active,u.created_at,u.updated_at, "
+                "CASE WHEN e.id IS NOT NULL THEN 'employee' WHEN vpu.id IS NOT NULL THEN 'vendor' ELSE 'internal' END AS account_type, "
+                "COALESCE(e.employee_code,s.name) AS linked_record "
+                "FROM app_users u LEFT JOIN hr_employees e ON e.user_id=u.id "
+                "LEFT JOIN vendor_portal_users vpu ON vpu.user_id=u.id AND vpu.is_active=TRUE "
+                "LEFT JOIN suppliers s ON s.id=vpu.supplier_id ORDER BY u.created_at,u.id"
             ).fetchall()
         return {"items": rows}
     except psycopg.Error as exc:
@@ -257,7 +282,74 @@ def create_user(payload: UserCreate, user=Depends(current_user)):
                     (payload.email, payload.full_name, _password_hash(payload.password), payload.role),
                 ).fetchone()
                 _save_user_permissions(conn, row["id"], payload.permissions, user["id"])
-        return row
+                linked_record = None
+                if payload.account_type == "employee":
+                    employee = conn.execute(
+                        "SELECT id,user_id,email,first_name,last_name,status FROM hr_employees WHERE id=%s FOR UPDATE",
+                        (payload.employee_id,),
+                    ).fetchone()
+                    if not employee or employee["status"] == "terminated":
+                        raise HTTPException(404, "Active employee record not found")
+                    if employee["user_id"] is not None:
+                        raise HTTPException(409, "This employee is already linked to a login account")
+                    if (employee["email"] or "").strip().lower() != payload.email:
+                        raise HTTPException(422, "Login email must match the selected employee's HR email")
+                    from app.api.hr import _link_employee_login_identity
+                    from app.services.identity import IdentityService
+                    identity = IdentityService(conn)
+                    party = conn.execute(
+                        "SELECT party_id FROM identity_profiles WHERE profile_type='employee' AND employee_id=%s "
+                        "AND status='active' FOR UPDATE",
+                        (employee["id"],),
+                    ).fetchone()
+                    if not party:
+                        raise HTTPException(409, "Employee identity is missing; refresh the HR employee record before linking login access")
+                    _link_employee_login_identity(conn, identity, party["party_id"], row["id"], user["id"])
+                    updated = conn.execute(
+                        "UPDATE hr_employees SET user_id=%s,updated_at=now() WHERE id=%s AND user_id IS NULL RETURNING id,employee_code",
+                        (row["id"], employee["id"]),
+                    ).fetchone()
+                    if not updated:
+                        raise HTTPException(409, "This employee was linked to another login account")
+                    linked_record = updated["employee_code"]
+                elif payload.account_type == "vendor":
+                    supplier = conn.execute(
+                        "SELECT id,name,email,is_active FROM suppliers WHERE id=%s FOR UPDATE",
+                        (payload.supplier_id,),
+                    ).fetchone()
+                    if not supplier or not supplier["is_active"]:
+                        raise HTTPException(404, "Active vendor record not found")
+                    if (supplier["email"] or "").strip().lower() != payload.email:
+                        raise HTTPException(422, "Login email must match the selected vendor's registered email")
+                    existing_vendor = conn.execute(
+                        "SELECT id FROM vendor_portal_users WHERE supplier_id=%s AND is_active=TRUE FOR UPDATE",
+                        (supplier["id"],),
+                    ).fetchone()
+                    if existing_vendor:
+                        raise HTTPException(409, "This vendor already has an active portal login")
+                    from app.services.identity import IdentityService
+                    identity = IdentityService(conn)
+                    organisation = conn.execute(
+                        "SELECT p.id FROM identity_profiles ip JOIN identity_parties p ON p.id=ip.party_id "
+                        "WHERE ip.profile_type='vendor_organisation' AND ip.supplier_id=%s AND ip.status='active' FOR UPDATE OF p",
+                        (supplier["id"],),
+                    ).fetchone()
+                    if not organisation:
+                        organisation_party = identity.create_party(party_type='organisation', display_name=supplier['name'], actor_user_id=user['id'], reason='Vendor login account created by administrator')
+                        organisation_id = organisation_party['id']
+                        identity.link_profile(party_id=organisation_id, profile_type='vendor_organisation', source_id=supplier['id'], link_method='admin_verified', actor_user_id=user['id'], reason='Vendor login account created by administrator')
+                    else:
+                        organisation_id = organisation['id']
+                    representative = identity.create_party(party_type='individual', display_name=payload.full_name, actor_user_id=user['id'], reason='Vendor portal login account created')
+                    identity.link_auth_account(party_id=representative['id'], account_type='staff', source_id=row['id'], link_method='admin_verified', actor_user_id=user['id'])
+                    identity.add_contact(party_id=representative['id'], contact_type='email', value=payload.email, source='vendor_user_management')
+                    identity.create_relationship(from_party_id=representative['id'], to_party_id=organisation_id, relationship_type='authorised_vendor_user', scope={'supplier_id': supplier['id'], 'portal_access': True}, reason='Vendor login account linked by administrator', actor_user_id=user['id'])
+                    conn.execute("INSERT INTO vendor_portal_users(user_id,supplier_id) VALUES(%s,%s)", (row['id'], supplier['id']))
+                    linked_record = supplier['name']
+                result = dict(row)
+                result['account_type'] = payload.account_type
+                result['linked_record'] = linked_record
+        return result
     except psycopg.Error as exc:
         if getattr(exc, "sqlstate", None) == "23505":
             raise HTTPException(409, "An account with this email already exists") from exc
