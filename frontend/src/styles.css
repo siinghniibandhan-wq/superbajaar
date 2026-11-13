@@ -401,3 +401,18 @@
 .sb-loyalty-status.active{background:#e9f7ef;color:#28734d}
 @media(max-width:760px){.sb-loyalty-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.sb-loyalty-form{grid-template-columns:repeat(2,minmax(0,1fr))}.sb-loyalty-overview-grid{grid-template-columns:1fr}}
 @media(max-width:480px){.sb-loyalty-heading{align-items:flex-start;flex-direction:column}.sb-loyalty-kpis{gap:8px}.sb-loyalty-kpis article{padding:13px}.sb-loyalty-kpis strong{font-size:21px}.sb-loyalty-form{grid-template-columns:1fr}.sb-loyalty-form .wide{grid-column:auto}}
+
+/* Impeccable polish, part 2 */
+.an-metric small,.an-controls label,.an-controls select,.an-panel header p,.an-section-title p,.an-finance-pairs small,.an-empty,.an-link,.an-shortcuts button,.sb-report-bar-row>span,.sb-loyalty-kpis small,.sb-loyalty-kpis span,.sb-loyalty-status{font-size:12px;color:var(--muted)}
+.an-metric-note,.an-table-wrap th{font-size:11px;color:var(--faint)}
+.an-table-wrap td,.an-bar-row>span,.an-bar-row>strong{font-size:12px}
+.an-metric{grid-template-columns:1fr;box-shadow:none}
+.an-metric-mark{width:9px;height:9px;min-height:0;grid-row:auto;border-radius:50%}
+.an-bar-row>div i,.sb-report-bar-track i{background:var(--brand)}
+.an-trend-chart{background:#fff}
+.sb-report-chart-empty{background:#fbfcfd}
+.sb-loyalty-heading>button,.sb-loyalty-form button,.sb-loyalty-overview-grid button,.sb-loyalty-tabs button,.an-controls nav button,.an-refresh,.sb-report-actions button,.sb-report-actions a{min-height:44px}
+.sb-loyalty-heading>button,.sb-loyalty-form button,.sb-loyalty-overview-grid button{background:var(--brand)}
+.sb-loyalty-tabs button.active{color:var(--brand)}
+.an-controls nav button.active,.an-link,.sb-customer-tabs button.is-active{color:var(--brand)}
+.sb-loyalty-heading h1,.an-heading h1{letter-spacing:-.8px}
