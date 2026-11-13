@@ -147,7 +147,7 @@ class LinkRequestIn(BaseModel):
 class ReviewIn(BaseModel):
     decision: str = Field(pattern=r"^(approve|reject)$")
     proof_verified: bool = False
-    proof_method: str | None = Field(default=None, pattern=r"^(document_review|in_person|verified_account|business_registry)$", max_length=40)
+    proof_method: str | None = Field(default=None, pattern=r"^(document_review|in_person|verified_account|business_registry|email_otp)$", max_length=40)
     reason: str = Field(min_length=5, max_length=500)
 
 
@@ -492,6 +492,10 @@ def review_link_request(request_id: int, payload: ReviewIn, request: Request):
                 if payload.decision == "approve" and context.get("submitted_by_user_id") == request.state.user_id:
                     raise HTTPException(403, "A different administrator must review and approve this identity request")
                 if payload.decision == "approve":
+                    if payload.proof_method == "email_otp" and (
+                        item["proof_method"] != "email_otp" or item["proof_verified_at"] is None
+                    ):
+                        raise HTTPException(409, "Target-owner email OTP confirmation has not been completed")
                     service = IdentityService(conn)
                     if item["request_type"] == "link_profile":
                         service.link_profile(
