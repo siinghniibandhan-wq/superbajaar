@@ -71,5 +71,5 @@ test("rejects source files above the existing 10 MB upload limit", async () => {
 test("rejects browsers that cannot encode WebP rather than uploading a mislabeled file", async () => {
   const browser = fakeBrowser({ blob: new Blob(["png"], { type: "image/png" }) });
   const source = { name: "product.png", type: "image/png", size: 200 };
-  await assert.rejects(() => prepareProductImage(source, browser), /could not be converted to WebP/);
+  await assert.rejects(() => prepareProductImage(source, browser), /could not convert the selected image to WebP/);
 });
