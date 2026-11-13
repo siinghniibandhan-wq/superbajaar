@@ -416,3 +416,19 @@
 .sb-loyalty-tabs button.active{color:var(--brand)}
 .an-controls nav button.active,.an-link,.sb-customer-tabs button.is-active{color:var(--brand)}
 .sb-loyalty-heading h1,.an-heading h1{letter-spacing:-.8px}
+
+/* Impeccable polish */
+:root{--font:'Lato',system-ui,sans-serif;--ink:#1f2a33;--muted:#5b6670;--faint:#6b7680;--brand:#2f6ea5}
+:root{font-family:var(--font);color:var(--ink)}
+body{background:#f6f8fa}
+.sb-mark{box-shadow:0 8px 20px #2f6ea533}
+.sb-tile:hover{box-shadow:0 10px 26px #1f2a3314}
+.sb-tile-copy small,.sb-order-open small,.sb-order-total small,.sb-customer-info>small,.sb-case-heading small,.sb-price-product small,.sb-delivery-row small,.sb-payment-row small,.sb-notice span,.sb-order-detail p,.sb-empty{font-size:12px;color:var(--muted)}
+.sb-arrow,.sb-group-heading span,.sb-nav-group>p,footer,.sb-kpi-grid article>span,.sb-order-actions label,.sb-delivery-form>small{color:var(--faint);font-size:11px}
+.sb-intro>p:last-child,.sb-workspace>p:not(.sb-eyebrow){color:var(--muted)}
+.sb-primary,.sb-price-card .sb-primary,.sb-payment-form .sb-primary,.sb-delivery-form .sb-primary{background:var(--brand)!important}
+.sb-intro h1,.sb-workspace h1{letter-spacing:-.8px}
+:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+@media(pointer:coarse){button,select,input:not([type=checkbox]){min-height:44px}}
+@media(max-width:700px){input,select,textarea{font-size:16px!important}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
