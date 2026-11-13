@@ -156,6 +156,9 @@ async def require_active_session(request: Request) -> None:
         customer_routes = {
             ("GET", prefix + "/customer-auth/me"),
             ("POST", prefix + "/customer-auth/logout"),
+            ("POST", prefix + "/customer-auth/identity-verification/otp/request"),
+            ("POST", prefix + "/customer-auth/identity-verification/otp/verify"),
+            ("POST", prefix + "/customer-auth/identity-verification/documents"),
             ("POST", prefix + "/razorpay/orders"),
             ("POST", prefix + "/razorpay/verify"),
             ("GET", prefix + "/customer-auth/referrals"),
@@ -165,6 +168,12 @@ async def require_active_session(request: Request) -> None:
             ("GET", prefix + "/customers/support-portal/tickets"),
             ("POST", prefix + "/customers/support-portal/tickets"),
         }
+        is_customer_identity_document_download = (
+            request.method == "GET"
+            and path.startswith(prefix + "/customer-auth/identity-verification/documents/")
+            and path.endswith("/download")
+            and path.count("/") == 6
+        )
         is_customer_support_detail = (
             path.startswith(prefix + "/customers/support-portal/tickets/")
             and request.method == "GET"
@@ -182,7 +191,7 @@ async def require_active_session(request: Request) -> None:
             and path.count("/") == 4
         )
         is_website_order = request.method == "POST" and path == prefix + "/orders"
-        if (request.method, path) not in customer_routes and not is_customer_identity_claim_route(request.method, path, prefix) and not is_customer_support_detail and not is_customer_support_reply and not is_customer_order_detail and not is_website_order:
+        if (request.method, path) not in customer_routes and not is_customer_identity_claim_route(request.method, path, prefix) and not is_customer_identity_document_download and not is_customer_support_detail and not is_customer_support_reply and not is_customer_order_detail and not is_website_order:
             raise HTTPException(status_code=403, detail="Customer session cannot access staff resources")
         try:
             with psycopg.connect(settings.database_url, row_factory=dict_row, connect_timeout=3) as conn:
