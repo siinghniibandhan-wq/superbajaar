@@ -381,6 +381,145 @@ def create_user(payload: UserCreate, user=Depends(current_user)):
         raise HTTPException(503, "Unable to create user; verify the required authentication schema") from exc
 
 
+class UserLinkInput(BaseModel):
+    account_type: str
+    employee_id: int | None = Field(default=None, gt=0)
+    supplier_id: int | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def validate_link_target(self):
+        if self.account_type == "employee" and (self.employee_id is None or self.supplier_id is not None):
+            raise ValueError("Select one employee record")
+        if self.account_type == "vendor" and (self.supplier_id is None or self.employee_id is not None):
+            raise ValueError("Select one vendor record")
+        if self.account_type not in {"employee", "vendor"}:
+            raise ValueError("Existing accounts can only be linked to an employee or vendor")
+        return self
+
+
+@router.post("/users/{user_id}/link")
+def link_existing_user(user_id: int, payload: UserLinkInput, user=Depends(current_user)):
+    """Attach an existing login account to one existing employee or vendor record."""
+    _require_user_admin(user)
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                account = conn.execute(
+                    "SELECT id,email,full_name,is_active FROM app_users WHERE id=%s FOR UPDATE",
+                    (user_id,),
+                ).fetchone()
+                if not account:
+                    raise HTTPException(404, "Login account not found")
+                if not account["is_active"]:
+                    raise HTTPException(409, "Activate this login account before linking a portal record")
+                existing_employee = conn.execute(
+                    "SELECT id FROM hr_employees WHERE user_id=%s",
+                    (user_id,),
+                ).fetchone()
+                existing_vendor = conn.execute(
+                    "SELECT id FROM vendor_portal_users WHERE user_id=%s AND is_active=TRUE",
+                    (user_id,),
+                ).fetchone()
+                if existing_employee or existing_vendor:
+                    raise HTTPException(409, "This login account is already linked to an employee or vendor")
+                if payload.account_type == "employee":
+                    employee = conn.execute(
+                        "SELECT id,user_id,email,employee_code,status FROM hr_employees WHERE id=%s FOR UPDATE",
+                        (payload.employee_id,),
+                    ).fetchone()
+                    if not employee or employee["status"] == "terminated":
+                        raise HTTPException(404, "Active employee record not found")
+                    if employee["user_id"] is not None:
+                        raise HTTPException(409, "This employee is already linked to a login account")
+                    if (employee["email"] or "").strip().lower() != account["email"].strip().lower():
+                        raise HTTPException(422, "Login email must match the selected employee's HR email")
+                    from app.api.hr import _link_employee_login_identity
+                    from app.services.identity import IdentityService
+                    identity = IdentityService(conn)
+                    party = conn.execute(
+                        "SELECT party_id FROM identity_profiles WHERE profile_type='employee' AND employee_id=%s "
+                        "AND status='active' FOR UPDATE",
+                        (employee["id"],),
+                    ).fetchone()
+                    if not party:
+                        raise HTTPException(409, "Employee identity is missing; refresh the HR employee record before linking login access")
+                    _link_employee_login_identity(conn, identity, party["party_id"], account["id"], user["id"])
+                    linked = conn.execute(
+                        "UPDATE hr_employees SET user_id=%s,updated_at=now() WHERE id=%s AND user_id IS NULL RETURNING employee_code",
+                        (account["id"], employee["id"]),
+                    ).fetchone()
+                    if not linked:
+                        raise HTTPException(409, "This employee was linked to another login account")
+                    linked_record = linked["employee_code"]
+                else:
+                    supplier = conn.execute(
+                        "SELECT id,name,email,is_active FROM suppliers WHERE id=%s FOR UPDATE",
+                        (payload.supplier_id,),
+                    ).fetchone()
+                    if not supplier or not supplier["is_active"]:
+                        raise HTTPException(404, "Active vendor record not found")
+                    if (supplier["email"] or "").strip().lower() != account["email"].strip().lower():
+                        raise HTTPException(422, "Login email must match the selected vendor's registered email")
+                    existing_vendor = conn.execute(
+                        "SELECT id FROM vendor_portal_users WHERE supplier_id=%s AND is_active=TRUE FOR UPDATE",
+                        (supplier["id"],),
+                    ).fetchone()
+                    if existing_vendor:
+                        raise HTTPException(409, "This vendor already has an active portal login")
+                    from app.services.identity import IdentityService
+                    identity = IdentityService(conn)
+                    organisation = conn.execute(
+                        "SELECT p.id FROM identity_profiles ip JOIN identity_parties p ON p.id=ip.party_id "
+                        "WHERE ip.profile_type='vendor_organisation' AND ip.supplier_id=%s AND ip.status='active' FOR UPDATE OF p",
+                        (supplier["id"],),
+                    ).fetchone()
+                    if not organisation:
+                        organisation_party = identity.create_party(
+                            party_type="organisation", display_name=supplier["name"],
+                            actor_user_id=user["id"], reason="Existing vendor login linked by administrator",
+                        )
+                        organisation_id = organisation_party["id"]
+                        identity.link_profile(
+                            party_id=organisation_id, profile_type="vendor_organisation",
+                            source_id=supplier["id"], link_method="admin_verified",
+                            actor_user_id=user["id"], reason="Existing vendor login linked by administrator",
+                        )
+                    else:
+                        organisation_id = organisation["id"]
+                    representative = identity.create_party(
+                        party_type="individual", display_name=account["full_name"],
+                        actor_user_id=user["id"], reason="Existing vendor portal login linked",
+                    )
+                    identity.link_auth_account(
+                        party_id=representative["id"], account_type="staff",
+                        source_id=account["id"], link_method="admin_verified",
+                        actor_user_id=user["id"],
+                    )
+                    identity.add_contact(
+                        party_id=representative["id"], contact_type="email",
+                        value=account["email"], source="vendor_user_management",
+                    )
+                    identity.create_relationship(
+                        from_party_id=representative["id"], to_party_id=organisation_id,
+                        relationship_type="authorised_vendor_user",
+                        scope={"supplier_id": supplier["id"], "portal_access": True},
+                        reason="Existing vendor login linked by administrator",
+                        actor_user_id=user["id"],
+                    )
+                    conn.execute(
+                        "INSERT INTO vendor_portal_users(user_id,supplier_id) VALUES(%s,%s)",
+                        (account["id"], supplier["id"]),
+                    )
+                    linked_record = supplier["name"]
+        return {"status": "linked", "user_id": user_id, "account_type": payload.account_type, "linked_record": linked_record}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        if getattr(exc, "sqlstate", None) == "23505":
+            raise HTTPException(409, "This login or portal record is already linked") from exc
+        raise HTTPException(503, "Unable to link the existing login account") from exc
+
+
 @router.patch("/users/{user_id}")
 def update_user(user_id: int, payload: UserUpdate, user=Depends(current_user)):
     _require_user_admin(user)
