@@ -1,8 +1,59 @@
 .sb-category-multiselect { min-width:0; margin:0; padding:14px; border:1px solid #dfe9f2; border-radius:14px; }
 .sb-category-multiselect legend { padding:0 6px; color:#2d4153; font-size:13px; font-weight:750; }
 .sb-category-multiselect legend small { display:block; margin-top:5px; color:#77838d; font-size:11px; font-weight:500; }
-.sb-category-checkbox-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
-.sb-category-checkbox-grid .sb-check { display:flex; align-items:flex-start; gap:8px; min-width:0; padding:10px; border:1px solid #edeff1; border-radius:10px; background:#fff; font-size:12px; overflow-wrap:anywhere; }
-.sb-category-checkbox-grid input { flex:0 0 auto; margin-top:2px; accent-color:#347dbc; }
-@media(max-width:680px) { .sb-category-checkbox-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
-@media(max-width:420px) { .sb-category-checkbox-grid { grid-template-columns:minmax(0,1fr); } }
+/* Category choices: keep checkbox and readable label in separate, predictable columns. */
+.sb-category-checkbox-grid {
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  align-items:stretch;
+  gap:10px;
+  width:100%;
+  min-width:0;
+}
+.sb-category-checkbox-grid .sb-check {
+  display:grid !important;
+  grid-template-columns:16px minmax(0,1fr) !important;
+  align-items:start;
+  justify-content:initial;
+  gap:9px;
+  min-width:0;
+  width:100%;
+  min-height:48px;
+  padding:12px;
+  border:1px solid #e3eaf0;
+  border-radius:10px;
+  background:#fff;
+  font-size:13px;
+  line-height:1.45;
+  white-space:normal;
+  overflow-wrap:break-word;
+  word-break:normal;
+}
+.sb-category-checkbox-grid .sb-check input {
+  display:block;
+  grid-column:1;
+  grid-row:1;
+  width:16px !important;
+  min-width:16px;
+  max-width:16px;
+  min-height:16px !important;
+  height:16px;
+  margin:2px 0 0;
+  padding:0;
+  flex:none;
+  accent-color:#347dbc;
+}
+.sb-category-checkbox-grid .sb-check > span {
+  display:block;
+  grid-column:2;
+  min-width:0;
+  width:100%;
+  overflow-wrap:break-word;
+  word-break:normal;
+}
+@media(max-width:680px) {
+  .sb-category-checkbox-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media(max-width:420px) {
+  .sb-category-checkbox-grid { grid-template-columns:minmax(0,1fr); }
+}
