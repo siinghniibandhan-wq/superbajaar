@@ -439,3 +439,5 @@ body{background:#f6f8fa}
 /* Logo links navigate home; admin brand text retains its workspace-home action. */
 .sb-brand-logo-link{display:inline-flex;align-items:center;flex:0 0 auto}
 .sb-brand-home{display:block;border:0;background:transparent;padding:0;text-align:left;color:inherit;cursor:pointer;font:inherit}
+
+.sb-brand{text-decoration:none}
