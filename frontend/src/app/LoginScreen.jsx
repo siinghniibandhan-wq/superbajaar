@@ -40,7 +40,7 @@ export default function LoginScreen({ onSignedIn }) {
 
   return <main className="sb-login-page">
     <form className="sb-login-card" onSubmit={submit}>
-      <img className="sb-login-mark" src="/superbajaar.svg" alt="Super Bajaar logo" />
+      <a href="/" aria-label="Go to Super Bajaar home"><img className="sb-login-mark" src="/superbajaar.svg" alt="Super Bajaar logo" /></a>
       <p className="sb-eyebrow">SUPER BAJAAR · SECURE ACCESS</p>
       <h1>Welcome back</h1>
       <p>Sign in to open your business workspaces.</p>
