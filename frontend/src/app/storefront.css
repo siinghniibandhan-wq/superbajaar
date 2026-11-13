@@ -1443,3 +1443,17 @@
 .storefront-category:hover, .storefront-category:hover .storefront-category-art,
 .storefront-department-nav > button:hover, .storefront-carousel-controls button:hover { transform:none; box-shadow:none; }
 .storefront-product-card:hover { border-color:#d8c4f4; }
+
+/* Motion layer: ease-out, press feedback, reduced motion */
+:root { --sb-ease-out: cubic-bezier(0.23, 1, 0.32, 1); }
+.storefront-add, .storefront-primary, .storefront-cart, .storefront-modal-wishlist,
+.storefront-wishlist, .storefront-icon-action, .storefront-account-button {
+  transition: transform 160ms var(--sb-ease-out), background-color 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+.storefront-add:active, .storefront-primary:active, .storefront-cart:active, .storefront-modal-wishlist:active,
+.storefront-wishlist:active, .storefront-icon-action:active, .storefront-account-button:active { transform: scale(0.97); }
+.storefront-product-card { transition: border-color 160ms ease; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
+  .storefront-add:active, .storefront-primary:active, .storefront-cart:active, .storefront-wishlist:active { transform: none; }
+}
