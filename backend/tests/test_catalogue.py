@@ -504,6 +504,7 @@ def test_product_scoped_image_option_is_accepted_by_variant_value_validator():
 def test_product_image_upload_reports_missing_s3_bucket_configuration(monkeypatch):
     from app.api import catalogue
 
+    monkeypatch.setattr(catalogue.settings, "database_url", "")
     monkeypatch.setattr(catalogue.settings, "media_bucket", "")
     monkeypatch.setattr(catalogue.settings, "media_public_base_url", "https://images.example.com")
     response = client.post(
@@ -517,6 +518,7 @@ def test_product_image_upload_reports_missing_s3_bucket_configuration(monkeypatc
 def test_product_image_upload_reports_missing_cdn_url_configuration(monkeypatch):
     from app.api import catalogue
 
+    monkeypatch.setattr(catalogue.settings, "database_url", "")
     monkeypatch.setattr(catalogue.settings, "media_bucket", "superbajaar-product-media")
     monkeypatch.setattr(catalogue.settings, "media_public_base_url", "")
     response = client.post(
