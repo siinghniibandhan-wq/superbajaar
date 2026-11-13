@@ -263,6 +263,31 @@ def list_users(user=Depends(current_user)):
         raise HTTPException(503, "Unable to load users; verify the required authentication schema") from exc
 
 
+@router.get("/linkable-records")
+def list_linkable_records(user=Depends(current_user)):
+    """List existing employee and vendor records that can receive a new portal login."""
+    _require_user_admin(user)
+    try:
+        with _connect() as conn:
+            employees = conn.execute(
+                "SELECT id,employee_code,first_name,last_name,email FROM hr_employees "
+                "WHERE status<>'terminated' AND user_id IS NULL AND email IS NOT NULL "
+                "ORDER BY first_name,last_name LIMIT 500"
+            ).fetchall()
+            vendors = conn.execute(
+                "SELECT s.id,s.name,s.email FROM suppliers s WHERE s.is_active=TRUE "
+                "AND s.email IS NOT NULL AND NOT EXISTS ("
+                "SELECT 1 FROM vendor_portal_users v WHERE v.supplier_id=s.id AND v.is_active=TRUE) "
+                "ORDER BY s.name LIMIT 500"
+            ).fetchall()
+        return {
+            "employees": employees,
+            "vendors": vendors,
+        }
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Unable to load employee and vendor records for account linking") from exc
+
+
 @router.post("/users", status_code=201)
 def create_user(payload: UserCreate, user=Depends(current_user)):
     _require_user_admin(user)
