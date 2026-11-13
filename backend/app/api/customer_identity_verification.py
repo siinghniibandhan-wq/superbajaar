@@ -216,3 +216,93 @@ def verify_identity_email_otp(payload: OTPVerifyIn, request: Request):
 
 
 
+
+
+@router.post("/documents", status_code=201)
+async def upload_identity_evidence(
+    request: Request,
+    document_type: str,
+    file: UploadFile = File(...),
+):
+    """Upload identity evidence for the signed-in customer's own SBID."""
+    customer_id = getattr(request.state, "customer_id", None)
+    if not customer_id:
+        raise HTTPException(401, "Customer sign-in required")
+    content = await file.read(10 * 1024 * 1024 + 1)
+    try:
+        with _connect() as conn:
+            party = _customer_party(conn, customer_id)
+        stored = upload_identity_document(
+            party_id=party["party_id"],
+            user_id=customer_id,
+            document_type=document_type,
+            content_type=file.content_type or "",
+            content=content,
+        )
+        try:
+            with _connect() as conn:
+                with conn.transaction():
+                    row = conn.execute(
+                        """
+                        INSERT INTO identity_verification_documents
+                          (party_id,document_type,object_key,content_type,file_size_bytes,sha256_hex,status)
+                        VALUES (%s,%s,%s,%s,%s,%s,'pending_review')
+                        RETURNING id,status,created_at
+                        """,
+                        (
+                            party["party_id"], document_type, stored["object_key"],
+                            stored["content_type"], stored["file_size_bytes"], stored["sha256_hex"],
+                        ),
+                    ).fetchone()
+        except Exception:
+            bucket = os.getenv("SB_PRIVATE_DOCUMENT_BUCKET", "").strip()
+            region = os.getenv("SB_S3_REGION", "").strip() or os.getenv("AWS_REGION", "").strip()
+            if bucket and region:
+                try:
+                    boto3.client("s3", region_name=region).delete_object(
+                        Bucket=bucket, Key=stored["object_key"]
+                    )
+                except Exception:
+                    pass
+            raise
+        return {"document": row}
+    except IdentityDocumentError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except IdentityDocumentConfigurationError as exc:
+        raise HTTPException(503, "Identity document storage is not configured") from exc
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Unable to save identity evidence") from exc
+    finally:
+        await file.close()
+
+
+@router.get("/documents/{document_id}/download")
+def download_identity_evidence(document_id: int, request: Request):
+    """Issue a short-lived URL only for the signed-in customer's own evidence."""
+    customer_id = getattr(request.state, "customer_id", None)
+    if not customer_id:
+        raise HTTPException(401, "Customer sign-in required")
+    try:
+        with _connect() as conn:
+            party = _customer_party(conn, customer_id)
+            document = conn.execute(
+                """
+                SELECT object_key FROM identity_verification_documents
+                WHERE id=%s AND party_id=%s
+                """,
+                (document_id, party["party_id"]),
+            ).fetchone()
+            if document is None:
+                raise HTTPException(404, "Identity document not found")
+        url = create_identity_document_download_url(
+            party_id=party["party_id"], object_key=document["object_key"]
+        )
+        return {"url": url, "expires_in_seconds": 300}
+    except HTTPException:
+        raise
+    except (IdentityDocumentError, IdentityDocumentConfigurationError) as exc:
+        raise HTTPException(503, "Identity document storage is unavailable") from exc
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Unable to retrieve identity evidence") from exc
