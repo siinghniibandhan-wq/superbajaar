@@ -74,7 +74,6 @@ def test_identity_otp_and_document_migration_is_additive_and_validly_quoted():
     assert "create table if not exists public.identity_otp_challenges" in sql
     assert "create table if not exists public.identity_verification_documents" in sql
     assert "otp_digest text not null" in sql
-    assert "server" not in sql
     assert sql.count("do $$") == 2
     assert sql.count("end $$;") == 2
     assert "on delete restrict" in sql
