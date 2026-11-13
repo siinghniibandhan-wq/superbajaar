@@ -432,3 +432,6 @@ body{background:#f6f8fa}
 @media(pointer:coarse){button,select,input:not([type=checkbox]){min-height:44px}}
 @media(max-width:700px){input,select,textarea{font-size:16px!important}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* Approved Super Bajaar logo asset */
+.sb-mark,.sb-login-mark{display:block;object-fit:contain;background:transparent;border-radius:0;box-shadow:none;padding:0}
