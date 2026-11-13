@@ -432,3 +432,12 @@ body{background:#f6f8fa}
 @media(pointer:coarse){button,select,input:not([type=checkbox]){min-height:44px}}
 @media(max-width:700px){input,select,textarea{font-size:16px!important}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* Approved Super Bajaar logo asset */
+.sb-mark,.sb-login-mark{display:block;object-fit:contain;background:transparent;border-radius:0;box-shadow:none;padding:0}
+
+/* Logo links navigate home; admin brand text retains its workspace-home action. */
+.sb-brand-logo-link{display:inline-flex;align-items:center;flex:0 0 auto}
+.sb-brand-home{display:block;border:0;background:transparent;padding:0;text-align:left;color:inherit;cursor:pointer;font:inherit}
+
+.sb-brand{text-decoration:none}

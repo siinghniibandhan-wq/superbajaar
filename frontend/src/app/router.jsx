@@ -160,14 +160,14 @@ function AppShell() {
   // assigned workspace directly instead of an otherwise empty module launcher.
   if (visibleItems.length === 1 && visibleItems[0].id === "hr") return <main className="sb-shell">
     <header className="sb-header">
-      <span className="sb-brand"><span className="sb-mark">S</span><span><strong>Super Bajaar</strong><small>HR & Payroll</small></span></span>
+      <a className="sb-brand" href="/" aria-label="Go to Super Bajaar home"><img className="sb-mark" src="/superbajaar.svg" alt="" /><span><strong>Super Bajaar</strong><small>HR & Payroll</small></span></a>
       <div className="sb-header-actions"><span className="sb-user-label">{user.full_name || user.email}</span><button className="sb-signout" type="button" onClick={signOut}>Sign out</button></div>
     </header>
     <div className="sb-main-content"><HRWorkspace currentUser={user} /></div>
   </main>;
   return <main className="sb-shell">
     <header className="sb-header">
-      <button className="sb-brand" type="button" onClick={back} aria-label="Back to workspaces"><span className="sb-mark">S</span><span><strong>Super Bajaar</strong><small>Commerce & ERP</small></span></button>
+      <div className="sb-brand"><a className="sb-brand-logo-link" href="/" aria-label="Go to Super Bajaar home"><img className="sb-mark" src="/superbajaar.svg" alt="" /></a><button className="sb-brand-home" type="button" onClick={back} aria-label="Back to workspaces"><span><strong>Super Bajaar</strong><small>Commerce & ERP</small></span></button></div>
       <div className="sb-header-actions">{["super_admin","admin"].includes(user.role) && <><button className="sb-signout" type="button" onClick={() => setSelected({ id: "portalAccess", label: "Portals & Access" })}>Portals & Access</button><button className="sb-signout" type="button" onClick={() => setSelected({ id: "identity", label: "Identity Register" })}>Identity Register</button></>}<span className={`sb-status sb-status-${apiStatus}`} role="status"><i />{statusText[apiStatus]}</span><span className="sb-user-label">{user.full_name || user.email}</span><button className="sb-signout" type="button" onClick={signOut}>Sign out</button></div>
     </header>
     <div className="sb-app-layout">
