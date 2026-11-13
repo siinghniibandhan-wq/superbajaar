@@ -1519,8 +1519,10 @@ async def upload_product_image(
     content_type = (file.content_type or "").lower()
     if content_type not in allowed_types:
         raise HTTPException(status_code=415, detail="Upload a JPEG, PNG, WebP or GIF image")
-    if not settings.media_bucket or not settings.media_public_base_url:
-        raise HTTPException(status_code=503, detail="Product image storage is not configured")
+    if not settings.media_bucket:
+        raise HTTPException(status_code=503, detail="Product image uploads are disabled: configure MEDIA_BUCKET with the product media S3 bucket name.")
+    if not settings.media_public_base_url:
+        raise HTTPException(status_code=503, detail="Product image uploads are disabled: configure MEDIA_PUBLIC_BASE_URL with the CloudFront URL for the product media bucket.")
     data = await file.read(10 * 1024 * 1024 + 1)
     if not data:
         raise HTTPException(status_code=422, detail="Image file is empty")
