@@ -41,7 +41,7 @@ CREATE INDEX IF NOT EXISTS identity_otp_challenges_target_idx
     ON public.identity_otp_challenges(target_party_id, requested_profile_type, requested_source_id)
     WHERE consumed_at IS NULL;
 
-DO $
+DO $$
 DECLARE
     app_role text;
 BEGIN
@@ -51,7 +51,7 @@ BEGIN
             EXECUTE format('GRANT USAGE,SELECT ON SEQUENCE public.identity_otp_challenges_id_seq TO %I', app_role);
         END IF;
     END LOOP;
-END $;
+END $$;
 
 
 -- Private proof files are stored in the existing private S3 bucket.
@@ -82,7 +82,7 @@ CREATE TABLE IF NOT EXISTS public.identity_verification_documents (
 CREATE INDEX IF NOT EXISTS identity_verification_documents_party_idx
     ON public.identity_verification_documents(party_id,created_at DESC);
 
-DO $
+DO $$
 DECLARE
     app_role text;
 BEGIN
@@ -92,4 +92,4 @@ BEGIN
             EXECUTE format('GRANT USAGE,SELECT ON SEQUENCE public.identity_verification_documents_id_seq TO %I', app_role);
         END IF;
     END LOOP;
-END $;
+END $$;
