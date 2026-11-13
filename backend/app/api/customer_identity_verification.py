@@ -133,6 +133,7 @@ def verify_identity_email_otp(payload: OTPVerifyIn, request: Request):
     customer_id = getattr(request.state, "customer_id", None)
     if not customer_id:
         raise HTTPException(401, "Customer sign-in required")
+    invalid_code = False
     try:
         with _connect() as conn:
             with conn.transaction():
@@ -161,13 +162,13 @@ def verify_identity_email_otp(payload: OTPVerifyIn, request: Request):
                         "UPDATE identity_otp_challenges SET attempts=attempts+1 WHERE id=%s",
                         (challenge["id"],),
                     )
-                    raise HTTPException(400, "Incorrect verification code")
-                verified_at = datetime.now(timezone.utc)
-                conn.execute(
+                    invalid_code = True
+                if not invalid_code:
+                    verified_at = datetime.now(timezone.utc)
+                    conn.execute(
                     "UPDATE identity_otp_challenges SET verified_at=%s,consumed_at=%s WHERE id=%s",
                     (verified_at, verified_at, challenge["id"]),
-                )
-                existing = conn.execute(
+                    existing = conn.execute(
                     """
                     SELECT id FROM identity_contacts
                     WHERE party_id=%s AND contact_type='email'
@@ -175,9 +176,9 @@ def verify_identity_email_otp(payload: OTPVerifyIn, request: Request):
                     ORDER BY id DESC LIMIT 1 FOR UPDATE
                     """,
                     (party["party_id"], challenge["normalized_contact"]),
-                ).fetchone()
-                if existing:
-                    conn.execute(
+                    ).fetchone()
+                    if existing:
+                        conn.execute(
                         """
                         UPDATE identity_contacts
                         SET verification_status='verified',verified_at=%s,updated_at=now()
@@ -194,14 +195,16 @@ def verify_identity_email_otp(payload: OTPVerifyIn, request: Request):
                         VALUES (%s,'email',%s,%s,'verified',%s,true,'customer_email_otp')
                         """,
                         (party["party_id"], challenge["normalized_contact"], party["email"], verified_at),
-                    )
-                IdentityService(conn)._event(
+                        )
+                    IdentityService(conn)._event(
                     party_id=party["party_id"],
                     event_type="contact_verified",
                     event_data={"contact_type": "email", "verification_method": "email_otp"},
                     actor_party_id=party["party_id"],
                     reason="Customer verified control of their account email",
-                )
+                    )
+        if invalid_code:
+            raise HTTPException(400, "Incorrect verification code")
         return {"status": "verified", "contact_type": "email"}
     except HTTPException:
         raise
