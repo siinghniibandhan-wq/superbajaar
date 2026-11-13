@@ -81,7 +81,7 @@ const workspaceRoutes = {
   catalogue: ({ onBack, currentUser }) => <><ModuleDataOverview moduleId="catalogue" /><CatalogueWorkspace onBack={onBack} currentUser={currentUser} /></>,
   pricing: ({ onBack }) => <PricingWorkspace onBack={onBack} />,
   orders: ({ onBack }) => <><ModuleDataOverview moduleId="orders" /><OrdersWorkspace onBack={onBack} /></>,
-  payments: ({ onBack }) => <><ModuleDataOverview moduleId="payments" /><PaymentsWorkspace onBack={onBack} /></>,
+  payments: ({ onBack }) => <PaymentsWorkspace onBack={onBack} />,
   inventory: ({ onBack }) => <InventoryWorkspace onBack={onBack} />,
   purchase: ({ onBack }) => <PurchasingWorkspace onBack={onBack} />,
   fulfilment: ({ onBack }) => <><ModuleDataOverview moduleId="fulfilment" /><FulfilmentWorkspace onBack={onBack} /></>,
