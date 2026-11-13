@@ -68,6 +68,8 @@ def _action_for_request(method: str, path: str) -> str:
     segments = path.rstrip("/").lower().split("/")
     # Identity review decisions are privileged approvals, not ordinary creates.
     # Keep GET review-queue access as read and other identity POSTs as create.
+    if method == "POST" and len(segments) >= 4 and segments[-4] == "identity" and segments[-3] == "documents" and segments[-1] == "review":
+        return "approve"
     if method == "POST" and segments[-4:-1] == ["identity", "review-queue", "requests"]:
         return "approve"
     if method == "POST" and len(segments) >= 5 and segments[-4] == "identity" and segments[-3] in {"contacts", "relationships"} and segments[-1] in {"verify", "revoke"}:
