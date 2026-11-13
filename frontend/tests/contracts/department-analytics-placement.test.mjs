@@ -24,3 +24,16 @@ test('Master Dashboard remains a separate cross-module overview', () => {
   assert.match(dashboard, /Department and module health/);
   assert.match(dashboard, /14 business modules/);
 });
+
+
+test('Payments workspace does not mount the duplicate generic overview above its native payment overview', () => {
+  const paymentRoute = router.match(/payments:\s*\([^)]*\)\s*=>\s*([^,]+),/);
+  assert.ok(paymentRoute, 'Payments workspace route should remain registered');
+  assert.doesNotMatch(paymentRoute[1], /ModuleDataOverview/);
+  assert.match(paymentRoute[1], /PaymentsWorkspace/);
+
+  const payments = read('features/payments/PaymentsWorkspace.jsx');
+  assert.match(payments, /Payment overview/);
+  assert.match(payments, /Total order value/);
+  assert.match(payments, /Captured \(verified\)/);
+});
