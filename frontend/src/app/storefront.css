@@ -1423,3 +1423,12 @@
   .storefront-account-section--loyalty .storefront-loyalty-card,
   .storefront-account-section--referrals .storefront-loyalty-card { min-height: 160px; padding: 18px; }
 }
+
+/* Impeccable: icon tiles and hero */
+.storefront-category-art>span{color:#4a2a8a;filter:none}
+.storefront-hero-art{display:grid;place-items:center;background:#f4edff}
+.hero-icon-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;padding:0 24px 34px}
+.hero-icon-grid span{display:grid;place-items:center;width:84px;height:84px;border-radius:22px;background:#fff;color:#5928c8}
+.hero-icon-grid span:nth-child(2n){background:#ffeadc;color:#c4590f}
+.art-caption{font-size:13px;color:#554b66}
+@media(max-width:560px){.hero-icon-grid span{width:64px;height:64px}}

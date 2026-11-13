@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Heart, ShoppingBag, Search, Sparkles, Flame, Clock3, ChevronLeft, ChevronRight, UserRound, MapPin, X, Coins, CreditCard, CalendarClock } from "lucide-react";
+import { ShoppingCart, Leaf, Shirt, Droplets, Headphones, Home, PawPrint, Gift, Car, Trophy, Pill, ShieldCheck } from "lucide-react";
 import { apiRequest } from "../services/api.js";
 import GoogleAnalytics, { getAnalyticsConsent, setAnalyticsConsent, trackAnalyticsEvent } from "./GoogleAnalytics.jsx";
 import IdentityClaimsPanel from "./IdentityClaimsPanel.jsx";
@@ -12,20 +13,21 @@ const categoryOrder = [
   "Automobiles", "Toys & Sports", "Pharmacy", "Insurance",
 ];
 const categoryArt = {
-  "Grocery": { icon: "🛒", tone: "lavender", detail: "Everyday groceries" },
-  "Fresh Daily": { icon: "🥬", tone: "green", detail: "Fresh picks, every day" },
-  "Fashion": { icon: "👕", tone: "peach", detail: "Style for everyone" },
-  "Personal Care": { icon: "🧴", tone: "blue", detail: "Care for every day" },
-  "Electronics": { icon: "🎧", tone: "lavender", detail: "Smart picks, every day" },
-  "Home Appliances": { icon: "🏠", tone: "yellow", detail: "For a happier home" },
-  "Pet Care": { icon: "🐾", tone: "green", detail: "Little things for pets" },
-  "Gifting": { icon: "🎁", tone: "peach", detail: "Gifts for every moment" },
-  "Pooja Essentials": { icon: "🪔", tone: "yellow", detail: "For your traditions" },
-  "Automobiles": { icon: "🚗", tone: "blue", detail: "Everyday auto essentials" },
-  "Toys & Sports": { icon: "⚽", tone: "lavender", detail: "Play, move, explore" },
-  "Pharmacy": { icon: "💊", tone: "green", detail: "Health and wellness" },
-  "Insurance": { icon: "🛡️", tone: "lavender", detail: "Insurance guidance for life, health and motor cover" },
+  "Grocery": { icon: "ShoppingCart", tone: "lavender", detail: "Everyday groceries" },
+  "Fresh Daily": { icon: "Leaf", tone: "green", detail: "Fresh picks, every day" },
+  "Fashion": { icon: "Shirt", tone: "peach", detail: "Style for everyone" },
+  "Personal Care": { icon: "Droplets", tone: "blue", detail: "Care for every day" },
+  "Electronics": { icon: "Headphones", tone: "lavender", detail: "Smart picks, every day" },
+  "Home Appliances": { icon: "Home", tone: "yellow", detail: "For a happier home" },
+  "Pet Care": { icon: "PawPrint", tone: "green", detail: "Little things for pets" },
+  "Gifting": { icon: "Gift", tone: "peach", detail: "Gifts for every moment" },
+  "Pooja Essentials": { icon: "Flame", tone: "yellow", detail: "For your traditions" },
+  "Automobiles": { icon: "Car", tone: "blue", detail: "Everyday auto essentials" },
+  "Toys & Sports": { icon: "Trophy", tone: "lavender", detail: "Play, move, explore" },
+  "Pharmacy": { icon: "Pill", tone: "green", detail: "Health and wellness" },
+  "Insurance": { icon: "ShieldCheck", tone: "lavender", detail: "Insurance guidance for life, health and motor cover" },
 };
+const catIcons = { ShoppingCart, Leaf, Shirt, Droplets, Headphones, Home, PawPrint, Gift, Flame, Car, Trophy, Pill, ShieldCheck };
 const art = categoryOrder.map(name => categoryArt[name]);
 const money = value => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(Number(value || 0));
 
@@ -776,7 +778,7 @@ export default function Storefront() {
     const saved = productVariants.some(item => wishlist.some(id => Number(id) === Number(item.id)));
     const openDetails = () => openProductPage(variant);
     return <article className="storefront-product-card" key={variant.product_id} role="link" tabIndex={0} onClick={openDetails} onKeyDown={event => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openDetails(); } }}>
-      <div className="storefront-product-art">{variant.image_url ? <img className="storefront-product-image" src={variant.image_url} alt={product?.name || variant.product_name || "Product"} loading="lazy"/> : <span>{tile.icon}</span>}<button type="button" className={"storefront-wishlist " + (saved ? "is-saved" : "")} onClick={event => { event.stopPropagation(); setWishlist(old => saved ? old.filter(id => !productVariants.some(item => Number(item.id) === Number(id))) : [...new Set([...old, ...productVariants.map(item => Number(item.id))])]); }} aria-label={(saved ? "Remove from" : "Add to") + " wishlist: " + (product?.name || variant.sku)} aria-pressed={saved}><Heart size={19} strokeWidth={1.9} fill={saved ? "currentColor" : "none"} /></button></div>
+      <div className="storefront-product-art">{variant.image_url ? <img className="storefront-product-image" src={variant.image_url} alt={product?.name || variant.product_name || "Product"} loading="lazy"/> : <span>{(() => { const I = catIcons[tile.icon]; return I ? <I size={40} strokeWidth={1.6} aria-hidden="true" /> : tile.icon; })()}</span>}<button type="button" className={"storefront-wishlist " + (saved ? "is-saved" : "")} onClick={event => { event.stopPropagation(); setWishlist(old => saved ? old.filter(id => !productVariants.some(item => Number(item.id) === Number(id))) : [...new Set([...old, ...productVariants.map(item => Number(item.id))])]); }} aria-label={(saved ? "Remove from" : "Add to") + " wishlist: " + (product?.name || variant.sku)} aria-pressed={saved}><Heart size={19} strokeWidth={1.9} fill={saved ? "currentColor" : "none"} /></button></div>
       <small>{product?.brand || product?.name || "Super Bajaar"}</small>
       <h3><button type="button" className="storefront-product-title" onClick={event => { event.stopPropagation(); openDetails(); }}>{product?.name || variant.product_name || variant.sku}</button></h3>
       {hasSelectableVariants && <p className="storefront-sku">Choose colour, size or weight</p>}
@@ -819,7 +821,7 @@ export default function Storefront() {
     <nav className="storefront-department-nav" aria-label="Shop departments"><a href="/#categories" onClick={event => { event.preventDefault(); openShopHome(); setTimeout(() => document.getElementById("categories")?.scrollIntoView({ behavior: "smooth" }), 0); }}>☰ All Categories</a><a href="/deals" onClick={event => { event.preventDefault(); openDealsPage(); }}>Deals <Flame size={14} /></a><button type="button" onClick={() => { openShopHome(); setTimeout(() => document.getElementById("products")?.scrollIntoView({ behavior: "smooth" }), 0); }}>Shop All</button>{departmentCategories.map(category => <a key={category.id} href={"/category/" + categorySlug(category.name)} aria-current={routeSlug === categorySlug(category.name) ? "page" : undefined}>{category.name === "Fresh Daily" ? "Fresh" : category.name}</a>)}</nav>
     {!isProductPage && !isCustomerAuthPage && !isCategoryPage && !isDealsPage && !isWishlistPage && !isAccountPage && !isCheckoutPage && !isInfoPage && <section className="storefront-hero">
       <div className="storefront-hero-copy"><span className="storefront-kicker"><i /> YOUR EVERYDAY SUPER STORE</span><h1>Welcome to<br /><em>Super Bajaar</em></h1><p>Everything you need, all in one place. Explore everyday essentials and discover something new for your home and family.</p><a className="storefront-primary" href="#products">Shop Now <span>→</span></a><div className="storefront-trust"><span>✦ Thoughtfully picked</span><span>✦ Made for everyday</span></div></div>
-      <div className="storefront-hero-art" aria-label="Colourful shopping bags and everyday products" role="img"><div className="art-sun" /><div className="art-orbit orbit-one" /><div className="art-orbit orbit-two" /><div className="art-spark spark-one">✦</div><div className="art-spark spark-two">✳</div><div className="art-bag bag-purple"><span>S</span></div><div className="art-bag bag-orange"><span>♥</span></div><div className="art-box"><span>GOOD</span><strong>THINGS</strong></div><div className="art-leaf leaf-one">✦</div><div className="art-leaf leaf-two">✿</div><div className="art-caption">A little joy in every basket</div></div>
+      <div className="storefront-hero-art" aria-hidden="true"><div className="hero-icon-grid">{[ShoppingCart, Leaf, Shirt, Gift, Headphones, Home].map((I, i) => <span key={i}><I size={34} strokeWidth={1.6} /></span>)}</div><div className="art-caption">A little joy in every basket</div></div>
     </section>}
     {!isProductPage && !isCategoryPage && !isDealsPage && !isWishlistPage && !isAccountPage && !isCheckoutPage && !isInfoPage && <section className="storefront-categories" id="categories">
       <div className="storefront-section-heading"><div><span className="storefront-kicker">FIND YOUR FAVOURITES</span><h2>Shop by category</h2></div><span className="storefront-heading-note">Choose a category to filter products.</span></div>
