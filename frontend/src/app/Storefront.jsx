@@ -830,7 +830,7 @@ export default function Storefront() {
         {displayCategories.map((category, index) => {
           const tile = categoryArt[category.name] || art[index % art.length];
           return <button type="button" className={"storefront-category " + (String(category.id) === categoryId ? "is-selected" : "")} key={category.id} onClick={() => openCategory(category)}>
-            <span className={"storefront-category-art tone-" + tile.tone}><span>{tile.icon}</span><i>↗</i></span><strong>{category.name}</strong><small>{category.description || tile.detail}</small>
+            <span className={"storefront-category-art tone-" + tile.tone}><span>{(() => { const I = catIcons[tile.icon]; return I ? <I size={40} strokeWidth={1.6} aria-hidden="true" /> : tile.icon; })()}</span><i>↗</i></span><strong>{category.name}</strong><small>{category.description || tile.detail}</small>
           </button>;
         })}
       </div>
