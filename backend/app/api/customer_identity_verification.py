@@ -306,3 +306,195 @@ def download_identity_evidence(document_id: int, request: Request):
         raise HTTPException(503, "Identity document storage is unavailable") from exc
     except psycopg.Error as exc:
         raise HTTPException(503, "Unable to retrieve identity evidence") from exc
+
+
+@router.get("/claims/pending")
+def list_incoming_identity_claims(request: Request):
+    """List only claims addressed to the signed-in customer's own identity."""
+    customer_id = getattr(request.state, "customer_id", None)
+    if not customer_id:
+        raise HTTPException(401, "Customer sign-in required")
+    try:
+        with _connect() as conn:
+            party = _customer_party(conn, customer_id)
+            rows = conn.execute(
+                """
+                SELECT id,status,created_at,expires_at
+                FROM identity_link_requests
+                WHERE target_party_id=%s AND request_type='claim_existing_identity'
+                  AND status='proof_required' AND expires_at>now()
+                ORDER BY created_at DESC
+                LIMIT 50
+                """,
+                (party["party_id"],),
+            ).fetchall()
+        return {"items": rows}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Unable to load incoming identity claims") from exc
+
+
+@router.post("/claims/{request_id}/otp/request", status_code=202)
+def request_claim_confirmation_otp(request_id: int, request: Request):
+    """Send an OTP to the verified email on the target identity, not to the claimant."""
+    customer_id = getattr(request.state, "customer_id", None)
+    if not customer_id:
+        raise HTTPException(401, "Customer sign-in required")
+    token = secrets.token_urlsafe(32)
+    code = generate_otp()
+    now = datetime.now(timezone.utc)
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                party = _customer_party(conn, customer_id)
+                claim = conn.execute(
+                    """
+                    SELECT id,requester_party_id,target_party_id,status,expires_at
+                    FROM identity_link_requests
+                    WHERE id=%s AND request_type='claim_existing_identity'
+                    FOR UPDATE
+                    """,
+                    (request_id,),
+                ).fetchone()
+                if claim is None or claim["target_party_id"] != party["party_id"]:
+                    raise HTTPException(404, "Incoming identity claim not found")
+                if claim["status"] != "proof_required" or claim["expires_at"] <= now:
+                    raise HTTPException(409, "This identity claim is no longer awaiting confirmation")
+                contact = conn.execute(
+                    """
+                    SELECT normalized_value FROM identity_contacts
+                    WHERE party_id=%s AND contact_type='email'
+                      AND verification_status='verified' AND valid_to IS NULL
+                    ORDER BY is_primary DESC,verified_at DESC LIMIT 1
+                    """,
+                    (party["party_id"],),
+                ).fetchone()
+                if contact is None:
+                    raise HTTPException(409, "Verify your account email before confirming an identity claim")
+                email = contact["normalized_value"]
+                recent = conn.execute(
+                    """
+                    SELECT count(*) AS total FROM identity_otp_challenges
+                    WHERE contact_type='email' AND normalized_contact=%s
+                      AND created_at>now()-interval '1 hour'
+                    """,
+                    (email,),
+                ).fetchone()["total"]
+                if recent >= 5:
+                    raise HTTPException(429, "Too many verification codes requested. Try again later.")
+                digest = otp_digest(token, code)
+                conn.execute(
+                    """
+                    INSERT INTO identity_otp_challenges
+                      (challenge_token,purpose,channel,contact_type,normalized_contact,otp_digest,
+                       requester_party_id,target_party_id,requested_source_id,expires_at)
+                    VALUES (%s,'identity_link','email','email',%s,%s,%s,%s,%s,%s)
+                    """,
+                    (
+                        token,email,digest,claim["requester_party_id"],party["party_id"],
+                        request_id,now+timedelta(minutes=5),
+                    ),
+                )
+        try:
+            deliver_otp("email", email, code)
+        except (OTPConfigurationError, OTPDeliveryError):
+            with _connect() as conn:
+                conn.execute(
+                    "DELETE FROM identity_otp_challenges WHERE challenge_token=%s AND verified_at IS NULL",
+                    (token,),
+                )
+            raise HTTPException(503, "Email verification delivery is not available. Contact support.")
+        return {
+            "challenge_token": token,
+            "masked_destination": email[:2] + "***@" + email.split("@")[-1],
+            "expires_in_seconds": 300,
+        }
+    except HTTPException:
+        raise
+    except (psycopg.Error, OTPConfigurationError) as exc:
+        raise HTTPException(503, "Unable to start identity claim confirmation") from exc
+
+
+@router.post("/claims/{request_id}/otp/verify")
+def verify_claim_confirmation_otp(request_id: int, payload: OTPVerifyIn, request: Request):
+    """Record target-owner consent only after the target account verifies its OTP."""
+    customer_id = getattr(request.state, "customer_id", None)
+    if not customer_id:
+        raise HTTPException(401, "Customer sign-in required")
+    invalid_code = False
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                party = _customer_party(conn, customer_id)
+                claim = conn.execute(
+                    """
+                    SELECT id,requester_party_id,target_party_id,status,expires_at
+                    FROM identity_link_requests
+                    WHERE id=%s AND request_type='claim_existing_identity'
+                    FOR UPDATE
+                    """,
+                    (request_id,),
+                ).fetchone()
+                if claim is None or claim["target_party_id"] != party["party_id"]:
+                    raise HTTPException(404, "Incoming identity claim not found")
+                if claim["status"] != "proof_required" or claim["expires_at"] <= datetime.now(timezone.utc):
+                    raise HTTPException(409, "This identity claim is no longer awaiting confirmation")
+                challenge = conn.execute(
+                    """
+                    SELECT id,normalized_contact,otp_digest,attempts,max_attempts,
+                           expires_at,verified_at,consumed_at
+                    FROM identity_otp_challenges
+                    WHERE challenge_token=%s AND purpose='identity_link'
+                      AND target_party_id=%s AND requester_party_id=%s
+                      AND requested_source_id=%s
+                    FOR UPDATE
+                    """,
+                    (payload.challenge_token,party["party_id"],claim["requester_party_id"],request_id),
+                ).fetchone()
+                if challenge is None:
+                    raise HTTPException(404, "Verification challenge not found")
+                if challenge["verified_at"] is not None or challenge["consumed_at"] is not None:
+                    raise HTTPException(409, "This verification code has already been used")
+                if challenge["expires_at"] <= datetime.now(timezone.utc):
+                    raise HTTPException(410, "Verification code has expired")
+                if challenge["attempts"] >= challenge["max_attempts"]:
+                    raise HTTPException(429, "Too many incorrect codes. Request a new code.")
+                if not verify_otp_digest(payload.challenge_token,payload.code,challenge["otp_digest"]):
+                    conn.execute(
+                        "UPDATE identity_otp_challenges SET attempts=attempts+1 WHERE id=%s",
+                        (challenge["id"],),
+                    )
+                    invalid_code = True
+                else:
+                    verified_at = datetime.now(timezone.utc)
+                    conn.execute(
+                        "UPDATE identity_otp_challenges SET verified_at=%s,consumed_at=%s WHERE id=%s",
+                        (verified_at,verified_at,challenge["id"]),
+                    )
+                    conn.execute(
+                        """
+                        UPDATE identity_link_requests
+                        SET status='pending',proof_method='email_otp',proof_verified_at=%s,updated_at=now()
+                        WHERE id=%s AND status='proof_required'
+                        """,
+                        (verified_at,request_id),
+                    )
+                    IdentityService(conn)._event(
+                        party_id=party["party_id"],
+                        event_type="link_requested",
+                        event_data={
+                            "request_id":request_id,
+                            "request_type":"claim_existing_identity",
+                            "target_owner_email_otp_verified":True,
+                        },
+                        actor_party_id=party["party_id"],
+                        reason="Target identity owner confirmed the claim by email OTP",
+                    )
+        if invalid_code:
+            raise HTTPException(400, "Incorrect verification code")
+        return {"id":request_id,"status":"pending","proof_method":"email_otp"}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Unable to verify identity claim confirmation") from exc
