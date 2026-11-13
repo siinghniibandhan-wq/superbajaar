@@ -134,3 +134,29 @@ def test_user_create_rejects_mixed_employee_and_vendor_links():
             employee_id=42,
             supplier_id=7,
         )
+
+
+
+def test_existing_login_link_requires_employee_or_vendor_target():
+    import pytest
+    from pydantic import ValidationError
+    from app.api.auth import UserLinkInput
+
+    with pytest.raises(ValidationError):
+        UserLinkInput(account_type="employee")
+
+
+def test_existing_login_link_accepts_employee_target():
+    from app.api.auth import UserLinkInput
+
+    payload = UserLinkInput(account_type="employee", employee_id=42)
+    assert payload.employee_id == 42
+    assert payload.supplier_id is None
+
+
+def test_existing_login_link_accepts_vendor_target():
+    from app.api.auth import UserLinkInput
+
+    payload = UserLinkInput(account_type="vendor", supplier_id=9)
+    assert payload.supplier_id == 9
+    assert payload.employee_id is None
