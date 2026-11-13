@@ -499,3 +499,31 @@ def test_product_scoped_image_option_is_accepted_by_variant_value_validator():
         "https://cdn.example.com/blue.png",
         42,
     )
+
+
+def test_product_image_upload_reports_missing_s3_bucket_configuration(monkeypatch):
+    from app.api import catalogue
+
+    monkeypatch.setattr(catalogue.settings, "database_url", "")
+    monkeypatch.setattr(catalogue.settings, "media_bucket", "")
+    monkeypatch.setattr(catalogue.settings, "media_public_base_url", "https://images.example.com")
+    response = client.post(
+        "/api/catalogue/products/1/images/upload",
+        files={"file": ("product.webp", b"RIFF\\x04\\x00\\x00\\x00WEBP", "image/webp")},
+    )
+    assert response.status_code == 503
+    assert "MEDIA_BUCKET" in response.json()["detail"]
+
+
+def test_product_image_upload_reports_missing_cdn_url_configuration(monkeypatch):
+    from app.api import catalogue
+
+    monkeypatch.setattr(catalogue.settings, "database_url", "")
+    monkeypatch.setattr(catalogue.settings, "media_bucket", "superbajaar-product-media")
+    monkeypatch.setattr(catalogue.settings, "media_public_base_url", "")
+    response = client.post(
+        "/api/catalogue/products/1/images/upload",
+        files={"file": ("product.webp", b"RIFF\\x04\\x00\\x00\\x00WEBP", "image/webp")},
+    )
+    assert response.status_code == 503
+    assert "MEDIA_PUBLIC_BASE_URL" in response.json()["detail"]

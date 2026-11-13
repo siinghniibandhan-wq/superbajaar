@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiRequest } from "../../services/api.js";
+import { prepareProductImage } from "./productImageFormat.js";
 
 export default function ProductImagesPanel({ products = [], initialProductId = "", embedded = false }) {
   const [productId, setProductId] = useState(initialProductId ? String(initialProductId) : "");
@@ -42,10 +43,12 @@ export default function ProductImagesPanel({ products = [], initialProductId = "
 
   async function submit(event) {
     event.preventDefault(); setBusy(true); setError(""); setMessage("");
+    let uploadedFile = null;
     try {
       if (imageFile) {
+        uploadedFile = await prepareProductImage(imageFile);
         const body = new FormData();
-        body.append("file", imageFile);
+        body.append("file", uploadedFile, uploadedFile.name);
         if (variantId) body.append("variant_id", variantId);
         if (altText) body.append("alt_text", altText);
         body.append("sort_order", String(Number(sortOrder)));
@@ -63,7 +66,10 @@ export default function ProductImagesPanel({ products = [], initialProductId = "
         });
       }
       setImageUrl(""); setImageFile(null); setAltText(""); setVariantId(""); setSortOrder("0"); setIsPrimary(false);
-      setMessage(imageFile ? "Image uploaded and saved." : "Image reference saved."); await loadImages(productId);
+      setMessage(imageFile
+        ? (uploadedFile?.type === "image/webp" && imageFile.type !== "image/webp" ? "Image converted to WebP and uploaded." : "Image uploaded and saved.")
+        : "Image reference saved.");
+      await loadImages(productId);
     } catch (e) { setError(e.message || "Unable to save image reference."); }
     finally { setBusy(false); }
   }
@@ -71,13 +77,13 @@ export default function ProductImagesPanel({ products = [], initialProductId = "
   const ImageForm = embedded ? "div" : "form";
   return <section className="sb-data-card">
     <h2>{embedded ? "Product & variant images" : "Product & variant images"}</h2>
-    <p className="sb-muted">Add an image URL to the parent product or a specific variant. Each gallery can have one designated cover image. Direct file upload still requires configured object storage.</p>
+    <p className="sb-muted">Add an image URL to the parent product or a specific variant. Each gallery can have one designated cover image. JPEG and PNG uploads are resized and converted to WebP automatically; existing WebP files stay unchanged and animated GIFs keep their animation.</p>
     {error && <p className="sb-alert" role="alert">{error}</p>}
     {message && <p className="sb-success" role="status">{message}</p>}
     {!embedded && <div className="sb-form-grid"><label>Product<select value={productId} onChange={e=>setProductId(e.target.value)}><option value="">Choose product</option>{products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label></div>}
     <ImageForm className="sb-form sb-form-inner" onSubmit={embedded ? undefined : submit}>
       <div className="sb-form-grid">
-        <label className="sb-span-all">Image file (JPEG, PNG, WebP or GIF; max 10 MB)<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={e=>{setImageFile(e.target.files?.[0] || null); if(e.target.files?.[0]) setImageUrl("");}}/></label>
+        <label className="sb-span-all">Image file (JPEG/PNG converted to WebP; WebP and GIF supported; max 10 MB)<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={e=>{setImageFile(e.target.files?.[0] || null); if(e.target.files?.[0]) setImageUrl("");}}/></label>
         <label className="sb-span-all">Or image URL<input type="url" maxLength="2048" value={imageUrl} disabled={Boolean(imageFile)} onChange={e=>setImageUrl(e.target.value)} placeholder="https://…"/></label>
         <label>Alt text<input maxLength="300" value={altText} onChange={e=>setAltText(e.target.value)}/></label>
         <label>Variant (optional)<select value={variantId} onChange={e=>setVariantId(e.target.value)}><option value="">Product-level image</option>{variants.map(v=><option key={v.id} value={v.id}>{v.sku}</option>)}</select></label>
