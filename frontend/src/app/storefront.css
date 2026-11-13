@@ -1432,3 +1432,8 @@
 .hero-icon-grid span:nth-child(2n){background:#ffeadc;color:#c4590f}
 .art-caption{font-size:13px;color:#554b66}
 @media(max-width:560px){.hero-icon-grid span{width:64px;height:64px}}
+
+/* Product card Option B: solid button, coin pill */
+.storefront-product-card .storefront-add { width:100%; min-height:44px; margin-top:10px; justify-content:center; background:var(--sb-purple-dark); color:#fff; border:0; border-radius:12px; font-weight:700; }
+.storefront-product-card .storefront-product-coins { align-self:flex-start; padding:4px 9px; background:#fff6e0; border-radius:999px; }
+.storefront-product-coins-page { font-size:14px; margin:10px 0; }
