@@ -8,6 +8,11 @@ from pydantic import BaseModel, Field
 
 from app.core.config import settings
 from app.services.identity import IdentityService
+from app.services.identity_documents import (
+    IdentityDocumentConfigurationError,
+    IdentityDocumentError,
+    create_identity_document_download_url,
+)
 
 router = APIRouter(prefix="/identity", tags=["unified identity"])
 
@@ -142,7 +147,7 @@ class LinkRequestIn(BaseModel):
 class ReviewIn(BaseModel):
     decision: str = Field(pattern=r"^(approve|reject)$")
     proof_verified: bool = False
-    proof_method: str | None = Field(default=None, pattern=r"^(document_review|in_person|verified_account|business_registry)$", max_length=40)
+    proof_method: str | None = Field(default=None, pattern=r"^(document_review|in_person|verified_account|business_registry|email_otp)$", max_length=40)
     reason: str = Field(min_length=5, max_length=500)
 
 
@@ -487,6 +492,10 @@ def review_link_request(request_id: int, payload: ReviewIn, request: Request):
                 if payload.decision == "approve" and context.get("submitted_by_user_id") == request.state.user_id:
                     raise HTTPException(403, "A different administrator must review and approve this identity request")
                 if payload.decision == "approve":
+                    if payload.proof_method == "email_otp" and (
+                        item["proof_method"] != "email_otp" or item["proof_verified_at"] is None
+                    ):
+                        raise HTTPException(409, "Target-owner email OTP confirmation has not been completed")
                     service = IdentityService(conn)
                     if item["request_type"] == "link_profile":
                         service.link_profile(
@@ -781,3 +790,103 @@ def split_profile(party_id: int, payload: SplitIn, request: Request):
         raise
     except psycopg.Error as exc:
         raise HTTPException(503, "Unable to split identity profile") from exc
+
+
+
+class IdentityDocumentReviewIn(BaseModel):
+    decision: str = Field(pattern=r"^(accept|reject)$")
+    reason: str = Field(min_length=5, max_length=500)
+
+
+@router.get("/documents/review-queue")
+def identity_document_review_queue(request: Request, limit: int = Query(default=100, ge=1, le=300)):
+    """List pending identity evidence without exposing private S3 object keys."""
+    _admin(request)
+    try:
+        with _connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT d.id,d.party_id,p.sbid,p.display_name,d.document_type,
+                       d.content_type,d.file_size_bytes,d.status,d.created_at
+                FROM identity_verification_documents d
+                JOIN identity_parties p ON p.id=d.party_id
+                WHERE d.status='pending_review'
+                ORDER BY d.created_at,d.id
+                LIMIT %s
+                """,
+                (limit,),
+            ).fetchall()
+        return {"items": rows}
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Unable to load identity document review queue") from exc
+
+
+@router.get("/documents/{document_id}/download")
+def download_identity_document_for_review(document_id: int, request: Request):
+    """Issue a short-lived private URL to an authorized identity administrator."""
+    _admin(request)
+    try:
+        with _connect() as conn:
+            document = conn.execute(
+                "SELECT party_id,object_key FROM identity_verification_documents WHERE id=%s",
+                (document_id,),
+            ).fetchone()
+            if document is None:
+                raise HTTPException(404, "Identity document not found")
+        url = create_identity_document_download_url(
+            party_id=document["party_id"], object_key=document["object_key"]
+        )
+        return {"url": url, "expires_in_seconds": 300}
+    except HTTPException:
+        raise
+    except (IdentityDocumentError, IdentityDocumentConfigurationError) as exc:
+        raise HTTPException(503, "Identity document storage is unavailable") from exc
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Unable to retrieve identity document") from exc
+
+
+@router.post("/documents/{document_id}/review")
+def review_identity_document(
+    document_id: int,
+    payload: IdentityDocumentReviewIn,
+    request: Request,
+):
+    """Record an explicit administrator decision on submitted identity evidence."""
+    _admin(request)
+    status = "accepted" if payload.decision == "accept" else "rejected"
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                document = conn.execute(
+                    """
+                    UPDATE identity_verification_documents
+                    SET status=%s,reviewed_by_user_id=%s,reviewed_at=now(),
+                        review_reason=%s,updated_at=now()
+                    WHERE id=%s AND status='pending_review'
+                    RETURNING id,party_id,status,reviewed_at
+                    """,
+                    (status, request.state.user_id, payload.reason.strip(), document_id),
+                ).fetchone()
+                if document is None:
+                    exists = conn.execute(
+                        "SELECT 1 FROM identity_verification_documents WHERE id=%s",
+                        (document_id,),
+                    ).fetchone()
+                    if exists is None:
+                        raise HTTPException(404, "Identity document not found")
+                    raise HTTPException(409, "Identity document has already been reviewed")
+                IdentityService(conn)._event(
+                    party_id=document["party_id"],
+                    event_type="party_updated",
+                    event_data={
+                        "identity_document_id": document_id,
+                        "document_review_status": status,
+                    },
+                    actor_user_id=request.state.user_id,
+                    reason=payload.reason.strip(),
+                )
+        return {"document": document}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Unable to record identity document review") from exc

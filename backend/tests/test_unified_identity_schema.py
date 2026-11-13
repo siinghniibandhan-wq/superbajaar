@@ -63,3 +63,17 @@ def test_identity_audit_events_are_immutable_and_link_operations_are_idempotent(
     assert "identity_events_immutable_trigger" in sql
     assert "idempotency_key" in sql
     assert "identity_link_requests_idempotency_uidx" in sql
+
+
+
+def test_identity_otp_and_document_migration_is_additive_and_validly_quoted():
+    migration = Path(__file__).parents[1] / "schema" / "046_identity_otp_verification.sql"
+    assert migration.exists(), "Identity verification requires additive migration 046"
+    sql = migration.read_text(encoding="utf-8").lower()
+
+    assert "create table if not exists public.identity_otp_challenges" in sql
+    assert "create table if not exists public.identity_verification_documents" in sql
+    assert "otp_digest text not null" in sql
+    assert sql.count("do $$") == 2
+    assert sql.count("end $$;") == 2
+    assert "on delete restrict" in sql

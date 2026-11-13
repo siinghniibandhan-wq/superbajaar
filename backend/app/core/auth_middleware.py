@@ -46,6 +46,22 @@ def is_customer_identity_claim_route(method: str, path: str, prefix: str = "/api
     return method == "POST" and len(parts) == 2 and parts[0].isdigit() and parts[1] == "cancel"
 
 
+def is_customer_identity_verification_claim_route(method: str, path: str, prefix: str = "/api") -> bool:
+    """Allow customers to confirm only claims addressed to their own identity."""
+    route = prefix.rstrip("/") + "/customer-auth/identity-verification/claims"
+    if method == "GET" and path == route + "/pending":
+        return True
+    suffix = path[len(route) + 1:] if path.startswith(route + "/") else ""
+    parts = suffix.split("/")
+    return (
+        method == "POST"
+        and len(parts) == 3
+        and parts[0].isdigit()
+        and parts[1] == "otp"
+        and parts[2] in {"request", "verify"}
+    )
+
+
 def _module_for_path(path: str, prefix: str = "/api") -> str | None:
     """Resolve every staff API router using the configured API prefix."""
     normalized_prefix = prefix.rstrip("/")
@@ -68,6 +84,8 @@ def _action_for_request(method: str, path: str) -> str:
     segments = path.rstrip("/").lower().split("/")
     # Identity review decisions are privileged approvals, not ordinary creates.
     # Keep GET review-queue access as read and other identity POSTs as create.
+    if method == "POST" and len(segments) >= 4 and segments[-4] == "identity" and segments[-3] == "documents" and segments[-1] == "review":
+        return "approve"
     if method == "POST" and segments[-4:-1] == ["identity", "review-queue", "requests"]:
         return "approve"
     if method == "POST" and len(segments) >= 5 and segments[-4] == "identity" and segments[-3] in {"contacts", "relationships"} and segments[-1] in {"verify", "revoke"}:
@@ -156,6 +174,9 @@ async def require_active_session(request: Request) -> None:
         customer_routes = {
             ("GET", prefix + "/customer-auth/me"),
             ("POST", prefix + "/customer-auth/logout"),
+            ("POST", prefix + "/customer-auth/identity-verification/otp/request"),
+            ("POST", prefix + "/customer-auth/identity-verification/otp/verify"),
+            ("POST", prefix + "/customer-auth/identity-verification/documents"),
             ("POST", prefix + "/razorpay/orders"),
             ("POST", prefix + "/razorpay/verify"),
             ("GET", prefix + "/customer-auth/referrals"),
@@ -165,6 +186,12 @@ async def require_active_session(request: Request) -> None:
             ("GET", prefix + "/customers/support-portal/tickets"),
             ("POST", prefix + "/customers/support-portal/tickets"),
         }
+        is_customer_identity_document_download = (
+            request.method == "GET"
+            and path.startswith(prefix + "/customer-auth/identity-verification/documents/")
+            and path.endswith("/download")
+            and path.count("/") == 6
+        )
         is_customer_support_detail = (
             path.startswith(prefix + "/customers/support-portal/tickets/")
             and request.method == "GET"
@@ -182,7 +209,7 @@ async def require_active_session(request: Request) -> None:
             and path.count("/") == 4
         )
         is_website_order = request.method == "POST" and path == prefix + "/orders"
-        if (request.method, path) not in customer_routes and not is_customer_identity_claim_route(request.method, path, prefix) and not is_customer_support_detail and not is_customer_support_reply and not is_customer_order_detail and not is_website_order:
+        if (request.method, path) not in customer_routes and not is_customer_identity_claim_route(request.method, path, prefix) and not is_customer_identity_verification_claim_route(request.method, path, prefix) and not is_customer_identity_document_download and not is_customer_support_detail and not is_customer_support_reply and not is_customer_order_detail and not is_website_order:
             raise HTTPException(status_code=403, detail="Customer session cannot access staff resources")
         try:
             with psycopg.connect(settings.database_url, row_factory=dict_row, connect_timeout=3) as conn:
