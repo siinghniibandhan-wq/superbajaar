@@ -62,3 +62,75 @@ def test_customer_identity_claim_routes_are_allowed_for_customer_sessions_only()
     assert not is_customer_identity_claim_route("DELETE", "/api/customer-auth/identity-claims")
     assert not is_customer_identity_claim_route("GET", "/api/identity")
 
+
+
+
+def test_user_create_defaults_to_internal_account_without_linkage():
+    from app.api.auth import UserCreate
+
+    payload = UserCreate(
+        email="staff@example.com",
+        full_name="Staff User",
+        password="long-enough-password",
+    )
+    assert payload.account_type == "internal"
+    assert payload.employee_id is None
+    assert payload.supplier_id is None
+
+
+def test_user_create_requires_employee_record_for_employee_account():
+    import pytest
+    from pydantic import ValidationError
+    from app.api.auth import UserCreate
+
+    with pytest.raises(ValidationError):
+        UserCreate(
+            email="employee@example.com",
+            full_name="Employee User",
+            password="long-enough-password",
+            account_type="employee",
+        )
+
+
+def test_user_create_accepts_employee_record_linkage():
+    from app.api.auth import UserCreate
+
+    payload = UserCreate(
+        email="employee@example.com",
+        full_name="Employee User",
+        password="long-enough-password",
+        account_type="employee",
+        employee_id=42,
+    )
+    assert payload.account_type == "employee"
+    assert payload.employee_id == 42
+
+
+def test_user_create_requires_vendor_record_for_vendor_account():
+    import pytest
+    from pydantic import ValidationError
+    from app.api.auth import UserCreate
+
+    with pytest.raises(ValidationError):
+        UserCreate(
+            email="vendor@example.com",
+            full_name="Vendor User",
+            password="long-enough-password",
+            account_type="vendor",
+        )
+
+
+def test_user_create_rejects_mixed_employee_and_vendor_links():
+    import pytest
+    from pydantic import ValidationError
+    from app.api.auth import UserCreate
+
+    with pytest.raises(ValidationError):
+        UserCreate(
+            email="employee@example.com",
+            full_name="Employee User",
+            password="long-enough-password",
+            account_type="employee",
+            employee_id=42,
+            supplier_id=7,
+        )
