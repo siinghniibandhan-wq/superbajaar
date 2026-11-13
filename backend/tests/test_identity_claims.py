@@ -42,11 +42,17 @@ def test_customer_claim_cancel_route_is_scoped_to_numeric_claim_ids():
 
 
 
-def test_identity_review_rejects_unimplemented_otp_proof_methods():
+def test_identity_review_accepts_only_implemented_otp_proof_method():
     from pydantic import ValidationError
     from app.api.identity import ReviewIn
 
-    for method in ("email_otp", "phone_otp", "automated_otp"):
+    payload = ReviewIn(
+        decision="approve", proof_verified=True, proof_method="email_otp",
+        reason="Target owner confirmed by email OTP",
+    )
+    assert payload.proof_method == "email_otp"
+
+    for method in ("phone_otp", "automated_otp"):
         try:
             ReviewIn(decision="approve", proof_verified=True, proof_method=method,
                      reason="Evidence was checked by an administrator")
