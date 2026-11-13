@@ -36,7 +36,7 @@ jobs:
         env:
           PYTHONPATH: .
           IDENTITY_OTP_HMAC_SECRET: "ci-test-secret-with-at-least-32-characters"
-        run: python -m pytest -q tests/test_identity_otp.py tests/test_identity_documents.py tests/test_customer_identity_verification_api.py tests/test_unified_identity_schema.py
+        run: python -m pytest -q tests --ignore=tests/smoke_test.py
 
   admin-frontend-checks:
     name: Admin frontend tests and build
