@@ -319,3 +319,70 @@ This establishes that Amplify reports deployment 113 as deployed for the connect
 3. Record the Amplify app ID and native branch auto-build setting if visible through the available AWS access.
 
 No production configuration, service, database, migration, IAM policy, timer or infrastructure changes were made during this audit. All EC2/database checks described above were read-only; the Amplify evidence was a screenshot supplied by the owner.
+
+
+---
+
+## AWS-native auto-deploy system — owner-supplied update, 13 November 2026
+
+The owner reports that production now uses three independent EC2 systemd lanes: GitHub source synchronization, automatic schema application and automatic backend deployment. This section supersedes earlier current-state statements in this guide that the schema timer is status-only or that backend deployment is exclusively initiated through GitHub Actions/SSM. Older dated evidence remains historical.
+
+**Infrastructure details supplied:** AWS account `715975223136`, region `us-east-1`, EC2 instance `i-08814a9225c19ee91`, instance role `SuperBajaar-EC2-Role`, checkout `/opt/superbajaar/source`, branch `main`, Linux user `ubuntu`.
+
+### Current lane state as reported
+
+| Lane | Unit | Schedule | Mode |
+|---|---|---|---|
+| GitHub sync | `superbajaar-github-sync.timer` | Every 2 minutes | Fetch + fast-forward only; unchanged |
+| Schema | `superbajaar-schema.timer` | Even minutes | APPLY mode; `SB_ON_FAILURE=stop` |
+| Backend | `superbajaar-backend-deploy.timer` | Odd minutes | `SB_BACKEND_LANE_MODE=live`; 15-minute timeout |
+
+The schema service drop-in is `/etc/systemd/system/superbajaar-schema.service.d/override.conf`; its previous copy is `override.conf.bak-20261113T002237Z`. The backend lane script is `/usr/local/bin/sb-backend-lane.sh`, with backup `sb-backend-lane.sh.bak-20261113T005650Z`; its mode file is `/etc/default/superbajaar-backend-lane`. Detailed execution, migration gate, rollback, monitoring and off-switch instructions are in the [production deployment runbook](operations/PRODUCTION_DEPLOYMENT.md#aws-native-three-lane-auto-deployment--13-november-2026).
+
+### AWS backup and observability resources as reported
+
+- Private S3 backup bucket: `superbajaar-db-backups-715975223136-715975223136-us-east-1-an`; reported lifecycle expiry is 30 days.
+- CloudWatch groups: `/superbajaar/backend-deploy` and `/superbajaar/db-migration`; 90-day retention is intended but must be checked in AWS.
+- EC2 inline policy `SuperBajaar-Deploy` on `SuperBajaar-EC2-Role` is reported to grant log stream creation/event writes and S3 object get/put access for the backup bucket.
+- SNS email alerts and DynamoDB run-history were not created.
+- AWS CLI v2 is reported at `/usr/local/bin/aws`.
+
+These are owner-supplied configuration details, not an independent AWS audit. Do not claim the CloudWatch retention, IAM resource scope, S3 upload success or current timer health is independently verified from this documentation change.
+
+### Initial backend deployment report
+
+The first automatic backend deployment is reported as commit `30e38fc` at 00:47 UTC on 13 November 2026, replacing previously running commit `f77b07c`. Treat this as owner-supplied deployment history; re-check the running service and `refs/deploy/last-good` before using it as current release evidence.
+
+### Governance and safety boundaries
+
+- A new migration uses the next unused three-digit number and a lowercase filename such as `046_something.sql`. Never reuse a prefix or edit an applied file; create a new migration for subsequent changes.
+- Schema SQL is additive. Do not rename or delete database objects still used by the running application.
+- If backend code requires a migration, include its exact filename in `backend/schema_required.txt` in the same commit. The backend lane waits for that migration to be recorded in `schema_migrations`.
+- Keep SQL files limited to schema/database changes; do not embed deployment tooling or systemd configuration in SQL.
+- The server checkout must remain clean. Do not edit `/opt/superbajaar/source` directly.
+- Frontend/storefront delivery remains separate through Amplify.
+- There are no configured SNS alerts; local/CloudWatch logs are the reported failure-observation path.
+- Backend rollback validates service health and an HR route but cannot detect incorrect business logic that still passes those checks.
+- A change anywhere under `backend/` except `backend/schema/` can restart the backend, including tests.
+- Migration lock waits have no maximum duration and a heavy schema operation can affect a busy table.
+- Failed backend code may remain downloaded in the checkout even when the previous version has been restored to service.
+
+### Read-only operations
+
+```bash
+systemctl list-timers --all | grep superbajaar
+tail -n 30 /var/lib/superbajaar/lane-state/backend-deploy.log
+tail -n 30 /var/log/superbajaar/schema.log
+curl -s http://127.0.0.1:8001/api/health
+```
+
+Emergency switches stop only their named lane:
+
+```bash
+sudo systemctl disable --now superbajaar-backend-deploy.timer
+sudo systemctl disable --now superbajaar-schema.timer
+```
+
+Re-enable the relevant timer with the same command using `enable --now`. These controls do not revert prior backend or database changes.
+
+**Verification boundary:** this update records the supplied configuration and operational intent. It does not prove that the timers are currently enabled, the latest runs succeeded, the health endpoint is currently healthy, S3 objects were uploaded, CloudWatch retention is 90 days, or the first deployment is still running. Verify each before an operational decision.

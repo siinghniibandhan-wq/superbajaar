@@ -3,6 +3,9 @@
 **Document date:** 10 November 2026  
 **Status:** Discovery record; timer configuration and production migration execution are not complete  
 **Scope:** PostgreSQL schema migration automation on the existing EC2 host  
+
+> **Historical discovery record — current automation superseded 13 November 2026.** This file records the earlier design/investigation state and is retained for historical evidence. The owner-supplied production configuration now runs `superbajaar-schema.timer` in APPLY mode with `SB_ON_FAILURE=stop`, alongside a separate backend deployment timer. Use [Database Migrations](../DATABASE_MIGRATIONS.md#13-aws-native-schema-apply-lane--13-november-2026) and [Production Deployment](PRODUCTION_DEPLOYMENT.md#aws-native-three-lane-auto-deployment--13-november-2026) for the current operating model. The earlier statements below that automatic application was not complete are historical, not current instructions. The 13 November configuration has not been independently re-audited by this documentation change.
+
 **Out of scope:** GitHub code-pull/deployment automation
 
 This document records the live-environment details observed during the SQL Schema Automator investigation. It distinguishes confirmed facts from items that still require verification. It is not authorization to apply the pending SQL files.

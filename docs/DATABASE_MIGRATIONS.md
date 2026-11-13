@@ -387,3 +387,88 @@ The installed unit names are `superbajaar-schema.timer` and `superbajaar-schema.
 - A future production migration still requires a reviewed migration, a fresh verified backup, separate explicit production approval and post-apply verification.
 
 No SQL was applied and no ledger/failure rows were modified during this audit.
+
+
+---
+
+## 13. AWS-native schema apply lane — 13 November 2026
+
+**Current operating model (owner-supplied configuration):** This section supersedes the earlier status-only timer and manual-only application descriptions above. Those sections preserve the previous operating model and dated evidence. The current configuration below was supplied by the project owner on 13 November 2026; this documentation update did not independently inspect the live EC2 units or execute a migration.
+
+### Timer and service
+
+| Setting | Current supplied value |
+|---|---|
+| Timer | `superbajaar-schema.timer` |
+| Schedule | `OnCalendar=*:0/2` — even minutes, every 2 minutes |
+| Service user | `ubuntu` |
+| Service override | `/etc/systemd/system/superbajaar-schema.service.d/override.conf` |
+| Previous override backup | `override.conf.bak-20261113T002237Z` |
+| Runner | `/opt/superbajaar/source/backend/scripts/apply_schema.sh` |
+| Mode | APPLY (no `--status` argument) |
+| Failure policy | `SB_ON_FAILURE=stop` |
+| Post-run hook | `sb-db-lane-post.sh` copies new backups to S3 and ships new log lines |
+
+The schema lane runs independently of the backend deployment lane. It does not restart the backend. Its post-run hook handles backup/log shipping.
+
+### Migration transaction and safety contract
+
+The deployed runner is reported as v2 and compares `backend/schema/*.sql` against `schema_migrations` using filename and SHA-256.
+
+1. A new eligible file must pass filename, numbering, duplicate-table and ledger checks.
+2. A verified database backup is required before any schema change. If backup creation or verification fails, no migration is applied.
+3. Each SQL file and its migration-ledger record are committed together in one transaction.
+4. A failed migration is rolled back, recorded in `schema_migration_failures`, and not retried while its content/checksum remains unchanged.
+5. An already-applied file whose contents have changed is reported and never reapplied.
+6. With `SB_ON_FAILURE=stop`, processing stops at the first failed file.
+7. The lane uses the lock `/tmp/sb_schema.lock`; a concurrent run is not allowed to apply in parallel.
+8. It stops on duplicate numeric prefixes, invalid names (must be `NNN_name.sql`), or a table name found in more than one schema.
+9. A post-apply health check targets `http://127.0.0.1:8001/api/health`. The schema lane never restarts the backend.
+
+### Backups and retention
+
+- Local directory: `/var/lib/superbajaar/backups`.
+- Local retention: 14 days, while retaining at least the 3 newest backups.
+- The post-run hook copies new backup artifacts to the private S3 bucket:
+  `superbajaar-db-backups-715975223136-715975223136-us-east-1-an`.
+- The supplied bucket configuration includes a 30-day expiration lifecycle rule.
+- Do not interpret the configured S3 lifecycle as a substitute for verifying that each upload succeeded and that the object is readable.
+
+### Exit-code reference
+
+| Code | Meaning |
+|---:|---|
+| 0 | Successful/no outstanding issue |
+| 10 / 11 | Migration or integrity problems reported |
+| 20 | Required migration file blocked/missing; dependent backend release must wait |
+| 30 | Backup failed; no schema change |
+| 50 | Setup/configuration problem |
+| 60 | Another run holds the lock |
+
+### Release dependency
+
+If a backend commit requires a new schema file, the same commit must add that exact filename to `backend/schema_required.txt`. The backend lane waits until every required filename at the target commit is present in `schema_migrations`. Keep migration files additive and immutable after application; never edit, rename or delete an applied migration. Choose the next unused number after inspecting the full migration directory and ledger/history.
+
+### Read-only status and emergency controls
+
+The following commands are observational only:
+
+```bash
+systemctl list-timers --all | grep superbajaar
+tail -n 30 /var/log/superbajaar/schema.log
+curl -s http://127.0.0.1:8001/api/health
+```
+
+Stop the schema lane:
+
+```bash
+sudo systemctl disable --now superbajaar-schema.timer
+```
+
+Re-enable it:
+
+```bash
+sudo systemctl enable --now superbajaar-schema.timer
+```
+
+Do not use the emergency commands casually; disabling a timer pauses the automated migration lane but does not undo migrations already committed to PostgreSQL. Confirm the current service unit and timer state before acting.

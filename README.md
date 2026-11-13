@@ -12,7 +12,8 @@ This README describes the code currently committed on `main`. It is an engineeri
 - [Documentation index](docs/README.md) — canonical document catalogue and precedence rules.
 - [Environments and CI/CD](docs/ENVIRONMENTS_AND_CICD.md) — local, CI and production contexts; commit triggers; frontend/backend/database release separation.
 - [Database migration operations](docs/DATABASE_MIGRATIONS.md) — migration runner, backup gate, numbering and production controls.
-- [Production deployment runbook](docs/operations/PRODUCTION_DEPLOYMENT.md) — EC2/SSM and Amplify release verification.
+- [Production deployment runbook](docs/operations/PRODUCTION_DEPLOYMENT.md) — AWS-native EC2 backend deployment lane, rollback and Amplify release boundaries.
+- [AWS-native auto-deploy operations](docs/operations/PRODUCTION_DEPLOYMENT.md#aws-native-three-lane-auto-deployment--13-november-2026) — two-minute Git sync, schema apply and backend deployment lanes.
 
 
 - **Repository:** [siinghniibandhan-wq/superbajaar](https://github.com/siinghniibandhan-wq/superbajaar)

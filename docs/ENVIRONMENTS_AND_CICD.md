@@ -247,3 +247,32 @@ The user has access to AWS RunShell but not AWS CloudShell. CloudShell-only AWS 
 ### Remaining release evidence
 
 To close the frontend release audit, capture the exact commit SHA and build/app-root details from Amplify deployment 113's build details, then inspect the live storefront and admin in a browser. Keep the Amplify app ID and `enableAutoBuild` setting marked unverified until visible evidence is obtained.
+
+
+---
+
+## 13. AWS-native EC2 automation — owner-supplied configuration, 13 November 2026
+
+This section supersedes earlier descriptions in this document that state the production schema timer is status-only/manual or that backend deployment is exclusively initiated by GitHub Actions/SSM. Those descriptions remain historical for the earlier configuration. The following is the current configuration supplied by the project owner; it has not been independently queried from AWS or the EC2 host as part of this documentation change.
+
+### Production automation topology
+
+| Lane | Timer | Schedule | Responsibility |
+|---|---|---|---|
+| GitHub source sync | `superbajaar-github-sync.timer` | Every 2 minutes | Fetch `origin/main` and fast-forward a clean checkout only |
+| Database schema | `superbajaar-schema.timer` | Even minutes (`*:0/2`) | Run `apply_schema.sh` in APPLY mode with `SB_ON_FAILURE=stop` |
+| Backend deployment | `superbajaar-backend-deploy.timer` | Odd minutes (`*:1/2`) | Deploy eligible backend changes after required migrations are recorded |
+
+The intended sequence is GitHub push → source sync → schema lane → backend lane. Expected end-to-end delay is approximately 2–4 minutes, depending on timer phase and run duration. The timers are independent; the backend lane explicitly checks the migration ledger before deploying a commit that requires SQL.
+
+### Important boundaries
+
+- Git sync is unchanged and is not a build, migration or restart operation.
+- The schema lane now applies new migrations automatically after its backup gate; it is no longer status-only.
+- The backend lane deploys backend changes automatically; it is separate from the GitHub Actions workflow.
+- The backend lane ignores `backend/schema/` when deciding whether backend application code changed.
+- The storefront/frontend is not deployed by these EC2 lanes. Amplify remains a separate frontend deployment mechanism.
+- GitHub Actions CI remains a verification mechanism. A green workflow is not evidence that the EC2 lanes or Amplify completed.
+- This documentation update does not install, enable, restart or otherwise change any timer or production service.
+
+See [Production deployment automation](operations/PRODUCTION_DEPLOYMENT.md#aws-native-three-lane-auto-deployment--13-november-2026) and [Database migrations](DATABASE_MIGRATIONS.md#13-aws-native-schema-apply-lane--13-november-2026) for operational details.
