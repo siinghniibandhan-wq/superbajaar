@@ -46,6 +46,22 @@ def is_customer_identity_claim_route(method: str, path: str, prefix: str = "/api
     return method == "POST" and len(parts) == 2 and parts[0].isdigit() and parts[1] == "cancel"
 
 
+def is_customer_identity_verification_claim_route(method: str, path: str, prefix: str = "/api") -> bool:
+    """Allow customers to confirm only claims addressed to their own identity."""
+    route = prefix.rstrip("/") + "/customer-auth/identity-verification/claims"
+    if method == "GET" and path == route + "/pending":
+        return True
+    suffix = path[len(route) + 1:] if path.startswith(route + "/") else ""
+    parts = suffix.split("/")
+    return (
+        method == "POST"
+        and len(parts) == 3
+        and parts[0].isdigit()
+        and parts[1] == "otp"
+        and parts[2] in {"request", "verify"}
+    )
+
+
 def _module_for_path(path: str, prefix: str = "/api") -> str | None:
     """Resolve every staff API router using the configured API prefix."""
     normalized_prefix = prefix.rstrip("/")
@@ -193,7 +209,7 @@ async def require_active_session(request: Request) -> None:
             and path.count("/") == 4
         )
         is_website_order = request.method == "POST" and path == prefix + "/orders"
-        if (request.method, path) not in customer_routes and not is_customer_identity_claim_route(request.method, path, prefix) and not is_customer_identity_document_download and not is_customer_support_detail and not is_customer_support_reply and not is_customer_order_detail and not is_website_order:
+        if (request.method, path) not in customer_routes and not is_customer_identity_claim_route(request.method, path, prefix) and not is_customer_identity_verification_claim_route(request.method, path, prefix) and not is_customer_identity_document_download and not is_customer_support_detail and not is_customer_support_reply and not is_customer_order_detail and not is_website_order:
             raise HTTPException(status_code=403, detail="Customer session cannot access staff resources")
         try:
             with psycopg.connect(settings.database_url, row_factory=dict_row, connect_timeout=3) as conn:
