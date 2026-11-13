@@ -1,7 +1,7 @@
 # Super Bajaar engineering documentation
 
 **Documentation owner:** Engineering  
-**Last reviewed:** 13 November 2026  
+**Last reviewed:** 14 November 2026  
 **Status:** Canonical documentation index
 
 This directory contains current engineering references, operational runbooks, historical audit/design records, implementation plans and supporting configuration. Source code and workflow YAML define implemented behaviour; live infrastructure and deployment state require timestamped evidence.
@@ -19,6 +19,7 @@ This directory contains current engineering references, operational runbooks, hi
 | Migration filename immutability | [Schema migration critical rule](SCHEMA_MIGRATION_CRITICAL_RULE.md) |
 | Unified Identity implementation | [Identity implementation guide](UNIFIED_IDENTITY_SYSTEM_IMPLEMENTATION.md) |
 | Unified Identity production rollout | [Identity rollout runbook](UNIFIED_IDENTITY_SYSTEM_PRODUCTION_ROLLOUT.md) |
+| PR #84 identity verification production status | [Identity verification status](IDENTITY_VERIFICATION_PR_84_STATUS.md) |
 
 ## Mandatory documentation change control
 
@@ -44,6 +45,7 @@ Every governed implementation or configuration change must include its correspon
 - [Schema migration critical rule](SCHEMA_MIGRATION_CRITICAL_RULE.md) — immutable migration files and unique numbering.
 
 ### Unified Identity
+- [PR #84 identity verification production status](IDENTITY_VERIFICATION_PR_84_STATUS.md) — dated evidence, confirmed database/backend observations, OTP configuration status and remaining live verification.
 - [Implementation guide](UNIFIED_IDENTITY_SYSTEM_IMPLEMENTATION.md)
 - [Production rollout runbook](UNIFIED_IDENTITY_SYSTEM_PRODUCTION_ROLLOUT.md)
 - [Phase 1 audit](UNIFIED_IDENTITY_SYSTEM_PHASE_1_AUDIT.md) — historical audit evidence.
