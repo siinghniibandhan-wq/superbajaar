@@ -49,7 +49,7 @@ def test_storefront_reservation_queries_profile_service_pins_priority_and_hours(
         },
     )
 
-    selected = reserve_order_stock(conn, 900, "800001", [(7, 2)])
+    selected = reserve_order_stock(conn, 900, "800001", [(7, 2)], profile_routing=True)
 
     assert selected == 22
     query, params = conn.calls[0]
@@ -73,7 +73,7 @@ def test_storefront_reservation_skips_higher_priority_facility_without_all_stock
         },
     )
 
-    selected = reserve_order_stock(conn, 901, "800001", [(7, 2)])
+    selected = reserve_order_stock(conn, 901, "800001", [(7, 2)], profile_routing=True)
 
     assert selected == 22
     assert len(conn.updates) == 1
@@ -90,7 +90,7 @@ def test_storefront_reservation_never_splits_order_across_facilities():
     )
 
     try:
-        reserve_order_stock(conn, 902, "800001", [(7, 2), (8, 2)])
+        reserve_order_stock(conn, 902, "800001", [(7, 2), (8, 2)], profile_routing=True)
     except ValueError as exc:
         assert "no single active location" in str(exc)
     else:
@@ -98,3 +98,21 @@ def test_storefront_reservation_never_splits_order_across_facilities():
 
     assert conn.updates == []
     assert conn.movements == []
+
+
+
+def test_manual_order_keeps_legacy_pin_and_location_ordering():
+    conn = _Connection(
+        location_rows=[{"id": 4}],
+        balance_rows_by_location={
+            4: [{"variant_id": 7, "on_hand": Decimal("5"), "reserved": Decimal("0")}],
+        },
+    )
+
+    selected = reserve_order_stock(conn, 903, "800001", [(7, 1)])
+
+    assert selected == 4
+    query, params = conn.calls[0]
+    assert "stock_location_profiles" not in query
+    assert "pin_code=%s ORDER BY id" in query
+    assert params == ("800001",)
