@@ -68,16 +68,16 @@ def test_storefront_reservation_skips_higher_priority_facility_without_all_stock
     conn = _Connection(
         location_rows=[{"id": 22}, {"id": 11}],
         balance_rows_by_location={
-            22: [{"variant_id": 7, "on_hand": Decimal("10"), "reserved": Decimal("0")}],
-            11: [{"variant_id": 7, "on_hand": Decimal("1"), "reserved": Decimal("0")}],
+            22: [{"variant_id": 7, "on_hand": Decimal("1"), "reserved": Decimal("0")}],
+            11: [{"variant_id": 7, "on_hand": Decimal("10"), "reserved": Decimal("0")}],
         },
     )
 
     selected = reserve_order_stock(conn, 901, "800001", [(7, 2)], profile_routing=True)
 
-    assert selected == 22
+    assert selected == 11
     assert len(conn.updates) == 1
-    assert conn.updates[0][2] == 22
+    assert conn.updates[0][2] == 11
 
 
 def test_storefront_reservation_never_splits_order_across_facilities():
