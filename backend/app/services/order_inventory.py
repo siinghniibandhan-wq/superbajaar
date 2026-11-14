@@ -32,7 +32,20 @@ def reserve_order_stock(conn, order_id: int, delivery_pin: str | None, lines: li
             ).fetchall()
     else:
         locations = conn.execute(
-            "SELECT id FROM stock_locations WHERE is_active=TRUE AND is_fulfillable=TRUE AND pin_code=%s ORDER BY id FOR UPDATE",
+            "SELECT sl.id FROM stock_locations sl "
+            "LEFT JOIN stock_location_profiles p ON p.location_id=sl.id "
+            "WHERE sl.is_active=TRUE AND sl.is_fulfillable=TRUE "
+            "AND COALESCE((p.profile_data->>'storefront_available')::boolean, TRUE)=TRUE "
+            "AND COALESCE(p.profile_data->'service_pin_codes', "
+            "CASE WHEN sl.pin_code IS NULL THEN '[]'::jsonb ELSE jsonb_build_array(sl.pin_code) END) "
+            "@> jsonb_build_array(%s::text) "
+            "AND (COALESCE(jsonb_array_length(p.profile_data->'operating_days'),0)=0 "
+            "OR p.profile_data->'operating_days' ? lower(to_char(now() AT TIME ZONE 'Asia/Kolkata','Dy'))) "
+            "AND (p.profile_data->>'opening_time' IS NULL OR "
+            "to_char(now() AT TIME ZONE 'Asia/Kolkata','HH24:MI') >= p.profile_data->>'opening_time') "
+            "AND (p.profile_data->>'closing_time' IS NULL OR "
+            "to_char(now() AT TIME ZONE 'Asia/Kolkata','HH24:MI') <= p.profile_data->>'closing_time') "
+            "ORDER BY COALESCE((p.profile_data->>'routing_priority')::integer,100), sl.id FOR UPDATE OF sl",
             (delivery_pin,),
         ).fetchall()
     if location_id is not None and not locations:
