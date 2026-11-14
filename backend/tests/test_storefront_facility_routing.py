@@ -116,3 +116,15 @@ def test_manual_order_keeps_legacy_pin_and_location_ordering():
     assert "stock_location_profiles" not in query
     assert "pin_code=%s ORDER BY id" in query
     assert params == ("800001",)
+
+
+
+def test_storefront_reports_when_no_facility_serves_pin_and_hours():
+    conn = _Connection(location_rows=[], balance_rows_by_location={})
+
+    try:
+        reserve_order_stock(conn, 904, "800009", [(7, 1)], profile_routing=True)
+    except ValueError as exc:
+        assert "No active fulfilment facility serves this delivery PIN" in str(exc)
+    else:
+        raise AssertionError("Checkout must reject a PIN with no eligible facility")
