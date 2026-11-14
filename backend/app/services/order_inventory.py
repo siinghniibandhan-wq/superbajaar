@@ -36,6 +36,7 @@ def reserve_order_stock(conn, order_id: int, delivery_pin: str | None, lines: li
             "LEFT JOIN stock_location_profiles p ON p.location_id=sl.id "
             "WHERE sl.is_active=TRUE AND sl.is_fulfillable=TRUE "
             "AND COALESCE((p.profile_data->>'storefront_available')::boolean, TRUE)=TRUE "
+            "AND COALESCE((p.profile_data->>'dispatches_stock')::boolean, TRUE)=TRUE "
             "AND COALESCE(p.profile_data->'service_pin_codes', "
             "CASE WHEN sl.pin_code IS NULL THEN '[]'::jsonb ELSE jsonb_build_array(sl.pin_code) END) "
             "@> jsonb_build_array(%s::text) "
