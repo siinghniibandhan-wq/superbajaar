@@ -153,6 +153,7 @@ class FacilityProfileCreate(BaseModel):
     service_pin_codes: list[str] = Field(default_factory=list, max_length=500)
     routing_priority: int = Field(default=100, ge=0, le=100000)
     storefront_available: bool = True
+    is_fulfillable: bool | None = None
     manager_name: str | None = Field(default=None, max_length=120)
     contact_phone: str | None = Field(default=None, pattern=r"^[+0-9 ()-]{7,20}$")
     contact_email: str | None = Field(default=None, max_length=254)
@@ -736,7 +737,10 @@ def update_location_profile(location_id: int, profile: FacilityProfileCreate, re
                 profile_data = profile.model_dump(mode="json")
                 if not profile_data["service_pin_codes"]:
                     profile_data["service_pin_codes"] = [profile.pin_code]
-                conn.execute("UPDATE stock_locations SET pin_code=%s WHERE id=%s", (profile.pin_code, location_id))
+                conn.execute(
+                    "UPDATE stock_locations SET pin_code=%s,is_fulfillable=COALESCE(%s,is_fulfillable) WHERE id=%s",
+                    (profile.pin_code, profile.is_fulfillable, location_id),
+                )
                 row = conn.execute(
                     "INSERT INTO stock_location_profiles(location_id,facility_code,profile_data) VALUES(%s,%s,%s::jsonb) "
                     "ON CONFLICT(location_id) DO UPDATE SET facility_code=EXCLUDED.facility_code,profile_data=EXCLUDED.profile_data,updated_at=now() "
