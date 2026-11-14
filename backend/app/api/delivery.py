@@ -166,6 +166,7 @@ def list_shipments(
                 "SELECT d.id, d.shipment_reference, d.order_id, o.order_number, o.status AS order_status, "
                 "d.delivery_pin, d.recipient_name, d.recipient_phone, d.address, d.location_id, d.status, "
                 "d.tracking_reference, d.assigned_to, d.delivery_notes, d.created_at, d.updated_at, "
+                "sl.name AS fulfilment_location_name, "
                 "COALESCE((SELECT json_agg(json_build_object("
                 "'variant_id',ol.variant_id,'sku',v.sku,'product_name',p.name,"
                 "'ordered_quantity',ol.quantity,'dispatched_quantity',"
@@ -178,7 +179,8 @@ def list_shipments(
                 "AND m.movement_type='sale'),0),0)) ORDER BY ol.id) "
                 "FROM order_lines ol JOIN product_variants v ON v.id=ol.variant_id "
                 "JOIN products p ON p.id=v.product_id WHERE ol.order_id=o.id), '[]'::json) AS order_lines "
-                "FROM deliveries d JOIN orders o ON o.id=d.order_id" +
+                "FROM deliveries d JOIN orders o ON o.id=d.order_id "
+                "LEFT JOIN stock_locations sl ON sl.id=d.location_id" +
                 where + " ORDER BY d.created_at DESC LIMIT %s OFFSET %s", (*params, limit, offset)
             ).fetchall()
             total = conn.execute("SELECT count(*) AS total FROM deliveries d JOIN orders o ON o.id=d.order_id" + where, params).fetchone()["total"]
