@@ -1,5 +1,6 @@
 import OrganisationPolicyPanel from "../shared/OrganisationPolicyPanel.jsx";
 import PurchasingRequestsWorkspace from "./PurchasingRequestsWorkspace.jsx";
+import BlanketOrdersWorkspace from "./BlanketOrdersWorkspace.jsx";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./PurchasingWorkspace.css";
 import { apiRequest } from "../../services/api.js";
@@ -461,12 +462,13 @@ export default function PurchasingWorkspace({ onBack }) {
     <div className="sb-customer-tabs" role="tablist" aria-label="Purchasing workspace">
       <button type="button" role="tab" aria-selected={tab === "overview"} className={tab === "overview" ? "is-active" : ""} onClick={() => setTab("overview")}>Overview</button>
       <button type="button" role="tab" aria-selected={tab === "requests"} className={tab === "requests" ? "is-active" : ""} onClick={() => setTab("requests")}>Requisitions & RFQs</button>
+      <button type="button" role="tab" aria-selected={tab === "blankets"} className={tab === "blankets" ? "is-active" : ""} onClick={() => setTab("blankets")}>Blanket orders</button>
       <button type="button" role="tab" aria-selected={tab === "orders"} className={tab === "orders" ? "is-active" : ""} onClick={() => setTab("orders")}>Purchase orders <span>{orders.length}</span></button>
       <button type="button" role="tab" aria-selected={tab === "suppliers"} className={tab === "suppliers" ? "is-active" : ""} onClick={() => setTab("suppliers")}>Suppliers <span>{suppliers.length}</span></button>
       <button type="button" role="tab" aria-selected={tab === "invoices"} className={tab === "invoices" ? "is-active" : ""} onClick={() => setTab("invoices")}>Supplier invoices</button>
       <button type="button" role="tab" aria-selected={tab === "returns"} className={tab === "returns" ? "is-active" : ""} onClick={() => setTab("returns")}>Supplier returns</button>
     </div>
-    {tab === "overview" ? <>
+    {tab === "blankets" ? <BlanketOrdersWorkspace suppliers={suppliers} locations={locations} variants={variants} onPurchaseOrderCreated={async po => { setTab("orders"); await load(); await openOrder(po.id); setNotice("Blanket release created as draft PO "+po.purchase_number+"; standard approval is required."); }} /> : tab === "overview" ? <>
       <section className="sb-purchasing-overview">
         <div className="sb-purchasing-overview-head"><div><h2>Procurement workflow</h2><p>Follow each order from request through receipt and inventory posting.</p></div><button className="sb-primary" type="button" onClick={() => setTab("orders")}>Create / manage purchase orders</button></div>
         <div className="sb-purchasing-steps">
