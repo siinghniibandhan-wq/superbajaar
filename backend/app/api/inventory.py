@@ -150,7 +150,7 @@ class FacilityProfileCreate(BaseModel):
     district: str | None = Field(default=None, max_length=100)
     state: str = Field(min_length=2, max_length=100)
     country: str = Field(default="India", min_length=2, max_length=80)
-    pin_code: str = Field(pattern=r"^[0-9]{6}$")
+    pin_code: str = Field(pattern=r"^[1-9][0-9]{5}$")
     service_pin_codes: list[str] = Field(default_factory=list, max_length=500)
     routing_priority: int = Field(default=100, ge=0, le=100000)
     storefront_available: bool = True
@@ -186,7 +186,7 @@ class FacilityProfileCreate(BaseModel):
     @classmethod
     def valid_service_pin_codes(cls, value: list[str]) -> list[str]:
         normalised = [pin.strip() for pin in value]
-        if any(not re.fullmatch(r"[0-9]{6}", pin) for pin in normalised):
+        if any(not re.fullmatch(r"[1-9][0-9]{5}", pin) for pin in normalised):
             raise ValueError("Every service PIN code must contain exactly six digits")
         if len(set(normalised)) != len(normalised):
             raise ValueError("Service PIN codes must be unique")
@@ -213,7 +213,7 @@ class FacilityProfileCreate(BaseModel):
 class StockLocationCreate(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     location_type: str = Field(pattern=r"^(warehouse|store|dark_store)$")
-    pin_code: str | None = Field(default=None, pattern=r"^[0-9]{6}$")
+    pin_code: str | None = Field(default=None, pattern=r"^[1-9][0-9]{5}$")
     establishment_id: int | None = Field(default=None, gt=0)
     is_fulfillable: bool = True
     profile: FacilityProfileCreate | None = None
