@@ -58,3 +58,21 @@ ALTER TABLE public.purchasing_approval_events
 ALTER TABLE public.purchasing_approval_events
     ADD CONSTRAINT purchasing_approval_events_document_type_check
     CHECK (document_type IN ('requisition','purchase_order','quotation','supplier_invoice','supplier_return','blanket_order'));
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'superbajaar_user') THEN
+        GRANT SELECT, INSERT, UPDATE, DELETE ON
+            public.purchase_blanket_orders,
+            public.purchase_blanket_order_lines,
+            public.purchase_blanket_order_releases,
+            public.purchase_blanket_order_release_lines
+        TO superbajaar_user;
+        GRANT USAGE, SELECT ON SEQUENCE
+            public.purchase_blanket_orders_id_seq,
+            public.purchase_blanket_order_lines_id_seq,
+            public.purchase_blanket_order_releases_id_seq,
+            public.purchase_blanket_order_release_lines_id_seq
+        TO superbajaar_user;
+    END IF;
+END $$;
