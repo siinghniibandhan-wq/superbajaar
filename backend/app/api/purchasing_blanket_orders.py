@@ -53,6 +53,8 @@ class BlanketCreate(BaseModel):
         ids = [line.variant_id for line in self.lines]
         if len(ids) != len(set(ids)):
             raise ValueError("Each catalogue variant may appear once")
+        if self.max_contract_value is None and any(line.agreed_quantity is None for line in self.lines):
+            raise ValueError("Set a maximum contract value when any item has no quantity limit")
         return self
 
 
@@ -186,8 +188,8 @@ def approve_blanket_order(blanket_id: int, request: Request):
                 policy=conn.execute("SELECT * FROM organisation_policy_versions WHERE id=%s AND establishment_id=%s AND domain='purchase' FOR SHARE",(row["policy_version_id"],location["establishment_id"])).fetchone()
                 if policy is None: raise HTTPException(409,"The agreement's bound Purchase policy is unavailable")
                 lines=conn.execute("SELECT agreed_quantity,agreed_unit_cost FROM purchase_blanket_order_lines WHERE blanket_order_id=%s",(blanket_id,)).fetchall()
-                amount=sum((Decimal(str(x["agreed_quantity"] or 0))*Decimal(str(x["agreed_unit_cost"])) for x in lines),Decimal("0"))
-                if row["max_contract_value"] is not None: amount=min(amount,Decimal(str(row["max_contract_value"])))
+                amount=(Decimal(str(row["max_contract_value"])) if row["max_contract_value"] is not None
+                        else sum((Decimal(str(x["agreed_quantity"]))*Decimal(str(x["agreed_unit_cost"])) for x in lines),Decimal("0")))
                 evaluation,next_stage,complete=_record_purchase_approval_stage(
                     conn,policy=policy,document_type="blanket_order",document_id=blanket_id,
                     revision=row["approval_revision"],amount=amount,creator_user_id=row["created_by_user_id"],
