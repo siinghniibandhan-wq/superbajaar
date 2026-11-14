@@ -164,10 +164,10 @@ class FacilityProfileCreate(BaseModel):
     gstin: str | None = Field(default=None, pattern=r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$")
     licence_reference: str | None = Field(default=None, max_length=100)
 
-    @field_validator("facility_code")
+    @field_validator("facility_code", mode="before")
     @classmethod
     def normalise_facility_code(cls, value: str) -> str:
-        return value.strip().upper()
+        return value.strip().upper() if isinstance(value, str) else value
 
     @field_validator("address_line1", "city", "state", "country")
     @classmethod
