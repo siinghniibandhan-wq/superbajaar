@@ -276,6 +276,7 @@ export default function InventoryWorkspace({ onBack }) {
         service_pin_codes: locationForm.service_pin_codes.split(/[ ,;\\n]+/).map(pin => pin.trim()).filter(Boolean),
         routing_priority: Number(locationForm.routing_priority || 100),
         storefront_available: locationForm.storefront_available,
+        is_fulfillable: locationForm.is_fulfillable,
         address_line1: locationForm.address_line1.trim(), address_line2: locationForm.address_line2.trim() || null,
         city: locationForm.city.trim(), district: locationForm.district.trim() || null,
         state: locationForm.state.trim(), country: locationForm.country.trim(), pin_code: locationForm.pin_code,
