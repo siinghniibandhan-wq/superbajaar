@@ -193,6 +193,7 @@ class StockLocationCreate(BaseModel):
     pin_code: str | None = Field(default=None, pattern=r"^[0-9]{6}$")
     establishment_id: int | None = Field(default=None, gt=0)
     is_fulfillable: bool = True
+    profile: FacilityProfileCreate | None = None
 
     @field_validator("name")
     @classmethod
@@ -579,7 +580,8 @@ def _db_error(exc: psycopg.Error) -> HTTPException:
 
 
 @router.post("/locations", status_code=201)
-def create_location(payload: StockLocationCreate, request: Request, profile: FacilityProfileCreate | None = None):
+def create_location(payload: StockLocationCreate, request: Request):
+    profile = payload.profile
     if (payload.establishment_id is not None or not payload.is_fulfillable) and getattr(request.state, "role", None) not in {"super_admin", "admin"}:
         raise HTTPException(status_code=403, detail="Only Super Admin/Admin can assign a stock location to a legal establishment")
     try:
