@@ -57,6 +57,7 @@ def test_storefront_reservation_queries_profile_service_pins_priority_and_hours(
     assert "service_pin_codes" in query
     assert "routing_priority" in query
     assert "storefront_available" in query
+    assert "dispatches_stock" in query
     assert "operating_days" in query
     assert "Asia/Kolkata" in query
     assert params == ("800001",)
