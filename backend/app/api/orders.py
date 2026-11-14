@@ -128,8 +128,13 @@ def list_orders(
             items = conn.execute(
                 "SELECT o.id, o.order_number, o.channel, o.customer_name, o.customer_phone, o.delivery_pin, "
                 "o.status, o.subtotal, o.total, o.notes, o.created_at, o.updated_at, "
+                "assigned_location.id AS inventory_location_id, assigned_location.name AS inventory_location_name, "
                 "(SELECT count(*) FROM order_lines l WHERE l.order_id=o.id) AS line_count "
-                "FROM orders o" + where + " ORDER BY o.created_at DESC LIMIT %s OFFSET %s",
+                "FROM orders o LEFT JOIN stock_locations assigned_location ON assigned_location.id=COALESCE("
+                "(SELECT d.location_id FROM deliveries d WHERE d.order_id=o.id ORDER BY d.id DESC LIMIT 1),"
+                "(SELECT im.location_id FROM inventory_movements im WHERE im.reference_id=o.id::text "
+                "AND im.reference_type='order_reservation' AND im.movement_type='reservation' ORDER BY im.id DESC LIMIT 1))"
+                + where + " ORDER BY o.created_at DESC LIMIT %s OFFSET %s",
                 (*params, limit, offset),
             ).fetchall()
             count = conn.execute("SELECT count(*) AS total FROM orders o" + where, params).fetchone()["total"]
@@ -156,7 +161,14 @@ def get_order(order_id: int):
     try:
         with _connect() as conn:
             order = conn.execute(
-                "SELECT id, order_number, channel, customer_name, customer_phone, delivery_pin, status, subtotal, total, notes, created_at, updated_at FROM orders WHERE id=%s",
+                "SELECT o.id, o.order_number, o.channel, o.customer_name, o.customer_phone, o.delivery_pin, "
+                "o.status, o.subtotal, o.total, o.notes, o.created_at, o.updated_at, "
+                "assigned_location.id AS inventory_location_id, assigned_location.name AS inventory_location_name "
+                "FROM orders o LEFT JOIN stock_locations assigned_location ON assigned_location.id=COALESCE("
+                "(SELECT d.location_id FROM deliveries d WHERE d.order_id=o.id ORDER BY d.id DESC LIMIT 1),"
+                "(SELECT im.location_id FROM inventory_movements im WHERE im.reference_id=o.id::text "
+                "AND im.reference_type='order_reservation' AND im.movement_type='reservation' ORDER BY im.id DESC LIMIT 1)) "
+                "WHERE o.id=%s",
                 (order_id,),
             ).fetchone()
             if order is None:
