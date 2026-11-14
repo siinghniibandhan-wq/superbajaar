@@ -1,4 +1,4 @@
--- 046: additive, one-to-one operational profiles for existing stock facilities.
+-- 047: additive, one-to-one operational profiles for existing stock facilities.
 -- stock_locations remains the canonical facility identity; no stock rows are moved.
 CREATE TABLE IF NOT EXISTS public.stock_location_profiles (
     location_id bigint PRIMARY KEY REFERENCES public.stock_locations(id) ON DELETE RESTRICT,

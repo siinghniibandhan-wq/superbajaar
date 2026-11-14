@@ -2,13 +2,14 @@
 from decimal import Decimal
 import hashlib
 import json
+import re
 from uuid import UUID, uuid4
 from typing import Any
 
 import psycopg
 from fastapi import APIRouter, HTTPException, Query, Request
 from psycopg.rows import dict_row
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from datetime import date
 
 from app.services.inventory_costing import allocate_cost_layers, create_cost_layer, transfer_cost_layers, money
@@ -149,7 +150,11 @@ class FacilityProfileCreate(BaseModel):
     district: str | None = Field(default=None, max_length=100)
     state: str = Field(min_length=2, max_length=100)
     country: str = Field(default="India", min_length=2, max_length=80)
-    pin_code: str = Field(pattern=r"^[0-9]{6}$")
+    pin_code: str = Field(pattern=r"^[1-9][0-9]{5}$")
+    service_pin_codes: list[str] = Field(default_factory=list, max_length=500)
+    routing_priority: int = Field(default=100, ge=0, le=100000)
+    storefront_available: bool = True
+    is_fulfillable: bool | None = None
     manager_name: str | None = Field(default=None, max_length=120)
     contact_phone: str | None = Field(default=None, pattern=r"^[+0-9 ()-]{7,20}$")
     contact_email: str | None = Field(default=None, max_length=254)
@@ -177,6 +182,24 @@ class FacilityProfileCreate(BaseModel):
             raise ValueError("This field cannot be blank")
         return value
 
+    @field_validator("service_pin_codes")
+    @classmethod
+    def valid_service_pin_codes(cls, value: list[str]) -> list[str]:
+        normalised = [pin.strip() for pin in value]
+        if any(not re.fullmatch(r"[1-9][0-9]{5}", pin) for pin in normalised):
+            raise ValueError("Every service PIN code must contain exactly six digits")
+        if len(set(normalised)) != len(normalised):
+            raise ValueError("Service PIN codes must be unique")
+        return normalised
+
+    @model_validator(mode="after")
+    def valid_operating_hours(self):
+        if (self.opening_time is None) != (self.closing_time is None):
+            raise ValueError("Opening and closing times must be provided together")
+        if self.opening_time is not None and self.opening_time >= self.closing_time:
+            raise ValueError("Opening time must be earlier than closing time")
+        return self
+
     @field_validator("operating_days")
     @classmethod
     def valid_operating_days(cls, value: list[str]) -> list[str]:
@@ -190,7 +213,7 @@ class FacilityProfileCreate(BaseModel):
 class StockLocationCreate(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     location_type: str = Field(pattern=r"^(warehouse|store|dark_store)$")
-    pin_code: str | None = Field(default=None, pattern=r"^[0-9]{6}$")
+    pin_code: str | None = Field(default=None, pattern=r"^[1-9][0-9]{5}$")
     establishment_id: int | None = Field(default=None, gt=0)
     is_fulfillable: bool = True
     profile: FacilityProfileCreate | None = None
@@ -600,11 +623,20 @@ def create_location(payload: StockLocationCreate, request: Request):
                     (payload.name, payload.location_type, payload.pin_code, payload.establishment_id, payload.is_fulfillable),
                 ).fetchone()
                 if profile is not None:
+                    if payload.pin_code and payload.pin_code != profile.pin_code:
+                        raise HTTPException(status_code=422, detail="Facility PIN must match the profile's primary PIN")
+                    profile_data = profile.model_dump(mode="json")
+                    if not profile_data["service_pin_codes"]:
+                        profile_data["service_pin_codes"] = [profile.pin_code]
+                    conn.execute(
+                        "UPDATE stock_locations SET pin_code=%s WHERE id=%s",
+                        (profile.pin_code, row["id"]),
+                    )
                     conn.execute(
                         "INSERT INTO stock_location_profiles (location_id, facility_code, profile_data) VALUES (%s,%s,%s::jsonb)",
-                        (row["id"], profile.facility_code, json.dumps(profile.model_dump(mode="json"), default=str)),
+                        (row["id"], profile.facility_code, json.dumps(profile_data, default=str)),
                     )
-        return {**dict(row), "profile": profile.model_dump(mode="json") if profile else None,
+        return {**dict(row), "profile": profile_data if profile else None,
                 "profile_status": "complete" if profile else "incomplete"}
     except HTTPException:
         raise
@@ -703,11 +735,18 @@ def update_location_profile(location_id: int, profile: FacilityProfileCreate, re
                 exists = conn.execute("SELECT id FROM stock_locations WHERE id=%s FOR UPDATE", (location_id,)).fetchone()
                 if not exists:
                     raise HTTPException(404, "Stock location not found")
+                profile_data = profile.model_dump(mode="json")
+                if not profile_data["service_pin_codes"]:
+                    profile_data["service_pin_codes"] = [profile.pin_code]
+                conn.execute(
+                    "UPDATE stock_locations SET pin_code=%s,is_fulfillable=COALESCE(%s,is_fulfillable) WHERE id=%s",
+                    (profile.pin_code, profile.is_fulfillable, location_id),
+                )
                 row = conn.execute(
                     "INSERT INTO stock_location_profiles(location_id,facility_code,profile_data) VALUES(%s,%s,%s::jsonb) "
                     "ON CONFLICT(location_id) DO UPDATE SET facility_code=EXCLUDED.facility_code,profile_data=EXCLUDED.profile_data,updated_at=now() "
                     "RETURNING location_id,facility_code,profile_data,updated_at",
-                    (location_id, profile.facility_code, json.dumps(profile.model_dump(mode="json"), default=str)),
+                    (location_id, profile.facility_code, json.dumps(profile_data, default=str)),
                 ).fetchone()
         return {**dict(row), "profile_status": "complete"}
     except HTTPException:

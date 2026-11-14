@@ -14,7 +14,7 @@ ORDER_RESERVATION_REF = "order_reservation"
 ORDER_FULFILMENT_REF = "order_fulfilment"
 
 
-def reserve_order_stock(conn, order_id: int, delivery_pin: str | None, lines: list[tuple[int, int]], location_id: int | None = None):
+def reserve_order_stock(conn, order_id: int, delivery_pin: str | None, lines: list[tuple[int, int]], location_id: int | None = None, profile_routing: bool = False):
     """Reserve every line at one eligible location, or reserve none."""
     if not delivery_pin and location_id is None:
         raise ValueError("A verified delivery PIN or staff-selected stock location is required before reserving order stock")
@@ -30,6 +30,25 @@ def reserve_order_stock(conn, order_id: int, delivery_pin: str | None, lines: li
                 "SELECT id FROM stock_locations WHERE id=%s AND is_active=TRUE AND is_fulfillable=TRUE FOR UPDATE",
                 (location_id,),
             ).fetchall()
+    elif profile_routing:
+        locations = conn.execute(
+            "SELECT sl.id FROM stock_locations sl "
+            "LEFT JOIN stock_location_profiles p ON p.location_id=sl.id "
+            "WHERE sl.is_active=TRUE AND sl.is_fulfillable=TRUE "
+            "AND COALESCE((p.profile_data->>'storefront_available')::boolean, TRUE)=TRUE "
+            "AND COALESCE((p.profile_data->>'dispatches_stock')::boolean, TRUE)=TRUE "
+            "AND COALESCE(p.profile_data->'service_pin_codes', "
+            "CASE WHEN sl.pin_code IS NULL THEN '[]'::jsonb ELSE jsonb_build_array(sl.pin_code) END) "
+            "@> jsonb_build_array(%s::text) "
+            "AND (COALESCE(jsonb_array_length(p.profile_data->'operating_days'),0)=0 "
+            "OR p.profile_data->'operating_days' ? lower(to_char(now() AT TIME ZONE 'Asia/Kolkata','Dy'))) "
+            "AND (p.profile_data->>'opening_time' IS NULL OR "
+            "to_char(now() AT TIME ZONE 'Asia/Kolkata','HH24:MI') >= p.profile_data->>'opening_time') "
+            "AND (p.profile_data->>'closing_time' IS NULL OR "
+            "to_char(now() AT TIME ZONE 'Asia/Kolkata','HH24:MI') <= p.profile_data->>'closing_time') "
+            "ORDER BY COALESCE((p.profile_data->>'routing_priority')::integer,100), sl.id FOR UPDATE OF sl",
+            (delivery_pin,),
+        ).fetchall()
     else:
         locations = conn.execute(
             "SELECT id FROM stock_locations WHERE is_active=TRUE AND is_fulfillable=TRUE AND pin_code=%s ORDER BY id FOR UPDATE",
@@ -37,6 +56,8 @@ def reserve_order_stock(conn, order_id: int, delivery_pin: str | None, lines: li
         ).fetchall()
     if location_id is not None and not locations:
         raise ValueError("Selected stock location is inactive or does not serve the delivery PIN")
+    if profile_routing and not locations:
+        raise ValueError("No active fulfilment facility serves this delivery PIN during its configured operating hours")
     for location in locations:
         balances = conn.execute(
             "SELECT variant_id, on_hand, reserved FROM inventory_balances WHERE location_id=%s AND variant_id=ANY(%s) ORDER BY variant_id FOR UPDATE",

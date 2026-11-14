@@ -14,6 +14,7 @@ from app.services.fulfilment_dispatch import (
     dispatch_shipment,
     order_has_reservation,
 )
+from app.services.order_inventory import order_reservation_locations
 
 
 
@@ -115,9 +116,21 @@ def check_serviceability(pin_code: str):
     try:
         with _connect() as conn:
             locations = conn.execute(
-                "SELECT id, name, location_type, pin_code, region_code, city, district, state "
-                "FROM stock_locations WHERE is_active=TRUE AND is_fulfillable=TRUE "
-                "AND pin_code=%s ORDER BY name",
+                "SELECT sl.id, sl.name, sl.location_type, sl.pin_code, sl.region_code, sl.city, sl.district, sl.state "
+                "FROM stock_locations sl LEFT JOIN stock_location_profiles p ON p.location_id=sl.id "
+                "WHERE sl.is_active=TRUE AND sl.is_fulfillable=TRUE "
+                "AND COALESCE((p.profile_data->>'storefront_available')::boolean, TRUE)=TRUE "
+            "AND COALESCE((p.profile_data->>'dispatches_stock')::boolean, TRUE)=TRUE "
+                "AND COALESCE(p.profile_data->'service_pin_codes', "
+                "CASE WHEN sl.pin_code IS NULL THEN '[]'::jsonb ELSE jsonb_build_array(sl.pin_code) END) "
+                "@> jsonb_build_array(%s::text) "
+                "AND (COALESCE(jsonb_array_length(p.profile_data->'operating_days'),0)=0 "
+                "OR p.profile_data->'operating_days' ? lower(to_char(now() AT TIME ZONE 'Asia/Kolkata','Dy'))) "
+                "AND (p.profile_data->>'opening_time' IS NULL OR "
+                "to_char(now() AT TIME ZONE 'Asia/Kolkata','HH24:MI') >= p.profile_data->>'opening_time') "
+                "AND (p.profile_data->>'closing_time' IS NULL OR "
+                "to_char(now() AT TIME ZONE 'Asia/Kolkata','HH24:MI') <= p.profile_data->>'closing_time') "
+                "ORDER BY COALESCE((p.profile_data->>'routing_priority')::integer,100), sl.id",
                 (pin_code,),
             ).fetchall()
         return {
@@ -154,6 +167,7 @@ def list_shipments(
                 "SELECT d.id, d.shipment_reference, d.order_id, o.order_number, o.status AS order_status, "
                 "d.delivery_pin, d.recipient_name, d.recipient_phone, d.address, d.location_id, d.status, "
                 "d.tracking_reference, d.assigned_to, d.delivery_notes, d.created_at, d.updated_at, "
+                "sl.name AS fulfilment_location_name, "
                 "COALESCE((SELECT json_agg(json_build_object("
                 "'variant_id',ol.variant_id,'sku',v.sku,'product_name',p.name,"
                 "'ordered_quantity',ol.quantity,'dispatched_quantity',"
@@ -166,7 +180,8 @@ def list_shipments(
                 "AND m.movement_type='sale'),0),0)) ORDER BY ol.id) "
                 "FROM order_lines ol JOIN product_variants v ON v.id=ol.variant_id "
                 "JOIN products p ON p.id=v.product_id WHERE ol.order_id=o.id), '[]'::json) AS order_lines "
-                "FROM deliveries d JOIN orders o ON o.id=d.order_id" +
+                "FROM deliveries d JOIN orders o ON o.id=d.order_id "
+                "LEFT JOIN stock_locations sl ON sl.id=d.location_id" +
                 where + " ORDER BY d.created_at DESC LIMIT %s OFFSET %s", (*params, limit, offset)
             ).fetchall()
             total = conn.execute("SELECT count(*) AS total FROM deliveries d JOIN orders o ON o.id=d.order_id" + where, params).fetchone()["total"]
@@ -187,6 +202,12 @@ def create_shipment(payload: DeliveryCreate):
                     raise HTTPException(status_code=409, detail="Cannot create a shipment for a cancelled or delivered order")
                 if order["delivery_pin"] and order["delivery_pin"].strip() != payload.delivery_pin:
                     raise HTTPException(status_code=422, detail="Shipment delivery PIN must match the order delivery PIN")
+                reservation_locations = order_reservation_locations(conn, payload.order_id)
+                if len(reservation_locations) != 1:
+                    raise HTTPException(status_code=409, detail="The order must have one complete warehouse reservation before a shipment can be created")
+                reserved_location_id = reservation_locations[0]
+                if payload.location_id is not None and payload.location_id != reserved_location_id:
+                    raise HTTPException(status_code=409, detail="Shipment origin must match the warehouse that reserved the order")
                 existing = conn.execute("SELECT id FROM deliveries WHERE order_id=%s AND status NOT IN ('cancelled','returned','failed')", (payload.order_id,)).fetchone()
                 if existing:
                     raise HTTPException(status_code=409, detail="An active shipment already exists for this order")
@@ -194,7 +215,7 @@ def create_shipment(payload: DeliveryCreate):
                 row = conn.execute(
                     "INSERT INTO deliveries (shipment_reference, order_id, delivery_pin, recipient_name, recipient_phone, address, location_id, status, delivery_notes) "
                     "VALUES (%s,%s,%s,%s,%s,%s,%s,'pending',%s) RETURNING id, shipment_reference, order_id, delivery_pin, recipient_name, recipient_phone, address, location_id, status, delivery_notes, created_at, updated_at",
-                    (ref, payload.order_id, payload.delivery_pin, payload.recipient_name, payload.recipient_phone, payload.address, payload.location_id, payload.delivery_notes),
+                    (ref, payload.order_id, payload.delivery_pin, payload.recipient_name, payload.recipient_phone, payload.address, reserved_location_id, payload.delivery_notes),
                 ).fetchone()
         return row
     except HTTPException:
