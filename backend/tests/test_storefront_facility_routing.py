@@ -27,7 +27,7 @@ class _Connection:
 
     def execute(self, query, params):
         self.calls.append((query, params))
-        if "FROM stock_locations sl" in query:
+        if "FROM stock_locations sl" in query or "FROM stock_locations WHERE" in query:
             return _Result(rows=self.location_rows)
         if "FROM inventory_balances" in query:
             return _Result(rows=self.balance_rows_by_location.get(params[0], []))
