@@ -290,6 +290,7 @@ def create_order(payload: OrderCreate, request: Request):
                         conn, order["id"], payload.delivery_pin,
                         [(line.variant_id, line.quantity) for line in payload.lines],
                         location_id=payload.location_id,
+                        profile_routing=payload.channel == "website",
                     )
                 except ValueError as exc:
                     raise HTTPException(status_code=409, detail=str(exc)) from exc
