@@ -77,7 +77,7 @@ export default function InventoryWorkspace({ onBack }) {
     if (!internalFacilityId) { setInternalLocations([]); return; }
     apiRequest("/inventory/internal-locations?facility_id=" + internalFacilityId)
       .then(result => setInternalLocations(result.items || []))
-      .catch(e => setError(e.message || "Unable to load warehouse internal locations."));
+      .catch(e => setError(e.message || "Unable to load warehouse storage locations."));
   }, [internalFacilityId]);
   useEffect(() => {
     if (activeSection !== "returns") return;
@@ -111,8 +111,8 @@ export default function InventoryWorkspace({ onBack }) {
       setInternalLocationEditId(null);
       const result = await apiRequest("/inventory/internal-locations?facility_id=" + internalFacilityId);
       setInternalLocations(result.items || []);
-      setMessage(internalLocationEditId ? "Warehouse internal location updated." : "Warehouse internal location created.");
-    } catch (e) { setError(e.message || "Unable to save warehouse internal location."); }
+      setMessage(internalLocationEditId ? "Storage location updated." : "Storage location created.");
+    } catch (e) { setError(e.message || "Unable to save warehouse storage location."); }
     finally { setBusy(false); }
   }
 
@@ -390,17 +390,17 @@ export default function InventoryWorkspace({ onBack }) {
       {[["overview","Overview"],["locations","Locations"],["operations","Stock operations"],["approvals","Approvals"],["stock","Stock & valuation"],["returns","Returns & quarantine"],["policy","Control policy"]].map(([key,label])=><button key={key} type="button" className={activeSection===key?"active":""} aria-pressed={activeSection===key} onClick={()=>setActiveSection(key)}>{label}</button>)}
     </nav>
     {activeSection === "locations" && <div className="inventory-section"><form className="sb-form" onSubmit={createLocation}>
-      <h2>Add stock location</h2>
+      <h2>Create warehouse or store</h2>
       <div className="sb-form-grid">
         <label>Location name<input required maxLength="160" value={locationForm.name} onChange={e=>setLocationForm(v=>({...v,name:e.target.value}))}/></label>
         <label>Type<select value={locationForm.location_type} onChange={e=>setLocationForm(v=>({...v,location_type:e.target.value}))}><option value="warehouse">Warehouse</option><option value="store">Store</option><option value="dark_store">Dark store</option></select></label>
         <label>PIN code (optional)<input inputMode="numeric" pattern="[0-9]{6}" maxLength="6" value={locationForm.pin_code} onChange={e=>setLocationForm(v=>({...v,pin_code:e.target.value}))}/></label>
         <label className="sb-span-all"><input type="checkbox" checked={locationForm.is_fulfillable} onChange={e=>setLocationForm(v=>({...v,is_fulfillable:e.target.checked}))}/> Eligible for order reservation and normal fulfilment</label>
       </div>
-      <button className="sb-primary" disabled={busy} type="submit">{busy ? "Saving…" : "Create location"}</button>
+      <button className="sb-primary" disabled={busy} type="submit">{busy ? "Saving…" : locationForm.location_type === "warehouse" ? "Create warehouse" : locationForm.location_type === "dark_store" ? "Create dark store" : "Create store"}</button>
     </form>
     <div className="sb-data-card">
-      <h2>Location ownership ({locations.length})</h2>
+      <h2>Warehouse / store ownership ({locations.length})</h2>
       <p className="sb-muted">Every stock location used by controlled Purchase or Inventory workflows must be assigned to its legal establishment. Existing unassigned locations are blocked from those operations until assigned.</p>
       {locations.length ? locations.map(location => <div className="sb-form-grid" key={location.id}>
         <label>{location.name} · {location.location_type} · {location.is_fulfillable ? "Fulfilment stock" : "Quarantine / repair holding"}
@@ -413,20 +413,20 @@ export default function InventoryWorkspace({ onBack }) {
       </div>) : <p className="sb-empty">No stock locations yet.</p>}
     </div>
       <div className="sb-data-card">
-        <h2>Warehouse internal hierarchy</h2>
-        <p className="sb-muted">Create receiving, storage, rack, shelf, bin, picking, packing, dispatch, quarantine and repair addresses inside a facility. These addresses organise physical handling; stock balances remain facility-level until a separately approved bin-ledger design exists.</p>
+        <h2>Warehouse storage locations</h2>
+        <p className="sb-muted">Create storage locations inside the selected warehouse, such as receiving areas, zones, racks, shelves, bins, picking, packing, dispatch, quarantine and repair areas. These organise physical handling; stock balances remain warehouse-level until a separately approved bin-ledger design exists.</p>
         <div className="sb-form-grid">
-          <label>Facility<select value={internalFacilityId} onChange={e=>{setInternalFacilityId(e.target.value);setInternalLocationEditId(null);setInternalLocationForm({parent_id:"",code:"",name:"",location_type:"receiving"});}}><option value="">Choose facility</option>{locations.map(location=><option key={location.id} value={location.id}>{location.name}</option>)}</select></label>
+          <label>Warehouse<select value={internalFacilityId} onChange={e=>{setInternalFacilityId(e.target.value);setInternalLocationEditId(null);setInternalLocationForm({parent_id:"",code:"",name:"",location_type:"receiving"});}}><option value="">Choose facility</option>{locations.map(location=><option key={location.id} value={location.id}>{location.name}</option>)}</select></label>
         </div>
         <form className="sb-form" onSubmit={saveInternalLocation}>
-          <h3>{internalLocationEditId ? "Edit internal location" : "Add internal location"}</h3>
+          <h3>{internalLocationEditId ? "Edit storage location" : "Create storage location"}</h3>
           <div className="sb-form-grid">
-            <label>Parent location<select value={internalLocationForm.parent_id} onChange={e=>setInternalLocationForm(v=>({...v,parent_id:e.target.value}))}><option value="">No parent (top level)</option>{internalLocations.filter(item=>String(item.id)!==String(internalLocationEditId)).map(item=><option key={item.id} value={item.id}>{item.code} · {item.name} ({item.location_type})</option>)}</select></label>
+            <label>Parent storage location<select value={internalLocationForm.parent_id} onChange={e=>setInternalLocationForm(v=>({...v,parent_id:e.target.value}))}><option value="">No parent (top level)</option>{internalLocations.filter(item=>String(item.id)!==String(internalLocationEditId)).map(item=><option key={item.id} value={item.id}>{item.code} · {item.name} ({item.location_type})</option>)}</select></label>
             <label>Location code<input required maxLength="40" value={internalLocationForm.code} onChange={e=>setInternalLocationForm(v=>({...v,code:e.target.value.toUpperCase()}))}/></label>
             <label>Location name<input required maxLength="120" value={internalLocationForm.name} onChange={e=>setInternalLocationForm(v=>({...v,name:e.target.value}))}/></label>
             <label>Location type<select value={internalLocationForm.location_type} onChange={e=>setInternalLocationForm(v=>({...v,location_type:e.target.value}))}>{["receiving","storage","rack","shelf","bin","picking","packing","dispatch","quarantine","repair"].map(type=><option key={type} value={type}>{type.replaceAll("_"," ").replace(/\b\w/g,c=>c.toUpperCase())}</option>)}</select></label>
           </div>
-          <button className="sb-primary" type="submit" disabled={busy || !internalFacilityId}>{busy ? "Saving…" : internalLocationEditId ? "Save internal location" : "Create internal location"}</button>
+          <button className="sb-primary" type="submit" disabled={busy || !internalFacilityId}>{busy ? "Saving…" : internalLocationEditId ? "Save storage location" : "Create storage location"}</button>
           {internalLocationEditId && <button className="sb-secondary" type="button" onClick={()=>{setInternalLocationEditId(null);setInternalLocationForm({parent_id:"",code:"",name:"",location_type:"receiving"});}}>Cancel edit</button>}
         </form>
         {internalLocations.length ? <div className="sb-table-wrap"><table><thead><tr><th>Code</th><th>Location</th><th>Type</th><th>Parent</th><th>Action</th></tr></thead><tbody>{internalLocations.map(item=><tr key={item.id}><td>{item.code}</td><td>{item.name}</td><td>{item.location_type}</td><td>{internalLocations.find(parent=>parent.id===item.parent_id)?.name || "—"}</td><td><button type="button" onClick={()=>editInternalLocation(item)}>Edit</button></td></tr>)}</tbody></table></div> : <p className="sb-empty">No internal locations have been created for this facility.</p>}
