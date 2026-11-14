@@ -78,13 +78,13 @@ export default function OrdersWorkspace({ onBack }) {
     <div className="sb-orders-count">{total} matching orders</div>
     {loading ? <p className="sb-empty">Loading orders…</p> : orders.length ? <div className="sb-orders-list">{orders.map(order=><article className={`sb-order-card ${selected===order.id?"is-selected":""}`} key={order.id}>
       <button className="sb-order-open" type="button" onClick={()=>openOrder(order)}>
-        <span><strong>{order.order_number}</strong><small>{order.customer_name} · {label(order.channel)} · {new Date(order.created_at).toLocaleString("en-IN")}</small></span>
+        <span><strong>{order.order_number}</strong><small>{order.customer_name} · {label(order.channel)} · {new Date(order.created_at).toLocaleString("en-IN")}{order.inventory_location_name ? " · Fulfilment: " + order.inventory_location_name : ""}</small></span>
         <span className="sb-order-total">{money(order.total)}<small>{order.line_count} line(s)</small></span>
         <span className={`sb-order-status status-${order.status}`}>{label(order.status)}</span>
       </button>
       <div className="sb-order-actions"><label>Update status<select aria-label={"Update status for "+order.order_number} value="" disabled={busy===order.id || !(nextStatuses[order.status]||[]).length} onChange={e=>{if(e.target.value)updateStatus(order,e.target.value)}}><option value="">{(nextStatuses[order.status]||[]).length?"Choose next status":"No further changes"}</option>{(nextStatuses[order.status]||[]).map(s=><option key={s} value={s}>{label(s)}</option>)}</select></label>{order.status === "ready_for_dispatch" && <small className="sb-muted">Dispatch is controlled by the linked Fulfilment / Delivery workflow.</small>}{order.status === "dispatched" && <small className="sb-muted">Delivery confirmation and proof of delivery are recorded in the Delivery workspace.</small>}</div>
       {selected===order.id && <div className="sb-order-detail">{detailLoading ? <p>Loading order details…</p> : detail ? <>
-        <h3>Order details</h3><p>{detail.customer_name}{detail.customer_phone?" · "+detail.customer_phone:""}{detail.delivery_pin?" · PIN "+detail.delivery_pin:""}</p>
+        <h3>Order details</h3><p>{detail.customer_name}{detail.customer_phone?" · "+detail.customer_phone:""}{detail.delivery_pin?" · PIN "+detail.delivery_pin:""}</p><p><strong>Assigned fulfilment facility:</strong> {detail.inventory_location_name || "Not assigned yet"}</p>
         <ul>{(detail.lines||[]).map(line=><li key={line.id}><span>{line.product_name} <small>({line.sku}) × {line.quantity}</small></span><strong>{money(line.line_total)}</strong></li>)}</ul>
         {detail.notes && <p>Notes: {detail.notes}</p>}
       </> : null}
