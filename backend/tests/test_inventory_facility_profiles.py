@@ -62,3 +62,8 @@ def test_facility_profile_rejects_duplicate_or_invalid_service_pins(pins):
 def test_facility_profile_rejects_opening_time_after_closing_time():
     with pytest.raises(ValidationError):
         FacilityProfileCreate.model_validate(valid_profile(opening_time="21:00", closing_time="09:00"))
+
+
+def test_facility_profile_requires_both_operating_times():
+    with pytest.raises(ValidationError):
+        FacilityProfileCreate.model_validate(valid_profile(opening_time="09:00"))
