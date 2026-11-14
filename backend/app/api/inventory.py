@@ -139,6 +139,54 @@ def _require_inventory_event_policy(conn, location_id: int, event_type: str, pay
     return policy, event_policy
 
 
+
+
+class FacilityProfileCreate(BaseModel):
+    facility_code: str = Field(min_length=2, max_length=40, pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+    address_line1: str = Field(min_length=3, max_length=200)
+    address_line2: str | None = Field(default=None, max_length=200)
+    city: str = Field(min_length=2, max_length=100)
+    district: str | None = Field(default=None, max_length=100)
+    state: str = Field(min_length=2, max_length=100)
+    country: str = Field(default="India", min_length=2, max_length=80)
+    pin_code: str = Field(pattern=r"^[0-9]{6}$")
+    manager_name: str | None = Field(default=None, max_length=120)
+    contact_phone: str | None = Field(default=None, pattern=r"^[+0-9 ()-]{7,20}$")
+    contact_email: str | None = Field(default=None, max_length=254)
+    emergency_contact: str | None = Field(default=None, max_length=120)
+    capacity: Decimal | None = Field(default=None, gt=0, max_digits=14, decimal_places=3)
+    capacity_unit: str | None = Field(default=None, max_length=30)
+    operating_days: list[str] = Field(default_factory=list)
+    opening_time: str | None = Field(default=None, pattern=r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]$")
+    closing_time: str | None = Field(default=None, pattern=r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]$")
+    receives_stock: bool = True
+    dispatches_stock: bool = True
+    gstin: str | None = Field(default=None, pattern=r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$")
+    licence_reference: str | None = Field(default=None, max_length=100)
+
+    @field_validator("facility_code")
+    @classmethod
+    def normalise_facility_code(cls, value: str) -> str:
+        return value.strip().upper()
+
+    @field_validator("address_line1", "city", "state", "country")
+    @classmethod
+    def required_profile_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("This field cannot be blank")
+        return value
+
+    @field_validator("operating_days")
+    @classmethod
+    def valid_operating_days(cls, value: list[str]) -> list[str]:
+        allowed = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
+        normalised = [day.strip().lower()[:3] for day in value]
+        if len(set(normalised)) != len(normalised) or any(day not in allowed for day in normalised):
+            raise ValueError("Operating days must be unique weekdays")
+        return normalised
+
+
 class StockLocationCreate(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     location_type: str = Field(pattern=r"^(warehouse|store|dark_store)$")
@@ -531,27 +579,38 @@ def _db_error(exc: psycopg.Error) -> HTTPException:
 
 
 @router.post("/locations", status_code=201)
-def create_location(payload: StockLocationCreate, request: Request):
+def create_location(payload: StockLocationCreate, request: Request, profile: FacilityProfileCreate | None = None):
     if (payload.establishment_id is not None or not payload.is_fulfillable) and getattr(request.state, "role", None) not in {"super_admin", "admin"}:
         raise HTTPException(status_code=403, detail="Only Super Admin/Admin can assign a stock location to a legal establishment")
     try:
         with _connect() as conn:
-            if payload.establishment_id is not None:
-                establishment = conn.execute(
-                    "SELECT id FROM hr_establishments WHERE id=%s AND is_active=TRUE FOR SHARE",
-                    (payload.establishment_id,),
+            with conn.transaction():
+                if payload.establishment_id is not None:
+                    establishment = conn.execute(
+                        "SELECT id FROM hr_establishments WHERE id=%s AND is_active=TRUE FOR SHARE",
+                        (payload.establishment_id,),
+                    ).fetchone()
+                    if establishment is None:
+                        raise HTTPException(status_code=404, detail="Active legal establishment not found")
+                row = conn.execute(
+                    "INSERT INTO stock_locations (name, location_type, pin_code, establishment_id, is_fulfillable) VALUES (%s, %s, %s, %s, %s) "
+                    "RETURNING id, name, location_type, pin_code, establishment_id, is_active, is_fulfillable, created_at",
+                    (payload.name, payload.location_type, payload.pin_code, payload.establishment_id, payload.is_fulfillable),
                 ).fetchone()
-                if establishment is None:
-                    raise HTTPException(status_code=404, detail="Active legal establishment not found")
-            row = conn.execute(
-                "INSERT INTO stock_locations (name, location_type, pin_code, establishment_id, is_fulfillable) VALUES (%s, %s, %s, %s, %s) "
-                "RETURNING id, name, location_type, pin_code, establishment_id, is_active, is_fulfillable, created_at",
-                (payload.name, payload.location_type, payload.pin_code, payload.establishment_id, payload.is_fulfillable),
-            ).fetchone()
-        return row
+                if profile is not None:
+                    conn.execute(
+                        "INSERT INTO stock_location_profiles (location_id, facility_code, profile_data) VALUES (%s,%s,%s::jsonb)",
+                        (row["id"], profile.facility_code, json.dumps(profile.model_dump(mode="json"), default=str)),
+                    )
+        return {**dict(row), "profile": profile.model_dump(mode="json") if profile else None,
+                "profile_status": "complete" if profile else "incomplete"}
+    except HTTPException:
+        raise
     except psycopg.Error as exc:
         code = getattr(exc, "sqlstate", None)
         if code == "23505":
+            if "facility_code" in str(exc).lower():
+                raise HTTPException(status_code=409, detail="A facility with this code already exists") from exc
             raise HTTPException(status_code=409, detail="A stock location with this name already exists") from exc
         raise _db_error(exc) from exc
 
@@ -593,13 +652,67 @@ def list_locations(limit: int = Query(default=100, ge=1, le=500), offset: int = 
             rows = conn.execute(
                 "SELECT l.id, l.name, l.location_type, l.pin_code, l.address_line1, l.address_line2, "
                 "l.city, l.district, l.state, l.region_code, l.establishment_id, "
-                "e.display_name AS establishment_name, l.is_active, l.is_fulfillable, l.created_at "
+                "e.display_name AS establishment_name, l.is_active, l.is_fulfillable, l.created_at, "
+                "p.facility_code, p.profile_data, CASE WHEN p.location_id IS NULL THEN 'incomplete' ELSE 'complete' END AS profile_status "
                 "FROM stock_locations l LEFT JOIN hr_establishments e ON e.id=l.establishment_id "
+                "LEFT JOIN stock_location_profiles p ON p.location_id=l.id "
                 "WHERE l.is_active = TRUE ORDER BY l.name LIMIT %s OFFSET %s",
                 (limit, offset),
             ).fetchall()
-        return {"items": rows, "limit": limit, "offset": offset}
+        items = []
+        for row in rows:
+            item = dict(row)
+            item["profile"] = item.pop("profile_data", None)
+            items.append(item)
+        return {"items": items, "limit": limit, "offset": offset}
     except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.get("/locations/{location_id}/profile")
+def get_location_profile(location_id: int):
+    try:
+        with _connect() as conn:
+            row = conn.execute(
+                "SELECT l.id,l.name,l.location_type,l.pin_code,l.establishment_id,l.is_active,l.is_fulfillable,"
+                "p.facility_code,p.profile_data FROM stock_locations l "
+                "LEFT JOIN stock_location_profiles p ON p.location_id=l.id WHERE l.id=%s",
+                (location_id,),
+            ).fetchone()
+        if row is None:
+            raise HTTPException(404, "Stock location not found")
+        result = dict(row)
+        result["profile"] = result.pop("profile_data", None)
+        result["profile_status"] = "complete" if result["facility_code"] else "incomplete"
+        return result
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.put("/locations/{location_id}/profile")
+def update_location_profile(location_id: int, profile: FacilityProfileCreate, request: Request):
+    if getattr(request.state, "role", None) not in {"super_admin", "admin"}:
+        raise HTTPException(403, "Only Super Admin/Admin can edit facility profiles")
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                exists = conn.execute("SELECT id FROM stock_locations WHERE id=%s FOR UPDATE", (location_id,)).fetchone()
+                if not exists:
+                    raise HTTPException(404, "Stock location not found")
+                row = conn.execute(
+                    "INSERT INTO stock_location_profiles(location_id,facility_code,profile_data) VALUES(%s,%s,%s::jsonb) "
+                    "ON CONFLICT(location_id) DO UPDATE SET facility_code=EXCLUDED.facility_code,profile_data=EXCLUDED.profile_data,updated_at=now() "
+                    "RETURNING location_id,facility_code,profile_data,updated_at",
+                    (location_id, profile.facility_code, json.dumps(profile.model_dump(mode="json"), default=str)),
+                ).fetchone()
+        return {**dict(row), "profile_status": "complete"}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        if getattr(exc, "sqlstate", None) == "23505":
+            raise HTTPException(409, "A facility with this code already exists") from exc
         raise _db_error(exc) from exc
 
 
