@@ -86,6 +86,7 @@ def test_serviceability_uses_profile_service_pins_and_operating_hours(monkeypatc
     assert "stock_location_profiles" in conn.query
     assert "service_pin_codes" in conn.query
     assert "storefront_available" in conn.query
+    assert "dispatches_stock" in conn.query
     assert "Asia/Kolkata" in conn.query
     assert conn.params == ("800002",)
 
