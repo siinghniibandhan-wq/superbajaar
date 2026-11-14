@@ -41,3 +41,30 @@ Use conditional labels for warehouse/store/dark-store where appropriate. Keep th
 - Run focused tests, the existing frontend unit/contract tests, frontend production build and relevant backend regression tests.
 - Add the migration to `backend/schema_required.txt` in the same PR. Do not alter the schema runner or its automation.
 - Do not apply production migrations or merge to `main` without explicit user approval.
+
+## Storefront, warehouse and fulfilment relationship
+
+### Existing verified behavior
+- Website checkout requires a verified six-digit delivery PIN and does not accept a customer-supplied stock location ID.
+- The backend selects an active `stock_locations` record where `pin_code` matches and `is_fulfillable=TRUE`.
+- The current reservation helper evaluates eligible locations in ascending ID order and reserves the complete order at the first single location that has every requested variant and sufficient available quantity.
+- The current selector does not use warehouse address/distance, facility type, operating hours, capacity, or an explicit priority. It does not split one order across multiple facilities.
+- The selected location ID is retained in inventory reservation movements; fulfilment picking/dispatch consumes those location-specific reservations. Thus the selected stock location is the operational fulfilment origin.
+
+### Required behavior for the completed warehouse profile
+- A facility must be explicitly enabled for storefront fulfilment; retain the existing `is_fulfillable` contract as the compatibility switch.
+- Delivery PIN coverage must be configurable as one or more service PIN codes per facility, rather than assuming a single warehouse PIN is sufficient. Keep the existing `stock_locations.pin_code` value as the legacy/default service PIN during rollout.
+- Add a clear facility routing priority and optional operational availability/capacity controls. Do not silently treat storage capacity as live available capacity unless inventory reservations/operations maintain that figure.
+- At checkout, the backend—not the browser—must select the fulfilment facility using the verified delivery PIN, active status, fulfilment eligibility, operating availability, stock availability for every order line, and configured priority. Address/distance ranking can be a later phase once reliable customer delivery coordinates and geocoding exist; do not invent distances from PIN codes.
+- Preserve the current safe all-lines-at-one-facility rule in the first implementation. Do not split orders across warehouses or stores in this change.
+- Persist the selected facility through the existing inventory reservation and fulfilment records. Show the assigned fulfilment facility in admin order/fulfilment views so staff can identify the dispatch origin.
+- If no single eligible facility can fulfil the order, return a clear checkout message; never reserve partial stock or silently choose a non-fulfillable location.
+- POS continues to use the staff-selected stock location. Website checkout continues to select server-side. Manual order rules remain unchanged.
+
+### Acceptance criteria for storefront integration
+- A facility not marked fulfilment-eligible cannot receive website reservations.
+- A facility serving the customer's verified delivery PIN can receive a reservation only if it has all requested variants and sufficient available quantity.
+- Facility priority/availability affects server-side selection deterministically; the browser cannot override the selected facility.
+- Existing legacy facilities and existing orders/reservations remain valid.
+- The assigned facility is visible to fulfilment staff and the same location is used for pick/dispatch.
+- No multi-facility split allocation, distance-based routing, storefront redesign, or change to POS selection is included in this phase.
