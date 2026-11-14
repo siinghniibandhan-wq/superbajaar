@@ -30,7 +30,7 @@ export default function InventoryWorkspace({ onBack }) {
   const [countForm, setCountForm] = useState({ variant_id: "", location_id: "", counted_quantity: "", unit_cost: "", batch_code: "", expiry_date: "", allocation_method: "fifo", note: "" });
   const [transferForm, setTransferForm] = useState({ variant_id: "", source_location_id: "", destination_location_id: "", quantity: "", note: "" });
   const [locationEditId, setLocationEditId] = useState(null);
-  const [locationForm, setLocationForm] = useState({ name: "", location_type: "warehouse", pin_code: "", is_fulfillable: true, facility_code: "", address_line1: "", address_line2: "", city: "", district: "", state: "", country: "India", manager_name: "", contact_phone: "", contact_email: "", emergency_contact: "", capacity: "", capacity_unit: "", operating_days: [], opening_time: "", closing_time: "", receives_stock: true, dispatches_stock: true, gstin: "", licence_reference: "" });
+  const [locationForm, setLocationForm] = useState({ name: "", location_type: "warehouse", pin_code: "", is_fulfillable: true, facility_code: "", address_line1: "", address_line2: "", city: "", district: "", state: "", country: "India", service_pin_codes: "", routing_priority: "100", storefront_available: true, manager_name: "", contact_phone: "", contact_email: "", emergency_contact: "", capacity: "", capacity_unit: "", operating_days: [], opening_time: "", closing_time: "", receives_stock: true, dispatches_stock: true, gstin: "", licence_reference: "" });
   const [internalFacilityId, setInternalFacilityId] = useState("");
   const [internalLocations, setInternalLocations] = useState([]);
   const [internalLocationForm, setInternalLocationForm] = useState({ parent_id: "", code: "", name: "", location_type: "receiving" });
@@ -273,6 +273,9 @@ export default function InventoryWorkspace({ onBack }) {
     try {
       const profile = {
         facility_code: locationForm.facility_code.trim().toUpperCase(),
+        service_pin_codes: locationForm.service_pin_codes.split(/[ ,;\\n]+/).map(pin => pin.trim()).filter(Boolean),
+        routing_priority: Number(locationForm.routing_priority || 100),
+        storefront_available: locationForm.storefront_available,
         address_line1: locationForm.address_line1.trim(), address_line2: locationForm.address_line2.trim() || null,
         city: locationForm.city.trim(), district: locationForm.district.trim() || null,
         state: locationForm.state.trim(), country: locationForm.country.trim(), pin_code: locationForm.pin_code,
@@ -296,7 +299,7 @@ export default function InventoryWorkspace({ onBack }) {
         })});
       }
       setLocationEditId(null);
-      setLocationForm({ name: "", location_type: "warehouse", pin_code: "", is_fulfillable: true, facility_code: "", address_line1: "", address_line2: "", city: "", district: "", state: "", country: "India", manager_name: "", contact_phone: "", contact_email: "", emergency_contact: "", capacity: "", capacity_unit: "", operating_days: [], opening_time: "", closing_time: "", receives_stock: true, dispatches_stock: true, gstin: "", licence_reference: "" });
+      setLocationForm({ name: "", location_type: "warehouse", pin_code: "", is_fulfillable: true, facility_code: "", address_line1: "", address_line2: "", city: "", district: "", state: "", country: "India", service_pin_codes: "", routing_priority: "100", storefront_available: true, manager_name: "", contact_phone: "", contact_email: "", emergency_contact: "", capacity: "", capacity_unit: "", operating_days: [], opening_time: "", closing_time: "", receives_stock: true, dispatches_stock: true, gstin: "", licence_reference: "" });
       setMessage(locationEditId ? "Facility profile updated." : "Warehouse / store profile created."); await loadBase();
     } catch (e) { setError(e.message || "Unable to save facility profile."); }
     finally { setBusy(false); }
@@ -308,6 +311,9 @@ export default function InventoryWorkspace({ onBack }) {
     setLocationForm({
       name: location.name, location_type: location.location_type, pin_code: profile.pin_code || location.pin_code || "",
       is_fulfillable: location.is_fulfillable !== false, facility_code: location.facility_code || "",
+      service_pin_codes: (profile.service_pin_codes || [profile.pin_code || location.pin_code].filter(Boolean)).join(", "),
+      routing_priority: String(profile.routing_priority ?? 100),
+      storefront_available: profile.storefront_available !== false,
       address_line1: profile.address_line1 || location.address_line1 || "", address_line2: profile.address_line2 || location.address_line2 || "",
       city: profile.city || location.city || "", district: profile.district || location.district || "",
       state: profile.state || location.state || "", country: profile.country || "India",
@@ -443,7 +449,12 @@ export default function InventoryWorkspace({ onBack }) {
         <label>District<input maxLength="100" value={locationForm.district} onChange={e=>setLocationForm(v=>({...v,district:e.target.value}))}/></label>
         <label>State<input required maxLength="100" value={locationForm.state} onChange={e=>setLocationForm(v=>({...v,state:e.target.value}))}/></label>
         <label>Country<input required maxLength="80" value={locationForm.country} onChange={e=>setLocationForm(v=>({...v,country:e.target.value}))}/></label>
-        <label>PIN code<input required inputMode="numeric" pattern="[0-9]{6}" maxLength="6" value={locationForm.pin_code} onChange={e=>setLocationForm(v=>({...v,pin_code:e.target.value}))}/></label>
+        <label>Primary facility PIN<input required inputMode="numeric" pattern="[0-9]{6}" maxLength="6" value={locationForm.pin_code} onChange={e=>setLocationForm(v=>({...v,pin_code:e.target.value}))}/></label>
+        <h3 className="sb-span-all">Storefront serviceability & routing</h3>
+        <label className="sb-span-all">Service PIN codes (comma or space separated)<textarea rows="2" placeholder="800001, 800002, 800003" value={locationForm.service_pin_codes} onChange={e=>setLocationForm(v=>({...v,service_pin_codes:e.target.value}))}/></label>
+        <label>Routing priority (lower runs first)<input required type="number" min="0" max="100000" step="1" value={locationForm.routing_priority} onChange={e=>setLocationForm(v=>({...v,routing_priority:e.target.value}))}/></label>
+        <label><input type="checkbox" checked={locationForm.storefront_available} onChange={e=>setLocationForm(v=>({...v,storefront_available:e.target.checked}))}/> Available for storefront orders</label>
+        <p className="sb-muted sb-span-all">Existing facility PIN is included automatically when no service PIN list is entered. Routing checks Indian local operating hours, service PIN coverage and complete stock availability.</p>
         <h3 className="sb-span-all">Contact (optional)</h3>
         <label>Manager / contact name<input maxLength="120" value={locationForm.manager_name} onChange={e=>setLocationForm(v=>({...v,manager_name:e.target.value}))}/></label>
         <label>Contact phone<input maxLength="20" value={locationForm.contact_phone} onChange={e=>setLocationForm(v=>({...v,contact_phone:e.target.value}))}/></label>
