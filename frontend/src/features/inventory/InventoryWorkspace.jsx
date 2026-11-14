@@ -29,6 +29,7 @@ export default function InventoryWorkspace({ onBack }) {
   const [issueForm, setIssueForm] = useState({ variant_id: "", location_id: "", quantity: "", note: "", reason_type: "issue", allocation_method: "fifo" });
   const [countForm, setCountForm] = useState({ variant_id: "", location_id: "", counted_quantity: "", unit_cost: "", batch_code: "", expiry_date: "", allocation_method: "fifo", note: "" });
   const [transferForm, setTransferForm] = useState({ variant_id: "", source_location_id: "", destination_location_id: "", quantity: "", note: "" });
+  const [locationEditId, setLocationEditId] = useState(null);
   const [locationForm, setLocationForm] = useState({ name: "", location_type: "warehouse", pin_code: "", is_fulfillable: true });
   const [internalFacilityId, setInternalFacilityId] = useState("");
   const [internalLocations, setInternalLocations] = useState([]);
@@ -275,9 +276,29 @@ export default function InventoryWorkspace({ onBack }) {
         is_fulfillable: locationForm.is_fulfillable,
       })});
       setLocationForm({ name: "", location_type: "warehouse", pin_code: "", is_fulfillable: true });
-      setMessage("Stock location created."); await loadBase();
+      setMessage(locationEditId ? "Facility profile updated." : "Warehouse / store profile created."); await loadBase();
     } catch (e) { setError(e.message || "Unable to create stock location."); }
     finally { setBusy(false); }
+  }
+
+
+  function editFacilityProfile(location) {
+    const profile = location.profile || {};
+    setLocationEditId(location.id);
+    setLocationForm({
+      name: location.name, location_type: location.location_type, pin_code: profile.pin_code || location.pin_code || "",
+      is_fulfillable: location.is_fulfillable !== false, facility_code: location.facility_code || "",
+      address_line1: profile.address_line1 || location.address_line1 || "", address_line2: profile.address_line2 || location.address_line2 || "",
+      city: profile.city || location.city || "", district: profile.district || location.district || "",
+      state: profile.state || location.state || "", country: profile.country || "India",
+      manager_name: profile.manager_name || "", contact_phone: profile.contact_phone || "",
+      contact_email: profile.contact_email || "", emergency_contact: profile.emergency_contact || "",
+      capacity: profile.capacity ?? "", capacity_unit: profile.capacity_unit || "",
+      operating_days: profile.operating_days || [], opening_time: profile.opening_time || "", closing_time: profile.closing_time || "",
+      receives_stock: profile.receives_stock !== false, dispatches_stock: profile.dispatches_stock !== false,
+      gstin: profile.gstin || "", licence_reference: profile.licence_reference || "",
+    });
+    setError(""); setMessage("");
   }
 
   async function submit(event) {
@@ -390,19 +411,20 @@ export default function InventoryWorkspace({ onBack }) {
       {[["overview","Overview"],["locations","Locations"],["operations","Stock operations"],["approvals","Approvals"],["stock","Stock & valuation"],["returns","Returns & quarantine"],["policy","Control policy"]].map(([key,label])=><button key={key} type="button" className={activeSection===key?"active":""} aria-pressed={activeSection===key} onClick={()=>setActiveSection(key)}>{label}</button>)}
     </nav>
     {activeSection === "locations" && <div className="inventory-section"><form className="sb-form" onSubmit={createLocation}>
-      <h2>Create warehouse or store</h2>
+      <h2>{locationEditId ? "Complete / edit facility profile" : "Create warehouse or store"}</h2>
       <div className="sb-form-grid">
         <label>Location name<input required maxLength="160" value={locationForm.name} onChange={e=>setLocationForm(v=>({...v,name:e.target.value}))}/></label>
         <label>Type<select value={locationForm.location_type} onChange={e=>setLocationForm(v=>({...v,location_type:e.target.value}))}><option value="warehouse">Warehouse</option><option value="store">Store</option><option value="dark_store">Dark store</option></select></label>
         <label>PIN code (optional)<input inputMode="numeric" pattern="[0-9]{6}" maxLength="6" value={locationForm.pin_code} onChange={e=>setLocationForm(v=>({...v,pin_code:e.target.value}))}/></label>
         <label className="sb-span-all"><input type="checkbox" checked={locationForm.is_fulfillable} onChange={e=>setLocationForm(v=>({...v,is_fulfillable:e.target.checked}))}/> Eligible for order reservation and normal fulfilment</label>
       </div>
-      <button className="sb-primary" disabled={busy} type="submit">{busy ? "Saving…" : locationForm.location_type === "warehouse" ? "Create warehouse" : locationForm.location_type === "dark_store" ? "Create dark store" : "Create store"}</button>
+      <button className="sb-primary" disabled={busy} type="submit">{busy ? "Saving…" : locationEditId ? "Save facility profile" : locationForm.location_type === "warehouse" ? "Create warehouse" : locationForm.location_type === "dark_store" ? "Create dark store" : "Create store"}</button>
     </form>
     <div className="sb-data-card">
       <h2>Warehouse / store ownership ({locations.length})</h2>
       <p className="sb-muted">Every stock location used by controlled Purchase or Inventory workflows must be assigned to its legal establishment. Existing unassigned locations are blocked from those operations until assigned.</p>
       {locations.length ? locations.map(location => <div className="sb-form-grid" key={location.id}>
+        <div><strong>{location.name}</strong><p className="sb-muted">{location.location_type} · {location.profile_status === "complete" ? "Profile complete" : "Profile incomplete"} · Code: {location.facility_code || "Not assigned"}</p><p className="sb-muted">{location.profile?.address_line1 || location.address_line1 || "Address not recorded"}{location.profile?.city || location.city ? ", " + (location.profile?.city || location.city) : ""}{location.profile?.state || location.state ? ", " + (location.profile?.state || location.state) : ""}</p><button className="sb-secondary" type="button" onClick={()=>editFacilityProfile(location)}>Edit / complete profile</button></div>
         <label>{location.name} · {location.location_type} · {location.is_fulfillable ? "Fulfilment stock" : "Quarantine / repair holding"}
           <select value={locationAssignments[location.id] || ""} onChange={e=>setLocationAssignments(old=>({...old,[location.id]:e.target.value}))}>
             <option value="">Not assigned</option>
