@@ -9,7 +9,7 @@ from typing import Any
 import psycopg
 from fastapi import APIRouter, HTTPException, Query, Request
 from psycopg.rows import dict_row
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from datetime import date
 
 from app.services.inventory_costing import allocate_cost_layers, create_cost_layer, transfer_cost_layers, money
@@ -192,13 +192,13 @@ class FacilityProfileCreate(BaseModel):
             raise ValueError("Service PIN codes must be unique")
         return normalised
 
-    @field_validator("opening_time", "closing_time")
-    @classmethod
-    def paired_operating_times(cls, value, info):
-        other = info.data.get("closing_time" if info.field_name == "opening_time" else "opening_time")
-        if value is not None and other is not None and value >= other:
+    @model_validator(mode="after")
+    def valid_operating_hours(self):
+        if (self.opening_time is None) != (self.closing_time is None):
+            raise ValueError("Opening and closing times must be provided together")
+        if self.opening_time is not None and self.opening_time >= self.closing_time:
             raise ValueError("Opening time must be earlier than closing time")
-        return value
+        return self
 
     @field_validator("operating_days")
     @classmethod
