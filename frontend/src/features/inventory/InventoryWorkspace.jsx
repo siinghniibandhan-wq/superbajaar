@@ -30,7 +30,6 @@ export default function InventoryWorkspace({ onBack }) {
   const [countForm, setCountForm] = useState({ variant_id: "", location_id: "", counted_quantity: "", unit_cost: "", batch_code: "", expiry_date: "", allocation_method: "fifo", note: "" });
   const [transferForm, setTransferForm] = useState({ variant_id: "", source_location_id: "", destination_location_id: "", quantity: "", note: "" });
   const [locationEditId, setLocationEditId] = useState(null);
-  const [locationEditId, setLocationEditId] = useState(null);
   const [locationForm, setLocationForm] = useState({ name: "", location_type: "warehouse", pin_code: "", is_fulfillable: true, facility_code: "", address_line1: "", address_line2: "", city: "", district: "", state: "", country: "India", manager_name: "", contact_phone: "", contact_email: "", emergency_contact: "", capacity: "", capacity_unit: "", operating_days: [], opening_time: "", closing_time: "", receives_stock: true, dispatches_stock: true, gstin: "", licence_reference: "" });
   const [internalFacilityId, setInternalFacilityId] = useState("");
   const [internalLocations, setInternalLocations] = useState([]);
@@ -433,7 +432,6 @@ export default function InventoryWorkspace({ onBack }) {
     </nav>
     {activeSection === "locations" && <div className="inventory-section"><form className="sb-form" onSubmit={createLocation}>
       <h2>{locationEditId ? "Complete / edit facility profile" : "Create warehouse or store"}</h2>
-      <h2>{locationEditId ? "Complete / edit facility profile" : "Create warehouse or store"}</h2>
       <div className="sb-form-grid">
         <label>Facility name<input required maxLength="160" value={locationForm.name} onChange={e=>setLocationForm(v=>({...v,name:e.target.value}))}/></label>
         <label>Facility type<select value={locationForm.location_type} onChange={e=>setLocationForm(v=>({...v,location_type:e.target.value}))}><option value="warehouse">Warehouse</option><option value="store">Store</option><option value="dark_store">Dark store</option></select></label>
@@ -470,7 +468,6 @@ export default function InventoryWorkspace({ onBack }) {
       <h2>Warehouse / store ownership ({locations.length})</h2>
       <p className="sb-muted">Every stock location used by controlled Purchase or Inventory workflows must be assigned to its legal establishment. Existing unassigned locations are blocked from those operations until assigned.</p>
       {locations.length ? locations.map(location => <div className="sb-form-grid" key={location.id}>
-        <div><strong>{location.name}</strong><p className="sb-muted">{location.location_type} · {location.profile_status === "complete" ? "Profile complete" : "Profile incomplete"} · Code: {location.facility_code || "Not assigned"}</p><p className="sb-muted">{location.profile?.address_line1 || location.address_line1 || "Address not recorded"}{location.profile?.city || location.city ? ", " + (location.profile?.city || location.city) : ""}{location.profile?.state || location.state ? ", " + (location.profile?.state || location.state) : ""}</p><button className="sb-secondary" type="button" onClick={()=>editFacilityProfile(location)}>Edit / complete profile</button></div>
         <div><strong>{location.name}</strong><p className="sb-muted">{location.location_type} · {location.profile_status === "complete" ? "Profile complete" : "Profile incomplete"} · Code: {location.facility_code || "Not assigned"}</p><p className="sb-muted">{location.profile?.address_line1 || location.address_line1 || "Address not recorded"}{location.profile?.city || location.city ? ", " + (location.profile?.city || location.city) : ""}{location.profile?.state || location.state ? ", " + (location.profile?.state || location.state) : ""}</p><button className="sb-secondary" type="button" onClick={()=>editFacilityProfile(location)}>Edit / complete profile</button></div>
         <label>{location.name} · {location.location_type} · {location.is_fulfillable ? "Fulfilment stock" : "Quarantine / repair holding"}
           <select value={locationAssignments[location.id] || ""} onChange={e=>setLocationAssignments(old=>({...old,[location.id]:e.target.value}))}>
