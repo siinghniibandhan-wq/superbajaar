@@ -55,6 +55,8 @@ def reserve_order_stock(conn, order_id: int, delivery_pin: str | None, lines: li
         ).fetchall()
     if location_id is not None and not locations:
         raise ValueError("Selected stock location is inactive or does not serve the delivery PIN")
+    if profile_routing and not locations:
+        raise ValueError("No active fulfilment facility serves this delivery PIN during its configured operating hours")
     for location in locations:
         balances = conn.execute(
             "SELECT variant_id, on_hand, reserved FROM inventory_balances WHERE location_id=%s AND variant_id=ANY(%s) ORDER BY variant_id FOR UPDATE",
