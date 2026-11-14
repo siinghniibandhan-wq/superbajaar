@@ -23,7 +23,7 @@ def test_facility_profile_normalises_unique_code_and_required_address():
     assert profile.pin_code == "800001"
 
 
-@pytest.mark.parametrize("pin", ["80001", "8000012", "ABC001", ""])
+@pytest.mark.parametrize("pin", ["80001", "8000012", "ABC001", "", "000001"])
 def test_facility_profile_rejects_invalid_indian_pin(pin):
     with pytest.raises(ValidationError):
         FacilityProfileCreate.model_validate(valid_profile(pin_code=pin))
