@@ -557,12 +557,12 @@ def test_required_variant_attributes_apply_only_when_product_uses_them():
 
 
 def test_products_without_variants_do_not_require_variant_attributes():
-    from app.api.catalogue import _required_variant_attributes_for_product
+    from app.api.catalogue import VariantCreate, _required_variant_attributes_for_product
 
     definitions = [{"code": "weight", "name": "Weight", "is_required": True}]
 
     assert _required_variant_attributes_for_product(definitions, []) == []
     assert _required_variant_attributes_for_product(
         definitions,
-        [type("Variant", (), {"attributes": {}})()],
+        [VariantCreate(attributes={}, selling_price=100)],
     ) == []
