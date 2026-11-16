@@ -345,6 +345,18 @@ def _validate_attribute_value(conn, attribute: dict[str, Any], value: Any, produ
         raise HTTPException(status_code=422, detail=f"Invalid value for attribute '{attribute['name']}'")
 
 
+def _required_variant_attributes_for_product(
+    variant_attribute_rows: list[dict[str, Any]],
+    variants: list[VariantCreate],
+) -> list[dict[str, Any]]:
+    """Only require variant attributes that this product actually uses."""
+    selected_codes = {code for variant in variants for code in variant.attributes}
+    return [
+        row for row in variant_attribute_rows
+        if row["is_required"] and row["code"] in selected_codes
+    ]
+
+
 @router.get("/categories")
 def list_categories(request: Request, limit: int = Query(default=100, ge=1, le=500), offset: int = Query(default=0, ge=0)):
     with _connection() as conn:
@@ -549,7 +561,7 @@ class ProductCompleteCreate(BaseModel):
     product: ProductCreate
     product_attributes: dict[int, Any] = Field(default_factory=dict)
     custom_options: dict[int, list[Any]] = Field(default_factory=dict)
-    variants: list[VariantCreate] = Field(min_length=1, max_length=1000)
+    variants: list[VariantCreate] = Field(default_factory=list, max_length=1000)
     availability_rules: list[AvailabilityRuleCreate] = Field(default_factory=list, max_length=500)
 
 
@@ -745,12 +757,13 @@ def _save_complete_product(
             ).fetchone()
             if has_live_stock or has_open_purchase:
                 raise HTTPException(409, "This product has an empty default variant with stock or open purchasing. Transfer its stock and close or reassign open purchase lines before adding selectable variants.")
+    required_variant_attribute_rows = _required_variant_attributes_for_product(variant_attribute_rows, variants)
     created_variant_count = 0
     for variant in variants:
         unknown = sorted(set(variant.attributes) - set(variant_attributes_by_code))
         if unknown:
             raise HTTPException(422, f"Unknown or unsupported variant attributes: {', '.join(unknown)}")
-        missing_required = [row["name"] for row in variant_attribute_rows if row["is_required"] and row["code"] not in variant.attributes]
+        missing_required = [row["name"] for row in required_variant_attribute_rows if row["code"] not in variant.attributes]
         if missing_required:
             raise HTTPException(422, "Required variant attributes are missing: " + ", ".join(missing_required))
         for code, value in variant.attributes.items():
