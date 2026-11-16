@@ -78,7 +78,7 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
       value_type: definition.value_type,
       display_type: definition.display_type || (definition.value_type === "colour" ? "colour" : "dropdown"),
       is_variant_attribute: definition.is_variant_attribute,
-      is_required: definition.is_required,
+      is_required: false,
       options: definition.value_type === "colour" ? "" : (definition.options || []).map(value => String(value)).join(", "),
     });
     setColourOptions(definition.value_type === "colour" ? (definition.options || []) : []);
@@ -245,7 +245,6 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
           </div> : <label className="sb-form-grid-wide">Options / values (comma-separated)<input required={attribute.is_variant_attribute} value={attribute.options} placeholder={attribute.value_type === "image" ? "Image URLs or value keys" : "S, M, L"} onChange={e=>setAttribute(v=>({...v,options:e.target.value}))}/></label>}
         </div>
         <label className="sb-check"><input type="checkbox" checked={attribute.is_variant_attribute} onChange={e=>setAttribute(v=>({...v,is_variant_attribute:e.target.checked}))}/> Used to define variant combinations</label>
-        <label className="sb-check"><input type="checkbox" checked={attribute.is_required} onChange={e=>setAttribute(v=>({...v,is_required:e.target.checked}))}/> Required attribute</label>
         </form>
       </>}
     </CatalogueModal>
@@ -269,7 +268,7 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
             </div>}
           </>}
         </div>
-        <span className="sb-status-pill">{definition.is_required ? "Required" : "Optional"}</span>
+        <span className="sb-status-pill">Optional</span>
         {definition.is_variant_attribute && <span className="sb-strip-meta">Variant</span>}
         <button type="button" className="sb-row-action" disabled={busy} onClick={() => beginEditAttribute(definition)}>Edit</button>
         <button type="button" className="sb-row-action" disabled={busy} onClick={() => archiveAttribute(definition)}>Archive</button>
