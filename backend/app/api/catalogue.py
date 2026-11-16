@@ -349,12 +349,8 @@ def _required_variant_attributes_for_product(
     variant_attribute_rows: list[dict[str, Any]],
     variants: list[VariantCreate],
 ) -> list[dict[str, Any]]:
-    """Only require variant attributes that this product actually uses."""
-    selected_codes = {code for variant in variants for code in variant.attributes}
-    return [
-        row for row in variant_attribute_rows
-        if row["is_required"] and row["code"] in selected_codes
-    ]
+    """Product attributes are optional; configured definitions never block saving."""
+    return []
 
 
 @router.get("/categories")
@@ -676,13 +672,9 @@ def _save_complete_product(
     product_attribute_ids = {int(row["id"]): row for row in product_attribute_rows if not row["is_variant_attribute"]}
     for attribute_id, attribute in product_attribute_ids.items():
         if attribute_id not in product_attributes:
-            if product_id is None and attribute["is_required"]:
-                raise HTTPException(422, f"Required product attribute '{attribute['name']}' is missing")
             continue
         value = product_attributes[attribute_id]
         if value is None or value == "":
-            if attribute["is_required"]:
-                raise HTTPException(422, f"Required product attribute '{attribute['name']}' is missing")
             conn.execute(
                 "DELETE FROM product_attribute_values WHERE product_id=%s AND attribute_id=%s",
                 (product_id, attribute_id),
@@ -763,9 +755,6 @@ def _save_complete_product(
         unknown = sorted(set(variant.attributes) - set(variant_attributes_by_code))
         if unknown:
             raise HTTPException(422, f"Unknown or unsupported variant attributes: {', '.join(unknown)}")
-        missing_required = [row["name"] for row in required_variant_attribute_rows if row["code"] not in variant.attributes]
-        if missing_required:
-            raise HTTPException(422, "Required variant attributes are missing: " + ", ".join(missing_required))
         for code, value in variant.attributes.items():
             _validate_attribute_value(conn, variant_attributes_by_code[code], value, product_id)
         key = json.dumps(variant.attributes, sort_keys=True, separators=(",", ":"))
