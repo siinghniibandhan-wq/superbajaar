@@ -150,11 +150,6 @@ export default function ProductCreateForm({ categories = [], product = null, onS
           throw new Error("Check each variant's selling price, MRP and cost price. MRP must be at least the selling price.");
         }
       }
-      const missingRequiredProductAttribute = definitions.find(def => !def.is_variant_attribute && OPTION_TYPES.includes(def.value_type) && def.is_required && !(String(productAttributeValues[def.id] ?? "").trim()));
-      if (missingRequiredProductAttribute) {
-        setActiveTab("attributes");
-        throw new Error("Enter a value for required product attribute: " + missingRequiredProductAttribute.name + ".");
-      }
       const categoryIds = [...new Set((form.category_ids || []).map(Number).filter(id => Number.isInteger(id) && id > 0))];
       if (!categoryIds.length) {
         setActiveTab("general");

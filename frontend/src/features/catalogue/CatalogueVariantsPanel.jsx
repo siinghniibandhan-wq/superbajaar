@@ -4,7 +4,7 @@ import CatalogueModal from "./CatalogueModal.jsx";
 import ColourOptionEditor from "./ColourOptionEditor.jsx";
 import { colourOptionLabel, normalizeColourOption } from "./colourOptions.js";
 
-const initialAttribute = { name: "", code: "", value_type: "text", display_type: "dropdown", is_variant_attribute: true, is_required: true, options: "" };
+const initialAttribute = { name: "", code: "", value_type: "text", display_type: "dropdown", is_variant_attribute: true, is_required: false, options: "" };
 const initialVariant = { sku: "", barcode: "", attributes: "{}", selling_price: "", mrp: "", cost_price: "" };
 const OPTION_TYPES = ["text", "colour", "image"];
 function makeCombinations(items) {

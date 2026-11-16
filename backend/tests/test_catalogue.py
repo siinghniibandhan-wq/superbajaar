@@ -538,7 +538,7 @@ def test_complete_product_can_be_created_without_variants():
     assert payload.variants == []
 
 
-def test_required_variant_attributes_apply_only_when_product_uses_them():
+def test_required_variant_attribute_definitions_never_block_product_saving():
     from app.api.catalogue import VariantCreate, _required_variant_attributes_for_product
 
     definitions = [
@@ -548,21 +548,15 @@ def test_required_variant_attributes_apply_only_when_product_uses_them():
     ]
     variants = [
         VariantCreate(attributes={"size": "M"}, selling_price=100),
-        VariantCreate(attributes={"size": "L"}, selling_price=100),
+        VariantCreate(attributes={}, selling_price=100),
     ]
 
-    required = _required_variant_attributes_for_product(definitions, variants)
-
-    assert [attribute["code"] for attribute in required] == ["size"]
+    assert _required_variant_attributes_for_product(definitions, variants) == []
 
 
 def test_products_without_variants_do_not_require_variant_attributes():
-    from app.api.catalogue import VariantCreate, _required_variant_attributes_for_product
+    from app.api.catalogue import _required_variant_attributes_for_product
 
     definitions = [{"code": "weight", "name": "Weight", "is_required": True}]
 
     assert _required_variant_attributes_for_product(definitions, []) == []
-    assert _required_variant_attributes_for_product(
-        definitions,
-        [VariantCreate(attributes={}, selling_price=100)],
-    ) == []
