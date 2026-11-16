@@ -527,3 +527,42 @@ def test_product_image_upload_reports_missing_cdn_url_configuration(monkeypatch)
     )
     assert response.status_code == 503
     assert "MEDIA_PUBLIC_BASE_URL" in response.json()["detail"]
+
+
+def test_complete_product_can_be_created_without_variants():
+    from app.api.catalogue import ProductCompleteCreate, ProductCreate
+
+    payload = ProductCompleteCreate(
+        product=ProductCreate(name="Plain Product", slug="plain-product"),
+    )
+    assert payload.variants == []
+
+
+def test_required_variant_attributes_apply_only_when_product_uses_them():
+    from app.api.catalogue import VariantCreate, _required_variant_attributes_for_product
+
+    definitions = [
+        {"code": "size", "name": "Size", "is_required": True},
+        {"code": "weight", "name": "Weight", "is_required": True},
+        {"code": "colour", "name": "Colour", "is_required": False},
+    ]
+    variants = [
+        VariantCreate(attributes={"size": "M"}, selling_price=100),
+        VariantCreate(attributes={"size": "L"}, selling_price=100),
+    ]
+
+    required = _required_variant_attributes_for_product(definitions, variants)
+
+    assert [attribute["code"] for attribute in required] == ["size"]
+
+
+def test_products_without_variants_do_not_require_variant_attributes():
+    from app.api.catalogue import VariantCreate, _required_variant_attributes_for_product
+
+    definitions = [{"code": "weight", "name": "Weight", "is_required": True}]
+
+    assert _required_variant_attributes_for_product(definitions, []) == []
+    assert _required_variant_attributes_for_product(
+        definitions,
+        [VariantCreate(attributes={}, selling_price=100)],
+    ) == []
