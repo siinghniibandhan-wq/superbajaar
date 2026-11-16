@@ -41,7 +41,7 @@ export default function SettingsWorkspace({ onBack, currentUser, permissions = {
   async function create(event) {
     event.preventDefault(); setSaving(true); setError(""); setNotice("");
     try {
-      await apiRequest("/auth/users", { method: "POST", body: JSON.stringify(form) });
+      await apiRequest("/auth/users", { method: "POST", body: JSON.stringify(Object.fromEntries(Object.entries(form).filter(([, v]) => v !== ""))) });
       setForm(emptyForm);
       setNotice("Login account created and linked to the selected " + (form.account_type === "employee" ? "employee" : form.account_type === "vendor" ? "vendor" : "internal account") + "."); await load();
     } catch (e) { setError(e.message || "Unable to create account."); }
