@@ -218,6 +218,7 @@ export default function CatalogueWorkspace({ onBack, currentUser }) {
           <span className={"sb-status-pill sb-status-" + item.status}>{item.status}</span>
           <button type="button" className="sb-row-action sb-product-edit" onClick={() => { setEditingProduct(item); setShowProductForm(true); }}>Edit</button>
           {item.status !== "archived" && <button type="button" className="sb-row-action sb-product-archive" onClick={async () => { if (!window.confirm("Archive " + item.name + "?")) return; try { await apiRequest("/catalogue/products/" + item.id + "/archive", {method:"POST"}); await refresh(); } catch (e) { setError(e.message || "Unable to archive product"); } }}>Archive</button>}
+          {item.status === "archived" && <button type="button" className="sb-row-action sb-product-archive sb-product-restore" onClick={async () => { if (!window.confirm("Restore " + item.name + "?")) return; try { await apiRequest("/catalogue/products/" + item.id + "/restore", {method:"POST"}); setMessage("Product restored."); await refresh(); } catch (e) { setError(e.message || "Unable to restore product"); } }}>Restore</button>}
           {canDeleteProducts && <button type="button" className="sb-row-action sb-product-delete" onClick={() => deleteProduct(item)}>Delete</button>}
           <span className="sb-strip-meta sb-product-id">#{item.id}</span>
         </article>;
