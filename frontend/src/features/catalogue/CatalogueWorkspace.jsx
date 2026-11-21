@@ -29,7 +29,8 @@ export default function CatalogueWorkspace({ onBack, currentUser }) {
   const [message, setMessage] = useState("");
 
   async function refreshProducts(offset = productOffset, view = productView) {
-    const result = await apiRequest(`/catalogue/products?status=${view}&limit=${productPageSize}&offset=${offset}`);
+    const base = view === "archived" ? "/catalogue/archived-products?" : "/catalogue/products?status=active&";
+    const result = await apiRequest(`${base}limit=${productPageSize}&offset=${offset}`);
     setProducts(result.items || []);
     setProductTotal(Number(result.total ?? result.items?.length ?? 0));
     if (!(result.items || []).length && offset > 0 && offset >= Number(result.total || 0)) {
