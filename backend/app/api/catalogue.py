@@ -540,6 +540,16 @@ def archive_product(product_id: int):
             raise HTTPException(status_code=404, detail="Product not found or already archived")
     return row
 
+
+@router.post("/products/{product_id}/restore")
+def restore_product(product_id: int):
+    """Bring an archived product back to active. Only works on archived products."""
+    with _connection() as conn:
+        row = conn.execute("UPDATE products SET status='active',updated_at=now() WHERE id=%s AND status = 'archived' RETURNING id,name,status", (product_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Product not found or not archived")
+    return row
+
 class AvailabilityRuleCreate(BaseModel):
     channel: str = Field(pattern=r"^(pos|website)$")
     region_code: str | None = Field(default=None, max_length=80)
