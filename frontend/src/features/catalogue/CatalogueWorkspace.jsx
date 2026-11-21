@@ -12,6 +12,7 @@ export default function CatalogueWorkspace({ onBack, currentUser }) {
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
   const [productTotal, setProductTotal] = useState(0);
+  const [productView, setProductView] = useState("active");
   const [productOffset, setProductOffset] = useState(0);
   const productPageSize = 50;
   const [showProductForm, setShowProductForm] = useState(false);
@@ -27,15 +28,24 @@ export default function CatalogueWorkspace({ onBack, currentUser }) {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
-  async function refreshProducts(offset = productOffset) {
-    const result = await apiRequest(`/catalogue/products?status=all&limit=${productPageSize}&offset=${offset}`);
+  async function refreshProducts(offset = productOffset, view = productView) {
+    const result = await apiRequest(`/catalogue/products?status=${view}&limit=${productPageSize}&offset=${offset}`);
     setProducts(result.items || []);
     setProductTotal(Number(result.total ?? result.items?.length ?? 0));
     if (!(result.items || []).length && offset > 0 && offset >= Number(result.total || 0)) {
       const previousOffset = Math.max(0, offset - productPageSize);
       setProductOffset(previousOffset);
-      if (previousOffset !== offset) return refreshProducts(previousOffset);
+      if (previousOffset !== offset) return refreshProducts(previousOffset, view);
     }
+  }
+
+  function switchProductView(view) {
+    if (view === productView) return;
+    setProductView(view);
+    setProductOffset(0);
+    setError("");
+    setMessage("");
+    refreshProducts(0, view).catch(e => setError(e.message || "Unable to load products."));
   }
 
   async function refresh() {
@@ -168,7 +178,7 @@ export default function CatalogueWorkspace({ onBack, currentUser }) {
     <p>Manage products, categories and product attributes in one place.</p>
 
     <nav className="sb-catalogue-tabs" aria-label="Catalogue sections" role="tablist">
-      <button type="button" role="tab" aria-selected={activeTab === "catalogue"} className={activeTab === "catalogue" ? "is-active" : ""} onClick={() => { setActiveTab("catalogue"); setError(""); setMessage(""); }}>Catalogue <span>{productTotal}</span></button>
+      <button type="button" role="tab" aria-selected={activeTab === "catalogue"} className={activeTab === "catalogue" ? "is-active" : ""} onClick={() => { setActiveTab("catalogue"); setError(""); setMessage(""); }}>Catalogue {productView === "active" && <span>{productTotal}</span>}</button>
       <button type="button" role="tab" aria-selected={activeTab === "categories"} className={activeTab === "categories" ? "is-active" : ""} onClick={() => { setActiveTab("categories"); setError(""); setMessage(""); }}>Categories <span>{categories.length}</span></button>
       <button type="button" role="tab" aria-selected={activeTab === "attributes"} className={activeTab === "attributes" ? "is-active" : ""} onClick={() => { setActiveTab("attributes"); setError(""); setMessage(""); }}>Attributes</button>
     </nav>
@@ -178,9 +188,13 @@ export default function CatalogueWorkspace({ onBack, currentUser }) {
 
     {activeTab === "catalogue" && <>
       <div className="sb-catalogue-toolbar">
-        <div><h2>All products</h2><p className="sb-muted">Products loaded from the backend API.</p></div>
+        <div><h2>{productView === "archived" ? "Archived products" : "Active products"}</h2><p className="sb-muted">{productView === "archived" ? "Hidden from the store. Tap Restore to bring a product back." : "Products loaded from the backend API."}</p></div>
         <button className="sb-primary" type="button" onClick={() => { setEditingProduct(null); setShowProductForm(true); }}>+ Add product</button>
       </div>
+      <nav className="sb-catalogue-tabs" aria-label="Product status" role="group">
+        <button type="button" aria-pressed={productView === "active"} className={productView === "active" ? "is-active" : ""} onClick={() => switchProductView("active")}>Active</button>
+        <button type="button" aria-pressed={productView === "archived"} className={productView === "archived" ? "is-active" : ""} onClick={() => switchProductView("archived")}>Archived</button>
+      </nav>
       <CatalogueModal
         open={showProductForm}
         title={editingProduct ? "Edit product" : "Add product"}
@@ -222,7 +236,7 @@ export default function CatalogueWorkspace({ onBack, currentUser }) {
           {canDeleteProducts && <button type="button" className="sb-row-action sb-product-delete" onClick={() => deleteProduct(item)}>Delete</button>}
           <span className="sb-strip-meta sb-product-id">#{item.id}</span>
         </article>;
-        }) : <p className="sb-empty">No products found. Select Add product to create your first product.</p>}
+        }) : <p className="sb-empty">{productView === "archived" ? "No archived products." : "No products found. Select Add product to create your first product."}</p>}
       </div>
 
     </>}
