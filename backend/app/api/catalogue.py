@@ -550,6 +550,34 @@ def restore_product(product_id: int):
             raise HTTPException(status_code=404, detail="Product not found or not archived")
     return row
 
+
+@router.get("/archived-products")
+def list_archived_products(
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+):
+    """Staff-only list of archived products. Not public: it is not in the public catalogue read list,
+    so the normal sign-in and catalogue read permission checks apply."""
+    stock_projection = (
+        "(SELECT SUM(ib.on_hand - ib.reserved) FROM inventory_balances ib "
+        "JOIN product_variants stock_variant ON stock_variant.id=ib.variant_id "
+        "JOIN stock_locations sl ON sl.id=ib.location_id "
+        "WHERE stock_variant.product_id=p.id AND stock_variant.is_active=TRUE AND sl.is_active=TRUE) AS available_stock"
+    )
+    with _connection() as conn:
+        total = conn.execute("SELECT count(*) AS total FROM products p WHERE p.status = 'archived'").fetchone()["total"]
+        rows = conn.execute(
+            "SELECT p.id, p.category_id, ARRAY(SELECT pc.category_id FROM product_category_assignments pc WHERE pc.product_id=p.id ORDER BY pc.category_id) AS category_ids, p.name, p.slug, p.description, p.brand, p.status, p.tax_code, p.tax_rate, p.is_pos_available, p.is_website_available, p.delivery_options, p.created_at, p.updated_at, "
+            "(SELECT COUNT(*) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS variant_count, "
+            "(SELECT MIN(v.selling_price) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS min_selling_price, "
+            "(SELECT MAX(v.selling_price) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS max_selling_price, "
+            "(SELECT MIN(v.mrp) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS min_mrp, "
+            "(SELECT pi.image_url FROM product_images pi WHERE pi.product_id=p.id AND pi.variant_id IS NULL ORDER BY pi.is_primary DESC, pi.sort_order, pi.id LIMIT 1) AS image_url, "
+            f"{stock_projection} "
+            "FROM products p WHERE p.status = 'archived' ORDER BY p.name LIMIT %s OFFSET %s", (limit, offset)
+        ).fetchall()
+    return {"items": rows, "total": total, "limit": limit, "offset": offset}
+
 class AvailabilityRuleCreate(BaseModel):
     channel: str = Field(pattern=r"^(pos|website)$")
     region_code: str | None = Field(default=None, max_length=80)
