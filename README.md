@@ -6,6 +6,10 @@ Super Bajaar is a React/Vite and FastAPI application backed by PostgreSQL. The r
 
 This README describes the code currently committed on `main`. It is an engineering guide, not a claim that every module is complete or that the latest code is deployed to production.
 
+## Target architecture
+
+- [Storefront + Odoo target architecture](docs/ODOO_TARGET_ARCHITECTURE.md) — approved Odoo Community 20.0 direction, two Odoo themes, migration sequence and safeguards.
+
 ## Engineering documentation
 
 - [Production governance and readiness](docs/PRODUCTION_GOVERNANCE_AND_READINESS.md) — current owner decisions, IAM/self-approval risk, migration 045, deployment rollback, backup posture and open checks.
