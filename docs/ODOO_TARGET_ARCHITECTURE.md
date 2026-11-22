@@ -9,11 +9,19 @@ Super Bajaar will operate as two product surfaces:
 
 There will be no parallel Super Bajaar FastAPI business platform or separate custom admin application after migration and cutover. Existing systems remain untouched until their Odoo replacements have been migrated, tested and accepted.
 
-## Repository direction
+## Repository and complete upstream source
 
-The approved repository target is the existing `siinghniibandhan-wq/superbajaar` repository. The Odoo Community source must ultimately be incorporated under `odoo/`, with Super Bajaar-specific Odoo addons under `odoo/custom_addons/`. Do not create another Super Bajaar business application or duplicate database.
+The approved repository target is the existing `siinghniibandhan-wq/superbajaar` repository. The complete, unmodified Odoo Community source is now pinned as a Git submodule at `odoo/community`; Super Bajaar-specific addons remain under `odoo/custom_addons/`.
 
-The upstream Odoo Community source is available at [odoo/odoo, branch 20.0](https://github.com/odoo/odoo/tree/20.0). Its LGPL-3 notices and source history must be preserved when it is incorporated. The separately created GitHub fork is an upstream working copy; it is not a second Super Bajaar business system.
+- Upstream repository: [odoo/odoo](https://github.com/odoo/odoo)
+- Upstream branch: `20.0`
+- Pinned source commit: `9099d343022cf6cf438e6fcc57cb848442236947`
+- License: LGPL-3.0; upstream notices and history are retained.
+- Odoo Enterprise source is not included.
+
+The submodule gives a complete, exact upstream checkout while preserving Odoo's source history. It is not a hand-copied or modified approximation. Fresh clones must use `git clone --recurse-submodules`; existing clones must run `git submodule update --init --recursive -- odoo/community`. See [Odoo source integration and launch instructions](../odoo/SUPERBAJAAR_INTEGRATION.md).
+
+The individually staged files directly under `odoo/` from the initial connector-based import are incomplete and are not the authoritative runtime source. Use `odoo/community` for Odoo core and official Community addons. Do not patch upstream files to apply Super Bajaar branding.
 
 ## Theme decision
 
@@ -28,21 +36,24 @@ The first implementation is the `sb_theme_switcher` Community addon in `odoo/cus
 
 ## Migration and safety sequence
 
-1. Incorporate the complete Odoo Community 20.0 source into the existing Super Bajaar repository while preserving upstream licensing and history.
-2. Install and validate the Odoo Community modules required by Super Bajaar.
-3. Install the Super Bajaar theme addon and verify both themes on supported Odoo views and screen sizes.
-4. Map existing storefront API operations to Odoo's supported APIs and implement only missing Super Bajaar-specific behavior as Odoo addons.
-5. Migrate and reconcile products, categories, stock, customers, vendors, orders, payments, invoices, employees, roles and other approved records.
-6. Run staging integration, security, accounting, GST, payment, inventory and end-to-end acceptance tests.
-7. Cut over the storefront to Odoo only after acceptance and a verified rollback plan.
-8. Retire the FastAPI backend, separate admin UI and duplicate business data/services only after cutover is proven stable.
+1. Check out the pinned complete Odoo Community 20.0 source and install its dependencies in an isolated environment.
+2. Provision a separate Odoo development/staging PostgreSQL database; do not reuse the existing Super Bajaar production database.
+3. Install and validate the Odoo Community modules required by Super Bajaar.
+4. Install the Super Bajaar theme addon and verify both themes on supported Odoo views and screen sizes.
+5. Map existing storefront API operations to Odoo's supported APIs and implement only missing Super Bajaar-specific behavior as Odoo addons.
+6. Migrate and reconcile products, categories, stock, customers, vendors, orders, payments, invoices, employees, roles and other approved records.
+7. Run staging integration, security, accounting, GST, payment, inventory and end-to-end acceptance tests.
+8. Cut over the storefront to Odoo only after acceptance and a verified rollback plan.
+9. Retire the FastAPI backend, separate admin UI and duplicate business data/services only after cutover is proven stable.
 
 ## Current implementation status
 
 - Existing storefront and legacy backend have not been deleted or modified by this architecture work.
-- The Odoo Community 20.0 fork exists at [siinghniibandhan-wq/odoo](https://github.com/siinghniibandhan-wq/odoo).
-- The initial theme addon and its preference tests have been added on the `feature/odoo-theme-system` branch of the Super Bajaar repository.
-- The addon has not yet been installed or run against an Odoo 20.0 server. Runtime tests, browser verification and full source incorporation remain pending.
+- Complete Odoo Community source is linked at `odoo/community`, pinned to the official upstream commit above. Checkout requires Git submodule initialization.
+- The initial theme addon and its preference tests are present under `odoo/custom_addons/sb_theme_switcher`.
+- A repository launcher is available at `odoo/launch.sh`; it initializes the submodule when needed and includes upstream Community addons plus Super Bajaar custom addons in the addons path.
+- The launcher passed Bash syntax validation. Odoo dependency installation, PostgreSQL startup, addon installation, Odoo TransactionCase tests and browser verification have **not** been run in this environment.
+- The source checkout is complete, but the Super Bajaar migration is **not complete**: module configuration, Indian localisation/GST validation, data migration, storefront API integration, security review, end-to-end acceptance, rollback and production cutover remain open.
 - No production services, databases, credentials, deployment automation or DNS have been changed.
 
 ## Non-negotiable safeguards
