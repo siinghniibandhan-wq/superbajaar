@@ -3,6 +3,7 @@ Requires the baseline purchasing, catalogue and inventory schema.
 """
 from datetime import date
 from decimal import Decimal
+from typing import Optional
 import hashlib
 import json
 import uuid
