@@ -1,5 +1,6 @@
 import OrganisationPolicyPanel from "../shared/OrganisationPolicyPanel.jsx";
 import PurchasingRequestsWorkspace from "./PurchasingRequestsWorkspace.jsx";
+import ReplenishmentWorkspace from "./ReplenishmentWorkspace.jsx";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./PurchasingWorkspace.css";
 import { apiRequest } from "../../services/api.js";
@@ -465,6 +466,7 @@ export default function PurchasingWorkspace({ onBack }) {
       <button type="button" role="tab" aria-selected={tab === "suppliers"} className={tab === "suppliers" ? "is-active" : ""} onClick={() => setTab("suppliers")}>Suppliers <span>{suppliers.length}</span></button>
       <button type="button" role="tab" aria-selected={tab === "invoices"} className={tab === "invoices" ? "is-active" : ""} onClick={() => setTab("invoices")}>Supplier invoices</button>
       <button type="button" role="tab" aria-selected={tab === "returns"} className={tab === "returns" ? "is-active" : ""} onClick={() => setTab("returns")}>Supplier returns</button>
+      <button type="button" role="tab" aria-selected={tab === "replenishment"} className={tab === "replenishment" ? "is-active" : ""} onClick={() => setTab("replenishment")}>Replenishment</button>
     </div>
     {tab === "overview" ? <>
       <section className="sb-purchasing-overview">
@@ -612,7 +614,7 @@ export default function PurchasingWorkspace({ onBack }) {
           {detail.status === "cancelled" && <p className="sb-muted">Cancelled. Any goods received before cancellation remain in inventory.</p>}
         </div>}
       </article>)}</div> : <p className="sb-empty">{orders.length ? "No purchase orders match this status." : "No purchase orders yet."}</p>}
-    </>}
+    </> : tab === "replenishment" ? <ReplenishmentWorkspace onBack={onBack} variants={variants} /> : <p className="sb-empty">Unknown tab: {tab}</p>}
     <OrganisationPolicyPanel domain="purchase" />
   </section>;
 }
