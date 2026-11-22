@@ -627,3 +627,24 @@ def test_supplier_update_preserves_and_returns_existing_sbid(monkeypatch):
     monkeypatch.setattr(purchasing, "_connect", Connection)
     result = purchasing.update_supplier(41, purchasing.SupplierCreate(name="Updated Supplier"))
     assert result["sbid"] == "SBID-0123456789ABCDEF0123"
+
+
+def test_reorder_settings_accept_optional_non_negative_values():
+    from app.api.purchasing import ReorderSettingsUpdate
+
+    assert ReorderSettingsUpdate().model_dump() == {
+        "reorder_point": None,
+        "reorder_qty": None,
+    }
+    assert ReorderSettingsUpdate(reorder_point=0, reorder_qty=5).reorder_qty == 5
+
+
+def test_reorder_settings_reject_negative_values():
+    import pytest
+    from pydantic import ValidationError
+    from app.api.purchasing import ReorderSettingsUpdate
+
+    with pytest.raises(ValidationError):
+        ReorderSettingsUpdate(reorder_point=-1)
+    with pytest.raises(ValidationError):
+        ReorderSettingsUpdate(reorder_qty=-1)
