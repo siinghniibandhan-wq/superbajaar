@@ -10,6 +10,8 @@ test("saved customer addresses load from the account API and can be managed", ()
   assert.match(storefront, /Add new address/);
   assert.match(storefront, /Set as default/);
   assert.match(storefront, /Delete address/);
+  assert.match(storefront, /if \(!customerToken \|\| !customerAuth\)/);
+  assert.match(storefront, /legacy browser address available for manual saving/);
 });
 
 test("checkout selects a saved address and allows changing it", () => {
