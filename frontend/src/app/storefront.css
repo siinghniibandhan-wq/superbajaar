@@ -1804,3 +1804,5 @@
  .storefront-checkout-address{grid-template-columns:18px minmax(0,1fr) auto;padding:12px}
  .storefront-saved-address-actions button{flex:1}
 }
+
+@media(min-width:901px){.storefront-checkout-page .storefront-checkout{grid-template-columns:minmax(0,1fr);gap:18px}.storefront-checkout-page .storefront-basket-lines{display:grid;gap:12px}.storefront-checkout-page .storefront-basket-total{margin-top:4px}}
