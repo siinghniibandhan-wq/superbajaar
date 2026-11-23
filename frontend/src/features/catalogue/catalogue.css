@@ -209,3 +209,5 @@ dialog.sb-modal .sb-variant-pricing-list .sb-strip-row{display:grid;grid-templat
 .sb-import-file{display:inline-block;cursor:pointer}
 .sb-import-file span{display:inline-block;cursor:pointer}
 .sb-import-list{max-height:45vh;overflow:auto;margin:12px 0}
+
+.sb-row-action.sb-product-duplicate{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;padding:0;min-width:0}

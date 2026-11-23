@@ -19,6 +19,7 @@ export default function CatalogueWorkspace({ onBack, currentUser }) {
   const [showProductForm, setShowProductForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
+  const [duplicatingProduct, setDuplicatingProduct] = useState(null);
   const [productFormBusy, setProductFormBusy] = useState(false);
   const [selectedVariantProductId, setSelectedVariantProductId] = useState("");
   const [showCategoryForm, setShowCategoryForm] = useState(false);
@@ -150,6 +151,7 @@ export default function CatalogueWorkspace({ onBack, currentUser }) {
     if (!window.confirm("Close this product form? Unsaved changes will be lost.")) return;
     setShowProductForm(false);
     setEditingProduct(null);
+    setDuplicatingProduct(null);
   }
   const categoryPathFor = category => {
     const path = [];
@@ -194,7 +196,7 @@ export default function CatalogueWorkspace({ onBack, currentUser }) {
         <div><h2>{productView === "archived" ? "Archived products" : "Active products"}</h2><p className="sb-muted">{productView === "archived" ? "Hidden from the store. Tap Restore to bring a product back." : "Products loaded from the backend API."}</p></div>
         <div className="sb-import-actions" style={{ margin: 0 }}>
           <button className="sb-secondary" type="button" onClick={() => setShowImport(true)}>Import CSV</button>
-          <button className="sb-primary" type="button" onClick={() => { setEditingProduct(null); setShowProductForm(true); }}>+ Add product</button>
+          <button className="sb-primary" type="button" onClick={() => { setEditingProduct(null); setDuplicatingProduct(null); setShowProductForm(true); }}>+ Add product</button>
         </div>
       </div>
       <CatalogueImportModal
@@ -209,7 +211,7 @@ export default function CatalogueWorkspace({ onBack, currentUser }) {
       </nav>
       <CatalogueModal
         open={showProductForm}
-        title={editingProduct ? "Edit product" : "Add product"}
+        title={editingProduct ? "Edit product" : duplicatingProduct ? "Duplicate product" : "Add product"}
         className="sb-product-modal"
         onRequestClose={closeProductForm}
         footer={<>
@@ -220,8 +222,9 @@ export default function CatalogueWorkspace({ onBack, currentUser }) {
         {showProductForm && <ProductCreateForm
           categories={categories}
           product={editingProduct}
+          duplicateFrom={duplicatingProduct}
           onBusyChange={setProductFormBusy}
-          onSaved={async () => { setProductOffset(0); await refreshProducts(0); await apiRequest("/catalogue/categories?limit=500").then(result => setCategories(result.items || [])); setShowProductForm(false); setEditingProduct(null); }}
+          onSaved={async () => { setProductOffset(0); await refreshProducts(0); await apiRequest("/catalogue/categories?limit=500").then(result => setCategories(result.items || [])); setShowProductForm(false); setEditingProduct(null); setDuplicatingProduct(null); }}
         />}
       </CatalogueModal>
       <div className="sb-catalogue-pagination" aria-label="Product pagination">
@@ -242,7 +245,8 @@ export default function CatalogueWorkspace({ onBack, currentUser }) {
             <small className="sb-product-stock">Available stock · {item.available_stock == null ? "Not recorded" : Number(item.available_stock).toLocaleString(undefined, { maximumFractionDigits: 3 }) + " across active locations"}</small>
           </div>
           <span className={"sb-status-pill sb-status-" + item.status}>{item.status}</span>
-          <button type="button" className="sb-row-action sb-product-edit" onClick={() => { setEditingProduct(item); setShowProductForm(true); }}>Edit</button>
+          <button type="button" className="sb-row-action sb-product-edit" onClick={() => { setDuplicatingProduct(null); setEditingProduct(item); setShowProductForm(true); }}>Edit</button>
+          {item.status !== "archived" && <button type="button" className="sb-row-action sb-product-duplicate" aria-label={"Duplicate " + item.name} title="Duplicate product" onClick={() => { setEditingProduct(null); setDuplicatingProduct(item); setShowProductForm(true); }}><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg></button>}
           {item.status !== "archived" && <button type="button" className="sb-row-action sb-product-archive" onClick={async () => { if (!window.confirm("Archive " + item.name + "?")) return; try { await apiRequest("/catalogue/products/" + item.id + "/archive", {method:"POST"}); await refresh(); } catch (e) { setError(e.message || "Unable to archive product"); } }}>Archive</button>}
           {item.status === "archived" && <button type="button" className="sb-row-action sb-product-archive sb-product-restore" onClick={async () => { if (!window.confirm("Restore " + item.name + "?")) return; try { await apiRequest("/catalogue/products/" + item.id + "/restore", {method:"POST"}); setMessage("Product restored."); await refresh(); } catch (e) { setError(e.message || "Unable to restore product"); } }}>Restore</button>}
           {canDeleteProducts && <button type="button" className="sb-row-action sb-product-delete" onClick={() => deleteProduct(item)}>Delete</button>}
