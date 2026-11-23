@@ -1851,3 +1851,11 @@
 /* Lowest price in last 30 days (product page) */
 .storefront-lowest-price{display:block;margin:4px 0 10px;color:#766c83;font-size:12px;line-height:1.4}
 .storefront-lowest-price strong{color:#30213f;font-size:12px}
+
+/* Product card: rating, MRP strike-through, discount */
+.storefront-product-card .storefront-product-rating{display:inline-flex;align-items:center;gap:4px;margin-top:6px;color:#8a5a00;font-size:11px;font-weight:600}
+.storefront-product-card .storefront-product-rating b{color:#26333e}
+.storefront-product-card .storefront-product-rating.is-empty{color:#9a90a8;font-weight:500}
+.storefront-product-card .storefront-card-price{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;margin-top:auto;padding-top:6px}
+.storefront-product-card .storefront-card-mrp{color:#8a8095;font-size:12px;font-weight:500;text-decoration:line-through}
+.storefront-product-card .storefront-card-off{color:#18754f;font-size:11px;font-weight:750;font-style:normal}

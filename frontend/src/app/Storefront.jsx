@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Heart, ShoppingBag, Search, Sparkles, Flame, Clock3, ChevronLeft, ChevronRight, UserRound, MapPin, X, Coins, CreditCard, CalendarClock } from "lucide-react";
+import { Heart, ShoppingBag, Search, Sparkles, Flame, Clock3, ChevronLeft, ChevronRight, UserRound, MapPin, X, Coins, CreditCard, CalendarClock, Star } from "lucide-react";
 import { Users, HeartPulse, Package, ShoppingCart, Leaf, Shirt, Droplets, Headphones, Home, PawPrint, Gift, Car, Trophy, Pill, ShieldCheck } from "lucide-react";
 import { apiRequest } from "../services/api.js";
 import GoogleAnalytics, { getAnalyticsConsent, setAnalyticsConsent, trackAnalyticsEvent } from "./GoogleAnalytics.jsx";
@@ -914,13 +914,19 @@ export default function Storefront() {
     const minPrice = prices.length ? Math.min(...prices) : Number(variant.selling_price || 0);
     const maxPrice = prices.length ? Math.max(...prices) : minPrice;
     const saved = productVariants.some(item => wishlist.some(id => Number(id) === Number(item.id)));
+    const priceVariant = productVariants.find(item => Number(item.selling_price || 0) === minPrice) || variant;
+    const mrp = Number(priceVariant.mrp ?? priceVariant.compare_at_price ?? 0);
+    const offPercent = mrp > minPrice && minPrice > 0 ? Math.round((mrp - minPrice) / mrp * 100) : 0;
+    const ratingCount = Number(product?.review_count ?? variant.review_count ?? 0);
+    const ratingAverage = Number(product?.rating_average ?? variant.rating_average ?? 0);
     const openDetails = () => openProductPage(variant);
     return <article className="storefront-product-card" key={variant.product_id} role="link" tabIndex={0} onClick={openDetails} onKeyDown={event => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openDetails(); } }}>
       <div className="storefront-product-art">{variant.image_url ? <img className="storefront-product-image" src={variant.image_url} alt={product?.name || variant.product_name || "Product"} loading="lazy"/> : <span>{(() => { const I = catIcons[tile.icon]; return I ? <I size={40} strokeWidth={1.6} aria-hidden="true" /> : tile.icon; })()}</span>}<button type="button" className={"storefront-wishlist " + (saved ? "is-saved" : "")} onClick={event => { event.stopPropagation(); setWishlist(old => saved ? old.filter(id => !productVariants.some(item => Number(item.id) === Number(id))) : [...new Set([...old, ...productVariants.map(item => Number(item.id))])]); }} aria-label={(saved ? "Remove from" : "Add to") + " wishlist: " + (product?.name || variant.sku)} aria-pressed={saved}><Heart size={19} strokeWidth={1.9} fill={saved ? "currentColor" : "none"} /></button></div>
       <small>{product?.brand || product?.name || "Super Bajaar"}</small>
       <h3><button type="button" className="storefront-product-title" onClick={event => { event.stopPropagation(); openDetails(); }}>{product?.name || variant.product_name || variant.sku}</button></h3>
       {hasSelectableVariants && <p className="storefront-sku">Choose colour, size or weight</p>}
-      <strong>{minPrice === maxPrice ? money(minPrice) : money(minPrice) + " – " + money(maxPrice)}</strong>
+      <span className={"storefront-product-rating" + (ratingCount > 0 ? "" : " is-empty")}>{ratingCount > 0 ? <><Star size={13} fill="currentColor" aria-hidden="true" /> <b>{ratingAverage.toFixed(1)}</b> ({ratingCount} reviews)</> : "No reviews yet"}</span>
+      <strong className="storefront-card-price">{minPrice === maxPrice ? money(minPrice) : money(minPrice) + " – " + money(maxPrice)}{offPercent > 0 && <><s className="storefront-card-mrp" aria-label={"MRP " + money(mrp)}>{money(mrp)}</s><em className="storefront-card-off">{offPercent}% off</em></>}</strong>
       {coinsFor(product, minPrice) > 0 && <span className="storefront-product-coins"><Coins size={14} /> Earn {minPrice === maxPrice ? "" : "from "}{coinsFor(product, minPrice)} Super Coins</span>}
       {hasSelectableVariants ? <button type="button" className="storefront-add" onClick={event => { event.stopPropagation(); openDetails(); }}>Choose options</button> : <button type="button" className="storefront-add" onClick={event => { event.stopPropagation(); addToCart(variant); }}><ShoppingBag size={17} strokeWidth={2} /> Add to basket</button>}
     </article>;
