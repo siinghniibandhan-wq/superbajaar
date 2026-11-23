@@ -1640,6 +1640,11 @@ def list_all_variants(limit: int = Query(default=200, ge=1, le=500), offset: int
             rows = conn.execute(
                 "SELECT v.id, v.product_id, p.name AS product_name, v.sku, v.barcode, v.attributes, "
                 "v.selling_price, v.mrp, v.cost_price, v.is_active, "
+                "COALESCE((SELECT MIN(x.price) FROM ("
+                "SELECT h.selling_price AS price FROM variant_price_history h WHERE h.variant_id=v.id AND h.recorded_at >= now() - interval '30 days' "
+                "UNION ALL "
+                "(SELECT h2.selling_price FROM variant_price_history h2 WHERE h2.variant_id=v.id AND h2.recorded_at < now() - interval '30 days' "
+                "ORDER BY h2.recorded_at DESC, h2.id DESC LIMIT 1)) x), v.selling_price) AS lowest_price_30d, "
                 "(SELECT pi.image_url FROM product_images pi WHERE pi.product_id=p.id AND (pi.variant_id=v.id OR pi.variant_id IS NULL) "
                 "ORDER BY (pi.variant_id=v.id) DESC, pi.is_primary DESC, pi.sort_order, pi.id LIMIT 1) AS image_url "
                 "FROM product_variants v JOIN products p ON p.id = v.product_id "
