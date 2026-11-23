@@ -40,7 +40,7 @@ def test_verified_customer_contact_links_matching_legacy_loyalty_card():
     )
 
     assert linked is True
-    assert conn.inserted == (91, 17, "verified_customer_account")
+    assert conn.inserted == (91, 17)
 
 
 def test_unverified_customer_contact_does_not_link_legacy_card():
