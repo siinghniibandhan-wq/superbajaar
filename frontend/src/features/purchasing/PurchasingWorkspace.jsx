@@ -566,7 +566,7 @@ export default function PurchasingWorkspace({ onBack }) {
           </div>
         </article>)}
       </div> : <p className="sb-empty">No supplier returns recorded yet. Create a return against an accepted GRN batch through the return workflow.</p>}
-    </> : <>
+    </> : tab === "orders" ? <>
       <form className="sb-customer-form" onSubmit={createOrder}>
         <h2>{orderEditId ? "Edit draft purchase order" : "Create purchase order"}</h2><div className="sb-customer-fields">
           <label>Supplier *<select required value={supplierId} onChange={e => setSupplierId(e.target.value)}><option value="">Choose supplier</option>{suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
