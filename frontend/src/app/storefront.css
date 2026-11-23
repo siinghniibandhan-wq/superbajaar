@@ -1469,3 +1469,55 @@
 .storefront-logo{background:transparent;box-shadow:none;border-radius:0;overflow:visible}
 .storefront-logo img{display:block;width:100%;height:100%;object-fit:contain}
 .storefront-loyalty-mark{background:transparent;object-fit:contain;border-radius:0}
+
+
+/* Super Coin checkout redemption */
+.storefront-super-coin-redemption {
+  display: grid;
+  gap: 12px;
+  margin: 18px 0 22px;
+  padding: 18px 20px;
+  border: 1px solid #e7def4;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #fbf8ff, #fffaf4);
+}
+.storefront-super-coin-redemption h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 5px 0;
+  color: var(--sb-purple-dark);
+  font-size: 16px;
+}
+.storefront-super-coin-redemption p {
+  margin: 0;
+  color: var(--sb-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.storefront-super-coin-redemption label {
+  display: grid;
+  gap: 6px;
+  max-width: 260px;
+  color: var(--sb-ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+.storefront-super-coin-redemption input {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 12px;
+  border: 1px solid #d9cce9;
+  border-radius: 10px;
+  background: white;
+  color: var(--sb-ink);
+  font: inherit;
+}
+.storefront-super-coin-redemption .storefront-super-coin-discount {
+  color: var(--sb-purple-dark);
+  font-weight: 650;
+}
+@media (max-width: 640px) {
+  .storefront-super-coin-redemption { padding: 15px; }
+  .storefront-super-coin-redemption label { max-width: none; }
+}
