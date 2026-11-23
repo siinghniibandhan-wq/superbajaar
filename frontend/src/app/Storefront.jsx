@@ -144,7 +144,7 @@ export default function Storefront() {
   }, [cart]);
 
   useEffect(() => {
-    if (!customerToken) { setSavedAddresses([]); setSelectedAddressId(""); return; }
+    if (!customerToken || !customerAuth) { setSavedAddresses([]); setSelectedAddressId(""); return; }
     let active = true;
     customerRequest("/customer-auth/addresses").then(async result => {
       if (!active) return;
@@ -155,7 +155,7 @@ export default function Storefront() {
         if (legacy.address && /^[1-9][0-9]{5}$/.test(String(legacy.pin || ""))) {
           try {
             await customerRequest("/customer-auth/addresses", { method: "POST", body: JSON.stringify({
-              label: "Home", recipient_name: legacy.name || "", phone: legacy.phone || "",
+              label: "Home", recipient_name: legacy.name || customerAuth.full_name || customer.name || "", phone: legacy.phone || customer.phone || customerAuth.phone || "",
               address: legacy.address, pin_code: legacy.pin, is_default: true
             })});
             const refreshed = await customerRequest("/customer-auth/addresses");
@@ -174,7 +174,7 @@ export default function Storefront() {
       if (active) setSavedAddresses([]);
     });
     return () => { active = false; };
-  }, [customerToken]);
+  }, [customerToken, customerAuth?.id]);
 
   useEffect(() => {
     if (!customerToken) { setCustomerAuth(null); return; }
