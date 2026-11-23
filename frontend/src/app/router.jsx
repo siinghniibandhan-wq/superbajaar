@@ -14,6 +14,7 @@ import POSWorkspace from "../features/pos/POSWorkspace.jsx";
 import ReportsWorkspace from "../features/reports/ReportsWorkspace.jsx";
 import SettingsWorkspace from "../features/settings/SettingsWorkspace.jsx";
 import LoyaltyWorkspace from "../features/loyalty/LoyaltyWorkspace.jsx";
+import ProductReviewsAdmin from "../features/catalogue/ProductReviewsAdmin.jsx";
 import AccountingWorkspace from "../features/accounting/AccountingWorkspace.jsx";
 import HRWorkspace from "../features/hr/HRWorkspace.jsx";
 import ModuleDataOverview from "../features/shared/ModuleDataOverview.jsx";
@@ -78,7 +79,7 @@ function UnavailableWorkspace({ item, onBack }) {
 
 const workspaceRoutes = {
   dashboard: ({ onOpen, permissions }) => <DashboardWorkspace onOpen={onOpen} permissions={permissions} />,
-  catalogue: ({ onBack, currentUser }) => <><ModuleDataOverview moduleId="catalogue" /><CatalogueWorkspace onBack={onBack} currentUser={currentUser} /></>,
+  catalogue: ({ onBack, currentUser }) => <><ModuleDataOverview moduleId="catalogue" /><CatalogueWorkspace onBack={onBack} currentUser={currentUser} /><ProductReviewsAdmin /></>,
   pricing: ({ onBack }) => <PricingWorkspace onBack={onBack} />,
   orders: ({ onBack }) => <><ModuleDataOverview moduleId="orders" /><OrdersWorkspace onBack={onBack} /></>,
   payments: ({ onBack }) => <PaymentsWorkspace onBack={onBack} />,
