@@ -204,3 +204,8 @@ dialog.sb-modal .sb-variant-pricing-list .sb-strip-row{display:grid;grid-templat
 }
 
 .sb-form input.sb-price-locked{background:#f1f4f7;color:#7a858f;cursor:not-allowed;border-style:dashed}
+
+.sb-import-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:12px 0}
+.sb-import-file{display:inline-block;cursor:pointer}
+.sb-import-file span{display:inline-block;cursor:pointer}
+.sb-import-list{max-height:45vh;overflow:auto;margin:12px 0}

@@ -4,6 +4,7 @@ import ProductCreateForm from "./ProductCreateForm.jsx";
 import CatalogueVariantsPanel from "./CatalogueVariantsPanel.jsx";
 import ProductImagesPanel from "./ProductImagesPanel.jsx";
 import CatalogueModal from "./CatalogueModal.jsx";
+import CatalogueImportModal from "./CatalogueImportModal.jsx";
 import "./catalogue.css";
 
 export default function CatalogueWorkspace({ onBack, currentUser }) {
@@ -16,6 +17,7 @@ export default function CatalogueWorkspace({ onBack, currentUser }) {
   const [productOffset, setProductOffset] = useState(0);
   const productPageSize = 50;
   const [showProductForm, setShowProductForm] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [productFormBusy, setProductFormBusy] = useState(false);
   const [selectedVariantProductId, setSelectedVariantProductId] = useState("");
@@ -190,8 +192,17 @@ export default function CatalogueWorkspace({ onBack, currentUser }) {
     {activeTab === "catalogue" && <>
       <div className="sb-catalogue-toolbar">
         <div><h2>{productView === "archived" ? "Archived products" : "Active products"}</h2><p className="sb-muted">{productView === "archived" ? "Hidden from the store. Tap Restore to bring a product back." : "Products loaded from the backend API."}</p></div>
-        <button className="sb-primary" type="button" onClick={() => { setEditingProduct(null); setShowProductForm(true); }}>+ Add product</button>
+        <div className="sb-import-actions" style={{ margin: 0 }}>
+          <button className="sb-secondary" type="button" onClick={() => setShowImport(true)}>Import CSV</button>
+          <button className="sb-primary" type="button" onClick={() => { setEditingProduct(null); setShowProductForm(true); }}>+ Add product</button>
+        </div>
       </div>
+      <CatalogueImportModal
+        open={showImport}
+        categories={categories}
+        onClose={() => setShowImport(false)}
+        onImported={async () => { setProductOffset(0); await refreshProducts(0); }}
+      />
       <nav className="sb-catalogue-tabs" aria-label="Product status" role="group">
         <button type="button" aria-pressed={productView === "active"} className={productView === "active" ? "is-active" : ""} onClick={() => switchProductView("active")}>Active</button>
         <button type="button" aria-pressed={productView === "archived"} className={productView === "archived" ? "is-active" : ""} onClick={() => switchProductView("archived")}>Archived</button>
