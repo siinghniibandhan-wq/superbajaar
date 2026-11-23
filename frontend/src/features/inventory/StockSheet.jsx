@@ -5,7 +5,7 @@ import "./StockSheet.css";
 const PAGE_SIZE = 100;
 
 const COPY = {
-  add: { title: "Add stock", qty: "Quantity to add", help: "Pick the location once, then type a quantity only on the products you want. Empty rows are skipped.", button: "Add stock" },
+  add: { title: "Add stock", qty: "Quantity to add", help: "Pick the location once. On each product you want to add, type the quantity and its cost price. Rows with no quantity are skipped.", button: "Add stock" },
   issue: { title: "Remove stock", qty: "Quantity to remove", help: "Pick the location once, then type a quantity only on the products you want to remove or scrap. Empty rows are skipped.", button: "Remove stock" },
   count: { title: "Count stock", qty: "Counted on shelf", help: "Type the quantity you physically counted, only for the products you counted. The system fixes the difference.", button: "Save counts" },
   transfer: { title: "Move stock", qty: "Quantity to move", help: "Pick From and To once, then type a quantity only on the products you want to move. Empty rows are skipped.", button: "Move stock" },
@@ -71,6 +71,9 @@ export default function StockSheet({ action = "add", variants = [], balances = [
     setResult(null);
   }
 
+  // Cost = what you type on the row. If the row is empty, the optional "same cost" box at the top is used.
+  // The cost saved in Catalogue is only a hint with a Use button; it is never applied by itself.
+  const catalogueCost = variant => { const c = Number(variant?.cost_price); return Number.isFinite(c) && c > 0 ? String(c) : ""; };
   const costOf = row => (row.cost !== undefined && row.cost !== "" ? row.cost : defaultCost);
 
   function collect() {
@@ -90,9 +93,9 @@ export default function StockSheet({ action = "add", variants = [], balances = [
       }
       if (needsCost) {
         const c = num(costOf(row));
-        if (!Number.isFinite(c) || c < 0) return { problem: v.sku + ": enter a unit cost, or type a Default unit cost at the top." };
+        if (!Number.isFinite(c) || c < 0) return { problem: v.sku + ": type the cost price (₹) on this row, or fill the same-cost box at the top." };
       }
-      items.push({ variant: v, row, qty: q });
+      items.push({ variant: v, row, qty: q, cost: needsCost ? num(costOf(row)) : null });
     }
     if (!items.length) return { problem: "Type a quantity on at least one product." };
     return { items };
@@ -176,10 +179,11 @@ export default function StockSheet({ action = "add", variants = [], balances = [
       <h3>Check before saving</h3>
       <p className="sb-muted">{copy.title} · {action === "transfer" ? "From " + locationName(locationId) + " to " + locationName(toLocationId) : locationName(locationId)} · Reason: {note.trim()}</p>
       <div className="ss-review-list">
-        {reviewItems.map(({ variant, qty }) => <div className="ss-review-row" key={variant.id}>
-          <span><strong>{variant.product_name}</strong><small>{variant.sku}</small></span>
+        {reviewItems.map(({ variant, qty, cost }) => <div className="ss-review-row" key={variant.id}>
+          <span><strong>{variant.product_name}</strong><small>{variant.sku}{needsCost && Number.isFinite(cost) ? " · cost ₹" + cost + " each" : ""}</small></span>
           <b>{qty}</b>
         </div>)}
+        {needsCost && <p className="ss-total">Total stock value: ₹{Math.round(reviewItems.reduce((sum, item) => sum + item.qty * (Number.isFinite(item.cost) ? item.cost : 0), 0) * 100) / 100}</p>}
       </div>
       <div className="ss-actions">
         <button type="button" className="sb-primary" disabled={Boolean(working)} onClick={() => run("save")}>{working || "Confirm and save " + reviewItems.length + " row(s)"}</button>
@@ -216,8 +220,8 @@ export default function StockSheet({ action = "add", variants = [], balances = [
               <option value="fifo">FIFO (oldest first)</option>
               <option value="fefo">FEFO (earliest expiry first)</option>
             </select></label>}
-          {hasDetails && <label>{action === "add" ? "Default unit cost (₹)" : "Unit cost if count goes up (₹, optional)"}
-            <input type="number" inputMode="decimal" min="0" step="0.0001" value={defaultCost} onChange={e => setDefaultCost(e.target.value)} placeholder={action === "add" ? "Used on rows without own cost" : "Optional"} /></label>}
+          {hasDetails && <label>{action === "add" ? "Same cost for rows I leave empty (₹, optional)" : "Unit cost if count goes up (₹, optional)"}
+            <input type="number" inputMode="decimal" min="0" step="0.0001" value={defaultCost} onChange={e => setDefaultCost(e.target.value)} placeholder="Optional" /></label>}
           <label className="ss-wide">Reason / reference
             <input maxLength="500" value={note} onChange={e => setNote(e.target.value)} placeholder="Example: Opening stock Nov 2026" /></label>
         </div>
@@ -229,7 +233,7 @@ export default function StockSheet({ action = "add", variants = [], balances = [
         <div className="ss-toggles">
           {action !== "add" && <label><input type="checkbox" checked={onlyStocked} onChange={e => { setOnlyStocked(e.target.checked); setShown(PAGE_SIZE); }} /> Only items with stock here</label>}
           <label><input type="checkbox" checked={onlyFilled} onChange={e => { setOnlyFilled(e.target.checked); setShown(PAGE_SIZE); }} /> Only rows I filled</label>
-          {hasDetails && <label><input type="checkbox" checked={showDetails} onChange={e => setShowDetails(e.target.checked)} /> Show cost, batch and expiry</label>}
+          {hasDetails && <label><input type="checkbox" checked={showDetails} onChange={e => setShowDetails(e.target.checked)} /> {needsCost ? "Show batch and expiry" : "Show cost, batch and expiry"}</label>}
         </div>
         {!locationId && <p className="ss-hint">Choose the location above to see current stock on each row.</p>}
         {!variants.length && <p className="sb-empty">No active products with variants found. Add products in Catalogue first.</p>}
@@ -240,13 +244,17 @@ export default function StockSheet({ action = "add", variants = [], balances = [
             const onHand = Number(bal?.on_hand || 0);
             const available = Number(bal?.available ?? (onHand - Number(bal?.reserved || 0)));
             const q = num(row.qty);
-            return <div className={"ss-row" + (hasText(v.id) ? " is-filled" : "") + (errors[v.id] ? " has-error" : "")} key={v.id}>
+            return <div className={"ss-row" + (needsCost ? " ss-row--cost" : "") + (hasText(v.id) ? " is-filled" : "") + (errors[v.id] ? " has-error" : "")} key={v.id}>
               <div className="ss-name"><strong>{v.product_name}</strong><small>{v.sku}</small></div>
               <div className="ss-stock"><b>{locationId ? available : "–"}</b><small>available here</small></div>
               <label className="ss-qty"><span>{copy.qty}</span>
                 <input type="number" inputMode="decimal" min={action === "count" ? "0" : "0.001"} step="0.001" value={row.qty ?? ""} onChange={e => setRow(v.id, { qty: e.target.value })} /></label>
+              {needsCost && <label className="ss-costbox"><span>Cost price (₹)</span>
+                <input type="number" inputMode="decimal" min="0" step="0.0001" value={row.cost ?? ""} placeholder={defaultCost || "Type cost"} onChange={e => setRow(v.id, { cost: e.target.value })} /></label>}
+              {needsCost && catalogueCost(v) && (row.cost === undefined || row.cost === "") && <button type="button" className="ss-use" onClick={() => setRow(v.id, { cost: catalogueCost(v) })}>Catalogue cost ₹{catalogueCost(v)} · tap to use</button>}
+              {needsCost && hasText(v.id) && !Number.isFinite(num(costOf(row))) && <p className="ss-cost is-missing">Cost price needed on this row.</p>}
               {showDetails && hasDetails && <div className="ss-extra">
-                <label>Unit cost (₹)<input type="number" inputMode="decimal" min="0" step="0.0001" value={row.cost ?? ""} placeholder={defaultCost || "Default"} onChange={e => setRow(v.id, { cost: e.target.value })} /></label>
+                {!needsCost && <label>Unit cost (₹)<input type="number" inputMode="decimal" min="0" step="0.0001" value={row.cost ?? ""} placeholder={defaultCost || "Optional"} onChange={e => setRow(v.id, { cost: e.target.value })} /></label>}
                 <label>Batch / lot<input maxLength="100" value={row.batch ?? ""} onChange={e => setRow(v.id, { batch: e.target.value })} /></label>
                 <label>Expiry date<input type="date" value={row.expiry ?? ""} onChange={e => setRow(v.id, { expiry: e.target.value })} /></label>
               </div>}

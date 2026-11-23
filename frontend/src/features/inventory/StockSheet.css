@@ -23,8 +23,13 @@
 .ss-stock{display:grid;gap:1px;text-align:center}
 .ss-stock b{font-size:16px;color:#26333e}
 .ss-qty span{font-size:11px}
+.ss-row--cost{grid-template-columns:minmax(0,1.5fr) 90px minmax(110px,150px) minmax(110px,150px)}
+.ss-use{grid-column:1/-1;justify-self:start;padding:6px 10px;border:1px dashed #9db9d1;border-radius:9px;background:#f4f9fd;color:#2e587c;font-size:12px;font-weight:700;cursor:pointer}
+.ss-total{margin:8px 0 0;font-weight:700;color:#26333e}
 .ss-extra{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
 .ss-variance{grid-column:1/-1;margin:0;font-size:12px;color:#4582b8;font-weight:700}
+.ss-cost{grid-column:1/-1;margin:0;font-size:12px;color:#18754f;font-weight:700}
+.ss-cost.is-missing{color:#a82f45}
 .ss-err{grid-column:1/-1;margin:0;font-size:12px;color:#a82f45}
 .ss-more{justify-self:center;margin-top:10px}
 .ss-bar{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));background:#fff;border:1px solid #dae6f1;border-radius:14px;box-shadow:0 -6px 18px rgba(20,30,45,.1)}
@@ -50,5 +55,10 @@
   .ss-stock{grid-column:2;grid-row:1;text-align:right}
   .ss-qty{grid-column:1/-1}
   .ss-extra{grid-template-columns:minmax(0,1fr)}
+  .ss-row--cost{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .ss-row--cost .ss-name{grid-column:1}
+  .ss-row--cost .ss-stock{grid-column:2;grid-row:1}
+  .ss-row--cost .ss-qty{grid-column:1;grid-row:2}
+  .ss-row--cost .ss-costbox{grid-column:2;grid-row:2}
   .ss-actions button{flex:1 1 100%}
 }
