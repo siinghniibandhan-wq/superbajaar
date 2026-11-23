@@ -43,3 +43,4 @@
 044_identity_loyalty_referral_links.sql
 045_identity_claim_cancellation_event.sql
 047_inventory_facility_profiles.sql
+049_customer_saved_addresses.sql
