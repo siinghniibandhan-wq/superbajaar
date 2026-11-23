@@ -1,0 +1,651 @@
+import StockSheet from "./StockSheet.jsx";
+import OrganisationPolicyPanel from "../shared/OrganisationPolicyPanel.jsx";
+import { useEffect, useRef, useState } from "react";
+import { apiRequest } from "../../services/api.js";
+import "../catalogue/catalogue.css";
+import "./InventoryWorkspace.css";
+
+function makeIdempotencyUuid() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, char => {
+    const value = Math.floor(Math.random() * 16);
+    return (char === "x" ? value : (value & 0x3) | 0x8).toString(16);
+  });
+}
+
+// Loads every page (500 at a time) so large catalogues are not cut off at the first page.
+async function fetchAllItems(path, maxPages = 20) {
+  const joiner = path.includes("?") ? "&" : "?";
+  const all = [];
+  for (let page = 0; page < maxPages; page += 1) {
+    const result = await apiRequest(path + joiner + "limit=500&offset=" + page * 500);
+    const items = result.items || [];
+    all.push(...items);
+    if (items.length < 500) break;
+  }
+  return all;
+}
+
+
+export default function InventoryWorkspace({ onBack }) {
+  const [locations, setLocations] = useState([]);
+  const [establishments, setEstablishments] = useState([]);
+  const [locationAssignments, setLocationAssignments] = useState({});
+  const [products, setProducts] = useState([]);
+  const [allVariants, setAllVariants] = useState([]);
+  const [variants, setVariants] = useState([]);
+  const [balances, setBalances] = useState([]);
+  const [movements, setMovements] = useState([]);
+  const [approvalRequests, setApprovalRequests] = useState([]);
+  const [costLayers, setCostLayers] = useState([]);
+  const [costReconciliation, setCostReconciliation] = useState([]);
+  const [overview, setOverview] = useState(null);
+  const [productId, setProductId] = useState("");
+  const [form, setForm] = useState({ variant_id: "", location_id: "", quantity: "", unit_cost: "", adjustment_type: "opening_valuation", batch_code: "", expiry_date: "", note: "" });
+  const [issueForm, setIssueForm] = useState({ variant_id: "", location_id: "", quantity: "", note: "", reason_type: "issue", allocation_method: "fifo" });
+  const [countForm, setCountForm] = useState({ variant_id: "", location_id: "", counted_quantity: "", unit_cost: "", batch_code: "", expiry_date: "", allocation_method: "fifo", note: "" });
+  const [transferForm, setTransferForm] = useState({ variant_id: "", source_location_id: "", destination_location_id: "", quantity: "", note: "" });
+  const [locationEditId, setLocationEditId] = useState(null);
+  const [locationForm, setLocationForm] = useState({ name: "", location_type: "warehouse", pin_code: "", is_fulfillable: true, facility_code: "", address_line1: "", address_line2: "", city: "", district: "", state: "", country: "India", service_pin_codes: "", routing_priority: "100", storefront_available: true, manager_name: "", contact_phone: "", contact_email: "", emergency_contact: "", capacity: "", capacity_unit: "", operating_days: [], opening_time: "", closing_time: "", receives_stock: true, dispatches_stock: true, gstin: "", licence_reference: "" });
+  const [internalFacilityId, setInternalFacilityId] = useState("");
+  const [internalLocations, setInternalLocations] = useState([]);
+  const [internalLocationForm, setInternalLocationForm] = useState({ parent_id: "", code: "", name: "", location_type: "receiving" });
+  const [internalLocationEditId, setInternalLocationEditId] = useState(null);
+  const [returns, setReturns] = useState([]);
+  const [selectedReturn, setSelectedReturn] = useState(null);
+  const [returnLoading, setReturnLoading] = useState(false);
+  const [returnReleaseLocationId, setReturnReleaseLocationId] = useState("");
+  const [returnReleaseReason, setReturnReleaseReason] = useState("");
+  const [returnReleaseBusyId, setReturnReleaseBusyId] = useState(null);
+  const returnReleaseAttempts = useRef({});
+  const [quarantineGrns, setQuarantineGrns] = useState([]);
+  const [expiredStock, setExpiredStock] = useState([]);
+  const [expiredQuarantineLocationId, setExpiredQuarantineLocationId] = useState("");
+  const [expiredQuarantineReason, setExpiredQuarantineReason] = useState("");
+  const [expiredQuarantineBusyKey, setExpiredQuarantineBusyKey] = useState(null);
+  const expiredQuarantineAttempts = useRef({});
+  const [selectedQuarantineGrn, setSelectedQuarantineGrn] = useState(null);
+  const [quarantineReleaseQuantities, setQuarantineReleaseQuantities] = useState({});
+  const [quarantineReleaseReasons, setQuarantineReleaseReasons] = useState({});
+  const quarantineReleaseAttempt = useRef(null);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [activeSection, setActiveSection] = useState("overview");
+  const [opAction, setOpAction] = useState("add");
+  const [stockSearch, setStockSearch] = useState("");
+  const [baseLoaded, setBaseLoaded] = useState(false);
+
+  async function loadBase() {
+    try {
+      const [l, p, b, m, c, cr, ar, o, av] = await Promise.all([
+        apiRequest("/inventory/locations"),
+        apiRequest("/catalogue/products?status=all&limit=500"),
+        fetchAllItems("/inventory/balances").then(items => ({ items })),
+        apiRequest("/inventory/movements"),
+        apiRequest("/inventory/cost-layers"),
+        apiRequest("/inventory/cost-layer-reconciliation"),
+        apiRequest("/inventory/approval-requests"),
+        apiRequest("/inventory/overview"),
+        fetchAllItems("/catalogue/variants").then(items => ({ items })).catch(() => ({ items: [] })),
+      ]);
+      setBaseLoaded(true); setLocations(l.items || []); setInternalFacilityId(current => current || String(l.items?.[0]?.id || "")); setProducts(p.items || []); setBalances(b.items || []); setMovements(m.items || []); setCostLayers(c.items || []); setCostReconciliation(cr.items || []); setApprovalRequests(ar.items || []); setOverview(o); setAllVariants(av.items || []);
+      apiRequest("/hr/establishments").then(result => setEstablishments(result.items || [])).catch(() => setEstablishments([]));
+    } catch (e) { setError(e.message || "Inventory API unavailable."); }
+  }
+  useEffect(() => { loadBase(); }, []);
+  useEffect(() => {
+    if (!internalFacilityId) { setInternalLocations([]); return; }
+    apiRequest("/inventory/internal-locations?facility_id=" + internalFacilityId)
+      .then(result => setInternalLocations(result.items || []))
+      .catch(e => setError(e.message || "Unable to load warehouse storage locations."));
+  }, [internalFacilityId]);
+  useEffect(() => {
+    if (activeSection !== "returns") return;
+    setReturnLoading(true);
+    Promise.all([
+      apiRequest("/fulfilment/returns?limit=100"),
+      apiRequest("/purchasing/grns?quarantined_only=true&limit=100"),
+      apiRequest("/inventory/expired-stock?limit=100"),
+    ]).then(([returnResult, grnResult, expiredResult]) => {
+      setReturns(returnResult.items || []);
+      setQuarantineGrns(grnResult.items || []);
+      setExpiredStock(expiredResult.items || []);
+    }).catch(e => setError(e.message || "Unable to load return and quarantine records."))
+      .finally(() => setReturnLoading(false));
+  }, [activeSection]);
+
+  async function saveInternalLocation(event) {
+    event.preventDefault(); setBusy(true); setError(""); setMessage("");
+    try {
+      const payload = {
+        parent_id: internalLocationForm.parent_id ? Number(internalLocationForm.parent_id) : null,
+        code: internalLocationForm.code.trim(), name: internalLocationForm.name.trim(),
+        location_type: internalLocationForm.location_type,
+      };
+      if (!payload.code || !payload.name || !internalFacilityId) throw new Error("Choose a facility and enter a code and name.");
+      await apiRequest(internalLocationEditId ? "/inventory/internal-locations/" + internalLocationEditId : "/inventory/internal-locations", {
+        method: internalLocationEditId ? "PUT" : "POST",
+        body: JSON.stringify(internalLocationEditId ? { ...payload, is_active: true } : { ...payload, facility_id: Number(internalFacilityId) }),
+      });
+      setInternalLocationForm({ parent_id: "", code: "", name: "", location_type: "receiving" });
+      setInternalLocationEditId(null);
+      const result = await apiRequest("/inventory/internal-locations?facility_id=" + internalFacilityId);
+      setInternalLocations(result.items || []);
+      setMessage(internalLocationEditId ? "Storage location updated." : "Storage location created.");
+    } catch (e) { setError(e.message || "Unable to save warehouse storage location."); }
+    finally { setBusy(false); }
+  }
+
+  function editInternalLocation(location) {
+    setInternalLocationEditId(location.id);
+    setInternalLocationForm({ parent_id: location.parent_id ? String(location.parent_id) : "", code: location.code, name: location.name, location_type: location.location_type });
+    setError(""); setMessage("");
+  }
+
+  async function createReplenishmentRequisition(balance) {
+    const quantityInput = window.prompt(`Enter the quantity to request for ${balance.sku} at ${balance.location_name}:`);
+    if (quantityInput === null) return;
+    const quantity = Number(quantityInput);
+    if (!Number.isFinite(quantity) || quantity <= 0) { setError("Replenishment quantity must be greater than zero."); return; }
+    const justification = window.prompt("Why is this stock required?");
+    if (justification === null) return;
+    if (justification.trim().length < 3) { setError("Enter a replenishment justification of at least 3 characters."); return; }
+    setBusy(true); setError(""); setMessage("");
+    try {
+      const request = await apiRequest("/purchasing/requisitions", {
+        method: "POST",
+        body: JSON.stringify({
+          location_id: Number(balance.location_id), department: "Inventory", cost_centre: null,
+          required_by: null, justification: justification.trim(),
+          lines: [{ variant_id: Number(balance.variant_id), quantity, estimated_unit_cost: null,
+            specification: "Replenishment request initiated from the Inventory watchlist" }],
+        }),
+      });
+      setMessage(`Draft purchase requisition ${request.requisition_number} created for ${balance.sku}. Submit it for the configured approval workflow in Purchasing.`);
+    } catch (e) { setError(e.message || "Unable to create replenishment requisition."); }
+    finally { setBusy(false); }
+  }
+
+  async function openInventoryReturn(returnId) {
+    setSelectedReturn(null); setError("");
+    try { setSelectedReturn(await apiRequest("/fulfilment/returns/" + returnId)); }
+    catch (e) { setError(e.message || "Unable to load return detail."); }
+  }
+
+  async function releaseCustomerReturnQuarantine(returnLine) {
+    if (!selectedReturn) return;
+    if (!returnReleaseLocationId || returnReleaseReason.trim().length < 3) {
+      setError("Choose an active saleable destination and enter a release reason of at least 3 characters."); return;
+    }
+    const payload = { destination_location_id: Number(returnReleaseLocationId), reason: returnReleaseReason.trim() };
+    const signature = JSON.stringify({ return_id: selectedReturn.id, line_id: returnLine.id, ...payload });
+    if (!returnReleaseAttempts.current[returnLine.id] || returnReleaseAttempts.current[returnLine.id].signature !== signature) {
+      returnReleaseAttempts.current[returnLine.id] = {
+        signature, key: makeIdempotencyUuid(),
+      };
+    }
+    setReturnReleaseBusyId(returnLine.id); setError(""); setMessage("");
+    try {
+      const result = await apiRequest(`/fulfilment/returns/${selectedReturn.id}/lines/${returnLine.id}/release-quarantine`, {
+        method: "POST", body: JSON.stringify({ ...payload, idempotency_key: returnReleaseAttempts.current[returnLine.id].key }),
+      });
+      setMessage(`Return line ${returnLine.id}: ${result.released_quantity} units moved to saleable stock. ${Number(result.expired_quantity_not_released || 0) > 0 ? `${result.expired_quantity_not_released} expired units remain quarantined.` : ""}`);
+      const [detail, balanceResult] = await Promise.all([
+        apiRequest(`/fulfilment/returns/${selectedReturn.id}`), apiRequest("/inventory/balances?limit=500"),
+      ]);
+      setSelectedReturn(detail); setBalances(balanceResult.items || []);
+      delete returnReleaseAttempts.current[returnLine.id];
+    } catch (e) { setError(e.message || "Unable to release customer-return quarantine stock."); }
+    finally { setReturnReleaseBusyId(null); }
+  }
+
+  async function quarantineExpiredStock(item) {
+    if (!expiredQuarantineLocationId || expiredQuarantineReason.trim().length < 3) {
+      setError("Choose an active non-fulfillable quarantine location and enter a reason of at least 3 characters."); return;
+    }
+    const payload = { variant_id: Number(item.variant_id), source_location_id: Number(item.location_id), quarantine_location_id: Number(expiredQuarantineLocationId), reason: expiredQuarantineReason.trim() };
+    const signature = JSON.stringify(payload);
+    const key = `${item.variant_id}:${item.location_id}`;
+    if (!expiredQuarantineAttempts.current[key] || expiredQuarantineAttempts.current[key].signature !== signature) {
+      expiredQuarantineAttempts.current[key] = { signature, idempotency_key: makeIdempotencyUuid() };
+    }
+    setExpiredQuarantineBusyKey(key); setError(""); setMessage("");
+    try {
+      const result = await apiRequest("/inventory/quarantine-expired", {
+        method: "POST", body: JSON.stringify({ ...payload, idempotency_key: expiredQuarantineAttempts.current[key].idempotency_key }),
+      });
+      const [expiredResult, balanceResult] = await Promise.all([
+        apiRequest("/inventory/expired-stock?limit=100"), apiRequest("/inventory/balances?limit=500"),
+      ]);
+      setExpiredStock(expiredResult.items || []); setBalances(balanceResult.items || []);
+      delete expiredQuarantineAttempts.current[key];
+      setMessage(`${result.quarantined_quantity} expired units moved to non-fulfillable quarantine. The original expiry and cost-layer history is preserved.`);
+    } catch (e) { setError(e.message || "Unable to quarantine expired stock."); }
+    finally { setExpiredQuarantineBusyKey(null); }
+  }
+
+  async function openQuarantineGrn(grnId) {
+    setSelectedQuarantineGrn(null); setError("");
+    try {
+      const detail = await apiRequest("/purchasing/grns/" + grnId);
+      setSelectedQuarantineGrn(detail);
+      setQuarantineReleaseQuantities(Object.fromEntries((detail.lines || []).map(line => [line.id, ""])));
+      setQuarantineReleaseReasons(Object.fromEntries((detail.lines || []).map(line => [line.id, ""])));
+    } catch (e) { setError(e.message || "Unable to load quarantined GRN detail."); }
+  }
+
+  async function releaseQuarantinedStock(event) {
+    event.preventDefault();
+    if (!selectedQuarantineGrn) return;
+    const lines = (selectedQuarantineGrn.lines || []).filter(line => Number(quarantineReleaseQuantities[line.id]) > 0).map(line => ({
+      goods_receipt_line_id: line.id,
+      quantity: Number(quarantineReleaseQuantities[line.id]),
+      reason: String(quarantineReleaseReasons[line.id] || "").trim(),
+    }));
+    if (!lines.length || lines.some(line => !Number.isFinite(line.quantity) || line.quantity <= 0 || line.reason.length < 3)) {
+      setError("Enter a positive release quantity and a reason of at least 3 characters for every selected GRN line."); return;
+    }
+    const signature = JSON.stringify({ grn_id: selectedQuarantineGrn.id, lines });
+    if (!quarantineReleaseAttempt.current || quarantineReleaseAttempt.current.signature !== signature) {
+      quarantineReleaseAttempt.current = { signature, key: makeIdempotencyUuid() };
+    }
+    setBusy(true); setError(""); setMessage("");
+    try {
+      const result = await apiRequest("/purchasing/grns/" + selectedQuarantineGrn.id + "/release-quarantine", {
+        method: "POST", body: JSON.stringify({ idempotency_key: quarantineReleaseAttempt.current.key, lines }),
+      });
+      quarantineReleaseAttempt.current = null;
+      setMessage(result.replayed ? "Quarantine release retry confirmed; no duplicate stock was posted." : "Quarantined quantity released to saleable stock with cost layers and Accounting references.");
+      const [detail, list] = await Promise.all([
+        apiRequest("/purchasing/grns/" + selectedQuarantineGrn.id),
+        apiRequest("/purchasing/grns?quarantined_only=true&limit=100"),
+      ]);
+      setSelectedQuarantineGrn(detail); setQuarantineGrns(list.items || []);
+      setQuarantineReleaseQuantities(Object.fromEntries((detail.lines || []).map(line => [line.id, ""])));
+      setQuarantineReleaseReasons(Object.fromEntries((detail.lines || []).map(line => [line.id, ""])));
+    } catch (e) { setError(e.message || "Unable to release quarantined stock."); }
+    finally { setBusy(false); }
+  }
+  useEffect(() => {
+    if (!productId) { setVariants([]); return; }
+    apiRequest("/catalogue/products/" + productId + "/variants")
+      .then(result => setVariants(result.items || []))
+      .catch(e => setError(e.message || "Unable to load variants."));
+  }, [productId]);
+
+  async function assignLocationEstablishment(locationId) {
+    const establishmentId = locationAssignments[locationId];
+    if (!establishmentId) { setError("Choose a legal establishment before assigning this location."); return; }
+    setBusy(true); setError(""); setMessage("");
+    try {
+      await apiRequest("/inventory/locations/" + locationId + "/establishment", {
+        method: "PUT", body: JSON.stringify({ establishment_id: Number(establishmentId) }),
+      });
+      setMessage("Legal establishment assigned to stock location.");
+      await loadBase();
+    } catch (e) { setError(e.message || "Unable to assign the legal establishment."); }
+    finally { setBusy(false); }
+  }
+
+  async function createLocation(event) {
+    event.preventDefault(); setBusy(true); setError(""); setMessage("");
+    try {
+      const profile = {
+        facility_code: locationForm.facility_code.trim().toUpperCase(),
+        service_pin_codes: locationForm.service_pin_codes.split(/[ ,;\\n]+/).map(pin => pin.trim()).filter(Boolean),
+        routing_priority: Number(locationForm.routing_priority || 100),
+        storefront_available: locationForm.storefront_available,
+        is_fulfillable: locationForm.is_fulfillable,
+        address_line1: locationForm.address_line1.trim(), address_line2: locationForm.address_line2.trim() || null,
+        city: locationForm.city.trim(), district: locationForm.district.trim() || null,
+        state: locationForm.state.trim(), country: locationForm.country.trim(), pin_code: locationForm.pin_code,
+        manager_name: locationForm.manager_name.trim() || null, contact_phone: locationForm.contact_phone.trim() || null,
+        contact_email: locationForm.contact_email.trim() || null, emergency_contact: locationForm.emergency_contact.trim() || null,
+        capacity: locationForm.capacity === "" ? null : Number(locationForm.capacity),
+        capacity_unit: locationForm.capacity_unit.trim() || null, operating_days: locationForm.operating_days,
+        opening_time: locationForm.opening_time || null, closing_time: locationForm.closing_time || null,
+        receives_stock: locationForm.receives_stock, dispatches_stock: locationForm.dispatches_stock,
+        gstin: locationForm.gstin.trim().toUpperCase() || null, licence_reference: locationForm.licence_reference.trim() || null,
+      };
+      if (!profile.facility_code || !profile.address_line1 || !profile.city || !profile.state || !profile.pin_code) {
+        throw new Error("Enter facility code, address, city, state and six-digit PIN code.");
+      }
+      if (locationEditId) {
+        await apiRequest("/inventory/locations/" + locationEditId + "/profile", { method: "PUT", body: JSON.stringify(profile) });
+      } else {
+        await apiRequest("/inventory/locations", { method: "POST", body: JSON.stringify({
+          name: locationForm.name, location_type: locationForm.location_type, pin_code: locationForm.pin_code,
+          is_fulfillable: locationForm.is_fulfillable, profile,
+        })});
+      }
+      setLocationEditId(null);
+      setLocationForm({ name: "", location_type: "warehouse", pin_code: "", is_fulfillable: true, facility_code: "", address_line1: "", address_line2: "", city: "", district: "", state: "", country: "India", service_pin_codes: "", routing_priority: "100", storefront_available: true, manager_name: "", contact_phone: "", contact_email: "", emergency_contact: "", capacity: "", capacity_unit: "", operating_days: [], opening_time: "", closing_time: "", receives_stock: true, dispatches_stock: true, gstin: "", licence_reference: "" });
+      setMessage(locationEditId ? "Facility profile updated." : "Warehouse / store profile created."); await loadBase();
+    } catch (e) { setError(e.message || "Unable to save facility profile."); }
+    finally { setBusy(false); }
+  }
+
+  function editFacilityProfile(location) {
+    const profile = location.profile || {};
+    setLocationEditId(location.id);
+    setLocationForm({
+      name: location.name, location_type: location.location_type, pin_code: profile.pin_code || location.pin_code || "",
+      is_fulfillable: location.is_fulfillable !== false, facility_code: location.facility_code || "",
+      service_pin_codes: (profile.service_pin_codes || [profile.pin_code || location.pin_code].filter(Boolean)).join(", "),
+      routing_priority: String(profile.routing_priority ?? 100),
+      storefront_available: profile.storefront_available !== false,
+      address_line1: profile.address_line1 || location.address_line1 || "", address_line2: profile.address_line2 || location.address_line2 || "",
+      city: profile.city || location.city || "", district: profile.district || location.district || "",
+      state: profile.state || location.state || "", country: profile.country || "India",
+      manager_name: profile.manager_name || "", contact_phone: profile.contact_phone || "",
+      contact_email: profile.contact_email || "", emergency_contact: profile.emergency_contact || "",
+      capacity: profile.capacity ?? "", capacity_unit: profile.capacity_unit || "",
+      operating_days: profile.operating_days || [], opening_time: profile.opening_time || "", closing_time: profile.closing_time || "",
+      receives_stock: profile.receives_stock !== false, dispatches_stock: profile.dispatches_stock !== false,
+      gstin: profile.gstin || "", licence_reference: profile.licence_reference || "",
+    });
+    setError(""); setMessage("");
+  }
+
+  async function submit(event) {
+    event.preventDefault(); setBusy(true); setError(""); setMessage("");
+    try {
+      await apiRequest("/inventory/adjustments", { method: "POST", body: JSON.stringify({
+        variant_id: Number(form.variant_id), location_id: Number(form.location_id),
+        quantity: Number(form.quantity), unit_cost: Number(form.unit_cost), adjustment_type: form.adjustment_type,
+        batch_code: form.batch_code || null, expiry_date: form.expiry_date || null, note: form.note,
+      })});
+      setForm(v => ({ ...v, quantity: "", unit_cost: "", batch_code: "", expiry_date: "", note: "" }));
+      setMessage("Stock receipt adjustment recorded."); await loadBase();
+    } catch (e) { setError(e.message || "Stock adjustment failed."); }
+    finally { setBusy(false); }
+  }
+
+
+  async function submitIssue(event) {
+    event.preventDefault(); setBusy(true); setError(""); setMessage("");
+    try {
+      await apiRequest("/inventory/issues", { method: "POST", body: JSON.stringify({
+        variant_id: Number(issueForm.variant_id), location_id: Number(issueForm.location_id),
+        quantity: Number(issueForm.quantity), note: issueForm.note, reason_type: issueForm.reason_type,
+        allocation_method: issueForm.allocation_method,
+      })});
+      setIssueForm(v => ({ ...v, quantity: "", note: "" }));
+      setMessage(issueForm.reason_type === "scrap" ? "Scrap recorded and stock reduced." : "Stock issue recorded. Reserved units were protected."); await loadBase();
+    } catch (e) { setError(e.message || "Stock issue failed."); }
+    finally { setBusy(false); }
+  }
+
+
+  async function submitCount(event) {
+    event.preventDefault(); setBusy(true); setError(""); setMessage("");
+    try {
+      const result = await apiRequest("/inventory/counts", { method: "POST", body: JSON.stringify({
+        variant_id: Number(countForm.variant_id), location_id: Number(countForm.location_id),
+        counted_quantity: Number(countForm.counted_quantity),
+        unit_cost: countForm.unit_cost === "" ? null : Number(countForm.unit_cost),
+        batch_code: countForm.batch_code || null, expiry_date: countForm.expiry_date || null,
+        allocation_method: countForm.allocation_method, note: countForm.note,
+      })});
+      setCountForm(v => ({ ...v, counted_quantity: "", note: "" }));
+      setMessage("Physical count saved. Variance: " + result.variance + " units."); await loadBase();
+    } catch (e) { setError(e.message || "Physical count failed."); }
+    finally { setBusy(false); }
+  }
+
+  async function submitTransfer(event) {
+    event.preventDefault(); setBusy(true); setError(""); setMessage("");
+    try {
+      await apiRequest("/inventory/transfers", { method: "POST", body: JSON.stringify({
+        variant_id: Number(transferForm.variant_id), source_location_id: Number(transferForm.source_location_id),
+        destination_location_id: Number(transferForm.destination_location_id),
+        quantity: Number(transferForm.quantity), note: transferForm.note,
+      })});
+      setTransferForm(v => ({ ...v, quantity: "", note: "" }));
+      setMessage("Stock transfer completed and both location movements recorded."); await loadBase();
+    } catch (e) { setError(e.message || "Stock transfer failed."); }
+    finally { setBusy(false); }
+  }
+
+
+  async function submitInventoryApproval(eventType, locationId, payload) {
+    setBusy(true); setError(""); setMessage("");
+    try {
+      await apiRequest("/inventory/approval-requests", {
+        method: "POST",
+        body: JSON.stringify({ event_type: eventType, location_id: Number(locationId), payload }),
+      });
+      setMessage("Inventory operation submitted for approval. No stock has moved.");
+      const result = await apiRequest("/inventory/approval-requests");
+      setApprovalRequests(result.items || []);
+    } catch (e) { setError(e.message || "Unable to submit inventory approval request."); }
+    finally { setBusy(false); }
+  }
+
+  async function decideInventoryApproval(id, decision) {
+    const reason = window.prompt(decision === "approved" ? "Approval reason / review note:" : "Reason for rejecting this inventory operation:");
+    if (reason === null) return;
+    if (reason.trim().length < 3) { setError("Enter a reason of at least 3 characters."); return; }
+    setBusy(true); setError(""); setMessage("");
+    try {
+      const result = await apiRequest("/inventory/approval-requests/" + id + "/decision", {
+        method: "POST", body: JSON.stringify({ decision, reason: reason.trim() }),
+      });
+      setMessage("Inventory request #" + id + " is now " + result.status + ".");
+      const refreshed = await apiRequest("/inventory/approval-requests");
+      setApprovalRequests(refreshed.items || []);
+    } catch (e) { setError(e.message || "Unable to record inventory decision."); }
+    finally { setBusy(false); }
+  }
+
+  const inventoryTotals = overview?.totals || {};
+  const totalOnHand = Number(inventoryTotals.on_hand || 0);
+  const totalReserved = Number(inventoryTotals.reserved || 0);
+  const totalAvailable = Number(inventoryTotals.available || 0);
+  const pendingApprovalCount = Number(inventoryTotals.pending_approvals || 0);
+  const movementGroups = (overview?.movement_groups || []).map(row => ({ name: String(row.movement_type || "other").replaceAll("_", " "), total: Number(row.total || 0) }));
+  const stockByLocation = (overview?.stock_by_location || []).map(row => ({ id: row.location_id, name: row.location_name || ("Location " + row.location_id), total: Number(row.on_hand || 0) }));
+  const maxLocationStock = Math.max(1, ...stockByLocation.map(row => row.total));
+
+  return <section className="sb-workspace">
+    <button className="sb-back" type="button" onClick={onBack}>← All workspaces</button>
+    <p className="sb-eyebrow">STOCK CONTROL</p><h1>Inventory</h1>
+    <p>Manage stock locations, receipt adjustments, stock issues, inter-location transfers, balances and movement history.</p>
+    {error && <p className="sb-alert" role="alert">{error}</p>}
+    {message && <p className="sb-success" role="status">{message}</p>}
+    {(() => {
+      const groups = [["overview","Overview",["overview"]],["stock","Stock",["stock"]],["operations","Update stock",["operations"]],["todo","To-do",["approvals","returns"]],["setup","Setup",["locations","policy"]]];
+      const subLabels = { approvals: "Approvals" + (approvalRequests.length ? " (" + approvalRequests.length + ")" : ""), returns: "Returns & quarantine", locations: "Locations", policy: "Control policy" };
+      const current = groups.find(g => g[2].includes(activeSection)) || groups[0];
+      return <>
+        <nav className="inventory-section-nav inventory-main-nav" aria-label="Inventory sections">{groups.map(([key,label,keys])=><button key={key} type="button" className={current[0]===key?"active":""} aria-pressed={current[0]===key} onClick={()=>setActiveSection(keys.includes(activeSection)?activeSection:keys[0])}>{label}{key==="todo" && approvalRequests.length>0 && <span className="inventory-badge">{approvalRequests.length}</span>}</button>)}</nav>
+        {current[2].length > 1 && <nav className="inventory-sub-nav" aria-label={current[1] + " sections"}>{current[2].map(k=><button key={k} type="button" className={activeSection===k?"active":""} aria-pressed={activeSection===k} onClick={()=>setActiveSection(k)}>{subLabels[k]}</button>)}</nav>}
+        {baseLoaded && !locations.length && activeSection !== "locations" && <div className="inventory-setup-banner" role="status"><div><strong>Create your first warehouse or store</strong><p>Stock needs a place to live before you can add it.</p></div><button type="button" className="sb-primary" onClick={()=>setActiveSection("locations")}>Create location</button></div>}
+      </>;
+    })()}
+    {activeSection === "locations" && <div className="inventory-section"><form className="sb-form" onSubmit={createLocation}>
+      <h2>{locationEditId ? "Complete / edit facility profile" : "Create warehouse or store"}</h2>
+      <div className="sb-form-grid">
+        <label>Facility name<input required maxLength="160" value={locationForm.name} onChange={e=>setLocationForm(v=>({...v,name:e.target.value}))}/></label>
+        <label>Facility type<select value={locationForm.location_type} onChange={e=>setLocationForm(v=>({...v,location_type:e.target.value}))}><option value="warehouse">Warehouse</option><option value="store">Store</option><option value="dark_store">Dark store</option></select></label>
+        <label>Unique facility code<input required maxLength="40" value={locationForm.facility_code} onChange={e=>setLocationForm(v=>({...v,facility_code:e.target.value.toUpperCase()}))}/></label>
+        <h3 className="sb-span-all">Address</h3>
+        <label>Address line 1<input required maxLength="200" value={locationForm.address_line1} onChange={e=>setLocationForm(v=>({...v,address_line1:e.target.value}))}/></label>
+        <label>Address line 2<input maxLength="200" value={locationForm.address_line2} onChange={e=>setLocationForm(v=>({...v,address_line2:e.target.value}))}/></label>
+        <label>City<input required maxLength="100" value={locationForm.city} onChange={e=>setLocationForm(v=>({...v,city:e.target.value}))}/></label>
+        <label>District<input maxLength="100" value={locationForm.district} onChange={e=>setLocationForm(v=>({...v,district:e.target.value}))}/></label>
+        <label>State<input required maxLength="100" value={locationForm.state} onChange={e=>setLocationForm(v=>({...v,state:e.target.value}))}/></label>
+        <label>Country<input required maxLength="80" value={locationForm.country} onChange={e=>setLocationForm(v=>({...v,country:e.target.value}))}/></label>
+        <label>Primary facility PIN<input required inputMode="numeric" pattern="[0-9]{6}" maxLength="6" value={locationForm.pin_code} onChange={e=>setLocationForm(v=>({...v,pin_code:e.target.value}))}/></label>
+        <h3 className="sb-span-all">Storefront serviceability & routing</h3>
+        <label className="sb-span-all">Service PIN codes (comma or space separated)<textarea rows="2" placeholder="800001, 800002, 800003" value={locationForm.service_pin_codes} onChange={e=>setLocationForm(v=>({...v,service_pin_codes:e.target.value}))}/></label>
+        <label>Routing priority (lower runs first)<input required type="number" min="0" max="100000" step="1" value={locationForm.routing_priority} onChange={e=>setLocationForm(v=>({...v,routing_priority:e.target.value}))}/></label>
+        <label><input type="checkbox" checked={locationForm.storefront_available} onChange={e=>setLocationForm(v=>({...v,storefront_available:e.target.checked}))}/> Available for storefront orders</label>
+        <p className="sb-muted sb-span-all">Existing facility PIN is included automatically when no service PIN list is entered. Routing checks Indian local operating hours, service PIN coverage and complete stock availability.</p>
+        <h3 className="sb-span-all">Contact (optional)</h3>
+        <label>Manager / contact name<input maxLength="120" value={locationForm.manager_name} onChange={e=>setLocationForm(v=>({...v,manager_name:e.target.value}))}/></label>
+        <label>Contact phone<input maxLength="20" value={locationForm.contact_phone} onChange={e=>setLocationForm(v=>({...v,contact_phone:e.target.value}))}/></label>
+        <label>Contact email<input type="email" maxLength="254" value={locationForm.contact_email} onChange={e=>setLocationForm(v=>({...v,contact_email:e.target.value}))}/></label>
+        <label>Emergency contact<input maxLength="120" value={locationForm.emergency_contact} onChange={e=>setLocationForm(v=>({...v,emergency_contact:e.target.value}))}/></label>
+        <h3 className="sb-span-all">Operations (optional)</h3>
+        <label>Capacity<input type="number" min="0.001" step="0.001" value={locationForm.capacity} onChange={e=>setLocationForm(v=>({...v,capacity:e.target.value}))}/></label>
+        <label>Capacity unit<input maxLength="30" value={locationForm.capacity_unit} onChange={e=>setLocationForm(v=>({...v,capacity_unit:e.target.value}))}/></label>
+        <label>Opening time<input type="time" value={locationForm.opening_time} onChange={e=>setLocationForm(v=>({...v,opening_time:e.target.value}))}/></label>
+        <label>Closing time<input type="time" value={locationForm.closing_time} onChange={e=>setLocationForm(v=>({...v,closing_time:e.target.value}))}/></label>
+        <label>Operating days<select multiple value={locationForm.operating_days} onChange={e=>setLocationForm(v=>({...v,operating_days:Array.from(e.target.selectedOptions).map(o=>o.value)}))}><option value="mon">Monday</option><option value="tue">Tuesday</option><option value="wed">Wednesday</option><option value="thu">Thursday</option><option value="fri">Friday</option><option value="sat">Saturday</option><option value="sun">Sunday</option></select></label>
+        <label><input type="checkbox" checked={locationForm.receives_stock} onChange={e=>setLocationForm(v=>({...v,receives_stock:e.target.checked}))}/> Receives stock</label>
+        <label><input type="checkbox" checked={locationForm.dispatches_stock} onChange={e=>setLocationForm(v=>({...v,dispatches_stock:e.target.checked}))}/> Dispatches stock</label>
+        <label className="sb-span-all"><input type="checkbox" checked={locationForm.is_fulfillable} onChange={e=>setLocationForm(v=>({...v,is_fulfillable:e.target.checked}))}/> Eligible for order reservation and normal fulfilment</label>
+        <h3 className="sb-span-all">Ownership & compliance</h3>
+        <label>GSTIN (optional)<input maxLength="15" value={locationForm.gstin} onChange={e=>setLocationForm(v=>({...v,gstin:e.target.value.toUpperCase()}))}/></label>
+        <label>Licence / registration reference<input maxLength="100" value={locationForm.licence_reference} onChange={e=>setLocationForm(v=>({...v,licence_reference:e.target.value}))}/></label>
+      </div>
+      <button className="sb-primary" disabled={busy} type="submit">{busy ? "Saving…" : locationEditId ? "Save facility profile" : locationForm.location_type === "warehouse" ? "Create warehouse" : locationForm.location_type === "dark_store" ? "Create dark store" : "Create store"}</button>
+    </form>
+    <div className="sb-data-card">
+      <h2>Warehouse / store ownership ({locations.length})</h2>
+      <p className="sb-muted">Every stock location used by controlled Purchase or Inventory workflows must be assigned to its legal establishment. Existing unassigned locations are blocked from those operations until assigned.</p>
+      {locations.length ? locations.map(location => <div className="sb-form-grid" key={location.id}>
+        <div><strong>{location.name}</strong><p className="sb-muted">{location.location_type} · {location.profile_status === "complete" ? "Profile complete" : "Profile incomplete"} · Code: {location.facility_code || "Not assigned"}</p><p className="sb-muted">{location.profile?.address_line1 || location.address_line1 || "Address not recorded"}{location.profile?.city || location.city ? ", " + (location.profile?.city || location.city) : ""}{location.profile?.state || location.state ? ", " + (location.profile?.state || location.state) : ""}</p><button className="sb-secondary" type="button" onClick={()=>editFacilityProfile(location)}>Edit / complete profile</button></div>
+        <label>{location.name} · {location.location_type} · {location.is_fulfillable ? "Fulfilment stock" : "Quarantine / repair holding"}
+          <select value={locationAssignments[location.id] || ""} onChange={e=>setLocationAssignments(old=>({...old,[location.id]:e.target.value}))}>
+            <option value="">Not assigned</option>
+            {establishments.map(item=><option key={item.id} value={item.id}>{item.display_name} ({item.code})</option>)}
+          </select>
+        </label>
+        <button className="sb-secondary" type="button" disabled={busy || !locationAssignments[location.id] || String(location.establishment_id || "") === String(locationAssignments[location.id])} onClick={()=>assignLocationEstablishment(location.id)}>Save assignment</button>
+      </div>) : <p className="sb-empty">No stock locations yet.</p>}
+    </div>
+      <div className="sb-data-card">
+        <h2>Warehouse storage locations</h2>
+        <p className="sb-muted">Create storage locations inside the selected warehouse, such as receiving areas, zones, racks, shelves, bins, picking, packing, dispatch, quarantine and repair areas. These organise physical handling; stock balances remain warehouse-level until a separately approved bin-ledger design exists.</p>
+        <div className="sb-form-grid">
+          <label>Warehouse<select value={internalFacilityId} onChange={e=>{setInternalFacilityId(e.target.value);setInternalLocationEditId(null);setInternalLocationForm({parent_id:"",code:"",name:"",location_type:"receiving"});}}><option value="">Choose facility</option>{locations.map(location=><option key={location.id} value={location.id}>{location.name}</option>)}</select></label>
+        </div>
+        <form className="sb-form" onSubmit={saveInternalLocation}>
+          <h3>{internalLocationEditId ? "Edit storage location" : "Create storage location"}</h3>
+          <div className="sb-form-grid">
+            <label>Parent storage location<select value={internalLocationForm.parent_id} onChange={e=>setInternalLocationForm(v=>({...v,parent_id:e.target.value}))}><option value="">No parent (top level)</option>{internalLocations.filter(item=>String(item.id)!==String(internalLocationEditId)).map(item=><option key={item.id} value={item.id}>{item.code} · {item.name} ({item.location_type})</option>)}</select></label>
+            <label>Location code<input required maxLength="40" value={internalLocationForm.code} onChange={e=>setInternalLocationForm(v=>({...v,code:e.target.value.toUpperCase()}))}/></label>
+            <label>Location name<input required maxLength="120" value={internalLocationForm.name} onChange={e=>setInternalLocationForm(v=>({...v,name:e.target.value}))}/></label>
+            <label>Location type<select value={internalLocationForm.location_type} onChange={e=>setInternalLocationForm(v=>({...v,location_type:e.target.value}))}>{["receiving","storage","rack","shelf","bin","picking","packing","dispatch","quarantine","repair"].map(type=><option key={type} value={type}>{type.replaceAll("_"," ").replace(/\b\w/g,c=>c.toUpperCase())}</option>)}</select></label>
+          </div>
+          <button className="sb-primary" type="submit" disabled={busy || !internalFacilityId}>{busy ? "Saving…" : internalLocationEditId ? "Save storage location" : "Create storage location"}</button>
+          {internalLocationEditId && <button className="sb-secondary" type="button" onClick={()=>{setInternalLocationEditId(null);setInternalLocationForm({parent_id:"",code:"",name:"",location_type:"receiving"});}}>Cancel edit</button>}
+        </form>
+        {internalLocations.length ? <div className="sb-table-wrap"><table><thead><tr><th>Code</th><th>Location</th><th>Type</th><th>Parent</th><th>Action</th></tr></thead><tbody>{internalLocations.map(item=><tr key={item.id}><td>{item.code}</td><td>{item.name}</td><td>{item.location_type}</td><td>{internalLocations.find(parent=>parent.id===item.parent_id)?.name || "—"}</td><td><button type="button" onClick={()=>editInternalLocation(item)}>Edit</button></td></tr>)}</tbody></table></div> : <p className="sb-empty">No internal locations have been created for this facility.</p>}
+      </div>
+    </div>}
+    {activeSection === "overview" && <div className="inventory-section inventory-analytics">
+      <div className="inventory-analytics-heading">
+        <div><h2>Inventory analytics</h2><p className="sb-muted">Live operational view from stock balances, movement history, approvals and valuation records.</p></div>
+        <button className="sb-secondary" type="button" disabled={busy} onClick={loadBase}>Refresh analytics</button>
+      </div>
+      <div className="inventory-analytics-metrics">
+        <article><small>Units on hand</small><strong>{overview ? totalOnHand.toLocaleString("en-IN") : "—"}</strong><span>Full-dataset total across {locations.length} stock locations</span></article>
+        <article><small>Reserved units</small><strong>{overview ? totalReserved.toLocaleString("en-IN") : "—"}</strong><span>Full-dataset reserved quantity</span></article>
+        <article><small>Available units</small><strong>{overview ? totalAvailable.toLocaleString("en-IN") : "—"}</strong><span>Full-dataset on-hand less reserved</span></article>
+        <article><small>Movement records</small><strong>{overview ? Number(inventoryTotals.movements || 0).toLocaleString("en-IN") : "—"}</strong><span>All recorded inventory movements</span></article>
+        <article><small>Pending approvals</small><strong>{overview ? pendingApprovalCount.toLocaleString("en-IN") : "—"}</strong><span>All pending approval requests</span></article>
+        <article><small>Cost layers</small><strong>{overview ? Number(inventoryTotals.active_cost_layers || 0).toLocaleString("en-IN") : "—"}</strong><span>All active inventory valuation layers</span></article>
+      </div>
+      <div className="inventory-analytics-grid">
+        <section className="sb-data-card">
+          <h2>Stock by location</h2>
+          {stockByLocation.length ? <div className="inventory-analytics-bars">{stockByLocation.map(row => <div className="inventory-analytics-bar" key={row.id}><div><span>{row.name}</span><strong>{row.total.toLocaleString("en-IN")}</strong></div><i><b style={{ width: Math.max(2, row.total / maxLocationStock * 100) + "%" }} /></i></div>)}</div> : <p className="sb-empty">No stock balance records are available yet.</p>}
+        </section>
+        <section className="sb-data-card">
+          <h2>Movement mix</h2>
+          {movementGroups.length ? <div className="inventory-analytics-list">{movementGroups.map(row => <div key={row.name}><span>{row.name.replace(/\b\w/g, value => value.toUpperCase())}</span><strong>{row.total.toLocaleString("en-IN")}</strong></div>)}</div> : <p className="sb-empty">No inventory movements are recorded yet.</p>}
+        </section>
+        <section className="sb-data-card">
+          <h2>Valuation & controls</h2>
+          <div className="inventory-analytics-list">
+            <div><span>Cost reconciliation records</span><strong>{overview ? Number(inventoryTotals.reconciliation_records || 0).toLocaleString("en-IN") : "—"}</strong></div>
+            <div><span>Balances requiring valuation review</span><strong>{overview ? Number(inventoryTotals.mismatched_records || 0).toLocaleString("en-IN") : "—"}</strong></div>
+            <div><span>Approval requests</span><strong>{overview ? Number(inventoryTotals.total_approval_requests || 0).toLocaleString("en-IN") : "—"}</strong></div>
+            <div><span>Locations requiring assignment</span><strong>{locations.filter(row => !row.establishment_id).length.toLocaleString("en-IN")}</strong></div>
+          </div>
+          <p className="sb-muted">Counts are full-dataset aggregates. Valuation review counts compare operational on-hand quantities with remaining cost-layer quantities; they are not monetary valuation totals.</p>
+        </section>
+      </div>
+    </div>}
+        {activeSection === "operations" && <div className="inventory-section"><div className="inventory-action-picker" role="group" aria-label="What do you want to do?">{[["add","Add stock","Opening balance or found stock"],["issue","Remove stock","Issue, scrap or reduce"],["count","Count stock","Match the system to the shelf"],["transfer","Move stock","Between two locations"]].map(([key,label,hint])=><button key={key} type="button" className={opAction===key?"active":""} aria-pressed={opAction===key} onClick={()=>setOpAction(key)}><strong>{label}</strong><small>{hint}</small></button>)}</div><StockSheet key={opAction} action={opAction} variants={allVariants} balances={balances} locations={locations} onDone={loadBase} />
+    </div>}
+    {activeSection === "approvals" && <div className="inventory-section"><div className="sb-data-card">
+      <h2>Inventory approval queue ({approvalRequests.length})</h2>
+      <p className="sb-muted">Requests are bound to their submitted payload and policy version. Requesters cannot approve their own operations. Once all stages approve, the requester must submit the unchanged operation again to post it.</p>
+      {approvalRequests.length ? approvalRequests.map(item=><div className="sb-form-grid" key={item.id}>
+        <div><strong>#{item.id} · {item.event_type}</strong><p className="sb-muted">{item.location_name} · {item.status} · {item.created_by_email}</p>
+          {(item.decisions||[]).map(d=><p className="sb-muted" key={d.stage_sequence}>Stage {d.stage_sequence}: {d.decision} — {d.actor_email}</p>)}</div>
+        {item.can_decide && <div><button className="sb-secondary" type="button" disabled={busy} onClick={()=>decideInventoryApproval(item.id,"approved")}>Approve next stage</button> <button className="sb-secondary" type="button" disabled={busy} onClick={()=>decideInventoryApproval(item.id,"rejected")}>Reject</button></div>}
+      </div>) : <p className="sb-empty">No inventory approval requests.</p>}
+    </div>
+    </div>}
+    {activeSection === "stock" && (() => {
+      const q = stockSearch.trim().toLowerCase();
+      const availOf = b => Number(b.available ?? (Number(b.on_hand || 0) - Number(b.reserved || 0)));
+      const stocked = new Set(balances.map(b => String(b.variant_id)));
+      const unstocked = allVariants.filter(v => !stocked.has(String(v.id))).map(v => ({ variant_id: v.id, sku: v.sku, product_name: v.product_name, location_id: "none", location_name: "No stock recorded", on_hand: 0, reserved: 0, available: 0 }));
+      const productNameByVariant = Object.fromEntries(allVariants.map(v => [String(v.id), v.product_name]));
+      const stockRows = [...balances.map(b => ({ ...b, product_name: b.product_name || productNameByVariant[String(b.variant_id)] || "" })), ...unstocked];
+      const shown = stockRows.filter(b => !q || String(b.sku || "").toLowerCase().includes(q) || String(b.product_name || "").toLowerCase().includes(q) || String(b.location_name || "").toLowerCase().includes(q));
+      const low = balances.filter(b => availOf(b) <= 5);
+      const skuById = Object.fromEntries(balances.map(b => [String(b.variant_id), b.sku]));
+      const locById = Object.fromEntries(locations.map(l => [String(l.id), l.name]));
+      return <div className="inventory-section">
+      <div className="sb-data-card"><div className="sb-data-heading"><h2>Current stock ({stockRows.length})</h2><button type="button" onClick={loadBase}>Refresh</button></div>
+        <input className="inventory-search" type="search" aria-label="Search stock by product, SKU or location" placeholder="Search by product, SKU or location" value={stockSearch} onChange={e=>setStockSearch(e.target.value)}/>
+        {shown.length ? <div className="sb-table-wrap"><table><thead><tr><th>Product</th><th>SKU</th><th>Location</th><th>On hand</th><th>Reserved</th><th>Available</th><th>Status</th></tr></thead><tbody>{shown.map((b,i)=>{ const a = availOf(b); return <tr key={b.variant_id+"-"+b.location_id+"-"+i}><td>{b.product_name || "—"}</td><td>{b.sku}</td><td>{b.location_name}</td><td>{b.on_hand}</td><td>{b.reserved}</td><td>{b.available}</td><td><span className={"inventory-pill " + (a <= 0 ? "is-out" : a <= 5 ? "is-low" : "is-ok")}>{a <= 0 ? "Out" : a <= 5 ? "Low" : "OK"}</span></td></tr>; })}</tbody></table></div> : <p className="sb-empty">{stockRows.length ? "No stock matches your search." : "No stock yet. Use Update stock to add your first stock."}</p>}
+      </div>
+      <div className="sb-data-card">
+        <h2>Low stock ({low.length})</h2>
+        <p className="sb-muted">5 or fewer units available. Raise a purchase request for these. Nothing is ordered automatically.</p>
+        {low.length ? <div className="sb-table-wrap"><table><thead><tr><th>SKU</th><th>Location</th><th>Available</th><th>On hand</th><th>Action</th></tr></thead><tbody>{low.map((b,i)=><tr key={"replenish-"+b.variant_id+"-"+b.location_id+"-"+i}><td>{b.sku}</td><td>{b.location_name}</td><td>{availOf(b)}</td><td>{b.on_hand}</td><td><button type="button" disabled={busy} onClick={()=>createReplenishmentRequisition(b)}>Create purchase request</button></td></tr>)}</tbody></table></div> : <p className="sb-empty">No items are running low.</p>}
+      </div>
+      <details className="inventory-fold"><summary>Stock movement history ({movements.length})</summary>
+        {movements.length ? <div className="sb-table-wrap"><table><thead><tr><th>Date</th><th>SKU</th><th>Location</th><th>Type</th><th>Quantity</th><th>Note</th></tr></thead><tbody>{movements.map(m=><tr key={m.id}><td>{new Date(m.created_at).toLocaleString()}</td><td>{skuById[String(m.variant_id)] || ("Variant " + m.variant_id)}</td><td>{locById[String(m.location_id)] || ("Location " + m.location_id)}</td><td>{String(m.movement_type || "").replaceAll("_", " ")}</td><td>{m.quantity}</td><td>{m.note}</td></tr>)}</tbody></table></div> : <p className="sb-empty">No inventory movements found.</p>}
+      </details>
+      <details className="inventory-fold"><summary>Cost check ({costReconciliation.length})</summary>
+        <p className="sb-muted">Compares stock on the shelf with stock that has a recorded cost. Any difference needs checking. Do not issue stock that has no cost.</p>
+        {costReconciliation.length ? <div className="sb-table-wrap"><table><thead><tr><th>SKU</th><th>Location</th><th>On hand</th><th>Valued</th><th>Expired</th><th>Unvalued / excess</th></tr></thead><tbody>{costReconciliation.map(row=><tr key={row.variant_id+"-"+row.location_id}><td>{row.sku}</td><td>{row.location_name}</td><td>{row.on_hand}</td><td>{row.valued_quantity}</td><td>{row.expired_quantity}</td><td>{row.unvalued_or_overvalued_quantity}</td></tr>)}</tbody></table></div> : <p className="sb-empty">No stock balances to reconcile.</p>}
+      </details>
+      <details className="inventory-fold"><summary>Stock value by batch ({costLayers.length})</summary>
+        <p className="sb-muted">Value of remaining stock, based on the cost recorded when it was received. Expired batches are skipped when issuing stock (FIFO/FEFO).</p>
+        {costLayers.length ? <div className="sb-table-wrap"><table><thead><tr><th>SKU</th><th>Location</th><th>Batch</th><th>Expiry</th><th>Remaining</th><th>Unit cost</th><th>Value</th></tr></thead><tbody>{costLayers.map(layer=><tr key={layer.id}><td>{layer.sku}</td><td>{layer.location_name}</td><td>{layer.batch_code || "—"}</td><td>{layer.expiry_date || "—"}</td><td>{layer.remaining_quantity}</td><td>₹{layer.unit_cost}</td><td>₹{layer.remaining_value}</td></tr>)}</tbody></table></div> : <p className="sb-empty">No valued receipt layers found. Existing stock needs an approved opening valuation before it can be issued.</p>}
+      </details>
+      </div>;
+    })()}
+    {activeSection === "returns" && <div className="inventory-section">
+      <div className="sb-data-card">
+        <div className="sb-data-heading"><h2>Customer returns & disposition</h2><button type="button" disabled={returnLoading} onClick={()=>{setSelectedReturn(null);setSelectedQuarantineGrn(null);setReturnLoading(true);Promise.all([apiRequest("/fulfilment/returns?limit=100"),apiRequest("/purchasing/grns?quarantined_only=true&limit=100"),apiRequest("/inventory/expired-stock?limit=100")]).then(([r,g,x])=>{setReturns(r.items||[]);setQuarantineGrns(g.items||[]);setExpiredStock(x.items||[]);}).catch(e=>setError(e.message||"Unable to refresh inventory return queues.")).finally(()=>setReturnLoading(false));}}>{returnLoading ? "Loading…" : "Refresh"}</button></div>
+        <p className="sb-muted">Inventory visibility for returns managed by Fulfilment. Inspection and disposition remain owned by the Fulfilment workflow so stock cannot be posted twice.</p>
+        {returns.length ? returns.map(item=><button type="button" className="sb-purchasing-attention-row" key={item.id} onClick={()=>openInventoryReturn(item.id)}><span><strong>{item.return_number}</strong><small>{item.order_number} · {item.shipment_reference} · {item.line_count} lines</small></span><em>{item.status}</em></button>) : <p className="sb-empty">{returnLoading ? "Loading customer returns…" : "No customer returns recorded."}</p>}
+      </div>
+      {selectedReturn && <div className="sb-data-card"><h2>{selectedReturn.return_number} · {selectedReturn.order_number}</h2><p className="sb-muted">{selectedReturn.reason} · {selectedReturn.status}</p><div className="sb-table-wrap"><table><thead><tr><th>SKU</th><th>Product</th><th>Requested</th><th>Received</th><th>Inspection</th><th>Disposition</th><th>Quarantine remaining</th><th>Released to saleable</th><th>Posted</th><th>Action</th></tr></thead><tbody>{(selectedReturn.lines||[]).map(line=><tr key={line.id}><td>{line.sku}</td><td>{line.product_name}</td><td>{line.requested_quantity}</td><td>{line.received_quantity}</td><td>{line.inspection_status}</td><td>{line.disposition || "Pending"}</td><td>{line.quarantine_remaining_quantity || 0}{Number(line.quarantine_remaining_quantity)>Number(line.quarantine_releasable_quantity || 0) ? " (expired blocked)" : ""}</td><td>{line.quarantine_released_quantity || 0}</td><td>{line.disposition_posted_at ? "Yes" : "No"}</td><td>{line.disposition === "quarantine" && Number(line.quarantine_releasable_quantity)>0 ? <button type="button" disabled={returnReleaseBusyId === line.id || !returnReleaseLocationId || returnReleaseReason.trim().length<3} onClick={()=>releaseCustomerReturnQuarantine(line)}>{returnReleaseBusyId === line.id ? "Releasing…" : "Release"}</button> : "—"}</td></tr>)}</tbody></table></div><div className="sb-form-grid"><label>Saleable destination<select value={returnReleaseLocationId} onChange={e=>setReturnReleaseLocationId(e.target.value)}><option value="">Choose active store / warehouse</option>{locations.filter(location=>location.is_active!==false && location.is_fulfillable!==false).map(location=><option key={location.id} value={location.id}>{location.name}</option>)}</select></label><label>Reinspection / release reason<input maxLength="1000" value={returnReleaseReason} onChange={e=>setReturnReleaseReason(e.target.value)} placeholder="QC reinspection passed; packaging intact"/></label></div><p className="sb-muted">Return disposition is first posted by Fulfilment. Release moves only non-expired remaining quarantine cost layers within the same legal establishment; expired quantities remain blocked. Inventory movement and cost-layer provenance are retained.</p></div>}
+      <div className="sb-data-card">
+        <h2>Supplier receipt quarantine</h2>
+        <p className="sb-muted">Review supplier GRN quantities awaiting release. A release moves only previously quarantined units into accepted stock, creates their cost layers and posts the configured inventory/GRNI accounting event. Every release requires a reason and is idempotent.</p>
+        {quarantineGrns.length ? quarantineGrns.map(grn=><button type="button" className="sb-purchasing-attention-row" key={grn.id} onClick={()=>openQuarantineGrn(grn.id)}><span><strong>{grn.grn_number}</strong><small>{grn.supplier_name} · {grn.purchase_number} · {grn.quarantined_quantity} quarantined</small></span><em>{grn.status}</em></button>) : <p className="sb-empty">No supplier GRN quantities are currently quarantined.</p>}
+      </div>
+      <div className="sb-data-card">
+        <h2>Expired stock quarantine</h2>
+        <p className="sb-muted">Expired layers are excluded from FIFO/FEFO sale allocation. Move them out of a fulfilable facility into a non-fulfillable quarantine location. The transfer preserves original batch, expiry, cost and layer provenance; it does not write off the stock.</p>
+        <div className="sb-form-grid"><label>Quarantine destination<select value={expiredQuarantineLocationId} onChange={e=>setExpiredQuarantineLocationId(e.target.value)}><option value="">Choose non-fulfillable location</option>{locations.filter(location=>location.is_active!==false && location.is_fulfillable===false).map(location=><option key={location.id} value={location.id}>{location.name}</option>)}</select></label><label>Quarantine reason<input maxLength="1000" value={expiredQuarantineReason} onChange={e=>setExpiredQuarantineReason(e.target.value)} placeholder="Expired as of inspection date"/></label></div>
+        {expiredStock.length ? <div className="sb-table-wrap"><table><thead><tr><th>SKU</th><th>Product</th><th>Source facility</th><th>Expired qty</th><th>Earliest expiry</th><th>Value ₹</th><th>Action</th></tr></thead><tbody>{expiredStock.map(item=>{const key=`${item.variant_id}:${item.location_id}`;return <tr key={key}><td>{item.sku}</td><td>{item.product_name}</td><td>{item.location_name}</td><td>{item.expired_quantity}</td><td>{item.earliest_expiry}</td><td>{Number(item.expired_value||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td><button type="button" disabled={expiredQuarantineBusyKey===key || !expiredQuarantineLocationId || expiredQuarantineReason.trim().length<3} onClick={()=>quarantineExpiredStock(item)}>{expiredQuarantineBusyKey===key ? "Moving…" : "Quarantine all expired"}</button></td></tr>;})}</tbody></table></div> : <p className="sb-empty">No expired stock remains in active fulfilable locations.</p>}
+      </div>
+      {selectedQuarantineGrn && <div className="sb-data-card"><h2>{selectedQuarantineGrn.grn_number} · Quarantine release</h2><p className="sb-muted">{selectedQuarantineGrn.status} · Only quantities currently in quarantine can be released. Accepted stock is posted at its recorded receipt unit cost.</p>
+        <form className="sb-form" onSubmit={releaseQuarantinedStock}>
+          {(selectedQuarantineGrn.lines||[]).filter(line=>Number(line.quarantined_quantity)>0).map(line=><div className="sb-form-grid" key={line.id}>
+            <div><strong>{line.product_name} · {line.sku}</strong><p className="sb-muted">Batch {line.batch_code || "—"} · Expiry {line.expiry_date || "—"} · Quarantined {line.quarantined_quantity} · Unit cost ₹{line.unit_cost}</p></div>
+            <label>Release quantity<input type="number" min="0" max={Number(line.quarantined_quantity)} step="0.001" value={quarantineReleaseQuantities[line.id] || ""} onChange={e=>setQuarantineReleaseQuantities(old=>({...old,[line.id]:e.target.value}))}/></label>
+            <label>Inspection / release reason<input required minLength="3" maxLength="1000" value={quarantineReleaseReasons[line.id] || ""} onChange={e=>setQuarantineReleaseReasons(old=>({...old,[line.id]:e.target.value}))}/></label>
+          </div>)}
+          <button className="sb-primary" type="submit" disabled={busy || !(selectedQuarantineGrn.lines||[]).some(line=>Number(line.quarantined_quantity)>0)}>{busy ? "Posting…" : "Release selected quarantined stock"}</button>
+        </form>
+      </div>}
+    </div>}
+    {activeSection === "policy" && <div className="inventory-section"><OrganisationPolicyPanel domain="inventory" /></div>}
+  </section>;
+}
