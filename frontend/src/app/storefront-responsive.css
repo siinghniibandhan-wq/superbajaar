@@ -49,3 +49,52 @@ img,svg,video{max-width:100%}
 @supports (padding:max(0px)){.storefront-footer{padding-bottom:max(20px,env(safe-area-inset-bottom))}}
 @media (prefers-reduced-motion:reduce){.storefront *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 @media print{.storefront-promo,.storefront-header,.storefront-department-nav,.storefront-footer{display:none}}
+
+
+/* Mobile composition: compact, continuous shopping flow instead of stacked panels. */
+@media (max-width: 760px) {
+  .storefront-home-hero {
+    grid-template-columns: minmax(0, 1.05fr) minmax(112px, .95fr);
+    gap: 10px;
+    margin: 10px auto 6px;
+    padding: 12px 14px 16px;
+  }
+  .storefront-home-hero .storefront-hero-copy { min-width: 0; padding: 4px 0; }
+  .storefront-home-hero .storefront-kicker { font-size: 8px; }
+  .storefront-home-hero h1 { margin: 7px 0; font-size: clamp(23px, 6.3vw, 32px); line-height: 1.08; letter-spacing: -.045em; }
+  .storefront-home-hero .storefront-hero-copy > p { margin-bottom: 10px; font-size: 10px; line-height: 1.45; }
+  .storefront-home-hero .storefront-primary { min-height: 38px; padding: 9px 11px; font-size: 10px; }
+  .storefront-home-hero .storefront-trust { display: none; }
+  .storefront-home-hero .storefront-hero-art { min-height: 148px; height: 148px; border-radius: 15px; }
+  .storefront-home-hero .hero-icon-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; justify-content: center; padding: 12px 8px 25px; }
+  .storefront-home-hero .hero-icon-grid span { width: auto; height: 40px; border-radius: 11px; }
+  .storefront-home-hero .hero-icon-grid svg { width: 20px; height: 20px; }
+  .storefront-home-hero .art-caption { bottom: 8px; font-size: 8px; }
+  .storefront-home-section { margin-bottom: 16px; padding-inline: 14px; }
+  .storefront-home-section .storefront-section-heading { margin-bottom: 9px; }
+  .storefront-home-section .storefront-section-heading h2 { font-size: 18px; }
+  .storefront-home-section .storefront-section-heading p { font-size: 10px; }
+  .storefront-home-section .storefront-carousel-track { gap: 9px; padding-bottom: 7px; }
+  .storefront-home-section .storefront-carousel-track .storefront-product-card { flex-basis: 142px; }
+  .storefront-categories.storefront-home-section { padding-top: 4px; margin-bottom: 14px; }
+  .storefront-home-empty { align-items: flex-start; gap: 10px; margin: 4px 14px 18px; padding: 13px; border-radius: 13px; }
+  .storefront-home-empty-icon { flex-basis: 36px; width: 36px; height: 36px; }
+  .storefront-home-empty h2 { font-size: 13px; }
+  .storefront-home-empty p { font-size: 10px; }
+  .storefront-home-empty > a { align-self: center; padding: 8px 10px; font-size: 10px; white-space: nowrap; }
+  .storefront-home-benefits { gap: 9px; margin: 6px 14px 20px; padding: 14px; border-radius: 13px; }
+  .storefront-home-benefits .storefront-benefits-heading h2 { font-size: 17px; }
+  .storefront-home-benefits .storefront-benefit-grid { gap: 8px; }
+  .storefront-home-benefits > .storefront-benefit-grid > article { min-height: 74px; padding: 9px; gap: 8px; }
+  .storefront-home-benefits .benefit-icon { flex-basis: 28px; width: 28px; height: 28px; }
+  .storefront-home-benefits .benefit-icon svg { width: 16px; height: 16px; }
+}
+@media (max-width: 420px) {
+  .storefront-home-empty { flex-wrap: wrap; }
+  .storefront-home-empty-copy { flex-basis: calc(100% - 48px); }
+  .storefront-home-empty > a { margin-left: 46px; }
+  .storefront-home-benefits > .storefront-benefit-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .storefront-home-section .storefront-carousel-track { scroll-behavior: auto; }
+}
