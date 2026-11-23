@@ -139,3 +139,7 @@
 .sb-catalogue-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0;color:var(--sb-muted,#667085);font-size:13px}
 .sb-catalogue-pagination>div{display:flex;gap:8px}
 @media(max-width:640px){.sb-catalogue-pagination{align-items:flex-start;flex-direction:column}}
+
+/* Product form tabs: show ALL tabs at once (wrap into rows instead of hiding them off-screen) */
+.sb-modal-form .sb-catalogue-tabs{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:6px;overflow:visible;margin:4px 0 16px}
+.sb-modal-form .sb-catalogue-tabs button{min-width:0;width:100%;min-height:44px;padding:8px 10px;white-space:normal;text-align:center;line-height:1.25;font-size:13px}
