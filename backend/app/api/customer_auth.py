@@ -194,19 +194,15 @@ def _link_verified_legacy_loyalty_account(conn, *, customer_id: int, customer_em
         (loyalty_account["id"],),
     ).fetchone()
     if existing_link:
-        if int(existing_link["party_id"]) != int(verified_identity["party_id"]):
-            raise HTTPException(
-                status_code=409,
-                detail="This loyalty card is already linked to another verified identity and requires administrator review",
-            )
-        return True
+        return int(existing_link["party_id"]) == int(verified_identity["party_id"])
 
-    conn.execute(
+    inserted = conn.execute(
         "INSERT INTO identity_loyalty_accounts(party_id,loyalty_account_id,link_method) "
-        "VALUES(%s,%s,'verified_customer_account')",
+        "VALUES(%s,%s,'verified_customer_account') "
+        "ON CONFLICT (loyalty_account_id) DO NOTHING RETURNING id",
         (verified_identity["party_id"], loyalty_account["id"]),
-    )
-    return True
+    ).fetchone()
+    return inserted is not None
 
 
 def _public_customer(row):
