@@ -34,3 +34,29 @@
 .inventory-analytics-grid .sb-muted{margin:14px 0 0;font-size:11px}
 @media(max-width:720px){.inventory-analytics-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.inventory-analytics-grid{grid-template-columns:1fr}.inventory-analytics-grid>.sb-data-card:last-child{grid-column:auto}.inventory-analytics-heading{align-items:stretch;flex-direction:column}}
 @media(max-width:380px){.inventory-analytics-metrics strong{font-size:21px}}
+
+/* Simplified navigation: 5 main tabs (all visible), sub-tabs, action picker, setup banner */
+.inventory-main-nav{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:6px;overflow:visible;white-space:normal;padding:6px;margin:14px 0 10px}
+.inventory-main-nav button{position:relative;min-height:44px;padding:8px 10px;font-size:13px;white-space:normal;line-height:1.2;text-align:center}
+.inventory-badge{display:inline-block;min-width:18px;margin-left:6px;padding:1px 6px;border-radius:9px;background:#d9534f;color:#fff;font-size:11px;line-height:16px}
+.inventory-sub-nav{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px}
+.inventory-sub-nav button{min-height:36px;padding:7px 14px;border:1px solid #d5e3f0;border-radius:18px;background:#fff;color:#33628c;font:700 12px Lato,sans-serif;cursor:pointer}
+.inventory-sub-nav button.active{background:#437fb3;border-color:#437fb3;color:#fff}
+.inventory-action-picker{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.inventory-action-picker button{display:grid;gap:3px;min-height:60px;padding:10px 12px;text-align:left;border:1px solid #dde6ee;border-radius:12px;background:#fff;color:#26333e;cursor:pointer}
+.inventory-action-picker button strong{font-size:14px}
+.inventory-action-picker button small{font-size:11px;color:#71787f}
+.inventory-action-picker button.active{border:2px solid #437fb3;background:#f0f6fb;padding:9px 11px}
+.inventory-setup-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 14px;padding:14px 16px;border:1px solid #f0d9a8;border-radius:12px;background:#fdf6e3}
+.inventory-setup-banner strong{display:block;font-size:14px;color:#6b4a0b}
+.inventory-setup-banner p{margin:3px 0 0;font-size:12px;color:#7a5a1a}
+.inventory-search{width:100%;min-height:42px;margin:0 0 12px;padding:9px 12px;border:1px solid #dde6ee;border-radius:10px;font-size:14px}
+.inventory-pill{display:inline-block;padding:2px 9px;border-radius:9px;font-size:11px;font-weight:700}
+.inventory-pill.is-ok{background:#e6f4ea;color:#1e6b34}
+.inventory-pill.is-low{background:#fdf1d8;color:#8a5a00}
+.inventory-pill.is-out{background:#fde7e7;color:#a32d2d}
+.inventory-fold{border:1px solid #e3eaf0;border-radius:14px;background:#fff;padding:0 16px}
+.inventory-fold>summary{min-height:48px;display:flex;align-items:center;cursor:pointer;font:700 14px Lato,sans-serif;color:#26333e}
+.inventory-fold[open]>summary{border-bottom:1px solid #eceef0;margin-bottom:12px}
+.inventory-fold[open]{padding-bottom:14px}
+@media(max-width:640px){.inventory-main-nav{grid-template-columns:repeat(2,minmax(0,1fr))}.inventory-main-nav button{font-size:13px}.inventory-section .sb-form-grid{grid-template-columns:1fr}.inventory-section .sb-form-grid>*{grid-column:1/-1}.inventory-section .sb-form input,.inventory-section .sb-form select{min-height:44px;font-size:16px}.inventory-section .sb-form button.sb-primary,.inventory-section .sb-form button.sb-secondary{min-height:46px}}

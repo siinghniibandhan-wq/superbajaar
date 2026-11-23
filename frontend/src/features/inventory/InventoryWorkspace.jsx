@@ -56,6 +56,9 @@ export default function InventoryWorkspace({ onBack }) {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [activeSection, setActiveSection] = useState("overview");
+  const [opAction, setOpAction] = useState("add");
+  const [stockSearch, setStockSearch] = useState("");
+  const [baseLoaded, setBaseLoaded] = useState(false);
 
   async function loadBase() {
     try {
@@ -69,7 +72,7 @@ export default function InventoryWorkspace({ onBack }) {
         apiRequest("/inventory/approval-requests"),
         apiRequest("/inventory/overview"),
       ]);
-      setLocations(l.items || []); setInternalFacilityId(current => current || String(l.items?.[0]?.id || "")); setProducts(p.items || []); setBalances(b.items || []); setMovements(m.items || []); setCostLayers(c.items || []); setCostReconciliation(cr.items || []); setApprovalRequests(ar.items || []); setOverview(o);
+      setBaseLoaded(true); setLocations(l.items || []); setInternalFacilityId(current => current || String(l.items?.[0]?.id || "")); setProducts(p.items || []); setBalances(b.items || []); setMovements(m.items || []); setCostLayers(c.items || []); setCostReconciliation(cr.items || []); setApprovalRequests(ar.items || []); setOverview(o);
       apiRequest("/hr/establishments").then(result => setEstablishments(result.items || [])).catch(() => setEstablishments([]));
     } catch (e) { setError(e.message || "Inventory API unavailable."); }
   }
@@ -434,9 +437,16 @@ export default function InventoryWorkspace({ onBack }) {
     <p>Manage stock locations, receipt adjustments, stock issues, inter-location transfers, balances and movement history.</p>
     {error && <p className="sb-alert" role="alert">{error}</p>}
     {message && <p className="sb-success" role="status">{message}</p>}
-    <nav className="inventory-section-nav" aria-label="Inventory sections">
-      {[["overview","Overview"],["locations","Locations"],["operations","Stock operations"],["approvals","Approvals"],["stock","Stock & valuation"],["returns","Returns & quarantine"],["policy","Control policy"]].map(([key,label])=><button key={key} type="button" className={activeSection===key?"active":""} aria-pressed={activeSection===key} onClick={()=>setActiveSection(key)}>{label}</button>)}
-    </nav>
+    {(() => {
+      const groups = [["overview","Overview",["overview"]],["stock","Stock",["stock"]],["operations","Update stock",["operations"]],["todo","To-do",["approvals","returns"]],["setup","Setup",["locations","policy"]]];
+      const subLabels = { approvals: "Approvals" + (approvalRequests.length ? " (" + approvalRequests.length + ")" : ""), returns: "Returns & quarantine", locations: "Locations", policy: "Control policy" };
+      const current = groups.find(g => g[2].includes(activeSection)) || groups[0];
+      return <>
+        <nav className="inventory-section-nav inventory-main-nav" aria-label="Inventory sections">{groups.map(([key,label,keys])=><button key={key} type="button" className={current[0]===key?"active":""} aria-pressed={current[0]===key} onClick={()=>setActiveSection(keys.includes(activeSection)?activeSection:keys[0])}>{label}{key==="todo" && approvalRequests.length>0 && <span className="inventory-badge">{approvalRequests.length}</span>}</button>)}</nav>
+        {current[2].length > 1 && <nav className="inventory-sub-nav" aria-label={current[1] + " sections"}>{current[2].map(k=><button key={k} type="button" className={activeSection===k?"active":""} aria-pressed={activeSection===k} onClick={()=>setActiveSection(k)}>{subLabels[k]}</button>)}</nav>}
+        {baseLoaded && !locations.length && activeSection !== "locations" && <div className="inventory-setup-banner" role="status"><div><strong>Create your first warehouse or store</strong><p>Stock needs a place to live before you can add it.</p></div><button type="button" className="sb-primary" onClick={()=>setActiveSection("locations")}>Create location</button></div>}
+      </>;
+    })()}
     {activeSection === "locations" && <div className="inventory-section"><form className="sb-form" onSubmit={createLocation}>
       <h2>{locationEditId ? "Complete / edit facility profile" : "Create warehouse or store"}</h2>
       <div className="sb-form-grid">
@@ -544,8 +554,8 @@ export default function InventoryWorkspace({ onBack }) {
         </section>
       </div>
     </div>}
-    {activeSection === "operations" && <div className="inventory-section"><form className="sb-form" onSubmit={submit}>
-      <h2>Value or add stock</h2>
+        {activeSection === "operations" && <div className="inventory-section"><div className="inventory-action-picker" role="group" aria-label="What do you want to do?">{[["add","Add stock","Opening balance or found stock"],["issue","Remove stock","Issue, scrap or reduce"],["count","Count stock","Match the system to the shelf"],["transfer","Move stock","Between two locations"]].map(([key,label,hint])=><button key={key} type="button" className={opAction===key?"active":""} aria-pressed={opAction===key} onClick={()=>setOpAction(key)}><strong>{label}</strong><small>{hint}</small></button>)}</div>{opAction === "add" && <form className="sb-form" onSubmit={submit}>
+      <h2>Add stock</h2>
       <p className="sb-muted">Opening valuation assigns cost to existing unvalued on-hand stock without increasing quantity. Opening balance and stock gain add new quantity. Every entry requires an explicit unit cost.</p>
       <div className="sb-form-grid">
         <label>Product<select required value={productId} onChange={e=>{setProductId(e.target.value);setForm(v=>({...v,variant_id:""}));}}><option value="">Choose product</option>{products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
@@ -561,9 +571,9 @@ export default function InventoryWorkspace({ onBack }) {
       <button className="sb-primary" disabled={busy || !locations.length} type="submit">{busy ? "Saving…" : "Record adjustment"}</button>
       <button className="sb-secondary" type="button" disabled={busy || !form.location_id || !form.variant_id || !form.quantity || !form.note} onClick={()=>submitInventoryApproval(form.adjustment_type,form.location_id,{variant_id:Number(form.variant_id),location_id:Number(form.location_id),quantity:Number(form.quantity),unit_cost:Number(form.unit_cost),adjustment_type:form.adjustment_type,batch_code:form.batch_code||null,expiry_date:form.expiry_date||null,note:form.note})}>Submit adjustment for approval</button>
       {!locations.length && <p className="sb-muted">No active stock locations are configured.</p>}
-    </form>
-    <form className="sb-form" onSubmit={submitIssue}>
-      <h2>Issue / reduce stock</h2>
+    </form>}
+    {opAction === "issue" && <form className="sb-form" onSubmit={submitIssue}>
+      <h2>Remove stock</h2>
       <p className="sb-muted">Issue or scrap stock. On-hand stock cannot fall below reserved units; every reduction is recorded in movement history.</p>
       <div className="sb-form-grid">
         <label>Product<select required value={productId} onChange={e=>{setProductId(e.target.value);setIssueForm(v=>({...v,variant_id:""}));}}><option value="">Choose product</option>{products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
@@ -576,9 +586,9 @@ export default function InventoryWorkspace({ onBack }) {
       </div>
       <button className="sb-primary" disabled={busy || !locations.length} type="submit">{busy ? "Saving…" : "Issue stock"}</button>
       <button className="sb-secondary" type="button" disabled={busy || !issueForm.location_id || !issueForm.variant_id || !issueForm.quantity || !issueForm.note} onClick={()=>submitInventoryApproval(issueForm.reason_type==="scrap"?"scrap":"issue",issueForm.location_id,{variant_id:Number(issueForm.variant_id),location_id:Number(issueForm.location_id),quantity:Number(issueForm.quantity),note:issueForm.note,reason_type:issueForm.reason_type,allocation_method:issueForm.allocation_method})}>Submit issue for approval</button>
-    </form>
-    <form className="sb-form" onSubmit={submitCount}>
-      <h2>Physical inventory count</h2>
+    </form>}
+    {opAction === "count" && <form className="sb-form" onSubmit={submitCount}>
+      <h2>Count stock</h2>
       <p className="sb-muted">Enter the physically counted quantity. The system records the variance and will not allow a count below reserved stock.</p>
       <div className="sb-form-grid">
         <label>Product<select required value={productId} onChange={e=>{setProductId(e.target.value);setCountForm(v=>({...v,variant_id:""}));}}><option value="">Choose product</option>{products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
@@ -593,9 +603,9 @@ export default function InventoryWorkspace({ onBack }) {
       </div>
       <button className="sb-primary" disabled={busy || !locations.length} type="submit">{busy ? "Saving…" : "Reconcile physical count"}</button>
       <button className="sb-secondary" type="button" disabled={busy || !countForm.location_id || !countForm.variant_id || countForm.counted_quantity==="" || !countForm.note} onClick={()=>submitInventoryApproval("physical_count",countForm.location_id,{variant_id:Number(countForm.variant_id),location_id:Number(countForm.location_id),counted_quantity:Number(countForm.counted_quantity),unit_cost:countForm.unit_cost===""?null:Number(countForm.unit_cost),batch_code:countForm.batch_code||null,expiry_date:countForm.expiry_date||null,allocation_method:countForm.allocation_method,note:countForm.note})}>Submit count for approval</button>
-    </form>
-    <form className="sb-form" onSubmit={submitTransfer}>
-      <h2>Transfer stock between locations</h2>
+    </form>}
+    {opAction === "transfer" && <form className="sb-form" onSubmit={submitTransfer}>
+      <h2>Move stock between locations</h2>
       <p className="sb-muted">Source stock is reduced and destination stock increased in one database transaction. Reserved units are not transferable.</p>
       <div className="sb-form-grid">
         <label>Product<select required value={productId} onChange={e=>{setProductId(e.target.value);setTransferForm(v=>({...v,variant_id:""}));}}><option value="">Choose product</option>{products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
@@ -608,7 +618,7 @@ export default function InventoryWorkspace({ onBack }) {
       <button className="sb-primary" disabled={busy || locations.length < 2} type="submit">{busy ? "Saving…" : "Transfer stock"}</button>
       <button className="sb-secondary" type="button" disabled={busy || !transferForm.source_location_id || !transferForm.destination_location_id || !transferForm.variant_id || !transferForm.quantity || !transferForm.note} onClick={()=>submitInventoryApproval("transfer",transferForm.source_location_id,{variant_id:Number(transferForm.variant_id),source_location_id:Number(transferForm.source_location_id),destination_location_id:Number(transferForm.destination_location_id),quantity:Number(transferForm.quantity),note:transferForm.note})}>Submit transfer for approval</button>
       {locations.length < 2 && <p className="sb-muted">Create at least two active locations to transfer stock.</p>}
-    </form>
+    </form>}
     </div>}
     {activeSection === "approvals" && <div className="inventory-section"><div className="sb-data-card">
       <h2>Inventory approval queue ({approvalRequests.length})</h2>
@@ -620,26 +630,36 @@ export default function InventoryWorkspace({ onBack }) {
       </div>) : <p className="sb-empty">No inventory approval requests.</p>}
     </div>
     </div>}
-    {activeSection === "stock" && <div className="inventory-section"><div className="sb-data-card">
-      <h2>Replenishment watchlist</h2>
-      <p className="sb-muted">Balances with 5 or fewer available units. Review these and raise purchase orders in Purchasing; no orders are created automatically.</p>
-      {balances.filter(b => Number(b.available ?? (Number(b.on_hand || 0) - Number(b.reserved || 0))) <= 5).length ? <div className="sb-table-wrap"><table><thead><tr><th>SKU</th><th>Location</th><th>Available</th><th>On hand</th><th>Action</th></tr></thead><tbody>{balances.filter(b => Number(b.available ?? (Number(b.on_hand || 0) - Number(b.reserved || 0))) <= 5).map((b,i)=><tr key={"replenish-"+b.variant_id+"-"+b.location_id+"-"+i}><td>{b.sku}</td><td>{b.location_name}</td><td>{b.available ?? (Number(b.on_hand || 0) - Number(b.reserved || 0))}</td><td>{b.on_hand}</td><td><button type="button" disabled={busy} onClick={()=>createReplenishmentRequisition(b)}>Create purchase request</button></td></tr>)}</tbody></table></div> : <p className="sb-empty">No balances currently meet the replenishment threshold.</p>}
-    </div>
-    <div className="sb-data-card"><div className="sb-data-heading"><h2>Stock balances ({balances.length})</h2><button type="button" onClick={loadBase}>Refresh</button></div>
-      {balances.length ? <div className="sb-table-wrap"><table><thead><tr><th>SKU</th><th>Location</th><th>On hand</th><th>Reserved</th><th>Available</th></tr></thead><tbody>{balances.map((b,i)=><tr key={b.variant_id+"-"+b.location_id+"-"+i}><td>{b.sku}</td><td>{b.location_name}</td><td>{b.on_hand}</td><td>{b.reserved}</td><td>{b.available}</td></tr>)}</tbody></table></div> : <p className="sb-empty">No stock balances found.</p>}
-    </div>
-    <div className="sb-data-card"><h2>Cost reconciliation ({costReconciliation.length})</h2>
-      <p className="sb-muted">Compare physical on-hand quantity with valued receipt layers. Any non-zero difference requires investigation; do not issue unvalued stock.</p>
-      {costReconciliation.length ? <div className="sb-table-wrap"><table><thead><tr><th>SKU</th><th>Location</th><th>On hand</th><th>Valued</th><th>Expired</th><th>Unvalued / excess</th></tr></thead><tbody>{costReconciliation.map(row=><tr key={row.variant_id+"-"+row.location_id}><td>{row.sku}</td><td>{row.location_name}</td><td>{row.on_hand}</td><td>{row.valued_quantity}</td><td>{row.expired_quantity}</td><td>{row.unvalued_or_overvalued_quantity}</td></tr>)}</tbody></table></div> : <p className="sb-empty">No stock balances to reconcile.</p>}
-    </div>
-    <div className="sb-data-card"><h2>Cost layers ({costLayers.length})</h2>
-      <p className="sb-muted">Remaining stock value is based on recorded receipt costs. Expired batches are excluded from FIFO/FEFO issues.</p>
-      {costLayers.length ? <div className="sb-table-wrap"><table><thead><tr><th>SKU</th><th>Location</th><th>Batch</th><th>Expiry</th><th>Remaining</th><th>Unit cost</th><th>Value</th></tr></thead><tbody>{costLayers.map(layer=><tr key={layer.id}><td>{layer.sku}</td><td>{layer.location_name}</td><td>{layer.batch_code || "—"}</td><td>{layer.expiry_date || "—"}</td><td>{layer.remaining_quantity}</td><td>₹{layer.unit_cost}</td><td>₹{layer.remaining_value}</td></tr>)}</tbody></table></div> : <p className="sb-empty">No valued receipt layers found. Existing stock needs an approved opening valuation before it can be issued.</p>}
-    </div>
-    <div className="sb-data-card"><h2>Recent movements ({movements.length})</h2>
-      {movements.length ? <div className="sb-table-wrap"><table><thead><tr><th>Date</th><th>Variant ID</th><th>Location ID</th><th>Type</th><th>Quantity</th><th>Note</th></tr></thead><tbody>{movements.map(m=><tr key={m.id}><td>{new Date(m.created_at).toLocaleString()}</td><td>{m.variant_id}</td><td>{m.location_id}</td><td>{m.movement_type}</td><td>{m.quantity}</td><td>{m.note}</td></tr>)}</tbody></table></div> : <p className="sb-empty">No inventory movements found.</p>}
-    </div>
-    </div>}
+    {activeSection === "stock" && (() => {
+      const q = stockSearch.trim().toLowerCase();
+      const availOf = b => Number(b.available ?? (Number(b.on_hand || 0) - Number(b.reserved || 0)));
+      const shown = balances.filter(b => !q || String(b.sku || "").toLowerCase().includes(q) || String(b.location_name || "").toLowerCase().includes(q));
+      const low = balances.filter(b => availOf(b) <= 5);
+      const skuById = Object.fromEntries(balances.map(b => [String(b.variant_id), b.sku]));
+      const locById = Object.fromEntries(locations.map(l => [String(l.id), l.name]));
+      return <div className="inventory-section">
+      <div className="sb-data-card"><div className="sb-data-heading"><h2>Current stock ({balances.length})</h2><button type="button" onClick={loadBase}>Refresh</button></div>
+        <input className="inventory-search" type="search" aria-label="Search stock by SKU or location" placeholder="Search by SKU or location" value={stockSearch} onChange={e=>setStockSearch(e.target.value)}/>
+        {shown.length ? <div className="sb-table-wrap"><table><thead><tr><th>SKU</th><th>Location</th><th>On hand</th><th>Reserved</th><th>Available</th><th>Status</th></tr></thead><tbody>{shown.map((b,i)=>{ const a = availOf(b); return <tr key={b.variant_id+"-"+b.location_id+"-"+i}><td>{b.sku}</td><td>{b.location_name}</td><td>{b.on_hand}</td><td>{b.reserved}</td><td>{b.available}</td><td><span className={"inventory-pill " + (a <= 0 ? "is-out" : a <= 5 ? "is-low" : "is-ok")}>{a <= 0 ? "Out" : a <= 5 ? "Low" : "OK"}</span></td></tr>; })}</tbody></table></div> : <p className="sb-empty">{balances.length ? "No stock matches your search." : "No stock yet. Use Update stock to add your first stock."}</p>}
+      </div>
+      <div className="sb-data-card">
+        <h2>Low stock ({low.length})</h2>
+        <p className="sb-muted">5 or fewer units available. Raise a purchase request for these. Nothing is ordered automatically.</p>
+        {low.length ? <div className="sb-table-wrap"><table><thead><tr><th>SKU</th><th>Location</th><th>Available</th><th>On hand</th><th>Action</th></tr></thead><tbody>{low.map((b,i)=><tr key={"replenish-"+b.variant_id+"-"+b.location_id+"-"+i}><td>{b.sku}</td><td>{b.location_name}</td><td>{availOf(b)}</td><td>{b.on_hand}</td><td><button type="button" disabled={busy} onClick={()=>createReplenishmentRequisition(b)}>Create purchase request</button></td></tr>)}</tbody></table></div> : <p className="sb-empty">No items are running low.</p>}
+      </div>
+      <details className="inventory-fold"><summary>Stock movement history ({movements.length})</summary>
+        {movements.length ? <div className="sb-table-wrap"><table><thead><tr><th>Date</th><th>SKU</th><th>Location</th><th>Type</th><th>Quantity</th><th>Note</th></tr></thead><tbody>{movements.map(m=><tr key={m.id}><td>{new Date(m.created_at).toLocaleString()}</td><td>{skuById[String(m.variant_id)] || ("Variant " + m.variant_id)}</td><td>{locById[String(m.location_id)] || ("Location " + m.location_id)}</td><td>{String(m.movement_type || "").replaceAll("_", " ")}</td><td>{m.quantity}</td><td>{m.note}</td></tr>)}</tbody></table></div> : <p className="sb-empty">No inventory movements found.</p>}
+      </details>
+      <details className="inventory-fold"><summary>Cost check ({costReconciliation.length})</summary>
+        <p className="sb-muted">Compares stock on the shelf with stock that has a recorded cost. Any difference needs checking. Do not issue stock that has no cost.</p>
+        {costReconciliation.length ? <div className="sb-table-wrap"><table><thead><tr><th>SKU</th><th>Location</th><th>On hand</th><th>Valued</th><th>Expired</th><th>Unvalued / excess</th></tr></thead><tbody>{costReconciliation.map(row=><tr key={row.variant_id+"-"+row.location_id}><td>{row.sku}</td><td>{row.location_name}</td><td>{row.on_hand}</td><td>{row.valued_quantity}</td><td>{row.expired_quantity}</td><td>{row.unvalued_or_overvalued_quantity}</td></tr>)}</tbody></table></div> : <p className="sb-empty">No stock balances to reconcile.</p>}
+      </details>
+      <details className="inventory-fold"><summary>Stock value by batch ({costLayers.length})</summary>
+        <p className="sb-muted">Value of remaining stock, based on the cost recorded when it was received. Expired batches are skipped when issuing stock (FIFO/FEFO).</p>
+        {costLayers.length ? <div className="sb-table-wrap"><table><thead><tr><th>SKU</th><th>Location</th><th>Batch</th><th>Expiry</th><th>Remaining</th><th>Unit cost</th><th>Value</th></tr></thead><tbody>{costLayers.map(layer=><tr key={layer.id}><td>{layer.sku}</td><td>{layer.location_name}</td><td>{layer.batch_code || "—"}</td><td>{layer.expiry_date || "—"}</td><td>{layer.remaining_quantity}</td><td>₹{layer.unit_cost}</td><td>₹{layer.remaining_value}</td></tr>)}</tbody></table></div> : <p className="sb-empty">No valued receipt layers found. Existing stock needs an approved opening valuation before it can be issued.</p>}
+      </details>
+      </div>;
+    })()}
     {activeSection === "returns" && <div className="inventory-section">
       <div className="sb-data-card">
         <div className="sb-data-heading"><h2>Customer returns & disposition</h2><button type="button" disabled={returnLoading} onClick={()=>{setSelectedReturn(null);setSelectedQuarantineGrn(null);setReturnLoading(true);Promise.all([apiRequest("/fulfilment/returns?limit=100"),apiRequest("/purchasing/grns?quarantined_only=true&limit=100"),apiRequest("/inventory/expired-stock?limit=100")]).then(([r,g,x])=>{setReturns(r.items||[]);setQuarantineGrns(g.items||[]);setExpiredStock(x.items||[]);}).catch(e=>setError(e.message||"Unable to refresh inventory return queues.")).finally(()=>setReturnLoading(false));}}>{returnLoading ? "Loading…" : "Refresh"}</button></div>
