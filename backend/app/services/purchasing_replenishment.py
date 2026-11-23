@@ -73,6 +73,8 @@ def _connect() -> psycopg.Connection:
 def get_out_of_stock_variants(conn: psycopg.Connection) -> List[VariantReorderData]:
     """Get variants that need replenishment.
 
+    Stock is the total on_hand across all locations (inventory_balances).
+
     Args:
         conn: Database connection
 
@@ -87,18 +89,23 @@ def get_out_of_stock_variants(conn: psycopg.Connection) -> List[VariantReorderDa
             v.sku,
             v.reorder_point,
             v.reorder_qty,
-            inv.quantity as current_stock,
+            ib.on_hand::float8 as current_stock,
             inv.min_stock_date
         FROM public.product_variants v
         INNER JOIN public.products p ON v.product_id = p.id
+        LEFT JOIN (
+            SELECT variant_id, SUM(on_hand) AS on_hand
+            FROM public.inventory_balances
+            GROUP BY variant_id
+        ) ib ON ib.variant_id = v.id
         LEFT JOIN public.inventory inv ON p.id = inv.product_id
         WHERE p.status = 'active'
           AND v.reorder_point IS NOT NULL
           AND v.reorder_qty IS NOT NULL
           AND v.reorder_qty > 0
-          AND (inv.quantity IS NULL OR inv.quantity <= v.reorder_point)
+          AND (ib.on_hand IS NULL OR ib.on_hand <= v.reorder_point)
         ORDER BY
-            inv.quantity NULLS LAST,
+            ib.on_hand NULLS LAST,
             v.reorder_point ASC,
             p.name ASC
     """
@@ -125,6 +132,8 @@ def get_out_of_stock_variants(conn: psycopg.Connection) -> List[VariantReorderDa
 def get_replenishment_report(conn: psycopg.Connection) -> List[VariantReorderData]:
     """Get a report of all variants with reorder configuration.
 
+    Stock is the total on_hand across all locations (inventory_balances).
+
     Args:
         conn: Database connection
 
@@ -139,10 +148,15 @@ def get_replenishment_report(conn: psycopg.Connection) -> List[VariantReorderDat
             v.sku,
             v.reorder_point,
             v.reorder_qty,
-            inv.quantity as current_stock,
+            ib.on_hand::float8 as current_stock,
             inv.min_stock_date
         FROM public.product_variants v
         INNER JOIN public.products p ON v.product_id = p.id
+        LEFT JOIN (
+            SELECT variant_id, SUM(on_hand) AS on_hand
+            FROM public.inventory_balances
+            GROUP BY variant_id
+        ) ib ON ib.variant_id = v.id
         LEFT JOIN public.inventory inv ON p.id = inv.product_id
         WHERE p.status = 'active'
           AND v.reorder_point IS NOT NULL
@@ -351,6 +365,8 @@ def clear_reorder_alerts(product_id: int) -> bool:
 def get_replenishment_stats(conn: psycopg.Connection) -> dict:
     """Get statistics about replenishment needs.
 
+    Stock is the total on_hand across all locations (inventory_balances).
+
     Args:
         conn: Database connection
 
@@ -360,13 +376,17 @@ def get_replenishment_stats(conn: psycopg.Connection) -> dict:
     query = """
         SELECT
             COUNT(*) as total_configured_variants,
-            COUNT(*) FILTER (WHERE quantity IS NOT NULL AND quantity <= reorder_point) as stock_below_reorder,
-            COUNT(*) FILTER (WHERE quantity IS NULL) as out_of_stock,
-            AVG(reorder_point) as avg_reorder_point,
-            AVG(reorder_qty) as avg_reorder_qty
+            COUNT(*) FILTER (WHERE ib.on_hand IS NOT NULL AND ib.on_hand <= v.reorder_point) as stock_below_reorder,
+            COUNT(*) FILTER (WHERE ib.on_hand IS NULL) as out_of_stock,
+            AVG(v.reorder_point) as avg_reorder_point,
+            AVG(v.reorder_qty) as avg_reorder_qty
         FROM public.product_variants v
         INNER JOIN public.products p ON v.product_id = p.id
-        LEFT JOIN public.inventory inv ON p.id = inv.product_id
+        LEFT JOIN (
+            SELECT variant_id, SUM(on_hand) AS on_hand
+            FROM public.inventory_balances
+            GROUP BY variant_id
+        ) ib ON ib.variant_id = v.id
         WHERE p.status = 'active'
           AND v.reorder_point IS NOT NULL
           AND v.reorder_qty IS NOT NULL
