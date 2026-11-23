@@ -151,8 +151,8 @@ def create_review(payload: ReviewCreate, request: Request):
                     raise HTTPException(status_code=403, detail="You can review a product only after your order with it is delivered")
                 try:
                     row = conn.execute(
-                        "INSERT INTO product_reviews (product_id, customer_id, order_id, rating, title, body) "
-                        "VALUES (%s,%s,%s,%s,%s,%s) RETURNING id, status",
+                        "INSERT INTO product_reviews (product_id, customer_id, order_id, rating, title, body, status) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,'approved') RETURNING id, status",
                         (payload.product_id, customer_id, order_id, payload.rating, title, body),
                     ).fetchone()
                 except psycopg.errors.UniqueViolation as exc:
@@ -162,7 +162,7 @@ def create_review(payload: ReviewCreate, request: Request):
     except psycopg.Error as exc:
         logger.warning("Review save failed: %s", exc)
         raise HTTPException(status_code=503, detail="Could not save the review; verify migration 051") from exc
-    return {"id": int(row["id"]), "status": row["status"], "message": "Thank you. Your review will appear after approval."}
+    return {"id": int(row["id"]), "status": row["status"], "message": "Thank you. Your review is now live."}
 
 
 @router.get("/admin")
