@@ -1066,7 +1066,7 @@ export default function Storefront() {
           <div className="storefront-carousel-track storefront-subcategory-product-track" tabIndex={0} aria-label={category.name + " products"}>{items.map(renderProductCard)}</div>
         </div>
       </section>)}
-      {routeCategoryName !== "Insurance" && <><div className="storefront-category-featured-heading"><div><span className="storefront-kicker">HANDPICKED FOR YOU</span><h2>Featured {routeCategoryName}</h2><p>Popular picks from this department.</p></div><button type="button" onClick={openCategoryListing}>View all <span>→</span></button></div>
+      {routeCategoryName !== "Insurance" && <><div className="storefront-category-featured-heading"><div><span className="storefront-kicker">HANDPICKED FOR YOU</span><h2>Featured {routeCategoryName}</h2><p>Customer favourites in this department.</p></div><button type="button" onClick={openCategoryListing}>View all <span>→</span></button></div>
       {loading ? <p className="storefront-empty">Loading live products…</p> : visibleVariants.length ? <div className="storefront-category-featured-track">{displayedVariants.slice(0, 8).map(renderProductCard)}</div> : <p className="storefront-empty">No active products are available in this category yet.</p>}
       {bestSellers.length > 0 && <div className="storefront-category-featured-heading"><div><span className="storefront-kicker">CUSTOMER FAVOURITES</span><h2>Popular in {routeCategoryName}</h2></div><button type="button" onClick={openCategoryListing}>View all <span>→</span></button></div>}
       {bestSellers.length > 0 && <div className="storefront-category-featured-track">{bestSellers.slice(0, 8).map(renderProductCard)}</div>}</>}
@@ -1078,7 +1078,7 @@ export default function Storefront() {
       {loading ? <p className="storefront-empty">Loading live products…</p> : (isDealsPage ? dealVariants : displayedVariants).length ? <div className="storefront-product-grid">{(isDealsPage ? dealVariants : displayedVariants).map(renderProductCard)}</div> : isWishlistPage ? <div className="storefront-wishlist-empty"><span aria-hidden="true">♡</span><h2>Your wishlist is waiting</h2><p>Tap the heart on any product to save it here for later.</p><button type="button" className="storefront-primary" onClick={openShopHome}>Explore products</button></div> : <p className="storefront-empty">{error ? "The live catalogue could not be loaded." : isDealsPage ? "No discounted products or featured picks are available yet." : "No active products are available in this category yet."}</p>}
     </section>}
     {!isProductPage && !isAccountPage && !isCheckoutPage && !isInfoPage && !isCategoryPage && !isWishlistPage && !isDealsPage && !loading && <div className="storefront-discovery">
-      {renderDiscoverySection(bestSellers.length ? "Best Sellers" : "Popular picks", bestSellers.length ? "Customer favourites, ranked by recorded sales" : "Explore products from the live catalogue", bestSellers.length ? bestSellers : displayedVariants.slice(0, 8), <Flame size={18} />)}
+      {renderDiscoverySection("Best Sellers", "Customer favourites, ranked by recorded sales", bestSellers, <Flame size={18} />)}
       {renderDiscoverySection("New Arrivals", "Fresh additions to the catalogue", newArrivals, <Sparkles size={18} />)}
       {renderDiscoverySection("Recently Viewed", "Pick up where you left off", recentVariants, <Clock3 size={18} />)}
     </div>}
