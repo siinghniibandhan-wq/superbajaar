@@ -12,7 +12,7 @@ test("homepage does not render empty discovery carousels", () => {
 test("homepage shows one coherent catalogue empty state instead of three placeholder panels", () => {
   assert.match(source, /className="storefront-home-empty"/);
   assert.match(source, /No products are available to shop just yet/);
-  assert.match(source, /bestSellers\.length\s*\|\|\s*newArrivals\.length\s*\|\|\s*recentVariants\.length/);
+  assert.match(source, /!displayedVariants\.length\s*&&\s*!newArrivals\.length\s*&&\s*!recentVariants\.length/);\n  assert.match(source, /bestSellers\.length\s*\?\s*bestSellers\s*:\s*displayedVariants\.slice\(0,\s*8\)/);
 });
 
 test("homepage sections use a shared compact rhythm on mobile", () => {
