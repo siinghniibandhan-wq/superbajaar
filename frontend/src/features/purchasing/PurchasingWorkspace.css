@@ -141,3 +141,43 @@
   .sb-purchasing-overview-head .sb-primary { width: 100%; }
   .sb-purchasing-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* ---- Purchasing: grouped navigation (same pattern as Inventory) ---- */
+.sb-pur-main-nav{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:6px;padding:6px;margin:14px 0 10px;border:1px solid var(--border,#e0e6ec);border-radius:11px;background:var(--surface,#fff)}
+.sb-pur-main-nav button{position:relative;min-height:44px;padding:8px 10px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--text,#2d363d);font:700 13px Lato,sans-serif;line-height:1.2;text-align:center;cursor:pointer}
+.sb-pur-main-nav button.is-active{border-color:#d5e3f0;background:#f0f1f2;color:#33628c;box-shadow:inset 0 -2px #437fb3}
+.sb-pur-badge{display:inline-block;min-width:18px;margin-left:6px;padding:1px 6px;border-radius:9px;background:#d9534f;color:#fff;font-size:11px;line-height:16px}
+.sb-pur-sub-nav{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px}
+.sb-pur-sub-nav button{min-height:36px;padding:7px 14px;border:1px solid #d5e3f0;border-radius:18px;background:#fff;color:#33628c;font:700 12px Lato,sans-serif;cursor:pointer}
+.sb-pur-sub-nav button span{margin-left:6px;opacity:.8}
+.sb-pur-sub-nav button.is-active{background:#437fb3;border-color:#437fb3;color:#fff}
+@media(max-width:640px){.sb-pur-main-nav{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* ---- Search-and-tap picker ---- */
+.sb-ss{position:relative;display:flex;flex-direction:column;gap:5px;min-width:0}
+.sb-ss-label{font-size:12px;font-weight:700}
+.sb-ss input[type=search]{width:100%;min-height:46px;padding:10px 12px;border:1px solid #dde6ee;border-radius:10px;font-size:16px;background:var(--surface,#fff);color:inherit}
+.sb-ss-hint{color:var(--muted,#71787f);font-size:11px}
+.sb-ss-list{position:absolute;z-index:30;top:100%;left:0;right:0;margin:4px 0 0;padding:4px;max-height:min(320px,50vh);overflow-y:auto;list-style:none;border:1px solid #cfdbe6;border-radius:12px;background:#fff;box-shadow:0 10px 28px rgba(30,50,70,.18)}
+.sb-ss-list li{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:48px;padding:8px 10px;border-radius:8px;cursor:pointer;color:#26333e}
+.sb-ss-list li.is-active,.sb-ss-list li:hover{background:#f0f6fb}
+.sb-ss-list li span{display:flex;flex-direction:column;min-width:0}
+.sb-ss-list li strong{font-size:14px;overflow-wrap:anywhere}
+.sb-ss-list li small{font-size:11px;color:#71787f;overflow-wrap:anywhere}
+.sb-ss-list li em{flex:0 0 auto;max-width:42%;text-align:right;font-style:normal;font-size:11px;color:#33628c;font-weight:700}
+.sb-ss-list li.sb-ss-empty{cursor:default;color:#71787f;font-size:13px}
+.sb-ss-chosen{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:46px;padding:8px 12px;border:1px solid #d5e3f0;border-radius:10px;background:#f0f6fb}
+.sb-ss-chosen span{display:flex;flex-direction:column;min-width:0}
+.sb-ss-chosen small{font-size:11px;color:#71787f}
+.sb-ss-chosen button{flex:0 0 auto;min-height:34px;padding:4px 12px;border:1px solid #437fb3;border-radius:8px;background:#fff;color:#33628c;font:700 12px Lato,sans-serif;cursor:pointer}
+.sb-pur-link{align-self:flex-start;margin-top:4px;padding:4px 0;border:0;background:none;color:#33628c;font:700 12px Lato,sans-serif;text-decoration:underline;cursor:pointer}
+.sb-pur-line-pick{grid-column:1/-1;min-width:0}
+
+/* ---- Purchase order line cards ---- */
+.sb-pur-line-card{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:end;padding:12px;margin-top:10px;border:1px solid #e3eaf0;border-radius:12px;background:#fff;position:relative}
+.sb-pur-line-title{grid-column:1/-1;display:flex;flex-direction:column;padding-right:34px;min-width:0}
+.sb-pur-line-title strong{overflow-wrap:anywhere}
+.sb-pur-line-title small{font-size:11px;color:#71787f}
+.sb-pur-line-total{grid-column:1/-1;text-align:right;font-weight:800;color:#26333e}
+.sb-pur-line-card .sb-remove-line{position:absolute;top:8px;right:8px}
+.sb-pur-line-card input{min-height:44px;font-size:16px}

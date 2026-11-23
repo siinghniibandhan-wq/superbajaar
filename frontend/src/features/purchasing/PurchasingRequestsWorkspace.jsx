@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiRequest } from "../../services/api.js";
+import SearchSelect, { variantItems } from "./SearchSelect.jsx";
 
 const money = value => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(Number(value || 0));
 const title = value => String(value || "—").replaceAll("_", " ").replace(/\b\w/g, char => char.toUpperCase());
 const blankLine = () => ({ variant_id: "", quantity: "1", estimated_unit_cost: "", specification: "" });
 
-export default function PurchasingRequestsWorkspace({ suppliers = [], locations = [], variants = [], onPurchaseOrderCreated }) {
+export default function PurchasingRequestsWorkspace({ suppliers = [], locations = [], variants = [], stock = null, onPurchaseOrderCreated }) {
   const [requisitions, setRequisitions] = useState([]);
   const [rfqs, setRfqs] = useState([]);
   const [selectedRequisition, setSelectedRequisition] = useState(null);
@@ -236,7 +237,7 @@ export default function PurchasingRequestsWorkspace({ suppliers = [], locations 
         <div className="sb-purchase-lines">
           <div className="sb-purchase-lines-head"><strong>Requested items</strong><button type="button" onClick={() => setRequestLines(lines => [...lines, blankLine()])}>+ Add item</button></div>
           {requestLines.map((line, index) => <div className="sb-purchase-line" key={index}>
-            <label>Variant *<select required value={line.variant_id} onChange={event => updateRequestLine(index, "variant_id", event.target.value)}><option value="">Choose variant</option>{variants.map(variant => <option key={variant.id} value={variant.id}>{variant.product_name || variant.name || `Product ${variant.product_id}`} · {variant.sku || `Variant ${variant.id}`}</option>)}</select></label>
+            <div className="sb-pur-line-pick"><SearchSelect label="Variant *" items={variantItems(variants, stock, locationId)} value={line.variant_id} onChange={item => { updateRequestLine(index, "variant_id", item ? String(item.id) : ""); if (item) { const v = variants.find(x => Number(x.id) === Number(item.id)); if (v && v.cost_price != null && !line.estimated_unit_cost) updateRequestLine(index, "estimated_unit_cost", String(v.cost_price)); } }} placeholder="Search product or SKU" /></div>
             <label>Quantity *<input required type="number" min="0.001" step="0.001" value={line.quantity} onChange={event => updateRequestLine(index, "quantity", event.target.value)} /></label>
             <label>Estimated unit cost ₹<input type="number" min="0" step="0.01" value={line.estimated_unit_cost} onChange={event => updateRequestLine(index, "estimated_unit_cost", event.target.value)} /></label>
             <label>Specification<input maxLength="2000" value={line.specification} onChange={event => updateRequestLine(index, "specification", event.target.value)} /></label>

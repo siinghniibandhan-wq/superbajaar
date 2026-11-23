@@ -5,11 +5,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./PurchasingWorkspace.css";
 import { apiRequest } from "../../services/api.js";
 import { toLocalDateInputValue } from "./dateInput.js";
+import SearchSelect, { variantItems } from "./SearchSelect.jsx";
 
 const money = v => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(Number(v || 0));
 const label = v => String(v || "").replaceAll("_", " ").replace(/\b\w/g, c => c.toUpperCase());
 const emptySupplier = { name: "", contact_name: "", phone: "", email: "", gstin: "", address: "" };
 const emptyLine = { variant_id: "", quantity: "1", unit_cost: "" };
+// Two-level navigation. Tab ids are unchanged, so every existing screen keeps working.
+const NAV_GROUPS = [
+  ["overview", "Overview", ["overview"]],
+  ["buy", "Buy", ["requests", "orders"]],
+  ["suppliers", "Suppliers", ["suppliers"]],
+  ["bills", "Bills & returns", ["invoices", "returns"]],
+  ["reorder", "Reorder", ["replenishment"]],
+];
+const SUB_LABELS = { requests: "Requisitions & RFQs", orders: "Purchase orders", invoices: "Supplier invoices", returns: "Supplier returns" };
 
 export default function PurchasingWorkspace({ onBack }) {
   const [tab, setTab] = useState("overview");
@@ -70,6 +80,7 @@ export default function PurchasingWorkspace({ onBack }) {
   const [returnDebitNotes, setReturnDebitNotes] = useState({});
   const [returnDebitDates, setReturnDebitDates] = useState({});
   const [financeLoading, setFinanceLoading] = useState(false);
+  const [stock, setStock] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true); setError("");
@@ -85,6 +96,32 @@ export default function PurchasingWorkspace({ onBack }) {
     finally { setLoading(false); }
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  // Live stock from Inventory (read only). Optional: if it cannot load, pickers just hide the stock figure.
+  const loadStock = useCallback(async () => {
+    try {
+      const total = {}, byLocation = {};
+      for (let page = 0; page < 20; page += 1) {
+        const result = await apiRequest("/inventory/balances?limit=500&offset=" + page * 500);
+        const items = result.items || [];
+        for (const row of items) {
+          const onHand = Number(row.on_hand || 0) - Number(row.reserved || 0);
+          total[row.variant_id] = (total[row.variant_id] || 0) + onHand;
+          byLocation[row.variant_id + ":" + row.location_id] = onHand;
+        }
+        if (items.length < 500) break;
+      }
+      setStock({ total, byLocation });
+    } catch { setStock(null); }
+  }, []);
+  useEffect(() => { loadStock(); }, [loadStock]);
+
+  // Only one supplier or location? Pick it automatically.
+  useEffect(() => {
+    if (orderEditId) return;
+    if (locations.length === 1 && !locationId) setLocationId(String(locations[0].id));
+    if (suppliers.length === 1 && !supplierId) setSupplierId(String(suppliers[0].id));
+  }, [locations, suppliers, orderEditId, locationId, supplierId]);
 
   const loadSupplierFinance = useCallback(async () => {
     setFinanceLoading(true); setError("");
@@ -211,14 +248,25 @@ export default function PurchasingWorkspace({ onBack }) {
     setLines(old => old.map((line, i) => i === index ? { ...line, [key]: value } : line));
   }
 
+  function addVariantLine(item) {
+    if (!item) return;
+    const variant = variants.find(v => Number(v.id) === Number(item.id));
+    setLines(old => {
+      const index = old.findIndex(line => String(line.variant_id) === String(item.id));
+      if (index >= 0) return old.map((line, i) => i === index ? { ...line, quantity: String((Number(line.quantity) || 0) + 1) } : line);
+      const next = { variant_id: String(item.id), quantity: "1", unit_cost: variant && variant.cost_price != null ? String(variant.cost_price) : "" };
+      return old.length === 1 && !old[0].variant_id ? [next] : [...old, next];
+    });
+  }
+
   async function createOrder(e) {
     e.preventDefault(); setSaving(true); setError(""); setNotice("");
     try {
       const payload = {
         supplier_id: Number(supplierId), location_id: Number(locationId), notes: notes.trim() || null,
-        lines: lines.map(line => ({ variant_id: Number(line.variant_id), quantity: Number(line.quantity), unit_cost: Number(line.unit_cost) })),
+        lines: lines.filter(line => line.variant_id).map(line => ({ variant_id: Number(line.variant_id), quantity: Number(line.quantity), unit_cost: Number(line.unit_cost) })),
       };
-      if (!payload.supplier_id || !payload.location_id || payload.lines.some(line => !line.variant_id || !Number.isFinite(line.quantity) || line.quantity <= 0 || !Number.isFinite(line.unit_cost) || line.unit_cost < 0)) {
+      if (!payload.supplier_id || !payload.location_id || !payload.lines.length || payload.lines.some(line => !line.variant_id || !Number.isFinite(line.quantity) || line.quantity <= 0 || !Number.isFinite(line.unit_cost) || line.unit_cost < 0)) {
         throw new Error("Select a supplier, location, catalogue variant, quantity and valid unit cost for each line.");
       }
       const po = await apiRequest(orderEditId ? "/purchasing/orders/" + orderEditId : "/purchasing/orders", { method: orderEditId ? "PUT" : "POST", body: JSON.stringify(payload) });
@@ -286,7 +334,7 @@ export default function PurchasingWorkspace({ onBack }) {
     try {
       const result = await apiRequest("/purchasing/orders/" + detail.id + "/grns", { method: "POST", body: JSON.stringify({ idempotency_key: receiptAttempt.current.key, lines: receiptLines, note }) });
       receiptAttempt.current = null;
-      setNotice("GRN " + result.grn_number + " recorded. Stock remains unavailable until Quality Control accepts it."); await load(); await openOrder(detail.id);
+      setNotice("GRN " + result.grn_number + " recorded. Stock remains unavailable until Quality Control accepts it."); await load(); await loadStock(); await openOrder(detail.id);
     } catch (e) { setError(e.message || "Unable to record goods receipt. Retry without changing quantities to safely resume the same receipt."); }
     finally { setSaving(false); }
   }
@@ -316,7 +364,7 @@ export default function PurchasingWorkspace({ onBack }) {
     try {
       const result = await apiRequest("/purchasing/grns/" + grnDetail.id + "/qc", { method: "POST", body: JSON.stringify({ idempotency_key: qcAttempt.current.key, lines }) });
       qcAttempt.current = null; setNotice("Quality inspection saved. GRN status: " + label(result.status) + ".");
-      await openGRN(grnDetail.id); await openOrder(detail.id);
+      await openGRN(grnDetail.id); await openOrder(detail.id); await loadStock();
     } catch (e) { setError(e.message || "Unable to save QC. Retry without changing quantities to safely resume."); }
     finally { setSaving(false); }
   }
@@ -459,15 +507,13 @@ export default function PurchasingWorkspace({ onBack }) {
       <article><span>Received orders</span><strong>{receivedOrders.length}</strong><small>Fully received</small></article>
       <article className="is-highlight"><span>Open PO value</span><strong>{money(totalOpenValue)}</strong><small>Excludes cancelled and received POs</small></article>
     </div>
-    <div className="sb-customer-tabs" role="tablist" aria-label="Purchasing workspace">
-      <button type="button" role="tab" aria-selected={tab === "overview"} className={tab === "overview" ? "is-active" : ""} onClick={() => setTab("overview")}>Overview</button>
-      <button type="button" role="tab" aria-selected={tab === "requests"} className={tab === "requests" ? "is-active" : ""} onClick={() => setTab("requests")}>Requisitions & RFQs</button>
-      <button type="button" role="tab" aria-selected={tab === "orders"} className={tab === "orders" ? "is-active" : ""} onClick={() => setTab("orders")}>Purchase orders <span>{orders.length}</span></button>
-      <button type="button" role="tab" aria-selected={tab === "suppliers"} className={tab === "suppliers" ? "is-active" : ""} onClick={() => setTab("suppliers")}>Suppliers <span>{suppliers.length}</span></button>
-      <button type="button" role="tab" aria-selected={tab === "invoices"} className={tab === "invoices" ? "is-active" : ""} onClick={() => setTab("invoices")}>Supplier invoices</button>
-      <button type="button" role="tab" aria-selected={tab === "returns"} className={tab === "returns" ? "is-active" : ""} onClick={() => setTab("returns")}>Supplier returns</button>
-      <button type="button" role="tab" aria-selected={tab === "replenishment"} className={tab === "replenishment" ? "is-active" : ""} onClick={() => setTab("replenishment")}>Replenishment</button>
-    </div>
+    {(() => {
+      const current = NAV_GROUPS.find(group => group[2].includes(tab)) || NAV_GROUPS[0];
+      return <>
+        <nav className="sb-pur-main-nav" role="tablist" aria-label="Purchasing sections">{NAV_GROUPS.map(([key, text, keys]) => <button key={key} type="button" role="tab" aria-selected={current[0] === key} className={current[0] === key ? "is-active" : ""} onClick={() => setTab(keys.includes(tab) ? tab : keys[0])}>{text}{key === "buy" && draftOrders.length > 0 && <span className="sb-pur-badge">{draftOrders.length}</span>}</button>)}</nav>
+        {current[2].length > 1 && <nav className="sb-pur-sub-nav" role="tablist" aria-label={current[1] + " sections"}>{current[2].map(key => <button key={key} type="button" role="tab" aria-selected={tab === key} className={tab === key ? "is-active" : ""} onClick={() => setTab(key)}>{SUB_LABELS[key]}{key === "orders" && <span>{orders.length}</span>}</button>)}</nav>}
+      </>;
+    })()}
     {tab === "overview" ? <>
       <section className="sb-purchasing-overview">
         <div className="sb-purchasing-overview-head"><div><h2>Procurement workflow</h2><p>Follow each order from request through receipt and inventory posting.</p></div><button className="sb-primary" type="button" onClick={() => setTab("orders")}>Create / manage purchase orders</button></div>
@@ -487,7 +533,7 @@ export default function PurchasingWorkspace({ onBack }) {
         </div>
         <p className="sb-purchasing-boundary"><strong>Operational boundary:</strong> supplier payment allocation reconciles an already-posted Accounting payment voucher; it does not initiate a bank transfer. Landed-cost allocation remains a separately controlled valuation workflow and is not yet represented as completed.</p>
       </section>
-    </> : tab === "requests" ? <PurchasingRequestsWorkspace suppliers={suppliers} locations={locations} variants={variants} onPurchaseOrderCreated={async po => { setTab("orders"); await load(); await openOrder(po.id); setNotice(`Quotation awarded. Draft PO ${po.purchase_number} created and still requires purchase approval.`); }} /> : tab === "suppliers" ? <>
+    </> : tab === "requests" ? <PurchasingRequestsWorkspace suppliers={suppliers} locations={locations} variants={variants} stock={stock} onPurchaseOrderCreated={async po => { setTab("orders"); await load(); await openOrder(po.id); setNotice(`Quotation awarded. Draft PO ${po.purchase_number} created and still requires purchase approval.`); }} /> : tab === "suppliers" ? <>
       <form className="sb-customer-form" onSubmit={createSupplier}>
         <h2>{supplierEditId ? "Edit supplier" : "Add supplier"}</h2><div className="sb-customer-fields">
           <label>Supplier name *<input required maxLength="200" value={supplierForm.name} onChange={e => setSupplierForm(o => ({ ...o, name: e.target.value }))} /></label>
@@ -569,17 +615,21 @@ export default function PurchasingWorkspace({ onBack }) {
     </> : tab === "orders" ? <>
       <form className="sb-customer-form" onSubmit={createOrder}>
         <h2>{orderEditId ? "Edit draft purchase order" : "Create purchase order"}</h2><div className="sb-customer-fields">
-          <label>Supplier *<select required value={supplierId} onChange={e => setSupplierId(e.target.value)}><option value="">Choose supplier</option>{suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
-          <label>Receive into location *<select required value={locationId} onChange={e => setLocationId(e.target.value)}><option value="">Choose location</option>{locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</select></label>
+          <div className="sb-span-all"><SearchSelect label="Supplier *" items={suppliers.map(sup => ({ id: sup.id, title: sup.name, sub: [sup.contact_name, sup.phone].filter(Boolean).join(" · "), search: [sup.name, sup.contact_name, sup.phone, sup.gstin].filter(Boolean).join(" ") }))} value={supplierId} onChange={item => setSupplierId(item ? String(item.id) : "")} placeholder="Search supplier by name or phone" hint={suppliers.length ? "" : "No suppliers yet."} /><button type="button" className="sb-pur-link" onClick={() => setTab("suppliers")}>Supplier not listed? Add supplier</button></div>
+          <div className="sb-span-all"><SearchSelect label="Receive into location *" items={locations.map(loc => ({ id: loc.id, title: loc.name, sub: loc.location_type ? label(loc.location_type) : "", search: [loc.name, loc.city, loc.location_type].filter(Boolean).join(" ") }))} value={locationId} onChange={item => setLocationId(item ? String(item.id) : "")} placeholder="Search warehouse or store" /></div>
           <label className="sb-span-all">Notes<input maxLength="2000" value={notes} onChange={e => setNotes(e.target.value)} /></label>
         </div>
-        <div className="sb-purchase-lines"><div className="sb-purchase-lines-head"><strong>Order lines</strong><button type="button" onClick={() => setLines(old => [...old, { ...emptyLine }])}>+ Add line</button></div>
-          {lines.map((line, i) => <div className="sb-purchase-line" key={i}>
-            <label>Product variant *<select required value={line.variant_id} onChange={e => setLine(i, "variant_id", e.target.value)}><option value="">Choose variant</option>{variants.map(v => <option key={v.id} value={v.id}>{v.product_name || v.name || ("Product " + v.product_id)} · {v.sku || ("Variant " + v.id)}</option>)}</select></label>
-            <label>Quantity<input required type="number" min="0.001" step="0.001" value={line.quantity} onChange={e => setLine(i, "quantity", e.target.value)} /></label>
-            <label>Unit cost ₹<input required type="number" min="0" step="0.01" value={line.unit_cost} onChange={e => setLine(i, "unit_cost", e.target.value)} /></label>
-            {lines.length > 1 && <button type="button" className="sb-remove-line" onClick={() => setLines(old => old.filter((_, n) => n !== i))} aria-label={"Remove line " + (i + 1)}>×</button>}
-          </div>)}
+        <div className="sb-purchase-lines"><div className="sb-purchase-lines-head"><strong>Order lines</strong></div>
+          <SearchSelect mode="add" label="Add product" items={variantItems(variants, stock, locationId)} onChange={addVariantLine} placeholder="Search product, SKU or barcode, then tap to add" />
+          {lines.filter(line => line.variant_id).length === 0 && <p className="sb-muted">No products added yet. Search above and tap a product to add it.</p>}
+          {lines.map((line, i) => { if (!line.variant_id) return null; const v = variants.find(item => Number(item.id) === Number(line.variant_id)); const name = v ? (v.product_name || v.name || ("Product " + v.product_id)) : ("Variant " + line.variant_id); const lineTotal = Math.max(0, Number(line.quantity) || 0) * Math.max(0, Number(line.unit_cost) || 0); const onHand = locationId && stock ? stock.byLocation[line.variant_id + ":" + locationId] : undefined;
+            return <div className="sb-purchase-line sb-pur-line-card" key={line.variant_id + "-" + i}>
+              <div className="sb-pur-line-title"><strong>{name}</strong><small>{v?.sku || ("Variant " + line.variant_id)}{onHand !== undefined ? " · Stock here " + onHand : stock && stock.total[line.variant_id] !== undefined ? " · Stock " + stock.total[line.variant_id] : ""}</small></div>
+              <label>Quantity<input required type="number" inputMode="decimal" min="0.001" step="0.001" value={line.quantity} onChange={e => setLine(i, "quantity", e.target.value)} /></label>
+              <label>Unit cost ₹<input required type="number" inputMode="decimal" min="0" step="0.01" value={line.unit_cost} onChange={e => setLine(i, "unit_cost", e.target.value)} /></label>
+              <span className="sb-pur-line-total">{money(lineTotal)}</span>
+              <button type="button" className="sb-remove-line" onClick={() => setLines(old => old.length > 1 ? old.filter((_, n) => n !== i) : [{ ...emptyLine }])} aria-label={"Remove " + name}>×</button>
+            </div>; })}
           <p className="sb-purchase-total">Estimated subtotal <strong>{money(lines.reduce((sum, line) => sum + Math.max(0, Number(line.quantity) || 0) * Math.max(0, Number(line.unit_cost) || 0), 0))}</strong></p>
         </div>
         <button className="sb-primary" type="submit" disabled={saving || !suppliers.length || !locations.length}>{saving ? "Saving…" : orderEditId ? "Save draft changes" : "Create purchase order"}</button>{orderEditId && <button type="button" onClick={() => { setOrderEditId(null); setSupplierId(""); setLocationId(""); setNotes(""); setLines([{ ...emptyLine }]); }}>Cancel edit</button>}
