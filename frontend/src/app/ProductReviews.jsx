@@ -41,7 +41,7 @@ export default function ProductReviews({ productId, customerToken, request: requ
     setBusy(true); setFormError("");
     try {
       const result = await request("/reviews", { method: "POST", body: JSON.stringify({ product_id: Number(productId), rating, title, body }) });
-      setMessage(result?.message || "Thank you. Your review will appear after approval.");
+      setMessage(result?.message || "Thank you. Your review is now live.");
       setRating(0); setTitle(""); setBody("");
       await load();
       if (onChanged) onChanged();
