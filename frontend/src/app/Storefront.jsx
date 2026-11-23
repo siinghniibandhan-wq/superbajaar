@@ -828,7 +828,7 @@ export default function Storefront() {
     const rate = Number(rule?.coins_per_100 ?? loyaltyDefaultRate);
     return Math.floor(Number(amount || 0) / 100 * (Number.isFinite(rate) ? rate : 0));
   }
-  function renderDiscoverySection(title, subtitle, items, emptyText, icon) {
+  function renderDiscoverySection(title, subtitle, items, icon) {
     if (!items.length) return null;
     const trackId = "carousel-" + title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
     const moveTrack = direction => {
@@ -847,7 +847,7 @@ export default function Storefront() {
           <button type="button" aria-label={"Next " + title} onClick={() => moveTrack(1)}><ChevronRight size={20} /></button>
         </div>
       </div>
-      {items.length ? <div className="storefront-carousel-track" id={trackId} tabIndex={0} aria-label={title + " products"}>{items.map(renderProductCard)}</div> : <p className="storefront-empty">{emptyText}</p>}
+      <div className="storefront-carousel-track" id={trackId} tabIndex={0} aria-label={title + " products"}>{items.map(renderProductCard)}</div>
     </section>;
   }
 
@@ -1078,11 +1078,11 @@ export default function Storefront() {
       {loading ? <p className="storefront-empty">Loading live products…</p> : (isDealsPage ? dealVariants : displayedVariants).length ? <div className="storefront-product-grid">{(isDealsPage ? dealVariants : displayedVariants).map(renderProductCard)}</div> : isWishlistPage ? <div className="storefront-wishlist-empty"><span aria-hidden="true">♡</span><h2>Your wishlist is waiting</h2><p>Tap the heart on any product to save it here for later.</p><button type="button" className="storefront-primary" onClick={openShopHome}>Explore products</button></div> : <p className="storefront-empty">{error ? "The live catalogue could not be loaded." : isDealsPage ? "No discounted products or featured picks are available yet." : "No active products are available in this category yet."}</p>}
     </section>}
     {!isProductPage && !isAccountPage && !isCheckoutPage && !isInfoPage && !isCategoryPage && !isWishlistPage && !isDealsPage && !loading && <div className="storefront-discovery">
-      {renderDiscoverySection("Best Sellers", "Customer favourites, ranked by recorded sales", bestSellers, "Best Sellers will appear when real sales data is available.", <Flame size={18} />)}
-      {renderDiscoverySection("New Arrivals", "Fresh additions to the catalogue", newArrivals, "Fresh additions to the catalogue", <Sparkles size={18} />)}
-      {renderDiscoverySection("Recently Viewed", "Pick up where you left off", recentVariants, "Products you open will appear here during this browsing session.", <Clock3 size={18} />)}
+      {renderDiscoverySection(bestSellers.length ? "Best Sellers" : "Popular picks", bestSellers.length ? "Customer favourites, ranked by recorded sales" : "Explore products from the live catalogue", bestSellers.length ? bestSellers : displayedVariants.slice(0, 8), <Flame size={18} />)}
+      {renderDiscoverySection("New Arrivals", "Fresh additions to the catalogue", newArrivals, <Sparkles size={18} />)}
+      {renderDiscoverySection("Recently Viewed", "Pick up where you left off", recentVariants, <Clock3 size={18} />)}
     </div>}
-    {!isProductPage && !isAccountPage && !isCheckoutPage && !isInfoPage && !isCategoryPage && !isWishlistPage && !isDealsPage && !loading && !bestSellers.length && !newArrivals.length && !recentVariants.length && <section className="storefront-home-empty" aria-live="polite">
+    {!isProductPage && !isAccountPage && !isCheckoutPage && !isInfoPage && !isCategoryPage && !isWishlistPage && !isDealsPage && !loading && !displayedVariants.length && !newArrivals.length && !recentVariants.length && <section className="storefront-home-empty" aria-live="polite">
       <div className="storefront-home-empty-icon"><ShoppingBag size={22} aria-hidden="true" /></div>
       <div className="storefront-home-empty-copy"><span className="storefront-kicker">YOUR SUPER BAJAAR</span><h2>No products are available to shop just yet</h2><p>{error ? "We're having trouble loading the catalogue right now. Please try again shortly." : "Explore our departments while we prepare the latest products for your store."}</p></div>
       <a href="#categories">Explore categories <span aria-hidden="true">→</span></a>
