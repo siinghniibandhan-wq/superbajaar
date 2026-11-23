@@ -27,6 +27,7 @@ from app.api.employee_portal import router as employee_portal_router
 from app.api.customer_auth import router as customer_auth_router
 from app.api.customer_identity_verification import router as customer_identity_verification_router
 from app.api.loyalty import router as loyalty_router
+from app.api.reviews import router as reviews_router
 from app.api.accounting import router as accounting_router
 from app.api.organisation_policies import router as organisation_policies_router
 from app.api.pricing import router as pricing_router
@@ -114,6 +115,7 @@ app.include_router(employee_portal_router, prefix=settings.api_prefix)
 app.include_router(customer_auth_router, prefix=settings.api_prefix)
 app.include_router(customer_identity_verification_router, prefix=settings.api_prefix)
 app.include_router(loyalty_router, prefix=settings.api_prefix)
+app.include_router(reviews_router, prefix=settings.api_prefix)
 app.include_router(accounting_router, prefix=settings.api_prefix)
 app.include_router(organisation_policies_router, prefix=settings.api_prefix)
 app.include_router(pricing_router, prefix=settings.api_prefix)
