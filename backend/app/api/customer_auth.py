@@ -626,7 +626,9 @@ def create_customer_address(payload: CustomerAddressPayload, request: Request):
     try:
         with _connect() as conn:
             with conn.transaction():
-                conn.execute("SELECT id FROM customer_accounts WHERE id=%s AND is_active=TRUE FOR UPDATE", (customer_id,))
+                owner = conn.execute("SELECT id FROM customer_accounts WHERE id=%s AND is_active=TRUE FOR UPDATE", (customer_id,)).fetchone()
+                if owner is None:
+                    raise HTTPException(status_code=401, detail="Customer account is no longer active")
                 if payload.is_default:
                     conn.execute("UPDATE customer_addresses SET is_default=FALSE,updated_at=now() WHERE customer_id=%s", (customer_id,))
                 row = conn.execute(
@@ -653,6 +655,9 @@ def update_customer_address(address_id: int, payload: CustomerAddressPatch, requ
     try:
         with _connect() as conn:
             with conn.transaction():
+                owner = conn.execute("SELECT id FROM customer_accounts WHERE id=%s AND is_active=TRUE FOR UPDATE", (customer_id,)).fetchone()
+                if owner is None:
+                    raise HTTPException(status_code=401, detail="Customer account is no longer active")
                 current = conn.execute(
                     "SELECT id,label,recipient_name,phone,address,landmark,pin_code,is_default "
                     "FROM customer_addresses WHERE id=%s AND customer_id=%s FOR UPDATE",
@@ -687,6 +692,9 @@ def delete_customer_address(address_id: int, request: Request):
     try:
         with _connect() as conn:
             with conn.transaction():
+                owner = conn.execute("SELECT id FROM customer_accounts WHERE id=%s AND is_active=TRUE FOR UPDATE", (customer_id,)).fetchone()
+                if owner is None:
+                    raise HTTPException(status_code=401, detail="Customer account is no longer active")
                 deleted = conn.execute(
                     "DELETE FROM customer_addresses WHERE id=%s AND customer_id=%s RETURNING id,is_default",
                     (address_id,customer_id),
