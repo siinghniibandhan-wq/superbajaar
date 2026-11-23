@@ -804,7 +804,7 @@ export default function Storefront() {
     try {
       const delivery = selectedAddress;
       if (!delivery) throw new Error("Choose or add a saved delivery address before placing your order.");
-      const phone = (delivery.phone || customer.phone).trim();
+      const phone = (customer.phone || delivery.phone).trim();
       const address = delivery.address.trim();
       if (phone.length < 7 || phone.length > 20) {
         throw new Error("Enter a valid contact phone number for delivery.");
@@ -822,11 +822,11 @@ export default function Storefront() {
       }
       const orderPayload = {
         channel: "website",
-        customer_name: delivery.recipient_name || customerAuth.full_name,
+        customer_name: customer.name.trim() || delivery.recipient_name || customerAuth.full_name,
         customer_phone: phone || null,
         customer_email: customerAuth.email,
         delivery_pin: pin || null,
-        notes: ["Website checkout", "Customer accepted Terms & Conditions and acknowledged Privacy Policy (version 2026-11-04)", customer.email.trim() ? "Email: " + customer.email.trim() : "", "Delivery address (" + delivery.label + "): " + address, delivery.landmark ? "Landmark: " + delivery.landmark : "", "Delivery contact: " + phone].filter(Boolean).join(" | "),
+        notes: ["Website checkout", "Customer accepted Terms & Conditions and acknowledged Privacy Policy (version 2026-11-04)", customer.email.trim() ? "Email: " + customer.email.trim() : "", "Delivery recipient: " + (customer.name.trim() || delivery.recipient_name), "Delivery address (" + delivery.label + "): " + address, delivery.landmark ? "Landmark: " + delivery.landmark : "", "Address contact: " + delivery.phone, "Order contact: " + phone].filter(Boolean).join(" | "),
         lines: cart.map(line => ({ variant_id: line.id, quantity: line.quantity })),
         redeem_coins: redeemableCoins,
       };
