@@ -202,3 +202,5 @@ dialog.sb-modal .sb-variant-pricing-list .sb-strip-row{display:grid;grid-templat
   dialog.sb-modal .sb-step-next{width:100%}
   dialog.sb-modal .sb-product-actions>button{flex:1 1 0}
 }
+
+.sb-form input.sb-price-locked{background:#f1f4f7;color:#7a858f;cursor:not-allowed;border-style:dashed}
