@@ -49,6 +49,27 @@ def test_attribute_accepts_three_value_types_and_display_type():
         assert payload.display_type == display_type
 
 
+def test_attribute_defaults_to_selector_not_dropdown():
+    from app.api.catalogue import AttributeCreate
+
+    assert AttributeCreate(name="Size", code="size", value_type="text").display_type == "button"
+
+
+def test_attribute_rejects_dropdown_display_type():
+    from pydantic import ValidationError
+    from app.api.catalogue import AttributeCreate, AttributeUpdate
+
+    for factory in (
+        lambda: AttributeCreate(name="Size", code="size", value_type="text", display_type="dropdown"),
+        lambda: AttributeUpdate(value_type="text", display_type="dropdown"),
+    ):
+        try:
+            factory()
+            assert False, "dropdown must no longer be accepted"
+        except ValidationError:
+            pass
+
+
 def test_attribute_rejects_invalid_display_type():
     from pydantic import ValidationError
     from app.api.catalogue import AttributeCreate
@@ -417,9 +438,9 @@ def test_attribute_update_accepts_compatible_display_types():
     from app.api.catalogue import AttributeUpdate
 
     compatible = {
-        "text": ("text", "dropdown", "button"),
-        "colour": ("dropdown", "button", "colour"),
-        "image": ("dropdown", "image"),
+        "text": ("text", "button", "circle", "tile"),
+        "colour": ("button", "colour", "colour_chip"),
+        "image": ("image", "image_circle"),
     }
     for value_type, display_types in compatible.items():
         for display_type in display_types:
