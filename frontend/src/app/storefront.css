@@ -1840,3 +1840,10 @@
 .storefront-checkout-page .checkout-section--payment .storefront-primary{width:100%;min-height:54px;font-size:16px;border-radius:14px;background:#4c168c}
 .storefront-checkout-page .checkout-section--payment .storefront-primary:disabled{background:#c9bbdc;box-shadow:none;opacity:1;cursor:not-allowed}
 @media(min-width:900px){.storefront-checkout-page{padding:28px}}
+
+/* Checkout quantity stepper fix: beat the old ".storefront-basket-line > div" grid rule */
+.storefront-checkout-page .storefront-basket-line > .basket-line-qty{display:inline-flex!important;flex-direction:row!important;align-items:stretch;gap:0;width:auto;height:42px;justify-self:start;border:1px solid #e0d4ee;border-radius:12px;overflow:hidden}
+.storefront-checkout-page .storefront-basket-line > .basket-line-qty button{flex:0 0 42px;width:42px;height:42px;display:flex;align-items:center;justify-content:center;padding:0;border:0;border-radius:0;background:#f5edff;color:#4c168c;font-size:20px;line-height:1}
+.storefront-checkout-page .storefront-basket-line > .basket-line-qty input{flex:0 0 48px;width:48px;height:42px;padding:0;border:0;border-left:1px solid #e0d4ee;border-right:1px solid #e0d4ee;border-radius:0;text-align:center;font-size:16px;font-weight:700;background:#fff}
+.storefront-checkout-page .storefront-basket-line > .basket-line-info{display:grid;gap:3px}
+.storefront-checkout-page .storefront-basket-line{align-items:center}
