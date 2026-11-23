@@ -16,7 +16,7 @@ test("checkout selects a saved address and allows changing it", () => {
   assert.match(storefront, /selectedAddressId/);
   assert.match(storefront, /Change address/);
   assert.match(storefront, /selectedAddress/);
-  assert.match(storefront, /delivery_address_id/);
+  assert.match(storefront, /Delivery address \(/);
 });
 
 test("checkout is organized into responsive summary, delivery and payment sections", () => {
