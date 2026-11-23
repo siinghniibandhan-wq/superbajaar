@@ -1521,3 +1521,14 @@
   .storefront-super-coin-redemption { padding: 15px; }
   .storefront-super-coin-redemption label { max-width: none; }
 }
+
+
+/* Keep every Why Choose Us card the same height within its grid row. */
+.storefront-benefits > .storefront-benefit-grid {
+  align-items: stretch;
+}
+.storefront-benefits > .storefront-benefit-grid > article {
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 112px;
+}
