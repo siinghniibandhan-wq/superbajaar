@@ -1847,3 +1847,7 @@
 .storefront-checkout-page .storefront-basket-line > .basket-line-qty input{flex:0 0 48px;width:48px;height:42px;padding:0;border:0;border-left:1px solid #e0d4ee;border-right:1px solid #e0d4ee;border-radius:0;text-align:center;font-size:16px;font-weight:700;background:#fff}
 .storefront-checkout-page .storefront-basket-line > .basket-line-info{display:grid;gap:3px}
 .storefront-checkout-page .storefront-basket-line{align-items:center}
+
+/* Lowest price in last 30 days (product page) */
+.storefront-lowest-price{display:block;margin:4px 0 10px;color:#766c83;font-size:12px;line-height:1.4}
+.storefront-lowest-price strong{color:#30213f;font-size:12px}
