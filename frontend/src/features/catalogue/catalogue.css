@@ -140,6 +140,65 @@
 .sb-catalogue-pagination>div{display:flex;gap:8px}
 @media(max-width:640px){.sb-catalogue-pagination{align-items:flex-start;flex-direction:column}}
 
-/* Product form tabs: show ALL tabs at once (wrap into rows instead of hiding them off-screen) */
-.sb-modal-form .sb-catalogue-tabs{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:6px;overflow:visible;margin:4px 0 16px}
-.sb-modal-form .sb-catalogue-tabs button{min-width:0;width:100%;min-height:44px;padding:8px 10px;white-space:normal;text-align:center;line-height:1.25;font-size:13px}
+/* ===== Product / category pop-up (desktop + mobile) =====
+   Selectors start with "dialog.sb-modal" so they win over the older
+   ".sb-modal" rule in purchasing/ReplenishmentWorkspace.css (500px wide). */
+dialog.sb-modal{
+  position:fixed;inset:0;margin:auto;
+  width:min(960px,calc(100vw - 48px));max-width:none;
+  height:auto;max-height:calc(100dvh - 48px);
+  padding:0;overflow:hidden;border:0;border-radius:18px;
+  background:#fff;color:#26333e;
+  box-shadow:0 24px 70px rgba(20,30,45,.35);
+}
+dialog.sb-modal:not([open]){display:none}
+dialog.sb-modal::backdrop{background:rgba(20,30,45,.55)}
+dialog.sb-modal .sb-modal-inner{display:flex;flex-direction:column;width:100%;height:100%;max-height:calc(100dvh - 48px);min-height:0}
+dialog.sb-modal .sb-modal-header{flex:0 0 auto;padding:14px 20px;background:#fff;border-bottom:1px solid #e6ecf1}
+dialog.sb-modal .sb-modal-header h2{font-size:18px}
+dialog.sb-modal .sb-modal-content{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
+dialog.sb-modal .sb-modal-footer{
+  flex:0 0 auto;display:flex;flex-direction:row-reverse;flex-wrap:nowrap;justify-content:flex-start;gap:10px;
+  padding:12px 20px;padding-bottom:calc(12px + env(safe-area-inset-bottom,0px));
+  background:#fff;border-top:1px solid #e6ecf1;box-shadow:0 -6px 16px rgba(20,30,45,.06)
+}
+dialog.sb-modal .sb-modal-footer>button{min-height:44px;padding:10px 20px;white-space:nowrap}
+dialog.sb-modal .sb-modal-form{padding:16px 20px 24px}
+
+/* Tabs: one row, equal width on desktop, swipe sideways on phones */
+dialog.sb-modal .sb-form-tabs{
+  display:flex;flex-wrap:nowrap;gap:6px;margin:0 0 16px;padding:5px;
+  overflow-x:auto;overflow-y:hidden;scrollbar-width:none;scroll-snap-type:x proximity;
+  position:sticky;top:0;z-index:2;background:#eef0f1;
+}
+dialog.sb-modal .sb-form-tabs::-webkit-scrollbar{display:none}
+dialog.sb-modal .sb-form-tabs button{
+  flex:1 0 auto;min-width:96px;min-height:42px;padding:8px 14px;
+  white-space:nowrap;scroll-snap-align:start;font-size:13px
+}
+dialog.sb-modal .sb-step-next{margin-top:14px}
+dialog.sb-modal .sb-modal-form section[hidden]{display:none}
+
+/* Variant price rows: three fields in a row on desktop */
+dialog.sb-modal .sb-variant-pricing-list .sb-strip-row{display:grid;grid-template-columns:minmax(0,1.4fr) repeat(3,minmax(0,1fr));align-items:end;gap:10px}
+
+/* Tablet */
+@media(max-width:860px){
+  dialog.sb-modal .sb-variant-pricing-list .sb-strip-row{grid-template-columns:repeat(3,minmax(0,1fr))}
+  dialog.sb-modal .sb-variant-pricing-list .sb-strip-main{grid-column:1/-1}
+}
+
+/* Phone: full-screen pop-up */
+@media(max-width:680px){
+  dialog.sb-modal{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;border-radius:0}
+  dialog.sb-modal .sb-modal-inner{height:100dvh;max-height:100dvh}
+  dialog.sb-modal .sb-modal-header{padding:12px 14px;padding-top:calc(12px + env(safe-area-inset-top,0px))}
+  dialog.sb-modal .sb-modal-form{padding:12px 14px 20px}
+  dialog.sb-modal .sb-modal-form .sb-form-grid{grid-template-columns:minmax(0,1fr)}
+  dialog.sb-modal .sb-modal-footer{padding:10px 14px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px))}
+  dialog.sb-modal .sb-modal-footer>button{flex:1 1 0;padding:10px 8px;white-space:normal}
+  dialog.sb-modal .sb-modal-footer>button[type="submit"]{flex:2 1 0}
+  dialog.sb-modal .sb-variant-pricing-list .sb-strip-row{grid-template-columns:minmax(0,1fr)}
+  dialog.sb-modal .sb-step-next{width:100%}
+  dialog.sb-modal .sb-product-actions>button{flex:1 1 0}
+}

@@ -191,8 +191,8 @@ export default function ProductCreateForm({ categories = [], product = null, onS
     return <form id="catalogue-product-form" className="sb-form sb-modal-form" noValidate onSubmit={submit}>
     {error && <p role="alert" className="sb-alert">{error}</p>}
     {success && <p role="status" className="sb-success">{success}</p>}
-    <nav className="sb-catalogue-tabs" aria-label="Product form sections" role="tablist">
-      {[["general","Product Information"],["attributes","Attributes & Variants"],["availability","Availability"],["delivery","Delivery"],["images","Images"],["review","Review & Save"]].map(([key,label]) => <button key={key} type="button" role="tab" aria-selected={activeTab === key} className={activeTab === key ? "is-active" : ""} onClick={() => setActiveTab(key)}>{label}</button>)}
+    <nav className="sb-catalogue-tabs sb-form-tabs" aria-label="Product form sections" role="tablist">
+      {[["general","Product"],["attributes","Variants"],["availability","Availability"],["delivery","Delivery"],["images","Images"],["review","Review"]].map(([key,label]) => <button key={key} type="button" role="tab" aria-selected={activeTab === key} className={activeTab === key ? "is-active" : ""} onClick={() => setActiveTab(key)}>{label}</button>)}
     </nav>
     <section hidden={activeTab !== "general"} aria-label="Product information">
       <div className="sb-form-grid">
@@ -208,7 +208,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
         <label>GST rate<select value={form.tax_rate ?? ""} onChange={e => change("tax_rate", e.target.value)}><option value="">Select GST rate</option>{["0","0.1","0.25","1","1.5","3","5","6","7.5","12","18","28","40"].map(rate => <option key={rate} value={rate}>{rate}%</option>)}</select></label>
         <label className="sb-span-all">Product description<textarea rows="4" value={form.description || ""} onChange={e => change("description", e.target.value)} placeholder="Features, material, fit, usage and care instructions" /></label>
       </div>
-      <button type="button" className="sb-primary" onClick={() => { if (!form.name.trim() || !form.slug.trim() || (!product?.id && (form.selling_price === "" || form.mrp === "" || Number(form.selling_price) < 0 || Number(form.mrp) < Number(form.selling_price)))) { setError("Complete product name, selling price and valid MRP before continuing."); return; } setError(""); setActiveTab("attributes"); }}>Continue to Attributes &amp; Variants</button>
+      <button type="button" className="sb-secondary sb-step-next" onClick={() => { if (!form.name.trim() || !form.slug.trim() || (!product?.id && (form.selling_price === "" || form.mrp === "" || Number(form.selling_price) < 0 || Number(form.mrp) < Number(form.selling_price)))) { setError("Complete product name, selling price and valid MRP before continuing."); return; } setError(""); setActiveTab("attributes"); }}>Continue to Attributes &amp; Variants</button>
     </section>
     <section hidden={activeTab !== "availability"} aria-label="Availability">
       <h3>Sales channels</h3>
@@ -227,21 +227,22 @@ export default function ProductCreateForm({ categories = [], product = null, onS
         <button type="button" className="sb-secondary" onClick={()=>{if(!ruleDraft.region_code.trim()&&!ruleDraft.pincode&&!ruleDraft.location_id){setError("Enter a region, pincode or stock location ID.");return;} if(ruleDraft.pincode&& !/^\d{6}$/.test(ruleDraft.pincode)){setError("Pincode must contain exactly six digits.");return;} setAvailabilityRules(old=>[...old,{...ruleDraft,region_code:ruleDraft.region_code.trim(),pincode:ruleDraft.pincode||"",location_id:ruleDraft.location_id||"",id:"new-"+Date.now()}]);setRuleDraft(v=>({...v,region_code:"",pincode:"",location_id:""}));setError("");}}>Add restriction</button>
         {availabilityRules.length ? <div className="sb-strip-list">{availabilityRules.map((rule,index)=><article className="sb-strip-row" key={rule.id || index}><div className="sb-strip-main"><strong>{rule.channel.toUpperCase()} · {rule.is_allowed===false?"Blocked":"Allowed"}</strong><small>{[rule.region_code,rule.pincode,rule.location_id?"Location #"+rule.location_id:""].filter(Boolean).join(" · ")}</small></div><button type="button" className="sb-row-action" onClick={()=>setAvailabilityRules(old=>old.filter((_,i)=>i!==index))}>Remove</button></article>)}</div>:<p className="sb-empty">No region, pincode or warehouse restrictions configured.</p>}
       </> : <p className="sb-muted">Save the product first to attach region, pincode and warehouse restrictions. Channel availability can be selected now and will be saved with the product.</p>}
-      <button type="button" className="sb-primary" onClick={()=>setActiveTab("delivery")}>Continue to Delivery</button>
+      <button type="button" className="sb-secondary sb-step-next" onClick={()=>setActiveTab("delivery")}>Continue to Delivery</button>
     </section>
     <section hidden={activeTab !== "delivery"} aria-label="Delivery options">
       <h3>Delivery options</h3>
       <p className="sb-muted">Select the delivery methods customers can choose for this product.</p>
       {["standard","express"].map(option=><label className="sb-check" key={option}><input type="checkbox" checked={(form.delivery_options||["standard"]).includes(option)} onChange={e=>change("delivery_options",e.target.checked?[...(form.delivery_options||[]).filter(x=>x!==option),option]:(form.delivery_options||[]).filter(x=>x!==option))}/>{option==="standard"?"Standard delivery":"Express delivery"}</label>)}
       {!(form.delivery_options||[]).length && <p role="alert" className="sb-alert">Choose at least one delivery option.</p>}
-      <button type="button" className="sb-primary" onClick={()=>setActiveTab("images")}>Continue to Images</button>
+      <button type="button" className="sb-secondary sb-step-next" onClick={()=>setActiveTab("images")}>Continue to Images</button>
     </section>
     <section hidden={activeTab !== "images"} aria-label="Product images">
       {product?.id ? <ProductImagesEmbedded product={product} /> : <p className="sb-muted">Save the product and its variants first. Then reopen Edit Product to add product-level and variant-specific image references.</p>}
-      <button type="button" className="sb-primary" onClick={()=>setActiveTab("review")}>Continue to Review &amp; Save</button>
+      <button type="button" className="sb-secondary sb-step-next" onClick={()=>setActiveTab("review")}>Continue to Review &amp; Save</button>
     </section>
     <section hidden={activeTab !== "review"} aria-label="Review and save">
       <h3>Review product</h3>
+      <p className="sb-muted">Check the details, then tap the Save button at the bottom.</p>
       <div className="sb-form-grid">
         <p><strong>Product:</strong> {form.name || "Not entered"}</p>
         <p><strong>Slug:</strong> {form.slug || "Not generated"}</p>
@@ -252,7 +253,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
         <p><strong>Delivery:</strong> {(form.delivery_options||[]).join(", ") || "Choose at least one option"}</p>
         <p><strong>Variants to create:</strong> {product?.id ? "Existing variants preserved" : variantCombinations.length}</p>
       </div>
-      <div className="sb-product-actions"><button className="sb-primary" disabled={busy || !(form.delivery_options||[]).length} type="submit">{busy ? "Saving…" : product ? "Save product changes" : "Save product and variants"}</button><button className="sb-secondary" type="button" disabled={busy} onClick={() => setActiveTab("general")}>Back to Product Information</button></div>
+      <div className="sb-product-actions"><button className="sb-secondary" type="button" disabled={busy} onClick={() => setActiveTab("general")}>Back to Product Information</button></div>
     </section>
     <section hidden={activeTab !== "attributes"} aria-label="Attributes and variants">
       {product?.id && <p className="sb-muted">Existing variants are preserved. Select additional values below to add only missing combinations; existing variants will not be duplicated.</p>}
@@ -291,7 +292,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
           </div>
         </section>
       </>
-      <div className="sb-product-actions"><button className="sb-secondary" type="button" disabled={busy} onClick={() => setActiveTab("general")}>Back to Product Information</button><button className="sb-primary" type="button" disabled={busy} onClick={() => setActiveTab("availability")}>Next: Availability</button></div>
+      <div className="sb-product-actions"><button className="sb-secondary" type="button" disabled={busy} onClick={() => setActiveTab("general")}>Back to Product Information</button><button className="sb-secondary sb-step-next" type="button" disabled={busy} onClick={() => setActiveTab("availability")}>Next: Availability</button></div>
     </section>
   </form>;
 }
