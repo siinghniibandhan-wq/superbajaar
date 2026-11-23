@@ -10,6 +10,8 @@ const EMPTY = { name: "", slug: "", brand: "", category_id: "", category_ids: []
 const OPTION_TYPES = ["text", "colour", "image"];
 function ProductImagesEmbedded({ product }) { return <ProductImagesPanel products={[product]} initialProductId={product.id} embedded />; }
 
+function slugifyName(value) { return String(value).toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
+
 function combinationKey(attributes) {
   return JSON.stringify(Object.fromEntries(Object.entries(attributes || {}).sort(([a], [b]) => a.localeCompare(b))));
 }
@@ -18,8 +20,22 @@ function combinations(items) {
   return items.reduce((acc, item) => acc.flatMap(prefix => item.values.map(value => [...prefix, [item.code, value]])), [[]]).map(entries => Object.fromEntries(entries));
 }
 
-export default function ProductCreateForm({ categories = [], product = null, onSaved, onBusyChange }) {
-  const [form, setForm] = useState(product ? {
+export default function ProductCreateForm({ categories = [], product = null, duplicateFrom = null, onSaved, onBusyChange }) {
+  const [form, setForm] = useState(duplicateFrom && !product ? {
+    ...EMPTY,
+    name: (duplicateFrom.name || "") + " (Copy)",
+    slug: slugifyName((duplicateFrom.name || "") + " (Copy)"),
+    brand: duplicateFrom.brand || "",
+    description: duplicateFrom.description || "",
+    tax_code: duplicateFrom.tax_code || "",
+    tax_rate: duplicateFrom.tax_rate == null ? "" : String(Number(duplicateFrom.tax_rate)),
+    selling_price: duplicateFrom.min_selling_price ?? "",
+    mrp: duplicateFrom.min_mrp ?? duplicateFrom.min_selling_price ?? "",
+    category_ids: Array.isArray(duplicateFrom.category_ids) && duplicateFrom.category_ids.length ? duplicateFrom.category_ids.map(String) : (duplicateFrom.category_id ? [String(duplicateFrom.category_id)] : []),
+    is_pos_available: duplicateFrom.is_pos_available !== false,
+    is_website_available: duplicateFrom.is_website_available !== false,
+    delivery_options: duplicateFrom.delivery_options?.length ? duplicateFrom.delivery_options : ["standard"],
+  } : product ? {
     ...EMPTY,
     ...product,
     selling_price: product.selling_price ?? product.min_selling_price ?? "",
@@ -87,6 +103,49 @@ export default function ProductCreateForm({ categories = [], product = null, onS
       .then(result => setAvailabilityRules(result.items || []))
       .catch(e => setError(e.message || "Unable to load availability restrictions."));
   }, [product?.id]);
+
+  useEffect(() => {
+    if (product?.id || !duplicateFrom?.id || !definitions.length) return;
+    const sourceId = duplicateFrom.id;
+    apiRequest("/catalogue/products/" + sourceId + "/attributes")
+      .then(result => {
+        const values = {};
+        for (const item of result.items || []) {
+          if (!item.is_variant_attribute && item.value !== null && item.value !== undefined) values[item.id] = item.value;
+        }
+        setProductAttributeValues(values);
+      })
+      .catch(e => setError(e.message || "Unable to copy product attributes."));
+    Promise.all(definitions.filter(def => def.is_variant_attribute && OPTION_TYPES.includes(def.value_type)).map(async def => {
+      const result = await apiRequest("/catalogue/products/" + sourceId + "/attributes/" + def.id + "/options");
+      return [def.id, (result.items || []).map(item => item.value)];
+    })).then(entries => {
+      const options = Object.fromEntries(entries.filter(([, list]) => list.length));
+      setCustomAttributeOptions(options);
+      setPendingCustomOptions(options);
+    }).catch(e => setError(e.message || "Unable to copy product-specific attribute options."));
+    apiRequest("/catalogue/products/" + sourceId + "/variants?limit=500")
+      .then(result => {
+        const values = {}; const pricing = {};
+        for (const row of (result.items || []).filter(item => item.is_active !== false)) {
+          for (const [code, raw] of Object.entries(row.attributes || {})) {
+            const list = Array.isArray(raw) ? raw : [raw];
+            values[code] = [...new Set([...(values[code] || []), ...list])];
+          }
+          pricing[combinationKey(row.attributes || {})] = {
+            selling_price: row.selling_price == null ? "" : String(row.selling_price),
+            mrp: row.mrp == null ? "" : String(row.mrp),
+            cost_price: row.cost_price == null ? "" : String(row.cost_price),
+          };
+        }
+        setSelected(values);
+        setVariantPricing(pricing);
+      })
+      .catch(e => setError(e.message || "Unable to copy product variants."));
+    apiRequest("/catalogue/products/" + sourceId + "/availability-rules")
+      .then(result => setAvailabilityRules((result.items || []).map(({ id, ...rule }) => rule)))
+      .catch(e => setError(e.message || "Unable to copy availability restrictions."));
+  }, [duplicateFrom?.id, definitions]);
 
   const chosenAttributes = useMemo(() => definitions.filter(def => def.is_variant_attribute && OPTION_TYPES.includes(def.value_type) && (selected[def.code] || []).length), [definitions, selected]);
   const variantCombinations = useMemo(() => {
@@ -168,7 +227,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
         productAttributes: productAttributeValues,
         customOptions: pendingCustomOptions,
         variants: variantPayloads,
-        availabilityRules: product?.id ? availabilityRules.map(rule => ({
+        availabilityRules: (product?.id || duplicateFrom) ? availabilityRules.map(rule => ({
           channel: rule.channel, region_code: rule.region_code || null, pincode: rule.pincode || null,
           location_id: rule.location_id ? Number(rule.location_id) : null, is_allowed: rule.is_allowed !== false,
         })) : [],
@@ -195,6 +254,7 @@ export default function ProductCreateForm({ categories = [], product = null, onS
       {[["general","Product"],["attributes","Variants"],["availability","Availability"],["delivery","Delivery"],["images","Images"],["review","Review"]].map(([key,label]) => <button key={key} type="button" role="tab" aria-selected={activeTab === key} className={activeTab === key ? "is-active" : ""} onClick={() => setActiveTab(key)}>{label}</button>)}
     </nav>
     <section hidden={activeTab !== "general"} aria-label="Product information">
+      {duplicateFrom && !product?.id && <p className="sb-success" role="status">Duplicating <b>{duplicateFrom.name}</b>. Details, categories, prices, variants and availability are copied. Change the name, brand or anything else, then save. Images, SKUs, barcodes and stock are not copied.</p>}
       <div className="sb-form-grid">
         <label>Product name *<input required maxLength="240" value={form.name} onChange={e => { const name=e.target.value; setForm(old => ({...old,name,slug:slugify(name)})); }} /></label>
         <label>Slug (automatic)<input required pattern="[a-z0-9]+(-[a-z0-9]+)*" value={form.slug} readOnly aria-readonly="true" /></label>

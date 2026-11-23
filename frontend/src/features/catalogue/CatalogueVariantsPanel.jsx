@@ -3,8 +3,10 @@ import { apiRequest } from "../../services/api.js";
 import CatalogueModal from "./CatalogueModal.jsx";
 import ColourOptionEditor from "./ColourOptionEditor.jsx";
 import { colourOptionLabel, normalizeColourOption } from "./colourOptions.js";
+import AttributeDisplayPicker from "./AttributeDisplayPicker.jsx";
+import { defaultDisplayType, displayStyleLabel, normalizeDisplayType } from "./attributeDisplay.js";
 
-const initialAttribute = { name: "", code: "", value_type: "text", display_type: "dropdown", is_variant_attribute: true, is_required: false, options: "" };
+const initialAttribute = { name: "", code: "", value_type: "text", display_type: "button", is_variant_attribute: true, is_required: false, options: "" };
 const initialVariant = { sku: "", barcode: "", attributes: "{}", selling_price: "", mrp: "", cost_price: "" };
 const OPTION_TYPES = ["text", "colour", "image"];
 function makeCombinations(items) {
@@ -76,7 +78,7 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
       name: definition.name,
       code: definition.code,
       value_type: definition.value_type,
-      display_type: definition.display_type || (definition.value_type === "colour" ? "colour" : "dropdown"),
+      display_type: normalizeDisplayType(definition.display_type, definition.value_type),
       is_variant_attribute: definition.is_variant_attribute,
       is_required: false,
       options: definition.value_type === "colour" ? "" : (definition.options || []).map(value => String(value)).join(", "),
@@ -231,8 +233,8 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
         <div className="sb-form-grid">
           <label>Name<input required value={attribute.name} onChange={e=>setAttribute(v=>({...v,name:e.target.value,...(!editingAttributeId ? {code:e.target.value.toLowerCase().trim().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").replace(/^([0-9])/,"attr_$1") || "attribute"} : {})}))}/></label>
           <label>Code (immutable)<input required pattern="[a-z][a-z0-9_]*" value={attribute.code} readOnly aria-readonly="true"/><small className="sb-muted">The code is fixed to protect saved variant data.</small></label>
-          <label>Attribute type<select value={attribute.value_type} onChange={e=>setAttribute(v=>({...v,value_type:e.target.value,display_type:e.target.value === "colour" ? "colour" : e.target.value === "image" ? "image" : "dropdown"}))}>{!["text","colour","image"].includes(attribute.value_type) && <option value={attribute.value_type} disabled>{attribute.value_type} (legacy — unchanged)</option>}{["text","colour","image"].map(x=><option key={x} value={x}>{x === "colour" ? "Colour" : x === "image" ? "Image" : "Text"}</option>)}</select></label>
-          <label>Display type<select disabled={!["text","colour","image"].includes(attribute.value_type)} value={attribute.display_type} onChange={e=>setAttribute(v=>({...v,display_type:e.target.value}))}>{(!["text","colour","image"].includes(attribute.value_type) ? ["text","dropdown","button","colour","image"] : attribute.value_type === "text" ? ["text","dropdown","button"] : attribute.value_type === "colour" ? ["dropdown","button","colour"] : ["dropdown","image"]).map(x=><option key={x} value={x}>{x.charAt(0).toUpperCase()+x.slice(1)}</option>)}</select><small className="sb-muted">Controls how customers select or view this attribute on the storefront.</small></label>
+          <label>Attribute type<select value={attribute.value_type} onChange={e=>setAttribute(v=>({...v,value_type:e.target.value,display_type:defaultDisplayType(e.target.value)}))}>{!["text","colour","image"].includes(attribute.value_type) && <option value={attribute.value_type} disabled>{attribute.value_type} (legacy — unchanged)</option>}{["text","colour","image"].map(x=><option key={x} value={x}>{x === "colour" ? "Colour" : x === "image" ? "Image" : "Text"}</option>)}</select></label>
+          <AttributeDisplayPicker valueType={attribute.value_type} value={attribute.display_type} disabled={!["text","colour","image"].includes(attribute.value_type)} values={attribute.value_type === "colour" ? colourOptions : String(attribute.options || "").split(",").map(x => x.trim()).filter(Boolean)} onChange={display_type => setAttribute(v => ({ ...v, display_type }))} />
           {attribute.value_type === "colour" ? <div className="sb-form-grid-wide">
             <strong>Colour values</strong>
             <ColourOptionEditor existingOptions={colourOptions} disabled={busy} onAdd={async option => {
@@ -253,7 +255,7 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
         <div className="sb-strip-icon" aria-hidden="true">Aa</div>
         <div className="sb-strip-main sb-attribute-main">
           <strong>{definition.name}</strong>
-          <small>{definition.code} · {definition.value_type} · Display: {definition.display_type || "dropdown"}{definition.options?.length ? " · " + definition.options.map(value => definition.value_type === "colour" ? colourOptionLabel(value) : String(value)).join(", ") : ""}</small>
+          <small>{definition.code} · {definition.value_type} · Display: {displayStyleLabel(definition.display_type, definition.value_type)}{definition.options?.length ? " · " + definition.options.map(value => definition.value_type === "colour" ? colourOptionLabel(value) : String(value)).join(", ") : ""}</small>
           {OPTION_TYPES.includes(definition.value_type) && <>
             {definition.value_type === "colour" ? <ColourOptionEditor existingOptions={definition.options || []} disabled={busy} compact onAdd={option => apiRequest("/catalogue/attributes/" + definition.id + "/options", { method: "PUT", body: JSON.stringify({ options: [option] }) }).then(async () => { await loadDefinitions(); setNotice('"' + option.name + '" added to ' + definition.name + '.'); })} /> : <div className="sb-add-option">
               <input aria-label={"New shared " + definition.name + " value"} value={optionDrafts[definition.id] || ""} placeholder={"Add a shared " + definition.name.toLowerCase() + " value"} onChange={e => setOptionDrafts(old => ({ ...old, [definition.id]: e.target.value }))} />

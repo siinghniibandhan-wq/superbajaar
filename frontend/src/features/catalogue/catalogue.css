@@ -211,3 +211,24 @@ dialog.sb-modal .sb-variant-pricing-list .sb-strip-row{display:grid;grid-templat
 .sb-import-list{max-height:45vh;overflow:auto;margin:12px 0}
 
 .sb-row-action.sb-product-duplicate{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;padding:0;min-width:0}
+
+.sb-attr-display{border:0;padding:0;margin:0;min-width:0}
+.sb-attr-display legend{font-size:12px;font-weight:700;color:#5b656e;padding:0;margin-bottom:8px}
+.sb-attr-display-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:8px}
+.sb-attr-display-card{display:flex;flex-direction:column;align-items:flex-start;gap:8px;text-align:left;padding:12px;border:1px solid #dee5eb;border-radius:12px;background:#fff;color:#24303b;cursor:pointer;font:inherit}
+.sb-attr-display-card small{color:#5b656e;font-size:12px;line-height:1.35}
+.sb-attr-display-card.is-active{border-color:#2f6a9f;box-shadow:0 0 0 2px #cfe0ef;background:#f5f9fd}
+.sb-attr-preview{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.sb-attr-opt{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 14px;border:1.5px solid #cdd7e0;background:#fff;color:#24303b;font-size:13px;font-weight:700;border-radius:999px}
+.sb-attr-opt.is-selected{border-color:#2f6a9f;background:#2f6a9f;color:#fff}
+.sb-attr-circle .sb-attr-opt{width:40px;height:40px;padding:0;justify-content:center;border-radius:50%}
+.sb-attr-tile .sb-attr-opt{border-radius:10px;min-height:44px;padding:0 16px}
+.sb-attr-colour .sb-attr-opt,.sb-attr-image .sb-attr-opt,.sb-attr-image_circle .sb-attr-opt{width:36px;height:36px;padding:0;justify-content:center;border-radius:50%;background:transparent}
+.sb-attr-colour .sb-attr-opt.is-selected,.sb-attr-image .sb-attr-opt.is-selected,.sb-attr-image_circle .sb-attr-opt.is-selected{background:transparent;border:2px solid #2f6a9f;box-shadow:0 0 0 2px #fff inset}
+.sb-attr-dot{display:inline-block;width:24px;height:24px;border-radius:50%;border:1px solid rgba(0,0,0,.18)}
+.sb-attr-colour_chip .sb-attr-dot{width:16px;height:16px}
+.sb-attr-colour_chip .sb-attr-opt.is-selected{background:#eaf2f9;color:#24303b}
+.sb-attr-image .sb-attr-opt{border-radius:8px}
+.sb-attr-pic{display:inline-block;width:26px;height:26px;border-radius:6px;background:linear-gradient(135deg,#cfe0ef,#9fbfd9)}
+.sb-attr-image_circle .sb-attr-pic{border-radius:50%}
+.sb-attr-preview-text{font-size:13px;color:#3a4651}
