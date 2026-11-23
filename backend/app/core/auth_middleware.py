@@ -73,7 +73,7 @@ def _module_for_path(path: str, prefix: str = "/api") -> str | None:
         "catalogue": "catalogue", "inventory": "inventory", "inventory-locations": "inventory", "purchasing": "purchasing", "purchasing-lifecycle": "purchasing",
         "pos": "pos", "customers": "crm", "orders": "orders", "payments": "payments",
         "razorpay": "payments", "fulfilment": "fulfillment", "delivery": "delivery",
-        "pricing": "pricing", "loyalty": "loyalty", "hr": "hr_payroll",
+        "pricing": "pricing", "loyalty": "loyalty", "reviews": "catalogue", "hr": "hr_payroll",
         "accounting": "accounting", "reports": "dashboard", "auth": "user_management", "identity": "user_management", "portal-invitations": "user_management", "organisation-policies": "dashboard",
     }
     return aliases.get(route)
@@ -148,6 +148,8 @@ async def require_active_session(request: Request) -> None:
         prefix + "/loyalty/customer/account",
     }:
         return
+    if request.method == "GET" and (path == prefix + "/reviews/summary" or (path.startswith(prefix + "/reviews/product/") and path.count("/") == 4)):
+        return
     if request.method == "OPTIONS" or not path.startswith(prefix + "/") or path in public:
         return
 
@@ -182,6 +184,8 @@ async def require_active_session(request: Request) -> None:
             ("GET", prefix + "/customer-auth/referrals"),
             ("GET", prefix + "/customer-auth/orders"),
             ("GET", prefix + "/loyalty/customer/me"),
+            ("GET", prefix + "/reviews/eligibility"),
+            ("POST", prefix + "/reviews"),
             ("GET", prefix + "/loyalty/customer/redemption-quote"),
             ("GET", prefix + "/customers/support-portal/tickets"),
             ("POST", prefix + "/customers/support-portal/tickets"),
