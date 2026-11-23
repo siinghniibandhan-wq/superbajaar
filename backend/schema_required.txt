@@ -46,3 +46,4 @@
 049_customer_saved_addresses.sql
 050_variant_price_history.sql
 051_product_reviews.sql
+052_product_purchase_mode.sql
