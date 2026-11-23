@@ -3,6 +3,7 @@ Requires the baseline purchasing, catalogue and inventory schema.
 """
 from datetime import date
 from decimal import Decimal
+from typing import Optional
 import hashlib
 import json
 import uuid
@@ -636,3 +637,173 @@ def approve_purchase_order(purchase_id: int, request: Request):
         raise
     except psycopg.Error as exc:
         raise _db_error(exc) from exc
+
+
+# =============================================================================
+# Replenishment Endpoints
+# =============================================================================
+
+from app.services.purchasing_replenishment import (
+    get_replenishment_report,
+    generate_draft_purchase_orders,
+    get_replenishment_stats,
+)
+
+
+class ReorderSettingsUpdate(BaseModel):
+    """Model for updating variant reorder settings."""
+
+    reorder_point: Optional[float] = Field(
+        default=None, ge=0, description="Minimum stock threshold"
+    )
+    reorder_qty: Optional[float] = Field(
+        default=None, ge=0, description="Quantity to order when stock is low"
+    )
+
+
+@router.post("/replenish")
+def trigger_replenishment(generate: bool = True, limit: int = Query(default=1000, ge=1, le=1000)):
+    """Generate draft purchase orders based on reorder points.
+
+    This endpoint automatically creates draft requisitions for variants
+    that have stock below their configured reorder point.
+
+    Args:
+        generate: If True, generate new POs; if False, just return the list of items that need replenishment
+
+    Returns:
+        Dictionary with replenishment results
+    """
+    conn = _connect()
+    try:
+        # Get the report first
+        report = get_replenishment_report(conn)
+
+        if generate:
+            # Generate draft POs
+            results = generate_draft_purchase_orders(conn, limit=limit)
+            return {
+                "message": f"Generated {len(results)} replenishment requisitions",
+                "generated": results,
+                "total_items_needing_replenishment": len(report),
+            }
+        else:
+            # Just return the report without generating POs
+            return {
+                "message": "Replenishment report generated (no POs created)",
+                "total_items_needing_replenishment": len(report),
+                "items": [
+                    {
+                        "variant_id": item.id,
+                        "product_name": item.name,
+                        "sku": item.sku,
+                        "reorder_point": item.reorder_point,
+                        "reorder_qty": item.reorder_qty,
+                        "current_stock": item.current_stock,
+                        "min_stock_date": item.min_stock_date,
+                    }
+                    for item in report
+                ],
+            }
+    finally:
+        conn.close()
+
+
+@router.get("/replenishment/stats")
+def get_replenishment_statistics():
+    """Get statistics about replenishment configuration and needs.
+
+    Returns:
+        Dictionary with replenishment statistics
+    """
+    conn = _connect()
+    try:
+        stats = get_replenishment_stats(conn)
+        return stats
+    finally:
+        conn.close()
+
+
+@router.get("/replenishment/report")
+def get_replenishment_report_endpoint(limit: int = Query(default=100, ge=1, le=1000)):
+    """Get a detailed report of all variants with reorder configuration.
+
+    Args:
+        limit: Maximum number of items to return
+
+    Returns:
+        List of variants with reorder settings and current stock
+    """
+    conn = _connect()
+    try:
+        report = get_replenishment_report(conn)[:limit]
+        return {
+            "total_items": len(report),
+            "items": [
+                {
+                    "variant_id": item.id,
+                    "product_id": item.product_id,
+                    "product_name": item.name,
+                    "sku": item.sku,
+                    "reorder_point": item.reorder_point,
+                    "reorder_qty": item.reorder_qty,
+                    "current_stock": item.current_stock,
+                    "min_stock_date": item.min_stock_date,
+                }
+                for item in report
+            ],
+        }
+    finally:
+        conn.close()
+
+
+@router.post("/replenishment/{variant_id}/settings")
+def update_variant_reorder_settings(
+    variant_id: int,
+    payload: ReorderSettingsUpdate,
+):
+    """Update reorder point and quantity for a variant.
+
+    Args:
+        variant_id: Variant ID
+        payload: New reorder settings
+
+    Returns:
+        Success confirmation
+    """
+    from app.services.purchasing_replenishment import update_variant_reorder_settings
+
+    conn = _connect()
+    try:
+        update_variant_reorder_settings(
+            variant_id=variant_id,
+            reorder_point=payload.reorder_point,
+            reorder_qty=payload.reorder_qty,
+        )
+        return {"message": "Reorder settings updated successfully", "variant_id": variant_id}
+    finally:
+        conn.close()
+
+
+@router.post("/replenishment/{variant_id}/clear-alert")
+def clear_reorder_alert(variant_id: int):
+    """Clear the reorder alert for a variant (use when stock is replenished).
+
+    Args:
+        variant_id: Variant ID
+
+    Returns:
+        Success confirmation
+    """
+    from app.services.purchasing_replenishment import clear_reorder_alerts
+
+    conn = _connect()
+    try:
+        # Find the product_id from variant_id
+        product_id = conn.execute(
+            "SELECT product_id FROM product_variants WHERE id = %s", (variant_id,)
+        ).fetchone()["product_id"]
+        clear_reorder_alerts(product_id)
+        return {"message": "Reorder alert cleared successfully", "variant_id": variant_id}
+    finally:
+        conn.close()

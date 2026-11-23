@@ -1,5 +1,6 @@
 import OrganisationPolicyPanel from "../shared/OrganisationPolicyPanel.jsx";
 import PurchasingRequestsWorkspace from "./PurchasingRequestsWorkspace.jsx";
+import ReplenishmentWorkspace from "./ReplenishmentWorkspace.jsx";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./PurchasingWorkspace.css";
 import { apiRequest } from "../../services/api.js";
@@ -465,6 +466,7 @@ export default function PurchasingWorkspace({ onBack }) {
       <button type="button" role="tab" aria-selected={tab === "suppliers"} className={tab === "suppliers" ? "is-active" : ""} onClick={() => setTab("suppliers")}>Suppliers <span>{suppliers.length}</span></button>
       <button type="button" role="tab" aria-selected={tab === "invoices"} className={tab === "invoices" ? "is-active" : ""} onClick={() => setTab("invoices")}>Supplier invoices</button>
       <button type="button" role="tab" aria-selected={tab === "returns"} className={tab === "returns" ? "is-active" : ""} onClick={() => setTab("returns")}>Supplier returns</button>
+      <button type="button" role="tab" aria-selected={tab === "replenishment"} className={tab === "replenishment" ? "is-active" : ""} onClick={() => setTab("replenishment")}>Replenishment</button>
     </div>
     {tab === "overview" ? <>
       <section className="sb-purchasing-overview">
@@ -564,7 +566,7 @@ export default function PurchasingWorkspace({ onBack }) {
           </div>
         </article>)}
       </div> : <p className="sb-empty">No supplier returns recorded yet. Create a return against an accepted GRN batch through the return workflow.</p>}
-    </> : <>
+    </> : tab === "orders" ? <>
       <form className="sb-customer-form" onSubmit={createOrder}>
         <h2>{orderEditId ? "Edit draft purchase order" : "Create purchase order"}</h2><div className="sb-customer-fields">
           <label>Supplier *<select required value={supplierId} onChange={e => setSupplierId(e.target.value)}><option value="">Choose supplier</option>{suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
@@ -584,7 +586,7 @@ export default function PurchasingWorkspace({ onBack }) {
         {!suppliers.length && <small>Add a supplier first. </small>}{!locations.length && <small>Create an active inventory location first.</small>}
       </form>
       <div className="sb-customer-toolbar"><label>Search purchase orders<input type="search" value={orderSearch} onChange={e => setOrderSearch(e.target.value)} placeholder="PO number, supplier or location" /></label><label>Filter orders<select value={orderStatusFilter} onChange={e => setOrderStatusFilter(e.target.value)}><option value="all">All statuses</option><option value="ordered">Ordered</option><option value="partially_received">Partially received</option><option value="received">Received</option><option value="cancelled">Cancelled</option><option value="draft">Draft</option></select></label><span>{visibleOrders.length} shown of {orders.length}</span><button type="button" onClick={load} disabled={loading}>{loading ? "Loading…" : "Refresh orders"}</button></div>
-      {loading ? <p className="sb-empty">Loading purchase orders…</p> : visibleOrders.length ? <div className="sb-customer-list">{visibleOrders.map(po => <article className={"sb-order-card " + (selected === po.id ? "is-selected" : "")} key={po.id}>
+      {loading ? <p className="sb-empty">Loading purchase orders…</p> : (visibleOrders.length ? <div className="sb-customer-list">{visibleOrders.map(po => <article className={"sb-order-card " + (selected === po.id ? "is-selected" : "")} key={po.id}>
         <button type="button" className="sb-order-open" onClick={() => openOrder(po.id)}><span><strong>{po.purchase_number}</strong><small>{po.supplier_name} · {po.location_name}</small></span><span className="sb-order-total">{money(po.subtotal)}<small>{po.line_count} lines</small></span><span className={"sb-order-status status-" + po.status}>{label(po.status)}</span></button>
         {selected === po.id && detail && <div className="sb-purchase-detail"><h3>{detail.purchase_number} · {detail.status === "draft" ? "Approval required" : "Goods receipt"}</h3>{detail.status === "draft" && <div className="sb-purchase-approval"><button type="button" onClick={() => editDraftOrder(detail)}>Edit draft</button><p className="sb-muted">Draft orders cannot receive stock until approved.</p><button className="sb-primary" type="button" onClick={approveOrder} disabled={saving}>{saving ? "Saving…" : "Approve purchase order"}</button></div>}{receiptHistory.length > 0 && <section className="sb-purchase-receipt-history" aria-label="Goods receipt history"><h4>Goods receipt history</h4>{receiptHistory.map(receipt => <article key={receipt.idempotency_key}><div><strong>{new Date(receipt.received_at).toLocaleString()}</strong><small>Receipt {receipt.idempotency_key.slice(0, 8)} · {receipt.note || "No note"}</small></div><ul>{receipt.lines.map(line => <li key={line.movement_id}>{line.product_name} ({line.sku}) — {line.quantity}</li>)}</ul></article>)}</section>}<div className="sb-purchase-detail-lines">{detail.lines.map(line => <div className="sb-purchase-detail-line" key={line.line_id}><div><strong>{line.product_name}</strong><small>SKU {line.sku} · ordered {line.quantity_ordered} · received {line.quantity_received} · open {line.quantity_open}</small></div><label>Receive qty<input type="number" min="0" max={Number(line.quantity_open)} step="0.001" disabled={Number(line.quantity_open) <= 0 || detail.status === "cancelled" || detail.status === "received"} value={receipts[line.line_id] ?? ""} onChange={e => setReceipts(old => ({ ...old, [line.line_id]: e.target.value }))} /></label>
             <label>Batch / lot<input maxLength="120" value={receiptMeta[line.line_id]?.batch_code || ""} onChange={e => setReceiptMeta(old => ({ ...old, [line.line_id]: { ...old[line.line_id], batch_code: e.target.value } }))} /></label>
@@ -611,8 +613,8 @@ export default function PurchasingWorkspace({ onBack }) {
           {(detail.status === "ordered" || detail.status === "partially_received") && <button type="button" className="sb-remove-line" onClick={cancelOrder} disabled={saving}>{saving ? "Saving…" : "Cancel remaining quantities"}</button>}
           {detail.status === "cancelled" && <p className="sb-muted">Cancelled. Any goods received before cancellation remain in inventory.</p>}
         </div>}
-      </article>)}</div> : <p className="sb-empty">{orders.length ? "No purchase orders match this status." : "No purchase orders yet."}</p>}
-    </>}
+      </article>)}</div> : <p className="sb-empty">{orders.length ? "No purchase orders match this status." : "No purchase orders yet."}</p>)}
+    </> : tab === "replenishment" ? <ReplenishmentWorkspace onBack={onBack} variants={variants} /> : <p className="sb-empty">Unknown tab: {tab}</p>}
     <OrganisationPolicyPanel domain="purchase" />
   </section>;
 }
