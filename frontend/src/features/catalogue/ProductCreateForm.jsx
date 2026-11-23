@@ -54,6 +54,7 @@ export default function ProductCreateForm({ categories = [], product = null, dup
   const [availabilityRules, setAvailabilityRules] = useState([]);
   const [stockLocations, setStockLocations] = useState([]);
   const [ruleDraft, setRuleDraft] = useState({ channel: "website", region_code: "", pincode: "", location_id: "", is_allowed: true });
+  const [existingVariants, setExistingVariants] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -97,6 +98,12 @@ export default function ProductCreateForm({ categories = [], product = null, dup
       })
       .catch(e => setError(e.message || "Unable to load existing product variants."));
   }, [product?.id, definitions]);
+  useEffect(() => {
+    if (!product?.id) return;
+    apiRequest("/catalogue/products/" + product.id + "/variants?limit=500")
+      .then(result => setExistingVariants((result.items || []).filter(item => item.is_active !== false)))
+      .catch(() => setExistingVariants([]));
+  }, [product?.id]);
   useEffect(() => {
     if (!product?.id) return;
     apiRequest("/catalogue/products/" + product.id + "/availability-rules")
@@ -147,6 +154,9 @@ export default function ProductCreateForm({ categories = [], product = null, dup
       .catch(e => setError(e.message || "Unable to copy availability restrictions."));
   }, [duplicateFrom?.id, definitions]);
 
+  // On edit: a product with exactly one active variant can have its price edited here; with several variants, prices stay per-variant.
+  const soleVariant = product?.id && existingVariants.length === 1 ? existingVariants[0] : null;
+  const lockPrices = Boolean(product?.id) && !soleVariant;
   const chosenAttributes = useMemo(() => definitions.filter(def => def.is_variant_attribute && OPTION_TYPES.includes(def.value_type) && (selected[def.code] || []).length), [definitions, selected]);
   const variantCombinations = useMemo(() => {
     if (!chosenAttributes.length) return [{}];
@@ -209,6 +219,10 @@ export default function ProductCreateForm({ categories = [], product = null, dup
           throw new Error("Check each variant's selling price, MRP and cost price. MRP must be at least the selling price.");
         }
       }
+      if (soleVariant && (form.selling_price === "" || form.mrp === "" || !Number.isFinite(price) || !Number.isFinite(mrp) || price < 0 || mrp < price)) {
+        setActiveTab("general");
+        throw new Error("Enter a valid selling price and an MRP equal to or higher than the selling price.");
+      }
       const categoryIds = [...new Set((form.category_ids || []).map(Number).filter(id => Number.isInteger(id) && id > 0))];
       if (!categoryIds.length) {
         setActiveTab("general");
@@ -236,6 +250,12 @@ export default function ProductCreateForm({ categories = [], product = null, dup
         product?.id ? "/catalogue/products/" + product.id + "/complete" : "/catalogue/products/complete",
         { method: product?.id ? "PUT" : "POST", body: JSON.stringify(completePayload) },
       );
+      if (soleVariant && (Number(soleVariant.selling_price) !== price || Number(soleVariant.mrp) !== mrp)) {
+        await apiRequest("/catalogue/variants/" + soleVariant.id + "/price", {
+          method: "PUT",
+          body: JSON.stringify({ selling_price: price, mrp, cost_price: soleVariant.cost_price == null ? null : Number(soleVariant.cost_price) }),
+        });
+      }
       setSuccess(product?.id
         ? (savedProduct.created_variant_count ? "Product updated and " + savedProduct.created_variant_count + " new variant(s) added. Existing variants were preserved." : "Product details saved atomically. Existing variants were preserved; no duplicate variants were created.")
         : "Product saved atomically with " + (savedProduct.created_variant_count ?? variantPayloads.length) + " variant(s) and default prices.");
@@ -261,9 +281,9 @@ export default function ProductCreateForm({ categories = [], product = null, dup
         <label>Brand<input maxLength="160" value={form.brand || ""} onChange={e => change("brand", e.target.value)} /></label>
         <fieldset className="sb-span-all sb-category-multiselect"><legend>Categories * <small>Select every category where this product should appear.</small></legend><div className="sb-category-checkbox-grid">{categories.map(item => <label className="sb-check" key={item.id}><input type="checkbox" checked={(form.category_ids || []).includes(String(item.id))} onChange={e => { const id=String(item.id); const ids=form.category_ids || []; const next=e.target.checked ? [...new Set([...ids,id])] : ids.filter(value => value !== id); setForm(old => ({...old,category_ids:next,category_id:next[0] || ""})); }} />{item.parent_id ? "↳ " : ""}{item.name}</label>)}</div></fieldset>
         <div className="sb-span-all"><h3>Price &amp; Tax</h3></div>
-        <label>Selling price (₹) {product?.id ? "(set per variant)" : "*"}<input required={!product?.id} type="number" min="0" step="0.01" readOnly={Boolean(product?.id)} aria-readonly={Boolean(product?.id)} className={product?.id ? "sb-price-locked" : undefined} placeholder={product?.id ? "Not set" : undefined} tabIndex={product?.id ? -1 : undefined} value={form.selling_price} onChange={e => change("selling_price", e.target.value)} /></label>
-        <label>MRP (₹) {product?.id ? "(set per variant)" : "*"}<input required={!product?.id} type="number" min="0" step="0.01" readOnly={Boolean(product?.id)} aria-readonly={Boolean(product?.id)} className={product?.id ? "sb-price-locked" : undefined} placeholder={product?.id ? "Not set" : undefined} tabIndex={product?.id ? -1 : undefined} value={form.mrp} onChange={e => change("mrp", e.target.value)} /></label>
-        {product?.id && <p className="sb-muted sb-span-all">These fields are locked and only show the lowest current variant prices. Prices belong to each variant, so to change the selling price or MRP, save/close this form and use Edit on the variant in the Variants section.</p>}
+        <label>Selling price (₹) {lockPrices ? "(set per variant)" : "*"}<input required={!product?.id || Boolean(soleVariant)} type="number" min="0" step="0.01" readOnly={lockPrices} aria-readonly={lockPrices} className={lockPrices ? "sb-price-locked" : undefined} placeholder={lockPrices ? "Not set" : undefined} tabIndex={lockPrices ? -1 : undefined} value={form.selling_price} onChange={e => change("selling_price", e.target.value)} /></label>
+        <label>MRP (₹) {lockPrices ? "(set per variant)" : "*"}<input required={!product?.id || Boolean(soleVariant)} type="number" min="0" step="0.01" readOnly={lockPrices} aria-readonly={lockPrices} className={lockPrices ? "sb-price-locked" : undefined} placeholder={lockPrices ? "Not set" : undefined} tabIndex={lockPrices ? -1 : undefined} value={form.mrp} onChange={e => change("mrp", e.target.value)} /></label>
+        {lockPrices && <p className="sb-muted sb-span-all">These fields are locked and only show the lowest current variant prices. Prices belong to each variant, so to change the selling price or MRP, save/close this form and use Edit on the variant in the Variants section.</p>}
         <label>HSN/SAC code<input maxLength="32" inputMode="numeric" value={form.tax_code || ""} onChange={e => change("tax_code", e.target.value.replace(/\s+/g, ""))} placeholder="Enter HSN/SAC code" /></label>
         <label>GST rate<select value={form.tax_rate ?? ""} onChange={e => change("tax_rate", e.target.value)}><option value="">Select GST rate</option>{["0","0.1","0.25","1","1.5","3","5","6","7.5","12","18","28","40"].map(rate => <option key={rate} value={rate}>{rate}%</option>)}</select></label>
         <label className="sb-span-all">Product description<textarea rows="4" value={form.description || ""} onChange={e => change("description", e.target.value)} placeholder="Features, material, fit, usage and care instructions" /></label>
