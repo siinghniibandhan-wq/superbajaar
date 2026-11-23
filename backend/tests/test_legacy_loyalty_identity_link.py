@@ -1,6 +1,3 @@
-import pytest
-from fastapi import HTTPException
-
 from app.api.customer_auth import _link_verified_legacy_loyalty_account
 
 
@@ -54,13 +51,12 @@ def test_unverified_customer_contact_does_not_link_legacy_card():
     assert conn.inserted is None
 
 
-def test_legacy_loyalty_card_already_linked_to_another_party_is_not_reassigned():
+def test_legacy_loyalty_card_already_linked_to_another_party_is_not_reassigned_or_block_login():
     conn = VerifiedLegacyLoyaltyConnection(existing_link={"party_id": 92})
 
-    with pytest.raises(HTTPException) as error:
-        _link_verified_legacy_loyalty_account(
-            conn, customer_id=42, customer_email="buyer@example.com"
-        )
+    linked = _link_verified_legacy_loyalty_account(
+        conn, customer_id=42, customer_email="buyer@example.com"
+    )
 
-    assert error.value.status_code == 409
+    assert linked is False
     assert conn.inserted is None
