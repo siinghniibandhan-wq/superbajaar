@@ -87,7 +87,7 @@ class AttributeCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     code: str = Field(min_length=1, max_length=120, pattern=r"^[a-z][a-z0-9_]*$")
     value_type: str = Field(pattern=r"^(text|colour|image)$")
-    display_type: str = Field(default="dropdown", pattern=r"^(text|dropdown|button|colour|image)$")
+    display_type: str = Field(default="button", pattern=r"^(text|button|circle|tile|colour|colour_chip|image|image_circle)$")
     is_variant_attribute: bool = False
     is_required: bool = False
     options: list[Any] = Field(default_factory=list, max_length=200, validate_default=True)
@@ -104,9 +104,9 @@ class AttributeCreate(BaseModel):
     def display_type_matches_attribute_type(cls, value: str, info):
         attribute_type = info.data.get("value_type")
         allowed = {
-            "text": {"text", "dropdown", "button"},
-            "colour": {"dropdown", "button", "colour"},
-            "image": {"dropdown", "image"},
+            "text": {"text", "button", "circle", "tile"},
+            "colour": {"button", "colour", "colour_chip"},
+            "image": {"image", "image_circle"},
         }
         if attribute_type in allowed and value not in allowed[attribute_type]:
             raise ValueError("Display type is not compatible with the selected attribute type")
@@ -145,7 +145,7 @@ class AttributeCreate(BaseModel):
 class AttributeUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     value_type: str | None = Field(default=None, pattern=r"^(text|colour|image)$")
-    display_type: str | None = Field(default=None, pattern=r"^(text|dropdown|button|colour|image)$")
+    display_type: str | None = Field(default=None, pattern=r"^(text|button|circle|tile|colour|colour_chip|image|image_circle)$")
     is_variant_attribute: bool | None = None
     is_required: bool | None = None
     options: list[Any] | None = Field(default=None, max_length=200)
@@ -162,9 +162,9 @@ class AttributeUpdate(BaseModel):
     def update_display_type_matches_attribute_type(cls, value: str | None, info):
         attribute_type = info.data.get("value_type")
         allowed = {
-            "text": {"text", "dropdown", "button"},
-            "colour": {"dropdown", "button", "colour"},
-            "image": {"dropdown", "image"},
+            "text": {"text", "button", "circle", "tile"},
+            "colour": {"button", "colour", "colour_chip"},
+            "image": {"image", "image_circle"},
         }
         if value is not None and attribute_type in allowed and value not in allowed[attribute_type]:
             raise ValueError("Display type is not compatible with the selected attribute type")
@@ -1146,16 +1146,19 @@ def update_attribute(attribute_id: int, payload: AttributeUpdate):
             ).fetchone()["used"]
             in_use = bool(has_product_values or has_variant_values)
             next_type = changes.get("value_type", current["value_type"])
-            next_display_type = changes.get("display_type", current["display_type"] or "dropdown")
+            next_display_type = changes.get("display_type", current["display_type"])
             next_variant = changes.get("is_variant_attribute", current["is_variant_attribute"])
             next_options = changes.get("options", current["options"] or [])
             if next_type in {"colour", "image"} and not next_options:
                 raise HTTPException(status_code=422, detail="Colour and image attributes require at least one value")
             compatible_display_types = {
-                "text": {"text", "dropdown", "button"},
-                "colour": {"dropdown", "button", "colour"},
-                "image": {"dropdown", "image"},
+                "text": {"text", "button", "circle", "tile"},
+                "colour": {"button", "colour", "colour_chip"},
+                "image": {"image", "image_circle"},
             }
+            if next_display_type in (None, "dropdown"):
+                # Legacy value from before migration 053: use the default selector for this type.
+                next_display_type = {"colour": "colour", "image": "image"}.get(next_type, "button")
             if next_type in compatible_display_types and next_display_type not in compatible_display_types[next_type]:
                 raise HTTPException(status_code=422, detail="Display type is not compatible with the selected attribute type")
             if next_type == "colour":
