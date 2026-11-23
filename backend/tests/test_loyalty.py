@@ -175,3 +175,39 @@ def test_customer_loyalty_response_reads_sbid_only_from_explicit_identity_link(m
                        "headers": [], "query_string": b"", "state": {"customer_email": "person@example.com", "customer_id": 42}})
     result = loyalty.get_my_loyalty_account(request)
     assert result["account"]["sbid"] == "SBID-0123456789ABCDEF0123"
+
+
+
+def test_customer_loyalty_endpoint_does_not_expose_unlinked_legacy_cards(monkeypatch):
+    from app.api import loyalty
+    from starlette.requests import Request
+
+    class Result:
+        def fetchone(self):
+            return None
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def execute(self, query, params=()):
+            assert "profile.customer_account_id=%s" in query
+            assert "JOIN identity_loyalty_accounts ila" in query
+            assert params == (42, "person@example.com")
+            return Result()
+
+    monkeypatch.setattr(loyalty, "_connection", Connection)
+    request = Request({
+        "type": "http", "method": "GET", "path": "/api/loyalty/customer/me",
+        "headers": [], "query_string": b"",
+        "state": {"customer_email": "person@example.com", "customer_id": 42},
+    })
+
+    result = loyalty.get_my_loyalty_account(request)
+
+    assert result["account"] is None
+    assert result["available_coins"] == 0
+    assert "Legacy cards" in result["message"]
