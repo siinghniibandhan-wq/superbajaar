@@ -40,6 +40,7 @@ test("inventory moves expired FEFO cost layers from a saleable store into a non-
 
   await page.goto("/admin");
   await page.getByRole("button", { name: "Inventory", exact: true }).click();
+  await page.getByRole("navigation", { name: "Inventory sections" }).getByRole("button", { name: /^To-do/ }).click();
   await page.getByRole("button", { name: "Returns & quarantine" }).click();
   await page.getByLabel("Quarantine destination").selectOption("10");
   await page.getByLabel("Quarantine reason").fill("Expiry confirmed during daily inspection");

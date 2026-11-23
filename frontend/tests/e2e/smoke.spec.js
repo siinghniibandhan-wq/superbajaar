@@ -662,24 +662,30 @@ test("inventory workspace separates locations, stock operations, approvals, valu
   await page.getByRole("button", { name: "Inventory", exact: true }).click();
   const navigation = page.getByRole("navigation", { name: "Inventory sections" });
   await expect(navigation).toBeVisible();
-  await navigation.getByRole("button", { name: "Locations", exact: true }).click();
+  await navigation.getByRole("button", { name: "Setup", exact: true }).click();
+  await page.getByRole("button", { name: "Locations", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Add stock location" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Value or add stock" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Add stock", exact: true })).toHaveCount(0);
 
-  await navigation.getByRole("button", { name: "Stock operations" }).click();
-  await expect(page.getByRole("heading", { name: "Value or add stock" })).toBeVisible();
+  await navigation.getByRole("button", { name: "Update stock" }).click();
+  await expect(page.getByRole("heading", { name: "Add stock", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Add stock location" })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Issue / reduce stock" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Physical inventory count" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Transfer stock between locations" })).toBeVisible();
+  await page.getByRole("button", { name: /Remove stock/ }).click();
+  await expect(page.getByRole("heading", { name: "Remove stock", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: /Count stock/ }).click();
+  await expect(page.getByRole("heading", { name: "Count stock", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: /Move stock/ }).click();
+  await expect(page.getByRole("heading", { name: "Move stock between locations" })).toBeVisible();
 
-  await navigation.getByRole("button", { name: "Approvals" }).click();
+  await navigation.getByRole("button", { name: /^To-do/ }).click();
+  await page.getByRole("button", { name: /^Approvals/ }).click();
   await expect(page.getByRole("heading", { name: /Inventory approval queue/ })).toBeVisible();
-  await navigation.getByRole("button", { name: "Stock & valuation" }).click();
-  await expect(page.getByRole("heading", { name: /Stock balances/ })).toBeVisible();
-  await expect(page.getByRole("heading", { name: /Cost reconciliation/ })).toBeVisible();
-  await expect(page.getByRole("heading", { name: /Recent movements/ })).toBeVisible();
-  await navigation.getByRole("button", { name: "Control policy" }).click();
+  await navigation.getByRole("button", { name: "Stock", exact: true }).click();
+  await expect(page.getByRole("heading", { name: /Current stock/ })).toBeVisible();
+  await expect(page.getByText(/Cost check/)).toBeVisible();
+  await expect(page.getByText(/Stock movement history/)).toBeVisible();
+  await navigation.getByRole("button", { name: "Setup", exact: true }).click();
+  await page.getByRole("button", { name: "Control policy" }).click();
   await expect(page.getByText("Inventory control policy")).toBeVisible();
 });
 

@@ -43,6 +43,7 @@ test("inventory releases only inspected quarantined GRN quantity through the con
 
   await page.goto("/admin");
   await page.getByRole("button", { name: "Inventory", exact: true }).click();
+  await page.getByRole("navigation", { name: "Inventory sections" }).getByRole("button", { name: /^To-do/ }).click();
   await page.getByRole("button", { name: "Returns & quarantine" }).click();
   const grnRow = page.getByRole("button", { name: /GRN-33/ });
   await expect(grnRow).toBeVisible();

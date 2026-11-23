@@ -43,8 +43,9 @@ test("inventory manager can create and edit internal warehouse addresses without
   await page.getByRole("button", { name: "Inventory", exact: true }).click();
   const sections = page.getByRole("navigation", { name: "Inventory sections" });
   await expect(sections.getByRole("button").nth(0)).toHaveText("Overview");
-  await expect(sections.getByRole("button").nth(1)).toHaveText("Locations");
-  await sections.getByRole("button", { name: "Locations" }).click();
+  await expect(sections.getByRole("button").nth(4)).toHaveText("Setup");
+  await sections.getByRole("button", { name: "Setup" }).click();
+  await page.getByRole("button", { name: "Locations", exact: true }).click();
   await page.getByLabel("Location code").fill("A-01");
   await page.getByLabel("Location name").last().fill("Receiving Bay A");
   await page.getByLabel("Location type").selectOption("receiving");

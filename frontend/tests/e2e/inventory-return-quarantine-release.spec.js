@@ -46,6 +46,7 @@ test("inventory releases inspected customer-return quarantine stock to a same-es
 
   await page.goto("/admin");
   await page.getByRole("button", { name: "Inventory", exact: true }).click();
+  await page.getByRole("navigation", { name: "Inventory sections" }).getByRole("button", { name: /^To-do/ }).click();
   await page.getByRole("button", { name: "Returns & quarantine" }).click();
   const returnRow = page.getByRole("button", { name: /RET-22/ });
   await expect(returnRow).toBeVisible();
