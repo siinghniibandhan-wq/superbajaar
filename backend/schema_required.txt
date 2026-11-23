@@ -44,3 +44,4 @@
 045_identity_claim_cancellation_event.sql
 047_inventory_facility_profiles.sql
 049_customer_saved_addresses.sql
+050_variant_price_history.sql
