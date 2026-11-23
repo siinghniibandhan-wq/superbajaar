@@ -8,6 +8,7 @@ async function openPurchasing(page) {
   await page.addInitScript(() => localStorage.setItem("superbajaar.access_token", "owner-purchasing-test-token"));
   await page.goto("/admin");
   await page.getByRole("button", { name: "Purchasing", exact: true }).click();
+  await page.getByRole("tab", { name: /^Buy/ }).click();
   await page.getByRole("tab", { name: /Requisitions & RFQs/ }).click();
 }
 
@@ -54,7 +55,8 @@ test("purchasing workspace creates and submits a requisition through its API", a
   await page.getByLabel("Receive into location *").selectOption("3");
   await page.getByLabel("Department").fill("Operations");
   await page.getByLabel("Business justification *").fill("Maintain safety stock");
-  await page.getByLabel("Variant *").selectOption("17");
+  await page.getByLabel("Variant *").fill("wheat");
+  await page.getByRole("option", { name: /Wheat Flour 5kg/ }).click();
   await page.getByLabel("Quantity *").fill("12");
   await page.getByLabel("Estimated unit cost ₹").fill("220");
   await page.getByRole("button", { name: "Create draft requisition" }).click();
