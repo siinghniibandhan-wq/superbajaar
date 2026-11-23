@@ -157,6 +157,54 @@ def _ensure_customer_identity(conn, customer_id: int, full_name: str) -> str:
         )
     return party["sbid"]
 
+def _link_verified_legacy_loyalty_account(conn, *, customer_id: int, customer_email: str) -> bool:
+    """Link an old card only when this customer's identity has a verified matching email."""
+    email = str(customer_email).strip().lower()
+    verified_identity = conn.execute(
+        """
+        SELECT profile.party_id
+        FROM identity_profiles profile
+        JOIN identity_parties party
+          ON party.id = profile.party_id AND party.status = 'active'
+        JOIN identity_contacts contact
+          ON contact.party_id = profile.party_id
+         AND contact.contact_type = 'email'
+         AND contact.normalized_value = %s
+         AND contact.verification_status = 'verified'
+         AND contact.valid_to IS NULL
+        WHERE profile.profile_type = 'customer_account'
+          AND profile.customer_account_id = %s
+          AND profile.status = 'active'
+        FOR UPDATE OF profile, contact
+        """,
+        (email, customer_id),
+    ).fetchone()
+    if verified_identity is None:
+        return False
+
+    loyalty_account = conn.execute(
+        "SELECT id FROM loyalty_accounts WHERE lower(customer_email)=lower(%s) FOR UPDATE",
+        (email,),
+    ).fetchone()
+    if loyalty_account is None:
+        return False
+
+    existing_link = conn.execute(
+        "SELECT party_id FROM identity_loyalty_accounts WHERE loyalty_account_id=%s FOR UPDATE",
+        (loyalty_account["id"],),
+    ).fetchone()
+    if existing_link:
+        return int(existing_link["party_id"]) == int(verified_identity["party_id"])
+
+    inserted = conn.execute(
+        "INSERT INTO identity_loyalty_accounts(party_id,loyalty_account_id,link_method) "
+        "VALUES(%s,%s,'verified_customer_account') "
+        "ON CONFLICT (loyalty_account_id) DO NOTHING RETURNING id",
+        (verified_identity["party_id"], loyalty_account["id"]),
+    ).fetchone()
+    return inserted is not None
+
+
 def _public_customer(row):
     return {
         "id": row["id"], "sbid": row.get("sbid"), "email": row["email"], "full_name": row["full_name"],
@@ -422,7 +470,11 @@ def login(payload: CustomerLogin):
                 ).fetchone()
                 if not customer or not customer["is_active"] or not _password_matches(payload.password, customer["password_hash"]):
                     raise HTTPException(status_code=401, detail="Invalid email or password")
-                customer = {**customer, "sbid": _ensure_customer_identity(conn, customer["id"], customer["full_name"])}
+                sbid = _ensure_customer_identity(conn, customer["id"], customer["full_name"])
+                _link_verified_legacy_loyalty_account(
+                    conn, customer_id=int(customer["id"]), customer_email=customer["email"]
+                )
+                customer = {**customer, "sbid": sbid}
                 session = _issue_session(conn, customer)
         return {**session, "customer": _public_customer(customer)}
     except HTTPException:
@@ -446,7 +498,11 @@ def me(request: Request):
                 ).fetchone()
                 if customer is None:
                     raise HTTPException(status_code=401, detail="Customer account is no longer active")
-                customer = {**customer, "sbid": _ensure_customer_identity(conn, customer_id, customer["full_name"])}
+                sbid = _ensure_customer_identity(conn, customer_id, customer["full_name"])
+                _link_verified_legacy_loyalty_account(
+                    conn, customer_id=int(customer_id), customer_email=customer["email"]
+                )
+                customer = {**customer, "sbid": sbid}
         return {"customer": _public_customer(customer)}
     except HTTPException:
         raise

@@ -159,18 +159,27 @@ def get_customer_loyalty_account(
 def get_my_loyalty_account(request: Request):
     """Return only the signed-in customer's own loyalty card and coin ledger."""
     email = str(getattr(request.state, "customer_email", "")).strip().lower()
-    if not email:
+    customer_id = getattr(request.state, "customer_id", None)
+    if not email or not customer_id:
         raise HTTPException(status_code=401, detail="Customer sign-in required")
     try:
         with _connection() as conn:
             account = conn.execute(
                 "SELECT la.id,la.customer_email,la.card_number,la.created_at,party.sbid "
-                "FROM loyalty_accounts la LEFT JOIN identity_loyalty_accounts ila ON ila.loyalty_account_id=la.id "
-                "LEFT JOIN identity_parties party ON party.id=ila.party_id WHERE la.customer_email=%s",
-                (email,),
+                "FROM loyalty_accounts la "
+                "JOIN identity_loyalty_accounts ila ON ila.loyalty_account_id=la.id "
+                "JOIN identity_profiles profile ON profile.party_id=ila.party_id "
+                "AND profile.profile_type='customer_account' AND profile.customer_account_id=%s AND profile.status='active' "
+                "JOIN identity_parties party ON party.id=profile.party_id AND party.status='active' "
+                "WHERE lower(la.customer_email)=lower(%s)",
+                (customer_id, email),
             ).fetchone()
             if account is None:
-                return {"account": None, "available_coins": 0, "items": [], "coin_value_in_rupees": 1}
+                return {
+                    "account": None, "available_coins": 0, "items": [],
+                    "coin_value_in_rupees": 1,
+                    "message": "No loyalty card is linked to this verified customer identity yet. Legacy cards are linked only after email ownership is verified or an administrator approves the link.",
+                }
             available_coins = available_balance(conn, int(account["id"]))
             rows = conn.execute(
                 "SELECT id, transaction_type, coins, order_reference, description, expires_at, created_at "
