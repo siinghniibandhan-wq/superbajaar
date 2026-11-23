@@ -4,7 +4,7 @@ import { apiRequest } from "../../services/api.js";
 const dateText = value => value ? new Date(value).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
 
 export default function ProductReviewsAdmin() {
-  const [status, setStatus] = useState("pending");
+  const [status, setStatus] = useState("approved");
   const [items, setItems] = useState([]);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState(null);
@@ -27,7 +27,7 @@ export default function ProductReviewsAdmin() {
   return <section className="sb-reviews-admin">
     <div className="sb-data-heading"><div><h2>Product reviews</h2><span>Customers who received the product can review it once. Approve a review to show it in the shop.</span></div>
       <select aria-label="Review status" value={status} onChange={e => setStatus(e.target.value)}>
-        <option value="pending">Waiting for approval</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="all">All</option>
+        <option value="pending">Waiting for approval</option><option value="approved">Published</option><option value="rejected">Rejected</option><option value="all">All</option>
       </select></div>
     {error && <p className="sb-empty" role="alert">{error}</p>}
     {!error && items.length === 0 && <p className="sb-empty">No reviews in this list.</p>}
