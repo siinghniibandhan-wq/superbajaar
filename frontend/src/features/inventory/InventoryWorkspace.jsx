@@ -1,3 +1,4 @@
+import StockSheet from "./StockSheet.jsx";
 import OrganisationPolicyPanel from "../shared/OrganisationPolicyPanel.jsx";
 import { useEffect, useRef, useState } from "react";
 import { apiRequest } from "../../services/api.js";
@@ -12,11 +13,26 @@ function makeIdempotencyUuid() {
   });
 }
 
+// Loads every page (500 at a time) so large catalogues are not cut off at the first page.
+async function fetchAllItems(path, maxPages = 20) {
+  const joiner = path.includes("?") ? "&" : "?";
+  const all = [];
+  for (let page = 0; page < maxPages; page += 1) {
+    const result = await apiRequest(path + joiner + "limit=500&offset=" + page * 500);
+    const items = result.items || [];
+    all.push(...items);
+    if (items.length < 500) break;
+  }
+  return all;
+}
+
+
 export default function InventoryWorkspace({ onBack }) {
   const [locations, setLocations] = useState([]);
   const [establishments, setEstablishments] = useState([]);
   const [locationAssignments, setLocationAssignments] = useState({});
   const [products, setProducts] = useState([]);
+  const [allVariants, setAllVariants] = useState([]);
   const [variants, setVariants] = useState([]);
   const [balances, setBalances] = useState([]);
   const [movements, setMovements] = useState([]);
@@ -62,17 +78,18 @@ export default function InventoryWorkspace({ onBack }) {
 
   async function loadBase() {
     try {
-      const [l, p, b, m, c, cr, ar, o] = await Promise.all([
+      const [l, p, b, m, c, cr, ar, o, av] = await Promise.all([
         apiRequest("/inventory/locations"),
-        apiRequest("/catalogue/products?status=all"),
-        apiRequest("/inventory/balances"),
+        apiRequest("/catalogue/products?status=all&limit=500"),
+        fetchAllItems("/inventory/balances").then(items => ({ items })),
         apiRequest("/inventory/movements"),
         apiRequest("/inventory/cost-layers"),
         apiRequest("/inventory/cost-layer-reconciliation"),
         apiRequest("/inventory/approval-requests"),
         apiRequest("/inventory/overview"),
+        fetchAllItems("/catalogue/variants").then(items => ({ items })).catch(() => ({ items: [] })),
       ]);
-      setBaseLoaded(true); setLocations(l.items || []); setInternalFacilityId(current => current || String(l.items?.[0]?.id || "")); setProducts(p.items || []); setBalances(b.items || []); setMovements(m.items || []); setCostLayers(c.items || []); setCostReconciliation(cr.items || []); setApprovalRequests(ar.items || []); setOverview(o);
+      setBaseLoaded(true); setLocations(l.items || []); setInternalFacilityId(current => current || String(l.items?.[0]?.id || "")); setProducts(p.items || []); setBalances(b.items || []); setMovements(m.items || []); setCostLayers(c.items || []); setCostReconciliation(cr.items || []); setApprovalRequests(ar.items || []); setOverview(o); setAllVariants(av.items || []);
       apiRequest("/hr/establishments").then(result => setEstablishments(result.items || [])).catch(() => setEstablishments([]));
     } catch (e) { setError(e.message || "Inventory API unavailable."); }
   }
@@ -554,71 +571,7 @@ export default function InventoryWorkspace({ onBack }) {
         </section>
       </div>
     </div>}
-        {activeSection === "operations" && <div className="inventory-section"><div className="inventory-action-picker" role="group" aria-label="What do you want to do?">{[["add","Add stock","Opening balance or found stock"],["issue","Remove stock","Issue, scrap or reduce"],["count","Count stock","Match the system to the shelf"],["transfer","Move stock","Between two locations"]].map(([key,label,hint])=><button key={key} type="button" className={opAction===key?"active":""} aria-pressed={opAction===key} onClick={()=>setOpAction(key)}><strong>{label}</strong><small>{hint}</small></button>)}</div>{opAction === "add" && <form className="sb-form" onSubmit={submit}>
-      <h2>Add stock</h2>
-      <p className="sb-muted">Opening valuation assigns cost to existing unvalued on-hand stock without increasing quantity. Opening balance and stock gain add new quantity. Every entry requires an explicit unit cost.</p>
-      <div className="sb-form-grid">
-        <label>Product<select required value={productId} onChange={e=>{setProductId(e.target.value);setForm(v=>({...v,variant_id:""}));}}><option value="">Choose product</option>{products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-        <label>Variant / SKU<select required value={form.variant_id} onChange={e=>setForm(v=>({...v,variant_id:e.target.value}))}><option value="">Choose variant</option>{variants.map(v=><option key={v.id} value={v.id}>{v.sku} · ₹{v.selling_price}</option>)}</select></label>
-        <label>Stock location<select required value={form.location_id} onChange={e=>setForm(v=>({...v,location_id:e.target.value}))}><option value="">Choose location</option>{locations.map(l=><option key={l.id} value={l.id}>{l.name} ({l.location_type})</option>)}</select></label>
-        <label>Quantity to add<input required type="number" min="0.001" step="0.001" value={form.quantity} onChange={e=>setForm(v=>({...v,quantity:e.target.value}))}/></label>
-        <label>Adjustment purpose<select value={form.adjustment_type} onChange={e=>setForm(v=>({...v,adjustment_type:e.target.value}))}><option value="opening_valuation">Value existing unvalued stock (quantity unchanged)</option><option value="opening_balance">Add opening stock balance</option><option value="stock_gain">Stock gain / found stock</option></select></label>
-        <label>Unit cost (₹)<input required type="number" min="0" step="0.0001" value={form.unit_cost} onChange={e=>setForm(v=>({...v,unit_cost:e.target.value}))}/></label>
-        <label>Batch / lot code<input maxLength="100" value={form.batch_code} onChange={e=>setForm(v=>({...v,batch_code:e.target.value}))}/></label>
-        <label>Expiry date<input type="date" value={form.expiry_date} onChange={e=>setForm(v=>({...v,expiry_date:e.target.value}))}/></label>
-        <label className="sb-span-all">Reason / reference<input required minLength="3" maxLength="500" value={form.note} onChange={e=>setForm(v=>({...v,note:e.target.value}))}/></label>
-      </div>
-      <button className="sb-primary" disabled={busy || !locations.length} type="submit">{busy ? "Saving…" : "Record adjustment"}</button>
-      <button className="sb-secondary" type="button" disabled={busy || !form.location_id || !form.variant_id || !form.quantity || !form.note} onClick={()=>submitInventoryApproval(form.adjustment_type,form.location_id,{variant_id:Number(form.variant_id),location_id:Number(form.location_id),quantity:Number(form.quantity),unit_cost:Number(form.unit_cost),adjustment_type:form.adjustment_type,batch_code:form.batch_code||null,expiry_date:form.expiry_date||null,note:form.note})}>Submit adjustment for approval</button>
-      {!locations.length && <p className="sb-muted">No active stock locations are configured.</p>}
-    </form>}
-    {opAction === "issue" && <form className="sb-form" onSubmit={submitIssue}>
-      <h2>Remove stock</h2>
-      <p className="sb-muted">Issue or scrap stock. On-hand stock cannot fall below reserved units; every reduction is recorded in movement history.</p>
-      <div className="sb-form-grid">
-        <label>Product<select required value={productId} onChange={e=>{setProductId(e.target.value);setIssueForm(v=>({...v,variant_id:""}));}}><option value="">Choose product</option>{products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-        <label>Variant / SKU<select required value={issueForm.variant_id} onChange={e=>setIssueForm(v=>({...v,variant_id:e.target.value}))}><option value="">Choose variant</option>{variants.map(v=><option key={v.id} value={v.id}>{v.sku} · ₹{v.selling_price}</option>)}</select></label>
-        <label>Stock location<select required value={issueForm.location_id} onChange={e=>setIssueForm(v=>({...v,location_id:e.target.value}))}><option value="">Choose location</option>{locations.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select></label>
-        <label>Action<select value={issueForm.reason_type} onChange={e=>setIssueForm(v=>({...v,reason_type:e.target.value}))}><option value="issue">Issue / remove stock</option><option value="scrap">Scrap / damaged stock</option></select></label>
-        <label>Quantity<input required type="number" min="0.001" step="0.001" value={issueForm.quantity} onChange={e=>setIssueForm(v=>({...v,quantity:e.target.value}))}/></label>
-        <label>Cost allocation<select value={issueForm.allocation_method} onChange={e=>setIssueForm(v=>({...v,allocation_method:e.target.value}))}><option value="fifo">FIFO</option><option value="fefo">FEFO (earliest expiry first)</option></select></label>
-        <label className="sb-span-all">Reason / reference<input required minLength="3" maxLength="500" value={issueForm.note} onChange={e=>setIssueForm(v=>({...v,note:e.target.value}))}/></label>
-      </div>
-      <button className="sb-primary" disabled={busy || !locations.length} type="submit">{busy ? "Saving…" : "Issue stock"}</button>
-      <button className="sb-secondary" type="button" disabled={busy || !issueForm.location_id || !issueForm.variant_id || !issueForm.quantity || !issueForm.note} onClick={()=>submitInventoryApproval(issueForm.reason_type==="scrap"?"scrap":"issue",issueForm.location_id,{variant_id:Number(issueForm.variant_id),location_id:Number(issueForm.location_id),quantity:Number(issueForm.quantity),note:issueForm.note,reason_type:issueForm.reason_type,allocation_method:issueForm.allocation_method})}>Submit issue for approval</button>
-    </form>}
-    {opAction === "count" && <form className="sb-form" onSubmit={submitCount}>
-      <h2>Count stock</h2>
-      <p className="sb-muted">Enter the physically counted quantity. The system records the variance and will not allow a count below reserved stock.</p>
-      <div className="sb-form-grid">
-        <label>Product<select required value={productId} onChange={e=>{setProductId(e.target.value);setCountForm(v=>({...v,variant_id:""}));}}><option value="">Choose product</option>{products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-        <label>Variant / SKU<select required value={countForm.variant_id} onChange={e=>setCountForm(v=>({...v,variant_id:e.target.value}))}><option value="">Choose variant</option>{variants.map(v=><option key={v.id} value={v.id}>{v.sku} · ₹{v.selling_price}</option>)}</select></label>
-        <label>Stock location<select required value={countForm.location_id} onChange={e=>setCountForm(v=>({...v,location_id:e.target.value}))}><option value="">Choose location</option>{locations.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select></label>
-        <label>Physically counted quantity<input required type="number" min="0" step="0.001" value={countForm.counted_quantity} onChange={e=>setCountForm(v=>({...v,counted_quantity:e.target.value}))}/></label>
-        <label>Unit cost if count increases (₹)<input type="number" min="0" step="0.0001" value={countForm.unit_cost} onChange={e=>setCountForm(v=>({...v,unit_cost:e.target.value}))}/></label>
-        <label>Batch / lot code for increase<input maxLength="100" value={countForm.batch_code} onChange={e=>setCountForm(v=>({...v,batch_code:e.target.value}))}/></label>
-        <label>Expiry date for increase<input type="date" value={countForm.expiry_date} onChange={e=>setCountForm(v=>({...v,expiry_date:e.target.value}))}/></label>
-        <label>Cost allocation for decrease<select value={countForm.allocation_method} onChange={e=>setCountForm(v=>({...v,allocation_method:e.target.value}))}><option value="fifo">FIFO</option><option value="fefo">FEFO</option></select></label>
-        <label className="sb-span-all">Count notes / reference<input required minLength="3" maxLength="500" value={countForm.note} onChange={e=>setCountForm(v=>({...v,note:e.target.value}))}/></label>
-      </div>
-      <button className="sb-primary" disabled={busy || !locations.length} type="submit">{busy ? "Saving…" : "Reconcile physical count"}</button>
-      <button className="sb-secondary" type="button" disabled={busy || !countForm.location_id || !countForm.variant_id || countForm.counted_quantity==="" || !countForm.note} onClick={()=>submitInventoryApproval("physical_count",countForm.location_id,{variant_id:Number(countForm.variant_id),location_id:Number(countForm.location_id),counted_quantity:Number(countForm.counted_quantity),unit_cost:countForm.unit_cost===""?null:Number(countForm.unit_cost),batch_code:countForm.batch_code||null,expiry_date:countForm.expiry_date||null,allocation_method:countForm.allocation_method,note:countForm.note})}>Submit count for approval</button>
-    </form>}
-    {opAction === "transfer" && <form className="sb-form" onSubmit={submitTransfer}>
-      <h2>Move stock between locations</h2>
-      <p className="sb-muted">Source stock is reduced and destination stock increased in one database transaction. Reserved units are not transferable.</p>
-      <div className="sb-form-grid">
-        <label>Product<select required value={productId} onChange={e=>{setProductId(e.target.value);setTransferForm(v=>({...v,variant_id:""}));}}><option value="">Choose product</option>{products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-        <label>Variant / SKU<select required value={transferForm.variant_id} onChange={e=>setTransferForm(v=>({...v,variant_id:e.target.value}))}><option value="">Choose variant</option>{variants.map(v=><option key={v.id} value={v.id}>{v.sku} · ₹{v.selling_price}</option>)}</select></label>
-        <label>From location<select required value={transferForm.source_location_id} onChange={e=>setTransferForm(v=>({...v,source_location_id:e.target.value}))}><option value="">Choose source</option>{locations.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select></label>
-        <label>To location<select required value={transferForm.destination_location_id} onChange={e=>setTransferForm(v=>({...v,destination_location_id:e.target.value}))}><option value="">Choose destination</option>{locations.filter(l=>l.is_fulfillable !== false && String(l.id)!==transferForm.source_location_id).map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select></label>
-        <label>Quantity to transfer<input required type="number" min="0.001" step="0.001" value={transferForm.quantity} onChange={e=>setTransferForm(v=>({...v,quantity:e.target.value}))}/></label>
-        <label className="sb-span-all">Reason / reference<input required minLength="3" maxLength="500" value={transferForm.note} onChange={e=>setTransferForm(v=>({...v,note:e.target.value}))}/></label>
-      </div>
-      <button className="sb-primary" disabled={busy || locations.length < 2} type="submit">{busy ? "Saving…" : "Transfer stock"}</button>
-      <button className="sb-secondary" type="button" disabled={busy || !transferForm.source_location_id || !transferForm.destination_location_id || !transferForm.variant_id || !transferForm.quantity || !transferForm.note} onClick={()=>submitInventoryApproval("transfer",transferForm.source_location_id,{variant_id:Number(transferForm.variant_id),source_location_id:Number(transferForm.source_location_id),destination_location_id:Number(transferForm.destination_location_id),quantity:Number(transferForm.quantity),note:transferForm.note})}>Submit transfer for approval</button>
-      {locations.length < 2 && <p className="sb-muted">Create at least two active locations to transfer stock.</p>}
-    </form>}
+        {activeSection === "operations" && <div className="inventory-section"><div className="inventory-action-picker" role="group" aria-label="What do you want to do?">{[["add","Add stock","Opening balance or found stock"],["issue","Remove stock","Issue, scrap or reduce"],["count","Count stock","Match the system to the shelf"],["transfer","Move stock","Between two locations"]].map(([key,label,hint])=><button key={key} type="button" className={opAction===key?"active":""} aria-pressed={opAction===key} onClick={()=>setOpAction(key)}><strong>{label}</strong><small>{hint}</small></button>)}</div><StockSheet key={opAction} action={opAction} variants={allVariants} balances={balances} locations={locations} onDone={loadBase} />
     </div>}
     {activeSection === "approvals" && <div className="inventory-section"><div className="sb-data-card">
       <h2>Inventory approval queue ({approvalRequests.length})</h2>
@@ -633,14 +586,18 @@ export default function InventoryWorkspace({ onBack }) {
     {activeSection === "stock" && (() => {
       const q = stockSearch.trim().toLowerCase();
       const availOf = b => Number(b.available ?? (Number(b.on_hand || 0) - Number(b.reserved || 0)));
-      const shown = balances.filter(b => !q || String(b.sku || "").toLowerCase().includes(q) || String(b.location_name || "").toLowerCase().includes(q));
+      const stocked = new Set(balances.map(b => String(b.variant_id)));
+      const unstocked = allVariants.filter(v => !stocked.has(String(v.id))).map(v => ({ variant_id: v.id, sku: v.sku, product_name: v.product_name, location_id: "none", location_name: "No stock recorded", on_hand: 0, reserved: 0, available: 0 }));
+      const productNameByVariant = Object.fromEntries(allVariants.map(v => [String(v.id), v.product_name]));
+      const stockRows = [...balances.map(b => ({ ...b, product_name: b.product_name || productNameByVariant[String(b.variant_id)] || "" })), ...unstocked];
+      const shown = stockRows.filter(b => !q || String(b.sku || "").toLowerCase().includes(q) || String(b.product_name || "").toLowerCase().includes(q) || String(b.location_name || "").toLowerCase().includes(q));
       const low = balances.filter(b => availOf(b) <= 5);
       const skuById = Object.fromEntries(balances.map(b => [String(b.variant_id), b.sku]));
       const locById = Object.fromEntries(locations.map(l => [String(l.id), l.name]));
       return <div className="inventory-section">
-      <div className="sb-data-card"><div className="sb-data-heading"><h2>Current stock ({balances.length})</h2><button type="button" onClick={loadBase}>Refresh</button></div>
-        <input className="inventory-search" type="search" aria-label="Search stock by SKU or location" placeholder="Search by SKU or location" value={stockSearch} onChange={e=>setStockSearch(e.target.value)}/>
-        {shown.length ? <div className="sb-table-wrap"><table><thead><tr><th>SKU</th><th>Location</th><th>On hand</th><th>Reserved</th><th>Available</th><th>Status</th></tr></thead><tbody>{shown.map((b,i)=>{ const a = availOf(b); return <tr key={b.variant_id+"-"+b.location_id+"-"+i}><td>{b.sku}</td><td>{b.location_name}</td><td>{b.on_hand}</td><td>{b.reserved}</td><td>{b.available}</td><td><span className={"inventory-pill " + (a <= 0 ? "is-out" : a <= 5 ? "is-low" : "is-ok")}>{a <= 0 ? "Out" : a <= 5 ? "Low" : "OK"}</span></td></tr>; })}</tbody></table></div> : <p className="sb-empty">{balances.length ? "No stock matches your search." : "No stock yet. Use Update stock to add your first stock."}</p>}
+      <div className="sb-data-card"><div className="sb-data-heading"><h2>Current stock ({stockRows.length})</h2><button type="button" onClick={loadBase}>Refresh</button></div>
+        <input className="inventory-search" type="search" aria-label="Search stock by product, SKU or location" placeholder="Search by product, SKU or location" value={stockSearch} onChange={e=>setStockSearch(e.target.value)}/>
+        {shown.length ? <div className="sb-table-wrap"><table><thead><tr><th>Product</th><th>SKU</th><th>Location</th><th>On hand</th><th>Reserved</th><th>Available</th><th>Status</th></tr></thead><tbody>{shown.map((b,i)=>{ const a = availOf(b); return <tr key={b.variant_id+"-"+b.location_id+"-"+i}><td>{b.product_name || "—"}</td><td>{b.sku}</td><td>{b.location_name}</td><td>{b.on_hand}</td><td>{b.reserved}</td><td>{b.available}</td><td><span className={"inventory-pill " + (a <= 0 ? "is-out" : a <= 5 ? "is-low" : "is-ok")}>{a <= 0 ? "Out" : a <= 5 ? "Low" : "OK"}</span></td></tr>; })}</tbody></table></div> : <p className="sb-empty">{stockRows.length ? "No stock matches your search." : "No stock yet. Use Update stock to add your first stock."}</p>}
       </div>
       <div className="sb-data-card">
         <h2>Low stock ({low.length})</h2>
