@@ -510,6 +510,211 @@ def me(request: Request):
         raise HTTPException(status_code=503, detail="Could not load customer account") from exc
 
 
+
+class CustomerAddressPayload(BaseModel):
+    label: str = Field(default="Home", min_length=2, max_length=24)
+    recipient_name: str = Field(min_length=2, max_length=200)
+    phone: str = Field(min_length=7, max_length=20)
+    address: str = Field(min_length=5, max_length=1000)
+    landmark: str | None = Field(default=None, max_length=200)
+    pin_code: str = Field(pattern=r"^[1-9][0-9]{5}$")
+    is_default: bool = False
+
+    @field_validator("label")
+    @classmethod
+    def clean_label(cls, value):
+        value = " ".join(value.split()).title()
+        if value.lower() not in {"home", "work", "other"}:
+            raise ValueError("Choose Home, Work or Other")
+        return value
+
+    @field_validator("recipient_name", "address")
+    @classmethod
+    def clean_address_text(cls, value):
+        value = " ".join(value.split())
+        if not value:
+            raise ValueError("This field is required")
+        return value
+
+    @field_validator("phone")
+    @classmethod
+    def clean_address_phone(cls, value):
+        value = " ".join(value.split())
+        digits = "".join(ch for ch in value if ch.isdigit())
+        if len(digits) < 7 or len(digits) > 15:
+            raise ValueError("Enter a valid contact number")
+        return value
+
+    @field_validator("landmark")
+    @classmethod
+    def clean_landmark(cls, value):
+        return " ".join(value.split()) if value and value.strip() else None
+
+
+class CustomerAddressPatch(BaseModel):
+    label: str | None = Field(default=None, min_length=2, max_length=24)
+    recipient_name: str | None = Field(default=None, min_length=2, max_length=200)
+    phone: str | None = Field(default=None, min_length=7, max_length=20)
+    address: str | None = Field(default=None, min_length=5, max_length=1000)
+    landmark: str | None = Field(default=None, max_length=200)
+    pin_code: str | None = Field(default=None, pattern=r"^[1-9][0-9]{5}$")
+    is_default: bool | None = None
+
+    @field_validator("label")
+    @classmethod
+    def clean_patch_label(cls, value):
+        if value is None:
+            return value
+        value = " ".join(value.split()).title()
+        if value.lower() not in {"home", "work", "other"}:
+            raise ValueError("Choose Home, Work or Other")
+        return value
+
+    @field_validator("recipient_name", "address")
+    @classmethod
+    def clean_patch_text(cls, value):
+        return " ".join(value.split()) if value is not None else None
+
+    @field_validator("phone")
+    @classmethod
+    def clean_patch_phone(cls, value):
+        if value is None:
+            return value
+        digits = "".join(ch for ch in value if ch.isdigit())
+        if len(digits) < 7 or len(digits) > 15:
+            raise ValueError("Enter a valid contact number")
+        return " ".join(value.split())
+
+    @field_validator("landmark")
+    @classmethod
+    def clean_patch_landmark(cls, value):
+        return " ".join(value.split()) if value and value.strip() else None
+
+
+def _customer_address_dict(row):
+    return {
+        "id": row["id"], "label": row["label"], "recipient_name": row["recipient_name"],
+        "phone": row["phone"], "address": row["address"], "landmark": row["landmark"],
+        "pin_code": row["pin_code"], "is_default": row["is_default"],
+    }
+
+
+@router.get("/addresses")
+def list_customer_addresses(request: Request):
+    customer_id = getattr(request.state, "customer_id", None)
+    if not customer_id:
+        raise HTTPException(status_code=401, detail="Customer sign-in required")
+    try:
+        with _connect() as conn:
+            rows = conn.execute(
+                "SELECT id,label,recipient_name,phone,address,landmark,pin_code,is_default "
+                "FROM customer_addresses WHERE customer_id=%s ORDER BY is_default DESC,updated_at DESC,id DESC",
+                (customer_id,),
+            ).fetchall()
+        return {"items": [_customer_address_dict(row) for row in rows]}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(status_code=503, detail="Could not load saved addresses") from exc
+
+
+@router.post("/addresses", status_code=201)
+def create_customer_address(payload: CustomerAddressPayload, request: Request):
+    customer_id = getattr(request.state, "customer_id", None)
+    if not customer_id:
+        raise HTTPException(status_code=401, detail="Customer sign-in required")
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                owner = conn.execute("SELECT id FROM customer_accounts WHERE id=%s AND is_active=TRUE FOR UPDATE", (customer_id,)).fetchone()
+                if owner is None:
+                    raise HTTPException(status_code=401, detail="Customer account is no longer active")
+                if payload.is_default:
+                    conn.execute("UPDATE customer_addresses SET is_default=FALSE,updated_at=now() WHERE customer_id=%s", (customer_id,))
+                row = conn.execute(
+                    "INSERT INTO customer_addresses(customer_id,label,recipient_name,phone,address,landmark,pin_code,is_default) "
+                    "VALUES(%s,%s,%s,%s,%s,%s,%s,%s) "
+                    "RETURNING id,label,recipient_name,phone,address,landmark,pin_code,is_default",
+                    (customer_id,payload.label,payload.recipient_name,payload.phone,payload.address,payload.landmark,payload.pin_code,payload.is_default),
+                ).fetchone()
+                if not conn.execute("SELECT 1 FROM customer_addresses WHERE customer_id=%s AND is_default=TRUE", (customer_id,)).fetchone():
+                    conn.execute("UPDATE customer_addresses SET is_default=TRUE,updated_at=now() WHERE id=%s", (row["id"],))
+                    row = {**row, "is_default": True}
+        return {"address": _customer_address_dict(row)}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(status_code=503, detail="Could not save delivery address") from exc
+
+
+@router.patch("/addresses/{address_id}")
+def update_customer_address(address_id: int, payload: CustomerAddressPatch, request: Request):
+    customer_id = getattr(request.state, "customer_id", None)
+    if not customer_id:
+        raise HTTPException(status_code=401, detail="Customer sign-in required")
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                owner = conn.execute("SELECT id FROM customer_accounts WHERE id=%s AND is_active=TRUE FOR UPDATE", (customer_id,)).fetchone()
+                if owner is None:
+                    raise HTTPException(status_code=401, detail="Customer account is no longer active")
+                current = conn.execute(
+                    "SELECT id,label,recipient_name,phone,address,landmark,pin_code,is_default "
+                    "FROM customer_addresses WHERE id=%s AND customer_id=%s FOR UPDATE",
+                    (address_id,customer_id),
+                ).fetchone()
+                if current is None:
+                    raise HTTPException(status_code=404, detail="Saved address not found")
+                values = {**current, **payload.model_dump(exclude_unset=True)}
+                if payload.is_default is True:
+                    conn.execute("UPDATE customer_addresses SET is_default=FALSE,updated_at=now() WHERE customer_id=%s", (customer_id,))
+                row = conn.execute(
+                    "UPDATE customer_addresses SET label=%s,recipient_name=%s,phone=%s,address=%s,landmark=%s,pin_code=%s,is_default=%s,updated_at=now() "
+                    "WHERE id=%s AND customer_id=%s "
+                    "RETURNING id,label,recipient_name,phone,address,landmark,pin_code,is_default",
+                    (values["label"],values["recipient_name"],values["phone"],values["address"],values["landmark"],values["pin_code"],values["is_default"],address_id,customer_id),
+                ).fetchone()
+                if not conn.execute("SELECT 1 FROM customer_addresses WHERE customer_id=%s AND is_default=TRUE", (customer_id,)).fetchone():
+                    conn.execute("UPDATE customer_addresses SET is_default=TRUE,updated_at=now() WHERE id=%s", (address_id,))
+                    row = {**row, "is_default": True}
+        return {"address": _customer_address_dict(row)}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(status_code=503, detail="Could not update saved address") from exc
+
+
+@router.delete("/addresses/{address_id}")
+def delete_customer_address(address_id: int, request: Request):
+    customer_id = getattr(request.state, "customer_id", None)
+    if not customer_id:
+        raise HTTPException(status_code=401, detail="Customer sign-in required")
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                owner = conn.execute("SELECT id FROM customer_accounts WHERE id=%s AND is_active=TRUE FOR UPDATE", (customer_id,)).fetchone()
+                if owner is None:
+                    raise HTTPException(status_code=401, detail="Customer account is no longer active")
+                deleted = conn.execute(
+                    "DELETE FROM customer_addresses WHERE id=%s AND customer_id=%s RETURNING id,is_default",
+                    (address_id,customer_id),
+                ).fetchone()
+                if deleted is None:
+                    raise HTTPException(status_code=404, detail="Saved address not found")
+                if deleted["is_default"]:
+                    next_address = conn.execute(
+                        "SELECT id FROM customer_addresses WHERE customer_id=%s ORDER BY updated_at DESC,id DESC LIMIT 1 FOR UPDATE",
+                        (customer_id,),
+                    ).fetchone()
+                    if next_address:
+                        conn.execute("UPDATE customer_addresses SET is_default=TRUE,updated_at=now() WHERE id=%s", (next_address["id"],))
+        return {"deleted": True, "id": address_id}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(status_code=503, detail="Could not delete saved address") from exc
+
+
 class IdentityClaimIn(BaseModel):
     target_sbid: str = Field(pattern=r"(?i)^SBID-[A-F0-9]{20}$")
     reason: str = Field(min_length=5, max_length=500)

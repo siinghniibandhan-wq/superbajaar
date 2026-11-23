@@ -80,6 +80,11 @@ export default function Storefront() {
   const [cart, setCart] = useState(() => { try { return JSON.parse(window.localStorage.getItem("sb-cart") || "[]"); } catch { return []; } });
   const [customerToken, setCustomerToken] = useState(() => { try { return window.localStorage.getItem("sb-customer.access_token") || ""; } catch { return ""; } });
   const [customerAuth, setCustomerAuth] = useState(null);
+  const [savedAddresses, setSavedAddresses] = useState([]);
+  const [selectedAddressId, setSelectedAddressId] = useState("");
+  const [addressEditorOpen, setAddressEditorOpen] = useState(false);
+  const [addressBusy, setAddressBusy] = useState(false);
+  const [addressDraft, setAddressDraft] = useState({ id: null, label: "Home", recipient_name: "", phone: "", address: "", landmark: "", pin_code: "", is_default: false });
   const [customerAuthMode, setCustomerAuthMode] = useState(() => window.location.pathname === "/customer/register" ? "register" : "login");
   const [customerAuthDraft, setCustomerAuthDraft] = useState(() => ({ full_name: "", email: "", phone: "", password: "", referral_code: new URLSearchParams(window.location.search).get("ref") || "" }));
   const [customerAuthBusy, setCustomerAuthBusy] = useState(false);
@@ -137,6 +142,39 @@ export default function Storefront() {
   useEffect(() => {
     try { window.localStorage.setItem("sb-cart", JSON.stringify(cart)); } catch { /* Keep cart in memory if storage is unavailable. */ }
   }, [cart]);
+
+  useEffect(() => {
+    if (!customerToken || !customerAuth) { setSavedAddresses([]); setSelectedAddressId(""); return; }
+    let active = true;
+    customerRequest("/customer-auth/addresses").then(async result => {
+      if (!active) return;
+      let items = Array.isArray(result?.items) ? result.items : [];
+      // Import the address previously stored only in this browser, once, when the account has none.
+      if (!items.length) {
+        const legacy = (() => { try { return JSON.parse(window.localStorage.getItem("sb-customer-profile") || "{}"); } catch { return {}; } })();
+        if (legacy.address && /^[1-9][0-9]{5}$/.test(String(legacy.pin || ""))) {
+          try {
+            await customerRequest("/customer-auth/addresses", { method: "POST", body: JSON.stringify({
+              label: "Home", recipient_name: legacy.name || customerAuth.full_name || customer.name || "", phone: legacy.phone || customer.phone || customerAuth.phone || "",
+              address: legacy.address, pin_code: legacy.pin, is_default: true
+            })});
+            const refreshed = await customerRequest("/customer-auth/addresses");
+            items = Array.isArray(refreshed?.items) ? refreshed.items : [];
+          } catch { /* Keep the legacy browser address available for manual saving. */ }
+        }
+      }
+      if (!active) return;
+      setSavedAddresses(items);
+      const preferred = items.find(item => item.is_default) || items[0];
+      if (preferred) {
+        setSelectedAddressId(String(preferred.id));
+        setCustomer(old => ({ ...old, name: preferred.recipient_name || old.name, phone: preferred.phone || old.phone, address: preferred.address || old.address, pin: preferred.pin_code || old.pin }));
+      }
+    }).catch(() => {
+      if (active) setSavedAddresses([]);
+    });
+    return () => { active = false; };
+  }, [customerToken, customerAuth?.id]);
 
   useEffect(() => {
     if (!customerToken) { setCustomerAuth(null); return; }
@@ -416,6 +454,68 @@ export default function Storefront() {
     finally { setReferralBusy(false); }
   };
 
+  const selectedAddress = savedAddresses.find(item => String(item.id) === String(selectedAddressId)) || null;
+  const selectSavedAddress = address => {
+    setSelectedAddressId(String(address.id));
+    setCustomer(old => ({ ...old, name: address.recipient_name, phone: address.phone, address: address.address, pin: address.pin_code }));
+  };
+  const openAddressEditor = address => {
+    setAddressDraft(address ? { ...address, id: address.id } : {
+      id: null, label: "Home", recipient_name: customer.name || customerAuth?.full_name || "",
+      phone: customer.phone || customerAuth?.phone || "", address: customer.address || "",
+      landmark: "", pin_code: customer.pin || "", is_default: savedAddresses.length === 0
+    });
+    setAddressEditorOpen(true);
+    setError("");
+  };
+  const saveCustomerAddress = async event => {
+    event.preventDefault();
+    if (!customerToken) { setError("Sign in to save a delivery address."); return; }
+    setAddressBusy(true); setError("");
+    try {
+      const payload = { label: addressDraft.label, recipient_name: addressDraft.recipient_name.trim(),
+        phone: addressDraft.phone.trim(), address: addressDraft.address.trim(),
+        landmark: addressDraft.landmark.trim() || null, pin_code: addressDraft.pin_code.trim(),
+        is_default: Boolean(addressDraft.is_default) };
+      const result = await customerRequest(addressDraft.id ? "/customer-auth/addresses/" + addressDraft.id : "/customer-auth/addresses", {
+        method: addressDraft.id ? "PATCH" : "POST", body: JSON.stringify(payload)
+      });
+      const saved = result?.address;
+      if (!saved?.id) throw new Error("The saved address response was incomplete.");
+      const refreshed = await customerRequest("/customer-auth/addresses");
+      const items = Array.isArray(refreshed?.items) ? refreshed.items : [];
+      setSavedAddresses(items);
+      selectSavedAddress(saved);
+      setAddressEditorOpen(false);
+      setNotice("Delivery address saved to your Super Bajaar account.");
+    } catch (reason) { setError(reason.message || "Could not save delivery address."); }
+    finally { setAddressBusy(false); }
+  };
+  const setDefaultCustomerAddress = async address => {
+    setAddressBusy(true); setError("");
+    try {
+      await customerRequest("/customer-auth/addresses/" + address.id, { method: "PATCH", body: JSON.stringify({ is_default: true }) });
+      const refreshed = await customerRequest("/customer-auth/addresses");
+      setSavedAddresses(refreshed.items || []);
+      setNotice("Default delivery address updated.");
+    } catch (reason) { setError(reason.message || "Could not update default address."); }
+    finally { setAddressBusy(false); }
+  };
+  const deleteCustomerAddress = async address => {
+    if (!window.confirm("Delete this saved address?")) return;
+    setAddressBusy(true); setError("");
+    try {
+      await customerRequest("/customer-auth/addresses/" + address.id, { method: "DELETE" });
+      const refreshed = await customerRequest("/customer-auth/addresses");
+      const items = refreshed.items || [];
+      setSavedAddresses(items);
+      const next = items.find(item => item.is_default) || items[0];
+      if (next) selectSavedAddress(next);
+      else { setSelectedAddressId(""); setCustomer(old => ({ ...old, address: "", pin: "" })); }
+      setNotice("Address deleted.");
+    } catch (reason) { setError(reason.message || "Could not delete address."); }
+    finally { setAddressBusy(false); }
+  };
   const saveCustomerProfile = async event => {
     event.preventDefault();
     if (!customerToken || !customerAuth) {
@@ -702,15 +802,17 @@ export default function Storefront() {
     });
     setSubmitting(true); setError(""); setNotice(""); setOrder(null);
     try {
-      const phone = customer.phone.trim();
-      const address = customer.address.trim();
+      const delivery = selectedAddress;
+      if (!delivery) throw new Error("Choose or add a saved delivery address before placing your order.");
+      const phone = (customer.phone || delivery.phone).trim();
+      const address = delivery.address.trim();
       if (phone.length < 7 || phone.length > 20) {
         throw new Error("Enter a valid contact phone number for delivery.");
       }
       if (address.length < 5 || address.length > 1000) {
         throw new Error("Enter your complete delivery address (at least 5 characters).");
       }
-      const pin = customer.pin.trim();
+      const pin = String(delivery.pin_code || "").trim();
       if (!/^[0-9]{6}$/.test(pin)) {
         throw new Error("Enter a valid six-digit delivery PIN before placing your order.");
       }
@@ -720,11 +822,11 @@ export default function Storefront() {
       }
       const orderPayload = {
         channel: "website",
-        customer_name: customerAuth.full_name,
-        customer_phone: customer.phone.trim() || null,
+        customer_name: customer.name.trim() || delivery.recipient_name || customerAuth.full_name,
+        customer_phone: phone || null,
         customer_email: customerAuth.email,
-        delivery_pin: customer.pin.trim() || null,
-        notes: ["Website checkout", "Customer accepted Terms & Conditions and acknowledged Privacy Policy (version 2026-11-04)", customer.email.trim() ? "Email: " + customer.email.trim() : "", customer.address.trim() ? "Delivery address: " + customer.address.trim() : ""].filter(Boolean).join(" | "),
+        delivery_pin: pin || null,
+        notes: ["Website checkout", "Customer accepted Terms & Conditions and acknowledged Privacy Policy (version 2026-11-04)", customer.email.trim() ? "Email: " + customer.email.trim() : "", "Delivery recipient: " + (customer.name.trim() || delivery.recipient_name), "Delivery address (" + delivery.label + "): " + address, delivery.landmark ? "Landmark: " + delivery.landmark : "", "Address contact: " + delivery.phone, "Order contact: " + phone].filter(Boolean).join(" | "),
         lines: cart.map(line => ({ variant_id: line.id, quantity: line.quantity })),
         redeem_coins: redeemableCoins,
       };
@@ -891,7 +993,13 @@ export default function Storefront() {
         <p className="storefront-account-note">{customerAuthMode === "register" ? "Already registered? " : "New to Super Bajaar? "}<button type="button" className="storefront-inline-link" onClick={()=>{setCustomerAuthMode(customerAuthMode==="register"?"login":"register");setError("");}}>{customerAuthMode === "register" ? "Sign in" : "Create an account"}</button></p>
       </form>
     </section>}
-    {isCheckoutPage && <section className="storefront-checkout-page"><div className="storefront-category-breadcrumb"><button type="button" onClick={openShopHome}>Home</button><span>/</span><span>Checkout</span></div><div className="storefront-checkout-page-heading"><span className="storefront-kicker">YOUR BASKET</span><h1>Checkout</h1><p>Review your items and delivery details before placing your order.</p></div>{error && <p className="storefront-alert" role="alert">{error}</p>}{notice && <p className="storefront-order-success" role="status">{notice}</p>}{order && <p className="storefront-order-success" role="status">Order placed: <strong>{order.order_number}</strong> · {money(order.total)}</p>}<section className="storefront-checkout" id="basket"><div><span className="storefront-kicker">ORDER SUMMARY</span><h2>Your basket</h2><p>Prices and order totals are verified by our server. Pay securely with Razorpay at checkout.</p></div><div className="storefront-basket-lines">{cart.length ? cart.map(line => <div className="storefront-basket-line" key={line.id}><div><strong>{line.product_name || line.sku}</strong><small>{line.sku} · {money(line.selling_price)}</small></div><label>Qty<input type="number" min="0" max="100000" step="1" value={line.quantity} onChange={e => setQuantity(line.id, e.target.value)} /></label><strong>{money(line.selling_price * line.quantity)}</strong><button type="button" aria-label={"Remove " + line.sku} onClick={() => setCart(old => old.filter(x => x.id !== line.id))}>×</button></div>) : <div className="storefront-checkout-empty"><h3>Your basket is empty</h3><p>Add products to your basket before placing an order.</p><button type="button" className="storefront-primary" onClick={openShopHome}>Continue shopping</button></div>}<div className="storefront-basket-total"><span>Subtotal</span><strong>{money(total)}</strong></div>{cart.length > 0 && (() => { const earn = cart.reduce((sum, l) => sum + coinsFor(productById.get(Number(l.product_id)), Number(l.selling_price || 0) * Number(l.quantity || 0)), 0); return earn > 0 ? <p className="storefront-product-coins storefront-product-coins-page"><Coins size={15} /> You will earn {earn} Super Coins on this order, credited after delivery</p> : null; })()}{cart.length > 0 && <div className="storefront-super-coin-redemption"><div><span className="storefront-kicker">REWARDS AT CHECKOUT</span><h3><Coins size={18}/> Use Super Coins</h3><p>1 Super Coin = ₹1. Redeem only available, unexpired coins.</p></div>{redemptionQuoteBusy ? <p role="status">Checking your Super Coin balance…</p> : redemptionQuoteError ? <p className="storefront-account-note" role="status">{redemptionQuoteError} You can continue without redemption.</p> : redemptionQuote?.redemption_enabled && Number(redemptionQuote.maximum_redeemable_coins || 0) > 0 ? <><p>Available: <strong>{Number(redemptionQuote.available_coins || 0).toLocaleString("en-IN")}</strong> · Maximum for this order: <strong>{Number(redemptionQuote.maximum_redeemable_coins).toLocaleString("en-IN")}</strong></p><label>Super Coins to redeem<input type="number" min="0" max={redemptionQuote.maximum_redeemable_coins} step="1" value={redeemableCoins} onChange={event => setRedeemCoins(clampRedeemCoins(event.target.value, redemptionQuote.maximum_redeemable_coins))}/></label>{redeemableCoins > 0 && <p className="storefront-super-coin-discount">Super Coin discount: <strong>{money(redemptionDiscount)}</strong> · Estimated amount to pay: <strong>{money(Math.max(0, total - redemptionDiscount))}</strong></p>}</> : <p className="storefront-account-note">{redemptionQuote?.reason || (Number(redemptionQuote?.available_coins || 0) > 0 ? "No Super Coins can be applied to this order amount." : "You do not have any available, unexpired Super Coins to redeem.")}</p>}</div>}{cart.length>0 && <form className="storefront-checkout-form" onSubmit={checkout}><label>Full name<input required minLength="1" maxLength="200" value={customer.name} onChange={e => setCustomer(v => ({ ...v, name: e.target.value }))} /></label><label>Email address<input type="email" autoComplete="email" required maxLength="254" value={customer.email} onChange={e => setCustomer(v => ({ ...v, email: e.target.value }))} /></label><label>Phone<input required minLength="7" maxLength="20" autoComplete="tel" value={customer.phone} onChange={e => setCustomer(v => ({ ...v, phone: e.target.value }))} /></label><label>Delivery address<textarea required minLength="5" maxLength="1000" autoComplete="street-address" value={customer.address} onChange={e => setCustomer(v => ({ ...v, address: e.target.value }))} /></label><label>Delivery PIN<input required inputMode="numeric" pattern="[0-9]{6}" maxLength="6" value={customer.pin} onChange={e => setCustomer(v => ({ ...v, pin: e.target.value }))} /><small>Enter a serviceable six-digit PIN to reserve stock for delivery.</small></label><label className="storefront-checkout-consent"><input type="checkbox" required checked={termsAccepted} onChange={e=>setTermsAccepted(e.target.checked)} /><span>I agree to the <a href="/pages/terms-and-conditions" onClick={e=>{e.preventDefault();openInfoPage("terms-and-conditions");}}>Terms &amp; Conditions</a> and acknowledge the <a href="/pages/privacy-policy" onClick={e=>{e.preventDefault();openInfoPage("privacy-policy");}}>Privacy Policy</a> and <a href="/pages/payment-information" onClick={e=>{e.preventDefault();openInfoPage("payment-information");}}>Payment Information</a>.</span></label><button type="submit" className="storefront-primary" disabled={submitting || redemptionQuoteBusy || !cart.length || !termsAccepted}>{submitting ? "Opening secure payment…" : "Pay securely with Razorpay"}</button></form>}</div></section></section>}
+    {isCheckoutPage && <section className="storefront-checkout-page"><div className="storefront-category-breadcrumb"><button type="button" onClick={openShopHome}>Home</button><span>/</span><span>Checkout</span></div><div className="storefront-checkout-page-heading"><span className="storefront-kicker">YOUR BASKET</span><h1>Checkout</h1><p>Review your items and delivery details before placing your order.</p></div>{error && <p className="storefront-alert" role="alert">{error}</p>}{notice && <p className="storefront-order-success" role="status">{notice}</p>}{order && <p className="storefront-order-success" role="status">Order placed: <strong>{order.order_number}</strong> · {money(order.total)}</p>}<section className="storefront-checkout" id="basket"><div className="storefront-checkout-section checkout-section--summary"><span className="storefront-kicker">ORDER SUMMARY</span><h2>Your basket</h2><p>Prices and order totals are verified by our server. Pay securely with Razorpay at checkout.</p></div><div className="storefront-basket-lines">{cart.length ? cart.map(line => <div className="storefront-basket-line" key={line.id}><div><strong>{line.product_name || line.sku}</strong><small>{line.sku} · {money(line.selling_price)}</small></div><label>Qty<input type="number" min="0" max="100000" step="1" value={line.quantity} onChange={e => setQuantity(line.id, e.target.value)} /></label><strong>{money(line.selling_price * line.quantity)}</strong><button type="button" aria-label={"Remove " + line.sku} onClick={() => setCart(old => old.filter(x => x.id !== line.id))}>×</button></div>) : <div className="storefront-checkout-empty"><h3>Your basket is empty</h3><p>Add products to your basket before placing an order.</p><button type="button" className="storefront-primary" onClick={openShopHome}>Continue shopping</button></div>}<div className="storefront-basket-total"><span>Subtotal</span><strong>{money(total)}</strong></div>{cart.length > 0 && (() => { const earn = cart.reduce((sum, l) => sum + coinsFor(productById.get(Number(l.product_id)), Number(l.selling_price || 0) * Number(l.quantity || 0)), 0); return earn > 0 ? <p className="storefront-product-coins storefront-product-coins-page"><Coins size={15} /> You will earn {earn} Super Coins on this order, credited after delivery</p> : null; })()}{cart.length > 0 && <div className="storefront-super-coin-redemption"><div><span className="storefront-kicker">REWARDS AT CHECKOUT</span><h3><Coins size={18}/> Use Super Coins</h3><p>1 Super Coin = ₹1. Redeem only available, unexpired coins.</p></div>{redemptionQuoteBusy ? <p role="status">Checking your Super Coin balance…</p> : redemptionQuoteError ? <p className="storefront-account-note" role="status">{redemptionQuoteError} You can continue without redemption.</p> : redemptionQuote?.redemption_enabled && Number(redemptionQuote.maximum_redeemable_coins || 0) > 0 ? <><p>Available: <strong>{Number(redemptionQuote.available_coins || 0).toLocaleString("en-IN")}</strong> · Maximum for this order: <strong>{Number(redemptionQuote.maximum_redeemable_coins).toLocaleString("en-IN")}</strong></p><label>Super Coins to redeem<input type="number" min="0" max={redemptionQuote.maximum_redeemable_coins} step="1" value={redeemableCoins} onChange={event => setRedeemCoins(clampRedeemCoins(event.target.value, redemptionQuote.maximum_redeemable_coins))}/></label>{redeemableCoins > 0 && <p className="storefront-super-coin-discount">Super Coin discount: <strong>{money(redemptionDiscount)}</strong> · Estimated amount to pay: <strong>{money(Math.max(0, total - redemptionDiscount))}</strong></p>}</> : <p className="storefront-account-note">{redemptionQuote?.reason || (Number(redemptionQuote?.available_coins || 0) > 0 ? "No Super Coins can be applied to this order amount." : "You do not have any available, unexpired Super Coins to redeem.")}</p>}</div>}{cart.length>0 && <div className="storefront-checkout-content">
+          <section className="storefront-checkout-section checkout-section--delivery"><div className="storefront-checkout-section-heading"><div><span className="storefront-kicker">DELIVERY DETAILS</span><h3>Choose delivery address</h3></div><div className="storefront-checkout-address-tools"><button type="button" onClick={()=>document.querySelector(".storefront-checkout-address-list")?.scrollIntoView({behavior:"smooth",block:"center"})}>Change address</button><button type="button" onClick={()=>openAddressEditor(null)}>+ Add address</button></div></div>
+            {savedAddresses.length ? <div className="storefront-checkout-address-list">{savedAddresses.map(address=><button type="button" key={address.id} className={"storefront-checkout-address "+(String(address.id)===String(selectedAddressId)?"is-selected":"")} onClick={()=>selectSavedAddress(address)}><span className="storefront-address-radio">{String(address.id)===String(selectedAddressId)?"●":"○"}</span><span><strong>{address.label} {address.is_default?"· Default":""}</strong><b>{address.recipient_name} · {address.phone}</b><small>{address.address}{address.landmark?", "+address.landmark:""} · {address.pin_code}</small></span><span className="storefront-address-edit" onClick={e=>{e.stopPropagation();openAddressEditor(address);}}>Edit</span></button>)}</div> : <div className="storefront-checkout-no-address"><p>No saved delivery address. Add one to continue.</p><button type="button" className="storefront-primary" onClick={()=>openAddressEditor(null)}>Add delivery address</button></div>}
+            {addressEditorOpen&&<form className="storefront-address-editor" onSubmit={saveCustomerAddress}><h3>{addressDraft.id?"Edit address":"Add new address"}</h3><label>Address type<select value={addressDraft.label} onChange={e=>setAddressDraft(v=>({...v,label:e.target.value}))}><option>Home</option><option>Work</option><option>Other</option></select></label><label>Recipient name<input required minLength="2" maxLength="200" value={addressDraft.recipient_name} onChange={e=>setAddressDraft(v=>({...v,recipient_name:e.target.value}))}/></label><label>Contact phone<input required minLength="7" maxLength="20" value={addressDraft.phone} onChange={e=>setAddressDraft(v=>({...v,phone:e.target.value}))}/></label><label className="storefront-address-editor-wide">Full address<textarea required minLength="5" maxLength="1000" rows="3" value={addressDraft.address} onChange={e=>setAddressDraft(v=>({...v,address:e.target.value}))}/></label><label>Landmark<input maxLength="200" value={addressDraft.landmark||""} onChange={e=>setAddressDraft(v=>({...v,landmark:e.target.value}))}/></label><label>Delivery PIN<input required inputMode="numeric" pattern="[1-9][0-9]{5}" maxLength="6" value={addressDraft.pin_code} onChange={e=>setAddressDraft(v=>({...v,pin_code:e.target.value.replace(/\\D/g,"").slice(0,6)}))}/></label><label className="storefront-address-default"><input type="checkbox" checked={Boolean(addressDraft.is_default)} onChange={e=>setAddressDraft(v=>({...v,is_default:e.target.checked}))}/> Set as default</label><div className="storefront-address-editor-actions"><button className="storefront-primary" type="submit" disabled={addressBusy}>{addressBusy?"Saving…":"Save address"}</button><button type="button" onClick={()=>setAddressEditorOpen(false)}>Cancel</button></div></form>}
+          </section>
+          <form className="storefront-checkout-form" onSubmit={checkout}><section className="storefront-checkout-section checkout-section--contact"><span className="storefront-kicker">CONTACT DETAILS</span><h3>Who should we contact?</h3><label>Full name<input required minLength="1" maxLength="200" value={customer.name} onChange={e=>setCustomer(v=>({...v,name:e.target.value}))}/></label><label>Email address<input type="email" autoComplete="email" required maxLength="254" value={customer.email} onChange={e=>setCustomer(v=>({...v,email:e.target.value}))}/></label><label>Phone<input required minLength="7" maxLength="20" autoComplete="tel" value={customer.phone} onChange={e=>setCustomer(v=>({...v,phone:e.target.value}))}/></label></section>
+          <section className="storefront-checkout-section checkout-section--payment"><span className="storefront-kicker">PAYMENT & CONFIRMATION</span><h3>Order total</h3><div className="storefront-checkout-total"><span>Subtotal</span><strong>{money(Math.max(0,total-redemptionDiscount))}</strong></div><p>Final amount, stock and discounts are verified securely by Super Bajaar.</p><label className="storefront-checkout-consent"><input type="checkbox" required checked={termsAccepted} onChange={e=>setTermsAccepted(e.target.checked)}/><span>I agree to the <a href="/pages/terms-and-conditions" onClick={e=>{e.preventDefault();openInfoPage("terms-and-conditions");}}>Terms &amp; Conditions</a> and acknowledge the <a href="/pages/privacy-policy" onClick={e=>{e.preventDefault();openInfoPage("privacy-policy");}}>Privacy Policy</a> and <a href="/pages/payment-information" onClick={e=>{e.preventDefault();openInfoPage("payment-information");}}>Payment Information</a>.</span></label><button type="submit" className="storefront-primary" disabled={submitting||redemptionQuoteBusy||!cart.length||!termsAccepted||!selectedAddress}>{submitting?"Opening secure payment…":"Pay securely with Razorpay"}</button></section></form></div>}</div></section></section>}
     {isAccountPage && <section className="storefront-account-page">
       <div className="storefront-category-breadcrumb"><button type="button" onClick={openShopHome}>Home</button><span>/</span><span>My Account</span></div>
       <div className="storefront-account-welcome"><span className="storefront-kicker">YOUR SUPER BAJAAR</span><h1>{customer.name.trim() ? `Hello, ${customer.name.trim().split(/\s+/)[0]}` : "My Account"}</h1><p>Manage your profile, purchases and support in one place.</p></div>
@@ -982,7 +1090,7 @@ export default function Storefront() {
             </div>}
             {error && <p className="storefront-account-note" role="alert">{error}</p>}
           </div>}
-          {accountSection==="addresses" && <div className="storefront-account-section"><h2>Addresses</h2><p>Manage your preferred delivery address and PIN code.</p><form className="storefront-account-form" onSubmit={saveCustomerProfile}><label>Delivery PIN<input inputMode="numeric" autoComplete="postal-code" pattern="[1-9][0-9]{5}" maxLength="6" value={customer.pin} onChange={event=>setCustomer(old=>({...old,pin:event.target.value.replace(/\\D/g,"").slice(0,6)}))}/></label><label className="storefront-account-address">Delivery address<textarea autoComplete="street-address" rows="3" maxLength="1000" value={customer.address} onChange={event=>setCustomer(old=>({...old,address:event.target.value}))}/></label><button className="storefront-primary" type="submit">Save address</button><p className="storefront-account-note">Address is currently saved on this device, not synced to a signed-in customer account.</p></form></div>}
+          {accountSection==="addresses" && <div className="storefront-account-section"><div className="storefront-account-section-heading"><div><h2>Saved addresses</h2><p>Your delivery locations are synced to your Super Bajaar account.</p></div><button type="button" className="storefront-primary" onClick={()=>openAddressEditor(null)}>Add new address</button></div><div className="storefront-saved-address-grid">{savedAddresses.map(address=><article className={"storefront-saved-address "+(address.is_default?"is-default":"")} key={address.id}><div className="storefront-saved-address-top"><strong>{address.label}</strong>{address.is_default&&<span>Default</span>}</div><b>{address.recipient_name}</b><p>{address.address}{address.landmark?", "+address.landmark:""}<br/>PIN {address.pin_code} · {address.phone}</p><div className="storefront-saved-address-actions"><button type="button" onClick={()=>openAddressEditor(address)}>Edit</button>{!address.is_default&&<button type="button" disabled={addressBusy} onClick={()=>setDefaultCustomerAddress(address)}>Set as default</button>}<button type="button" disabled={addressBusy} onClick={()=>deleteCustomerAddress(address)}>Delete address</button></div></article>)}</div>{!savedAddresses.length&&<p className="storefront-account-empty">No saved addresses yet. Add one to speed up checkout.</p>}{addressEditorOpen&&<form className="storefront-address-editor" onSubmit={saveCustomerAddress}><h3>{addressDraft.id?"Edit address":"Add new address"}</h3><label>Address type<select value={addressDraft.label} onChange={e=>setAddressDraft(v=>({...v,label:e.target.value}))}><option>Home</option><option>Work</option><option>Other</option></select></label><label>Recipient name<input required minLength="2" maxLength="200" autoComplete="name" value={addressDraft.recipient_name} onChange={e=>setAddressDraft(v=>({...v,recipient_name:e.target.value}))}/></label><label>Contact phone<input required minLength="7" maxLength="20" autoComplete="tel" value={addressDraft.phone} onChange={e=>setAddressDraft(v=>({...v,phone:e.target.value}))}/></label><label className="storefront-address-editor-wide">Full address<textarea required minLength="5" maxLength="1000" autoComplete="street-address" rows="3" value={addressDraft.address} onChange={e=>setAddressDraft(v=>({...v,address:e.target.value}))}/></label><label>Landmark (optional)<input maxLength="200" value={addressDraft.landmark||""} onChange={e=>setAddressDraft(v=>({...v,landmark:e.target.value}))}/></label><label>Delivery PIN<input required inputMode="numeric" pattern="[1-9][0-9]{5}" maxLength="6" autoComplete="postal-code" value={addressDraft.pin_code} onChange={e=>setAddressDraft(v=>({...v,pin_code:e.target.value.replace(/\\D/g,"").slice(0,6)}))}/></label><label className="storefront-address-default"><input type="checkbox" checked={Boolean(addressDraft.is_default)} onChange={e=>setAddressDraft(v=>({...v,is_default:e.target.checked}))}/> Set as default address</label><div className="storefront-address-editor-actions"><button className="storefront-primary" type="submit" disabled={addressBusy}>{addressBusy?"Saving…":"Save address"}</button><button type="button" onClick={()=>setAddressEditorOpen(false)}>Cancel</button></div></form>}</div>}
           {accountSection==="privacy" && <div className="storefront-account-section">
             <span className="storefront-kicker">YOUR PRIVACY</span>
             <h2>Analytics preferences</h2>
