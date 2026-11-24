@@ -1888,3 +1888,21 @@
 .sb-review-admin-card header span{color:#d98a00}
 .sb-review-admin-card input{padding:8px;border:1px solid #cfd5db;border-radius:8px}
 .sb-review-admin-card div{display:flex;gap:8px}
+
+/* Product page: variant option chooser (display style comes from Catalogue) */
+.storefront-option-groups{display:grid;gap:14px;width:100%;max-width:520px}
+.storefront-option-group{display:grid;gap:8px}
+.storefront-option-label{color:#51445f;font-size:14px;font-weight:700}
+.storefront-option-label b{color:#2d1055}
+.storefront-option-list{display:flex;flex-wrap:wrap;gap:8px}
+.storefront-option{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:42px;padding:8px 16px;border:1.5px solid #d9cdea;border-radius:999px;background:#fff;color:#2d1055;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.storefront-option.is-selected{border-color:#4c168c;background:#4c168c;color:#fff;box-shadow:0 2px 8px rgba(76,22,140,.25)}
+.storefront-option:focus-visible{outline:3px solid #b79be0;outline-offset:2px}
+.storefront-option-list.is-circle .storefront-option{width:46px;height:46px;min-width:46px;padding:0;border-radius:50%}
+.storefront-option-list.is-tile .storefront-option{min-width:92px;min-height:52px;padding:10px 16px;border-radius:12px}
+.storefront-option-list.is-text .storefront-option{min-height:0;padding:2px 4px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:#51445f;box-shadow:none}
+.storefront-option-list.is-text .storefront-option.is-selected{border-bottom-color:#4c168c;color:#2d1055;font-weight:800}
+.storefront-option-list.is-colour .storefront-option,.storefront-option-list.is-colour_chip .storefront-option{background:#fff;color:#2d1055}
+.storefront-option-list.is-colour .storefront-option{width:40px;height:40px;min-width:40px;padding:0;border-radius:50%}
+.storefront-option-list.is-colour .storefront-option.is-selected,.storefront-option-list.is-colour_chip .storefront-option.is-selected{border-color:#4c168c;box-shadow:0 0 0 3px rgba(76,22,140,.25)}
+.storefront-option-swatch{display:block;width:26px;height:26px;border-radius:50%;border:1px solid rgba(0,0,0,.18)}
