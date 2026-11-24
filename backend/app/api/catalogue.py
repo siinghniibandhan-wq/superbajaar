@@ -1649,7 +1649,10 @@ def list_all_variants(limit: int = Query(default=200, ge=1, le=500), offset: int
                 "(SELECT h2.selling_price FROM variant_price_history h2 WHERE h2.variant_id=v.id AND h2.recorded_at < now() - interval '30 days' "
                 "ORDER BY h2.recorded_at DESC, h2.id DESC LIMIT 1)) x), v.selling_price) AS lowest_price_30d, "
                 "(SELECT pi.image_url FROM product_images pi WHERE pi.product_id=p.id AND (pi.variant_id=v.id OR pi.variant_id IS NULL) "
-                "ORDER BY (pi.variant_id=v.id) DESC, pi.is_primary DESC, pi.sort_order, pi.id LIMIT 1) AS image_url "
+                "ORDER BY (pi.variant_id=v.id) DESC, pi.is_primary DESC, pi.sort_order, pi.id LIMIT 1) AS image_url, "
+                "COALESCE((SELECT json_agg(json_build_object('url', g.image_url, 'alt', g.alt_text) "
+                "ORDER BY (g.variant_id IS NULL), g.is_primary DESC, g.sort_order, g.id) "
+                "FROM product_images g WHERE g.product_id=p.id AND (g.variant_id=v.id OR g.variant_id IS NULL)), '[]'::json) AS images "
                 "FROM product_variants v JOIN products p ON p.id = v.product_id "
                 "WHERE v.is_active = TRUE AND p.status = 'active' ORDER BY p.name, v.sku LIMIT %s OFFSET %s",
                 (limit, offset),
