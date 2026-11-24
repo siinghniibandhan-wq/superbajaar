@@ -31,12 +31,12 @@ test("the downloadable template imports cleanly", () => {
 });
 
 test("header aliases, MRP default and currency symbols", () => {
-  const ok = buildImportPlan(parseCsv('Product Name,Price,Category,GST,HSN\nTea,"₹1,200.50",Beauty,5%,0902'), { categories });
+  const ok = buildImportPlan(parseCsv('Product Name,Price,Category,GST,HSN\nTea,"₹1,200.50",Beauty,5%,09021010'), { categories });
   assert.deepEqual(ok.items[0].errors, []);
   assert.equal(ok.items[0].payload.variants[0].selling_price, 1200.5);
   assert.equal(ok.items[0].payload.variants[0].mrp, 1200.5);
   assert.equal(ok.items[0].payload.product.tax_rate, 5);
-  assert.equal(ok.items[0].payload.product.tax_code, "0902");
+  assert.equal(ok.items[0].payload.product.tax_code, "09021010");
 });
 
 test("validation errors are reported per row", () => {
