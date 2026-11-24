@@ -22,6 +22,16 @@ function combinations(items) {
   return items.reduce((acc, item) => acc.flatMap(prefix => item.values.map(value => [...prefix, [item.code, value]])), [[]]).map(entries => Object.fromEntries(entries));
 }
 
+// Combinations of the selected values that have no active variant: these were deliberately left out/hidden.
+function excludedFrom(values, rows) {
+  const codes = Object.keys(values || {}).filter(code => (values[code] || []).length);
+  if (!codes.length) return {};
+  const all = combinations(codes.map(code => ({ code, values: values[code] })));
+  const active = new Set(rows.map(row => combinationKey(row.attributes || {})));
+  if (!all.some(attrs => active.has(combinationKey(attrs)))) return {};
+  return Object.fromEntries(all.map(attrs => combinationKey(attrs)).filter(key => !active.has(key)).map(key => [key, true]));
+}
+
 export default function ProductCreateForm({ categories = [], product = null, duplicateFrom = null, onSaved, onBusyChange }) {
   const [form, setForm] = useState(duplicateFrom && !product ? {
     ...EMPTY,
@@ -56,6 +66,7 @@ export default function ProductCreateForm({ categories = [], product = null, dup
   const [customAttributeOptions, setCustomAttributeOptions] = useState({});
   const [pendingCustomOptions, setPendingCustomOptions] = useState({});
   const [variantPricing, setVariantPricing] = useState({});
+  const [excludedCombos, setExcludedCombos] = useState({});
   const [newOptions, setNewOptions] = useState({});
   const [activeTab, setActiveTab] = useState("general");
   const [availabilityRules, setAvailabilityRules] = useState([]);
@@ -109,6 +120,7 @@ export default function ProductCreateForm({ categories = [], product = null, dup
         }
         setSelected(old => ({ ...values, ...old }));
         setValueOrder(old => ({ ...values, ...old }));
+        setExcludedCombos(excludedFrom(values, (result.items || []).filter(item => item.is_active !== false)));
       })
       .catch(e => setError(e.message || "Unable to load existing product variants."));
   }, [product?.id, definitions]);
@@ -170,6 +182,7 @@ export default function ProductCreateForm({ categories = [], product = null, dup
         setSelected(values);
         setValueOrder(values);
         setVariantPricing(pricing);
+        setExcludedCombos(excludedFrom(values, (result.items || []).filter(item => item.is_active !== false)));
       })
       .catch(e => setError(e.message || "Unable to copy product variants."));
     apiRequest("/catalogue/products/" + sourceId + "/availability-rules")
@@ -223,6 +236,32 @@ export default function ProductCreateForm({ categories = [], product = null, dup
     return combinations(chosenAttributes.map(def => ({ code: def.code, values: def.value_type === "multi_select" ? [[...(selected[def.code] || [])]] : orderByList(selected[def.code] || [], valueOrder[def.code] || []) })));
   }, [chosenAttributes, selected, valueOrder]);
 
+  const includedCombinations = useMemo(() => chosenAttributes.length ? variantCombinations.filter(attrs => !excludedCombos[combinationKey(attrs)]) : variantCombinations, [chosenAttributes, variantCombinations, excludedCombos]);
+  const setComboIncluded = (attrs, included) => setExcludedCombos(old => { const next = { ...old }; if (included) delete next[combinationKey(attrs)]; else next[combinationKey(attrs)] = true; return next; });
+  const setAllCombosIncluded = included => setExcludedCombos(included ? {} : Object.fromEntries(variantCombinations.map(attrs => [combinationKey(attrs), true])));
+
+  // One source of truth for variant prices, shared by the General and Attributes tabs.
+  const existingByKey = attrs => existingVariants.find(row => combinationKey(row.attributes || {}) === combinationKey(attrs));
+  const singleNewCombo = !product?.id && chosenAttributes.length > 0 && includedCombinations.length === 1;
+  const priceField = (attrs, field) => {
+    const key = combinationKey(attrs);
+    const existing = existingByKey(attrs);
+    if (existing && multiVariantEdit) return variantPriceEdits[existing.id]?.[field] ?? "";
+    if (existing && soleVariant) return field === "cost_price" ? (variantPriceEdits[existing.id]?.cost_price ?? "") : (form[field] ?? "");
+    if (singleNewCombo && field !== "cost_price") return form[field] ?? "";
+    const override = variantPricing[key]?.[field];
+    return override !== undefined ? override : (field === "cost_price" ? "" : (form[field] ?? ""));
+  };
+  const setPriceField = (attrs, field, value) => {
+    const key = combinationKey(attrs);
+    const existing = existingByKey(attrs);
+    if (existing && multiVariantEdit) return setVariantPrice(existing.id, field, value);
+    if (existing && soleVariant) return field === "cost_price" ? setVariantPrice(existing.id, field, value) : change(field, value);
+    if (singleNewCombo && field !== "cost_price") return change(field, value);
+    setVariantPricing(old => ({ ...old, [key]: { ...(old[key] || {}), [field]: value } }));
+  };
+  const rowFor = attrs => ({ selling_price: priceField(attrs, "selling_price"), mrp: priceField(attrs, "mrp"), cost_price: priceField(attrs, "cost_price") });
+
   const reorderValue = (def, value, direction) => setValueOrder(old => ({ ...old, [def.code]: moveValue(orderByList(selected[def.code] || [], old[def.code] || []), value, direction) }));
   const autoSortValues = def => setValueOrder(old => ({ ...old, [def.code]: sortValuesLowToHigh(selected[def.code] || []) }));
 
@@ -272,8 +311,13 @@ export default function ProductCreateForm({ categories = [], product = null, dup
         setActiveTab("general");
         throw new Error("Enter a valid selling price and an MRP equal to or higher than the selling price before creating variants.");
       }
-      for (const attrs of variantCombinations) {
-        const row = variantPricing[combinationKey(attrs)] || {};
+      if (chosenAttributes.length && !includedCombinations.length) {
+        setActiveTab("attributes");
+        throw new Error("Keep at least one variant visible. Tick at least one combination.");
+      }
+      for (const attrs of includedCombinations) {
+        if (existingByKey(attrs)) continue; // existing variants are validated with their own price rows
+        const row = rowFor(attrs);
         const variantPrice = row.selling_price === undefined || row.selling_price === "" ? price : Number(row.selling_price);
         const variantMrp = row.mrp === undefined || row.mrp === "" ? mrp : Number(row.mrp);
         const variantCost = row.cost_price === undefined || row.cost_price === "" ? null : Number(row.cost_price);
@@ -304,8 +348,10 @@ export default function ProductCreateForm({ categories = [], product = null, dup
         throw new Error("Select at least one category for this product.");
       }
       const payload = { name: form.name.trim(), slug: form.slug, brand: form.brand || null, category_id: categoryIds[0] || null, category_ids: categoryIds, description: form.description || null, tax_code: form.tax_code || null, tax_rate: form.tax_rate === "" ? null : Number(form.tax_rate), is_pos_available: Boolean(form.is_pos_available), is_website_available: Boolean(form.is_website_available), delivery_options: form.delivery_options?.length ? form.delivery_options : ["standard"], status: product?.status || "active" };
-      const variantPayloads = product?.id && !chosenAttributes.length ? [] : variantCombinations.map(attrs => {
-        const row = variantPricing[combinationKey(attrs)] || {};
+      const variantPayloads = product?.id && !chosenAttributes.length ? [] : includedCombinations.map(attrs => {
+        const existing = existingByKey(attrs);
+        if (existing) return { attributes: attrs, selling_price: Number(existing.selling_price), mrp: Number(existing.mrp ?? existing.selling_price), cost_price: existing.cost_price == null ? null : Number(existing.cost_price) };
+        const row = rowFor(attrs);
         const variantPrice = row.selling_price === undefined || row.selling_price === "" ? price : Number(row.selling_price);
         const variantMrp = row.mrp === undefined || row.mrp === "" ? mrp : Number(row.mrp);
         const variantCost = row.cost_price === undefined || row.cost_price === "" ? null : Number(row.cost_price);
@@ -337,10 +383,14 @@ export default function ProductCreateForm({ categories = [], product = null, dup
       } catch (orderError) {
         setError("Product saved, but the option order could not be saved: " + (orderError.message || "unknown error") + " Open the product and save again to retry.");
       }
-      if (soleVariant && (Number(soleVariant.selling_price) !== price || Number(soleVariant.mrp) !== mrp)) {
+      const soleCostRaw = soleVariant ? variantPriceEdits[soleVariant.id]?.cost_price : undefined;
+      const soleCost = soleCostRaw === undefined ? (soleVariant?.cost_price == null ? null : Number(soleVariant.cost_price)) : (soleCostRaw === "" ? null : Number(soleCostRaw));
+      const soleCostBefore = soleVariant?.cost_price == null ? null : Number(soleVariant.cost_price);
+      if (soleVariant && (Number(soleVariant.selling_price) !== price || Number(soleVariant.mrp) !== mrp || soleCost !== soleCostBefore)) {
+        if (soleCost !== null && (!Number.isFinite(soleCost) || soleCost < 0)) throw new Error("Cost price must be a valid number.");
         await apiRequest("/catalogue/variants/" + soleVariant.id + "/price", {
           method: "PUT",
-          body: JSON.stringify({ selling_price: price, mrp, cost_price: soleVariant.cost_price == null ? null : Number(soleVariant.cost_price) }),
+          body: JSON.stringify({ selling_price: price, mrp, cost_price: soleCost }),
         });
       }
       if (multiVariantEdit) {
@@ -384,6 +434,7 @@ export default function ProductCreateForm({ categories = [], product = null, dup
           <label>Selling price (₹) *<input required={!product?.id || Boolean(soleVariant)} type="number" min="0" step="0.01" value={form.selling_price} onChange={e => change("selling_price", e.target.value)} /></label>
           <label>MRP (₹) *<input required={!product?.id || Boolean(soleVariant)} type="number" min="0" step="0.01" value={form.mrp} onChange={e => change("mrp", e.target.value)} /></label>
         </>}
+        {!multiVariantEdit && !product?.id && includedCombinations.length > 1 && <p className="sb-span-all sb-muted">These prices are the default for all {includedCombinations.length} variants. You can set a different price for any variant in the Attributes &amp; variants tab; changes made there also appear in that tab&apos;s list.</p>}
         {multiVariantEdit && <div className="sb-span-all sb-variant-price-edit">
           <p className="sb-muted">This product has {existingVariants.length} variants. Change the price of any variant below, then save the product. Leave MRP empty to use the selling price.</p>
           <div className="sb-bulk-price">
@@ -453,7 +504,7 @@ export default function ProductCreateForm({ categories = [], product = null, dup
         <p><strong>POS:</strong> {form.is_pos_available ? "Available" : "Unavailable"}</p>
         <p><strong>Website:</strong> {form.is_website_available ? "Available" : "Unavailable"}</p>
         <p><strong>Delivery:</strong> {(form.delivery_options||[]).join(", ") || "Choose at least one option"}</p>
-        <p><strong>Variants to create:</strong> {product?.id ? "Existing variants preserved" : variantCombinations.length}</p>
+        <p><strong>Variants to create:</strong> {product?.id ? "Existing variants preserved" : includedCombinations.length}</p>
       </div>
       <div className="sb-product-actions"><button className="sb-secondary" type="button" disabled={busy} onClick={() => setActiveTab("general")}>Back to Product Information</button></div>
     </section>
@@ -485,20 +536,35 @@ export default function ProductCreateForm({ categories = [], product = null, dup
           {definitions.filter(def => def.is_variant_attribute && !OPTION_TYPES.includes(def.value_type) && selected[def.code]?.length).map(def => <p className="sb-muted" key={def.id}>{def.name} · Legacy attribute (read-only): {(selected[def.code] || []).join(", ")}. Existing variant values will be preserved.</p>)}
           {definitions.some(def => !def.is_variant_attribute && OPTION_TYPES.includes(def.value_type)) && <div className="sb-product-attributes"><h3>Product-level attributes</h3>{definitions.filter(def => !def.is_variant_attribute && OPTION_TYPES.includes(def.value_type)).map(def => { const options = [...(def.options || []), ...(customAttributeOptions[def.id] || [])]; const current = productAttributeValues[def.id] ?? ""; const displayValue = typeof current === "string" ? current : current == null ? "" : JSON.stringify(current); return <label className="sb-attribute-picker" key={def.id}><strong>{def.name}</strong><small className="sb-muted">{def.value_type} · Product attribute{def.is_required ? " · Required" : ""}</small>{def.value_type === "text" ? <input value={displayValue} placeholder={"Enter " + def.name.toLowerCase()} onChange={e => setProductAttributeValues(old => ({ ...old, [def.id]: e.target.value }))} /> : <select value={displayValue} onChange={e => setProductAttributeValues(old => ({ ...old, [def.id]: e.target.value }))}><option value="">Select {def.name.toLowerCase()}</option>{options.map(option => { const value = def.value_type === "colour" ? colourOptionLabel(option) : String(option); return <option key={value} value={value}>{value}</option>; })}</select>}</label>; })}</div>}
           {!definitions.length && <p className="sb-empty">Create an attribute in the Attributes tab first, or continue with a product that has no variants.</p>}
-          <p className="sb-muted">This product will create {variantCombinations.length} variant(s). Prices below are stored on each variant, not on the reusable attribute definition.</p>
+          <p className="sb-muted">This product will have {includedCombinations.length} of {variantCombinations.length} possible variant(s). Untick a combination that does not exist (for example 1 kg in a can) to hide it. Hidden combinations are not sold or shown in the shop. Prices below are stored on each variant, not on the reusable attribute definition.</p>
+          {chosenAttributes.length > 0 && variantCombinations.length > 1 && <div className="sb-combo-tools">
+            <button type="button" className="sb-row-action" disabled={busy} onClick={() => setAllCombosIncluded(true)}>Show all</button>
+            <button type="button" className="sb-row-action" disabled={busy} onClick={() => setAllCombosIncluded(false)}>Hide all</button>
+          </div>}
+          {chosenAttributes.length === 2 && <div className="sb-combo-matrix-wrap"><table className="sb-combo-matrix" aria-label="Choose which combinations are available">
+            <thead><tr><th>{chosenAttributes[0].name} \ {chosenAttributes[1].name}</th>{orderByList(selected[chosenAttributes[1].code] || [], valueOrder[chosenAttributes[1].code] || []).map(b => <th key={String(b)}>{String(b)}</th>)}</tr></thead>
+            <tbody>{orderByList(selected[chosenAttributes[0].code] || [], valueOrder[chosenAttributes[0].code] || []).map(a => <tr key={String(a)}><th scope="row">{String(a)}</th>{orderByList(selected[chosenAttributes[1].code] || [], valueOrder[chosenAttributes[1].code] || []).map(b => {
+              const attrs = { [chosenAttributes[0].code]: a, [chosenAttributes[1].code]: b };
+              const on = !excludedCombos[combinationKey(attrs)];
+              return <td key={String(b)}><input type="checkbox" checked={on} disabled={busy} aria-label={String(a) + " / " + String(b) + (on ? " visible" : " hidden")} onChange={e => setComboIncluded(attrs, e.target.checked)} /></td>;
+            })}</tr>)}</tbody>
+          </table></div>}
           <div className="sb-variant-pricing-list" aria-label="Variant-specific pricing">
             {variantCombinations.map((attrs, index) => {
               const key = combinationKey(attrs);
+              const hidden = chosenAttributes.length > 0 && Boolean(excludedCombos[key]);
+              const visibleNumber = includedCombinations.indexOf(attrs) + 1;
               const label = Object.entries(attrs).map(([code, value]) => {
                 const definition = definitions.find(item => item.code === code);
                 return (definition?.name || code) + ": " + (Array.isArray(value) ? value.join(", ") : String(value));
               }).join(" · ") || "Simple product (no selectable options)";
-              const row = variantPricing[key] || {};
-              return <article className="sb-strip-row" key={key || index}>
-                <div className="sb-strip-main"><strong>{label}</strong><small>Variant {index + 1}</small></div>
-                <label>Selling price (₹)<input type="number" min="0" step="0.01" value={row.selling_price ?? form.selling_price} onChange={e => setVariantPricing(old => ({ ...old, [key]: { ...(old[key] || {}), selling_price: e.target.value } }))}/></label>
-                <label>MRP (₹)<input type="number" min="0" step="0.01" value={row.mrp ?? form.mrp} onChange={e => setVariantPricing(old => ({ ...old, [key]: { ...(old[key] || {}), mrp: e.target.value } }))}/></label>
-                <label>Cost price (₹)<input type="number" min="0" step="0.01" value={row.cost_price ?? ""} onChange={e => setVariantPricing(old => ({ ...old, [key]: { ...(old[key] || {}), cost_price: e.target.value } }))} placeholder="Optional"/></label>
+              const row = rowFor(attrs);
+              return <article className={"sb-strip-row" + (hidden ? " sb-variant-hidden" : "")} key={key || index}>
+                {chosenAttributes.length > 0 && <label className="sb-combo-toggle"><input type="checkbox" checked={!hidden} disabled={busy} onChange={e => setComboIncluded(attrs, e.target.checked)} /> Visible</label>}
+                <div className="sb-strip-main"><strong>{label}</strong><small>{hidden ? "Hidden — not sold or shown" : "Variant " + visibleNumber}</small></div>
+                <label>Selling price (₹)<input type="number" disabled={hidden} min="0" step="0.01" value={row.selling_price} onChange={e => setPriceField(attrs, "selling_price", e.target.value)}/></label>
+                <label>MRP (₹)<input type="number" disabled={hidden} min="0" step="0.01" value={row.mrp} onChange={e => setPriceField(attrs, "mrp", e.target.value)}/></label>
+                <label>Cost price (₹)<input type="number" disabled={hidden} min="0" step="0.01" value={row.cost_price} onChange={e => setPriceField(attrs, "cost_price", e.target.value)} placeholder="Optional"/></label>
               </article>;
             })}
           </div>
