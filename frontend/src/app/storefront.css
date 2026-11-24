@@ -1961,3 +1961,17 @@
 .sb-loy-faq details p { margin:8px 0 0; }
 .sb-loy-actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:24px; }
 .sb-loy-secondary { padding:11px 18px; border:1px solid #d9c9f0; border-radius:12px; background:#fff; color:#5928c8; font-weight:600; cursor:pointer; font:inherit; }
+
+.storefront-search-box { position:relative; }
+.storefront-search-go { display:flex; align-items:center; justify-content:center; border:0; background:transparent; color:inherit; padding:0; cursor:pointer; }
+.storefront-suggest { position:absolute; top:calc(100% + 8px); left:0; width:max(100%, 300px); max-width:92vw; z-index:80; padding:6px; border:1px solid #eee4fa; border-radius:16px; background:#fff; box-shadow:0 12px 32px rgba(50,16,95,.16); }
+.storefront-suggest-item { display:grid; grid-template-columns:44px 1fr auto; gap:10px; align-items:center; width:100%; padding:8px; border:0; border-radius:12px; background:transparent; text-align:left; cursor:pointer; font:inherit; }
+.storefront-suggest-item:hover, .storefront-suggest-item:focus-visible { background:#faf6ff; }
+.storefront-suggest-img { display:flex; align-items:center; justify-content:center; width:44px; height:44px; border-radius:10px; background:#f7f0ff; overflow:hidden; }
+.storefront-suggest-img img { width:100%; height:100%; object-fit:contain; }
+.storefront-suggest-text { display:flex; flex-direction:column; min-width:0; }
+.storefront-suggest-text strong { color:#32105f; font-size:13px; line-height:1.25; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.storefront-suggest-text small { color:#7a6a96; font-size:11px; }
+.storefront-suggest-price { color:#32105f; font-weight:700; font-size:13px; }
+.storefront-suggest-all { display:block; width:100%; margin-top:4px; padding:10px; border:0; border-top:1px solid #f1eaf9; background:transparent; color:#5928c8; font:inherit; font-weight:600; font-size:13px; cursor:pointer; text-align:center; }
+.storefront-suggest-empty { margin:0; padding:12px; color:#685c76; font-size:13px; line-height:1.5; }

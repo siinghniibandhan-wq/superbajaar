@@ -3,6 +3,7 @@ import ProductGallery from "./ProductGallery.jsx";
 import ProductDescription from "./ProductDescription.jsx";
 import RelatedProducts from "./RelatedProducts.jsx";
 import LoyaltyProgrammePage from "./LoyaltyProgrammePage.jsx";
+import { buildSearchIndex } from "./searchEngine.js";
 import { variantAttributeGroups } from "./variantOptions.js";
 import { useEffect, useMemo, useState } from "react";
 import { Heart, ShoppingBag, Search, Sparkles, Flame, Clock3, ChevronLeft, ChevronRight, UserRound, MapPin, X, Coins, CreditCard, CalendarClock, Star } from "lucide-react";
@@ -83,7 +84,8 @@ export default function Storefront() {
   const [variants, setVariants] = useState([]);
   const [categoryId, setCategoryId] = useState("");
   const [routePath, setRoutePath] = useState(() => window.location.pathname.replace(/\/+$/, "") || "/");
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(() => window.location.pathname.replace(/\/+$/, "") === "/search" ? (new URLSearchParams(window.location.search).get("q") || "") : "");
+  const [suggestOpen, setSuggestOpen] = useState(false);
   const [cart, setCart] = useState(() => { try { return JSON.parse(window.localStorage.getItem("sb-cart") || "[]"); } catch { return []; } });
   const [customerToken, setCustomerToken] = useState(() => { try { return window.localStorage.getItem("sb-customer.access_token") || ""; } catch { return ""; } });
   const [customerAuth, setCustomerAuth] = useState(null);
@@ -224,7 +226,7 @@ export default function Storefront() {
   }, [routePath, variants]);
 
   useEffect(() => {
-    const syncPath = () => setRoutePath(window.location.pathname.replace(/\/+$/, "") || "/");
+    const syncPath = () => { const path = window.location.pathname.replace(/\/+$/, "") || "/"; setRoutePath(path); setSearch(path === "/search" ? (new URLSearchParams(window.location.search).get("q") || "") : ""); };
     window.addEventListener("popstate", syncPath);
     return () => window.removeEventListener("popstate", syncPath);
   }, []);
@@ -316,6 +318,21 @@ export default function Storefront() {
   }, []);
 
   const productById = useMemo(() => new Map(products.map(p => [Number(p.id), p])), [products]);
+  const searchIndex = useMemo(() => buildSearchIndex({ products, variants, categories }), [products, variants, categories]);
+  const suggestions = useMemo(() => {
+    const term = search.trim();
+    if (!term) return [];
+    const scoreMap = searchIndex.scores(term);
+    const best = new Map();
+    variants.forEach(v => {
+      if (v.is_active === false) return;
+      const pid = Number(v.product_id);
+      if (!scoreMap.has(pid)) return;
+      const existing = best.get(pid);
+      if (!existing || Number(v.selling_price || 0) < Number(existing.selling_price || 0)) best.set(pid, v);
+    });
+    return [...best.entries()].sort((a, b) => scoreMap.get(b[0]) - scoreMap.get(a[0])).slice(0, 6).map(entry => entry[1]);
+  }, [search, searchIndex, variants]);
   const categorySlug = name => {
     const normalized = String(name || "").trim().toLowerCase();
     if (normalized === "fresh daily") return "fresh";
@@ -331,6 +348,7 @@ export default function Storefront() {
   const isCategoryPage = Boolean(routeSlug);
   const isCategoryListingPage = isCategoryPage && routePath.split("/").filter(Boolean)[2] === "all";
   const isDealsPage = routePath === "/deals";
+  const isSearchPage = routePath === "/search";
   const isWishlistPage = routePath === "/wishlist";
   const isAccountPage = routePath === "/account";
   const isCheckoutPage = routePath === "/checkout";
@@ -356,6 +374,17 @@ export default function Storefront() {
     setCategoryId(String(category.id));
     setSearch("");
     window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const submitSearch = () => {
+    const term = search.trim();
+    if (!term) return;
+    window.history.pushState({}, "", "/search?q=" + encodeURIComponent(term));
+    setRoutePath("/search"); setCategoryId(""); setSuggestOpen(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const onSearchInput = value => {
+    setSearch(value); setSuggestOpen(true);
+    if (routePath === "/search") window.history.replaceState({}, "", "/search?q=" + encodeURIComponent(value));
   };
   const openCategoryListing = () => {
     const target = "/category/" + routeSlug + "/all";
@@ -683,7 +712,8 @@ export default function Storefront() {
 
   const visibleVariants = useMemo(() => {
     const term = search.trim().toLowerCase();
-    return variants.filter(v => {
+    const scoreMap = term ? searchIndex.scores(term) : null;
+    const matched = variants.filter(v => {
       if (v.is_active === false) return false;
       const product = productById.get(Number(v.product_id));
       if (!product) return false;
@@ -697,9 +727,10 @@ export default function Storefront() {
           || (targetName && (String(productCategoryName).trim().toLowerCase() === String(targetName).trim().toLowerCase() || productCategoryIds.some(id => String(categories.find(c => String(c.id) === id)?.name || "").trim().toLowerCase() === String(targetName).trim().toLowerCase())));
         if (!matches) return false;
       }
-      return !term || [v.product_name, product.name, v.sku, product.brand].some(x => String(x || "").toLowerCase().includes(term));
+      return !scoreMap || (scoreMap.get(Number(v.product_id)) || 0) > 0;
     });
-  }, [variants, productById, categoryId, routeCategoryName, search, displayCategories]);
+    return scoreMap ? matched.sort((a, b) => (scoreMap.get(Number(b.product_id)) || 0) - (scoreMap.get(Number(a.product_id)) || 0)) : matched;
+  }, [variants, productById, categoryId, routeCategoryName, search, displayCategories, searchIndex]);
   const displayedVariants = (isWishlistPage ? visibleVariants.filter(v => wishlist.some(id => Number(id) === Number(v.id))) : visibleVariants).filter((variant, index, items) => items.findIndex(item => Number(item.product_id) === Number(variant.product_id)) === index);
   const rememberViewed = variant => {
     const entry = { variantId: variant.id, productId: variant.product_id, viewedAt: Date.now() };
@@ -752,17 +783,18 @@ export default function Storefront() {
   }).filter(row => row.items.length > 0), [categorySubcategories, variants, productById]);
   const dealVariants = useMemo(() => {
     const term = search.trim().toLowerCase();
+    const dealScores = term ? searchIndex.scores(term) : null;
     const discounted = variants.filter(v => {
       if (v.is_active === false) return false;
       const p = productById.get(Number(v.product_id)) || {};
       const price = Number(v.selling_price ?? v.price ?? 0);
       const compare = Number(v.compare_at_price ?? v.original_price ?? v.mrp ?? p.compare_at_price ?? p.original_price ?? p.mrp ?? 0);
       const discount = Number(v.discount_percent ?? v.discount_percentage ?? p.discount_percent ?? p.discount_percentage ?? 0);
-      const matchesSearch = !term || [v.product_name, p.name, v.sku, p.brand].some(value => String(value || "").toLowerCase().includes(term));
+      const matchesSearch = !dealScores || (dealScores.get(Number(v.product_id)) || 0) > 0;
       return matchesSearch && (((compare > price) && price > 0) || discount > 0);
     });
     return discounted.filter((variant, index, all) => all.findIndex(item => Number(item.product_id) === Number(variant.product_id)) === index).slice(0, 24);
-  }, [variants, productById, search]);
+  }, [variants, productById, search, searchIndex]);
   const total = cart.reduce((sum, line) => sum + Number(line.selling_price || 0) * line.quantity, 0);
   const redeemableCoins = clampRedeemCoins(redeemCoins, redemptionQuote?.maximum_redeemable_coins ?? 0);
   const redemptionDiscount = redeemableCoins * Number(redemptionQuote?.coin_value_in_rupees || 1);
@@ -989,16 +1021,26 @@ export default function Storefront() {
     <div className="storefront-promo"><span aria-hidden="true">✦</span> Everyday essentials, made easier to shop <span>· Check delivery availability by PIN</span></div>
     <header className="storefront-header">
       <a className="storefront-brand" href="/" onClick={event => { event.preventDefault(); openShopHome(); }} aria-label="Super Bajaar home"><span className="storefront-logo"><img src="/superbajaar.svg" alt="" /></span><span><strong>Super Bajaar <span className="storefront-crown" aria-hidden="true">♛</span></strong><small>Your Everyday Super Store</small></span></a>
-      <label className="storefront-header-search"><span className="sr-only">Search products</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search for groceries, fruits, snacks and more…" /><Search aria-hidden="true" size={19} /></label>
+      <div className="storefront-header-search storefront-search-box" role="search">
+        <label className="sr-only" htmlFor="storefront-search-input">Search products</label>
+        <input id="storefront-search-input" type="search" autoComplete="off" enterKeyHint="search" value={search} onChange={e => onSearchInput(e.target.value)} onFocus={() => setSuggestOpen(true)} onBlur={() => setTimeout(() => setSuggestOpen(false), 150)} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); submitSearch(); } else if (e.key === "Escape") setSuggestOpen(false); }} placeholder="Search for groceries, fruits, snacks and more…" />
+        <button type="button" className="storefront-search-go" aria-label="Search" onMouseDown={e => e.preventDefault()} onClick={submitSearch}><Search aria-hidden="true" size={19} /></button>
+        {suggestOpen && search.trim() && <div className="storefront-suggest" role="listbox" aria-label="Search suggestions">
+          {suggestions.length ? <>
+            {suggestions.map(item => { const product = productById.get(Number(item.product_id)); const name = product?.name || item.product_name || item.sku; return <button type="button" role="option" key={item.product_id} className="storefront-suggest-item" onMouseDown={e => e.preventDefault()} onClick={() => { setSuggestOpen(false); setSearch(""); openProductPage(item); }}><span className="storefront-suggest-img">{item.image_url ? <img src={item.image_url} alt="" loading="lazy" /> : null}</span><span className="storefront-suggest-text"><strong>{name}</strong><small>{product?.brand || "Super Bajaar"}</small></span><span className="storefront-suggest-price">{money(item.selling_price)}</span></button>; })}
+            <button type="button" className="storefront-suggest-all" onMouseDown={e => e.preventDefault()} onClick={submitSearch}>See all results for “{search.trim()}”</button>
+          </> : <p className="storefront-suggest-empty">No matches for “{search.trim()}”. Try another spelling or a simpler word.</p>}
+        </div>}
+      </div>
       <div className="storefront-actions"><button type="button" className="storefront-delivery" onClick={() => { setDeliveryDraft(deliveryPin); setDeliveryMessage(""); setDeliveryOpen(true); }} aria-haspopup="dialog"><small>Deliver to</small><strong><MapPin size={13} /> {deliveryPin || "Set PIN"} ▾</strong><small className="storefront-delivery-note">Check delivery availability</small></button><a className="storefront-icon-action" href="/wishlist" aria-label={`Open wishlist, ${wishlist.length} saved`} onClick={event => { event.preventDefault(); openWishlist(); }}><Heart size={22} strokeWidth={1.8} /><small>{wishlist.length}</small></a><a className="storefront-icon-action" href="#basket" aria-label="Shopping basket" onClick={event => { event.preventDefault(); openCheckout(); }}><ShoppingBag size={22} strokeWidth={1.8} /><small>{cart.reduce((n, line) => n + line.quantity, 0)}</small></a><div className="storefront-account-wrap"><button type="button" className="storefront-account-button" aria-label="Open account menu" aria-expanded={accountOpen} onClick={() => setAccountOpen(value => !value)}><UserRound size={20} /><span>Account</span></button>{accountOpen && <div className="storefront-account-menu storefront-account-menu-desktop"><strong>Your account</strong><p>{customerAuth ? "Manage your profile, orders and Super Coins." : "Sign in to manage orders, referrals and Super Coins."}</p><button type="button" onClick={customerAuth ? openAccount : () => openCustomerAuth("login", "/account")}>{customerAuth ? "My Account" : "Customer Sign in"}</button>{customerAuth && <button type="button" onClick={signOutCustomer}>Sign out</button>}{canOpenAdmin && <a href="/admin">Admin Console</a>}</div>}</div></div>
     </header>
     {accountOpen && <div className="storefront-account-sheet-backdrop" role="presentation" onClick={event => { if (event.target === event.currentTarget) setAccountOpen(false); }}><section className="storefront-account-sheet" role="dialog" aria-modal="true" aria-labelledby="storefront-account-sheet-title"><div className="storefront-account-sheet-handle" aria-hidden="true" /><div className="storefront-account-sheet-heading"><div><span className="storefront-kicker">SUPER BAJAAR</span><h2 id="storefront-account-sheet-title">Your account</h2></div><button type="button" className="storefront-modal-close" aria-label="Close account menu" onClick={() => setAccountOpen(false)}><X size={19} /></button></div><p>Manage your profile and shopping experience.</p><button type="button" className="storefront-account-sheet-action" onClick={customerAuth ? openAccount : () => { setAccountOpen(false); openCustomerAuth("login", "/account"); }}><span className="storefront-account-sheet-action-icon"><UserRound size={20} /></span><span><strong>{customerAuth ? "My Account" : "Customer Sign in"}</strong><small>{customerAuth ? "Contact and delivery details" : "Sign in to manage your account"}</small></span><span aria-hidden="true">›</span></button>{customerAuth && <button type="button" className="storefront-account-sheet-action" onClick={signOutCustomer}><span className="storefront-account-sheet-action-icon">↪</span><span><strong>Sign out</strong><small>Sign out of your customer account</small></span><span aria-hidden="true">›</span></button>}{canOpenAdmin && <a className="storefront-account-sheet-action" href="/admin"><span className="storefront-account-sheet-action-icon">⌘</span><span><strong>Admin Console</strong><small>Store management</small></span><span aria-hidden="true">›</span></a>}</section></div>}
     <nav className="storefront-department-nav" aria-label="Shop departments"><a href="/#categories" onClick={event => { event.preventDefault(); openShopHome(); setTimeout(() => document.getElementById("categories")?.scrollIntoView({ behavior: "smooth" }), 0); }}>☰ All Categories</a><a href="/deals" onClick={event => { event.preventDefault(); openDealsPage(); }}>Deals <Flame size={14} /></a><button type="button" onClick={() => { openShopHome(); setTimeout(() => document.getElementById("products")?.scrollIntoView({ behavior: "smooth" }), 0); }}>Shop All</button>{departmentCategories.map(category => <a key={category.id} href={"/category/" + categorySlug(category.name)} aria-current={routeSlug === categorySlug(category.name) ? "page" : undefined}>{category.name === "Fresh Daily" ? "Fresh" : category.name}</a>)}</nav>
-    {!isProductPage && !isCustomerAuthPage && !isCategoryPage && !isDealsPage && !isWishlistPage && !isAccountPage && !isCheckoutPage && !isInfoPage && <section className="storefront-hero storefront-home-hero">
+    {!isProductPage && !isCustomerAuthPage && !isCategoryPage && !isDealsPage && !isWishlistPage && !isAccountPage && !isCheckoutPage && !isInfoPage && !isSearchPage && <section className="storefront-hero storefront-home-hero">
       <div className="storefront-hero-copy"><span className="storefront-kicker"><i /> YOUR EVERYDAY SUPER STORE</span><h1>Daily essentials<br /><em>at your fingertips.</em></h1><p>Groceries, fresh picks and everyday favourites for your home — all in one easy shopping destination.</p><a className="storefront-primary" href="#products">Start shopping <span>→</span></a><div className="storefront-trust"><span>Easy everyday shopping</span><span>Delivery availability by PIN</span></div></div>
       <div className="storefront-hero-art" aria-hidden="true"><div className="hero-icon-grid">{[ShoppingCart, Leaf, Shirt, Gift, Headphones, Home].map((I, i) => <span key={i}><I size={34} strokeWidth={1.6} /></span>)}</div><div className="art-caption">Everything for your everyday</div></div>
     </section>}
-    {!isProductPage && !isCategoryPage && !isDealsPage && !isWishlistPage && !isAccountPage && !isCheckoutPage && !isInfoPage && <section className="storefront-categories storefront-home-section" id="categories">
+    {!isProductPage && !isCategoryPage && !isDealsPage && !isWishlistPage && !isAccountPage && !isCheckoutPage && !isInfoPage && !isSearchPage && <section className="storefront-categories storefront-home-section" id="categories">
       <div className="storefront-section-heading"><div><span className="storefront-kicker">FIND YOUR FAVOURITES</span><h2>Shop by category</h2></div><span className="storefront-heading-note">Choose a category to filter products.</span></div>
       <div className="storefront-category-grid">
 
@@ -1167,7 +1209,7 @@ export default function Storefront() {
     </section>}
     {isProductPage && !selectedProduct && <main className="storefront-product-page"><button type="button" className="storefront-product-back" onClick={openShopHome}>← Continue shopping</button><section className="storefront-product-page-details" role="status"><h1>{loading ? "Loading product…" : "Product unavailable"}</h1><p>{loading ? "Please wait while product details load." : "This product may be unavailable or no longer active."}</p></section></main>}
     {isProductPage && selectedProduct && (() => { const product = productById.get(Number(selectedProduct.product_id)); const productVariants = variants.filter(item => Number(item.product_id) === Number(selectedProduct.product_id) && item.is_active !== false); const saved = productVariants.some(item => wishlist.some(id => Number(id) === Number(item.id))); const categoryName = product?.category_name || product?.category || orderedCategories.find(c => String(c.id) === String(product?.category_id))?.name; const tile = categoryArt[categoryName] || art[0]; const optionGroups = variantAttributeGroups(productVariants, attributeDefinitions); const variantLabel = item => { const values = Object.entries(item.attributes || {}).map(([key, value]) => (Array.isArray(value) ? value.join(", ") : String(value))); return values.length ? values.join(" / ") : "Standard"; }; return <main className="storefront-product-page"><button type="button" className="storefront-product-back" onClick={openShopHome}>← Continue shopping</button><div className="storefront-product-page-layout"><ProductGallery images={selectedProduct.images} fallbackUrl={selectedProduct.image_url} alt={product?.name || selectedProduct.product_name || "Product"} placeholder={<span>{(() => { const I = catIcons[tile.icon]; return I ? <I size={48} strokeWidth={1.5} aria-hidden="true" /> : null; })()}</span>} /><section className="storefront-product-page-details"><span className="storefront-kicker">PRODUCT DETAILS</span><h1>{product?.name || selectedProduct.product_name || "Product"}</h1><p className="storefront-modal-brand">{product?.brand || "Super Bajaar"}{categoryName ? " · " + categoryName : ""}</p>{productVariants.length > 1 && (optionGroups.length ? <VariantOptionPicker groups={optionGroups} variants={productVariants} selected={selectedProduct} productName={product?.name || selectedProduct.product_name || ""} onSelect={chosen => { rememberViewed(chosen); setSelectedProduct(chosen); }} /> : <label className="storefront-variant-select">Choose variant<select aria-label={"Choose variant for " + (product?.name || selectedProduct.product_name)} value={String(selectedProduct.id)} onChange={event => { const chosen = productVariants.find(item => String(item.id) === event.target.value); if (chosen) { rememberViewed(chosen); setSelectedProduct(chosen); } }}>{productVariants.map(item => <option key={item.id} value={item.id}>{variantLabel(item)} · {money(item.selling_price)}</option>)}</select></label>)}<label className="storefront-product-page-quantity">Quantity<input type="number" inputMode="numeric" min="1" max="100000" step="1" value={productPageQuantity} onChange={event => { const value = event.target.value; setProductPageQuantity(value === "" ? "" : Math.min(100000, Math.max(1, Math.floor(Number(value) || 1)))); }} onBlur={() => setProductPageQuantity(Math.min(100000, Math.max(1, Math.floor(Number(productPageQuantity) || 1))))} /></label><p className="storefront-modal-sku">SKU: {selectedProduct.sku || "Not available"}</p><strong className="storefront-modal-price">{money(selectedProduct.selling_price)}</strong>{selectedProduct.lowest_price_30d != null && <small className="storefront-lowest-price">Lowest price in last 30 days: <strong>{money(Math.min(Number(selectedProduct.lowest_price_30d), Number(selectedProduct.selling_price)))}</strong></small>}{coinsFor(product, Number(selectedProduct.selling_price || 0) * Number(productPageQuantity || 1)) > 0 && <p className="storefront-product-coins storefront-product-coins-page"><Coins size={15} /> Earn {coinsFor(product, Number(selectedProduct.selling_price || 0) * Number(productPageQuantity || 1))} Super Coins on this purchase, credited after delivery</p>}<div className="storefront-modal-actions"><button type="button" className="storefront-primary" onClick={() => { addToCart(selectedProduct, productPageQuantity); setProductPageQuantity(1); }}><ShoppingBag size={17}/> Add to basket</button><button type="button" className="storefront-modal-wishlist" onClick={() => setWishlist(old => saved ? old.filter(id => !productVariants.some(item => Number(item.id) === Number(id))) : [...new Set([...old, ...productVariants.map(item => Number(item.id))])])}><Heart size={17} fill={saved ? "currentColor" : "none"} />{saved ? "Remove from wishlist" : "Save to wishlist"}</button></div></section></div><ProductDescription text={product?.description} /><RelatedProducts current={selectedProduct} variants={variants} productById={productById} onOpen={openProductPage} money={money} /><ProductReviews productId={selectedProduct.product_id} customerToken={customerToken} request={customerRequest} onSignIn={() => openCustomerAuth("login", window.location.pathname)} onChanged={() => setReviewsVersion(v => v + 1)} /></main>; })()}
-    {isCategoryPage && !isCategoryListingPage && !isWishlistPage && !isAccountPage && !isCheckoutPage && !isInfoPage && !isProductPage && <section className="storefront-category-landing">
+    {isCategoryPage && !isCategoryListingPage && !isWishlistPage && !isAccountPage && !isCheckoutPage && !isInfoPage && !isSearchPage && !isProductPage && <section className="storefront-category-landing">
       <div className="storefront-category-breadcrumb"><a href="/" onClick={event => { event.preventDefault(); openShopHome(); }}>Home</a><span>/</span><span>{routeCategoryName}</span></div>
       <div className={"storefront-category-hero tone-" + (categoryArt[routeCategoryName]?.tone || "lavender")}>
         <div className="storefront-category-hero-copy"><span className="storefront-kicker">EXPLORE THE COLLECTION</span><h1>{routeCategoryName}</h1><p>{categoryArt[routeCategoryName]?.detail || categories.find(c => c.name === routeCategoryName)?.description || "Discover everyday favourites selected for you."}</p><div className="storefront-category-hero-actions"><button className="storefront-primary" type="button" onClick={openCategoryListing}>View all {routeCategoryName} <span>→</span></button><span>{visibleVariants.length} products and variants</span></div></div>
@@ -1210,27 +1252,27 @@ export default function Storefront() {
       {bestSellers.length > 0 && <div className="storefront-category-featured-heading"><div><span className="storefront-kicker">CUSTOMER FAVOURITES</span><h2>Popular in {routeCategoryName}</h2></div><button type="button" onClick={openCategoryListing}>View all <span>→</span></button></div>}
       {bestSellers.length > 0 && <div className="storefront-category-featured-track">{bestSellers.slice(0, 8).map(renderProductCard)}</div>}</>}
     </section>}
-    {(isCategoryListingPage || isDealsPage || isWishlistPage) && !isAccountPage && !isCheckoutPage && !isInfoPage && !isProductPage && <section className={"storefront-products " + (isCategoryPage ? "storefront-category-page" : "") + (isWishlistPage ? " storefront-wishlist-page" : "")} id="products">
-      <div className="storefront-category-breadcrumb"><a href="/" onClick={event => {event.preventDefault(); openShopHome();}}>Home</a><span>/</span><span>{isWishlistPage ? "My Wishlist" : isDealsPage ? "Deals" : routeCategoryName || "Shop products"}</span></div><div className="storefront-section-heading"><div><span className="storefront-kicker">{isWishlistPage ? "YOUR SAVED FAVOURITES" : isDealsPage ? "SPECIAL OFFERS" : "SHOP BY DEPARTMENT"}</span><h1>{isWishlistPage ? "My Wishlist" : isDealsPage ? "Deals & Offers" : routeCategoryName}</h1>{isWishlistPage && <p className="storefront-category-description">Your saved products, ready to revisit or add to your basket.</p>}{isDealsPage && <p className="storefront-category-description">Discover current discounted items and customer favourites.</p>}</div><span className="storefront-heading-note">{(isWishlistPage ? displayedVariants : isDealsPage ? dealVariants : visibleVariants).length} {isWishlistPage ? "saved products" : "products and variants"}</span></div>
-      <label className="storefront-search">Search products or SKU<input value={search} onChange={e => setSearch(e.target.value)} placeholder="Try a product name or SKU" /></label>
+    {(isCategoryListingPage || isDealsPage || isWishlistPage || isSearchPage) && !isAccountPage && !isCheckoutPage && !isInfoPage && !isProductPage && <section className={"storefront-products " + (isCategoryPage ? "storefront-category-page" : "") + (isWishlistPage ? " storefront-wishlist-page" : "")} id="products">
+      <div className="storefront-category-breadcrumb"><a href="/" onClick={event => {event.preventDefault(); openShopHome();}}>Home</a><span>/</span><span>{isSearchPage ? "Search" : isWishlistPage ? "My Wishlist" : isDealsPage ? "Deals" : routeCategoryName || "Shop products"}</span></div><div className="storefront-section-heading"><div><span className="storefront-kicker">{isSearchPage ? "SEARCH RESULTS" : isWishlistPage ? "YOUR SAVED FAVOURITES" : isDealsPage ? "SPECIAL OFFERS" : "SHOP BY DEPARTMENT"}</span><h1>{isSearchPage ? (search.trim() ? "Results for “" + search.trim() + "”" : "Search products") : isWishlistPage ? "My Wishlist" : isDealsPage ? "Deals & Offers" : routeCategoryName}</h1>{isWishlistPage && <p className="storefront-category-description">Your saved products, ready to revisit or add to your basket.</p>}{isDealsPage && <p className="storefront-category-description">Discover current discounted items and customer favourites.</p>}</div><span className="storefront-heading-note">{(isSearchPage || isWishlistPage ? displayedVariants : isDealsPage ? dealVariants : visibleVariants).length} {isWishlistPage ? "saved products" : isSearchPage ? "products found" : "products and variants"}</span></div>
+      {!isSearchPage && <label className="storefront-search">Search products or SKU<input value={search} onChange={e => setSearch(e.target.value)} placeholder="Try a product name or SKU" /></label>}
       {error && <p className="storefront-alert" role="alert">{error}</p>}
-      {loading ? <p className="storefront-empty">Loading live products…</p> : (isDealsPage ? dealVariants : displayedVariants).length ? <div className="storefront-product-grid">{(isDealsPage ? dealVariants : displayedVariants).map(renderProductCard)}</div> : isWishlistPage ? <div className="storefront-wishlist-empty"><span aria-hidden="true">♡</span><h2>Your wishlist is waiting</h2><p>Tap the heart on any product to save it here for later.</p><button type="button" className="storefront-primary" onClick={openShopHome}>Explore products</button></div> : <p className="storefront-empty">{error ? "The live catalogue could not be loaded." : isDealsPage ? "No discounted products or featured picks are available yet." : "No active products are available in this category yet."}</p>}
+      {loading ? <p className="storefront-empty">Loading live products…</p> : (isDealsPage ? dealVariants : displayedVariants).length ? <div className="storefront-product-grid">{(isDealsPage ? dealVariants : displayedVariants).map(renderProductCard)}</div> : isWishlistPage ? <div className="storefront-wishlist-empty"><span aria-hidden="true">♡</span><h2>Your wishlist is waiting</h2><p>Tap the heart on any product to save it here for later.</p><button type="button" className="storefront-primary" onClick={openShopHome}>Explore products</button></div> : <p className="storefront-empty">{error ? "The live catalogue could not be loaded." : isSearchPage ? (search.trim() ? "No products found for “" + search.trim() + "”. Try a different spelling, a simpler word, or browse the categories." : "Type a product name in the search bar to get started.") : isDealsPage ? "No discounted products or featured picks are available yet." : "No active products are available in this category yet."}</p>}
     </section>}
-    {!isProductPage && !isAccountPage && !isCheckoutPage && !isInfoPage && !isCategoryPage && !isWishlistPage && !isDealsPage && !loading && <div className="storefront-discovery">
+    {!isProductPage && !isAccountPage && !isCheckoutPage && !isInfoPage && !isSearchPage && !isCategoryPage && !isWishlistPage && !isDealsPage && !loading && <div className="storefront-discovery">
       {renderDiscoverySection("Best Sellers", "Customer favourites, ranked by recorded sales", bestSellers, <Flame size={18} />)}
       {renderDiscoverySection("New Arrivals", "Fresh additions to the catalogue", newArrivals, <Sparkles size={18} />)}
       {renderDiscoverySection("Recently Viewed", "Pick up where you left off", recentVariants, <Clock3 size={18} />)}
     </div>}
-    {!isProductPage && !isAccountPage && !isCheckoutPage && !isInfoPage && !isCategoryPage && !isWishlistPage && !isDealsPage && !loading && !displayedVariants.length && !newArrivals.length && !recentVariants.length && <section className="storefront-home-empty" aria-live="polite">
+    {!isProductPage && !isAccountPage && !isCheckoutPage && !isInfoPage && !isSearchPage && !isCategoryPage && !isWishlistPage && !isDealsPage && !loading && !displayedVariants.length && !newArrivals.length && !recentVariants.length && <section className="storefront-home-empty" aria-live="polite">
       <div className="storefront-home-empty-icon"><ShoppingBag size={22} aria-hidden="true" /></div>
       <div className="storefront-home-empty-copy"><span className="storefront-kicker">YOUR SUPER BAJAAR</span><h2>No products are available to shop just yet</h2><p>{error ? "We're having trouble loading the catalogue right now. Please try again shortly." : "Explore our departments while we prepare the latest products for your store."}</p></div>
       <a href="#categories">Explore categories <span aria-hidden="true">→</span></a>
     </section>}
     
-    {!isProductPage && !isCategoryPage && !isDealsPage && !isWishlistPage && !isAccountPage && !isCheckoutPage && !isInfoPage && <section className="storefront-benefits storefront-home-benefits" id="why-us"><div className="storefront-benefits-heading"><span className="storefront-kicker">THE SUPER BAJAAR DIFFERENCE</span><h2>Why Choose Us</h2><p>Everyday shopping, made simpler for you.</p></div><div className="storefront-benefit-grid"><article><span className="benefit-icon"><ShoppingBag size={20} strokeWidth={1.8} aria-hidden="true" /></span><div><strong>Everyday essentials</strong><small>Explore a wide range of daily needs in one place.</small></div></article><article><span className="benefit-icon"><Search size={20} strokeWidth={1.8} aria-hidden="true" /></span><div><strong>Convenient shopping</strong><small>Browse departments and build your basket with ease.</small></div></article><article><span className="benefit-icon"><MapPin size={20} strokeWidth={1.8} aria-hidden="true" /></span><div><strong>Clear delivery information</strong><small>See available delivery options and charges before ordering.</small></div></article><article><span className="benefit-icon"><Users size={20} strokeWidth={1.8} aria-hidden="true" /></span><div><strong>Support when you need it</strong><small>Contact our support team or raise a ticket for help.</small></div></article></div></section>}
+    {!isProductPage && !isCategoryPage && !isDealsPage && !isWishlistPage && !isAccountPage && !isCheckoutPage && !isInfoPage && !isSearchPage && <section className="storefront-benefits storefront-home-benefits" id="why-us"><div className="storefront-benefits-heading"><span className="storefront-kicker">THE SUPER BAJAAR DIFFERENCE</span><h2>Why Choose Us</h2><p>Everyday shopping, made simpler for you.</p></div><div className="storefront-benefit-grid"><article><span className="benefit-icon"><ShoppingBag size={20} strokeWidth={1.8} aria-hidden="true" /></span><div><strong>Everyday essentials</strong><small>Explore a wide range of daily needs in one place.</small></div></article><article><span className="benefit-icon"><Search size={20} strokeWidth={1.8} aria-hidden="true" /></span><div><strong>Convenient shopping</strong><small>Browse departments and build your basket with ease.</small></div></article><article><span className="benefit-icon"><MapPin size={20} strokeWidth={1.8} aria-hidden="true" /></span><div><strong>Clear delivery information</strong><small>See available delivery options and charges before ordering.</small></div></article><article><span className="benefit-icon"><Users size={20} strokeWidth={1.8} aria-hidden="true" /></span><div><strong>Support when you need it</strong><small>Contact our support team or raise a ticket for help.</small></div></article></div></section>}
     {deliveryOpen && <div className="storefront-delivery-backdrop" role="presentation" onClick={event => { if (event.target === event.currentTarget) setDeliveryOpen(false); }}><section className="storefront-delivery-dialog" role="dialog" aria-modal="true" aria-labelledby="storefront-delivery-title"><button type="button" className="storefront-modal-close" aria-label="Close delivery location" onClick={() => setDeliveryOpen(false)}><X size={19}/></button><span className="storefront-kicker">DELIVERY LOCATION</span><h2 id="storefront-delivery-title">Where should we deliver?</h2><p>Enter your six-digit Indian PIN code to save your preferred delivery location.</p><form onSubmit={saveDeliveryPin}><label>PIN code<input inputMode="numeric" autoComplete="postal-code" pattern="[1-9][0-9]{5}" maxLength="6" value={deliveryDraft} onChange={event => { setDeliveryDraft(event.target.value.replace(/\D/g,"").slice(0,6)); setDeliveryMessage(""); }} required /></label><button className="storefront-primary" type="submit">Save location</button></form>{deliveryMessage && <p className="storefront-delivery-message" role="status">{deliveryMessage}</p>}<small>Saving a PIN does not confirm serviceability; that requires a connected delivery-serviceability check.</small></section></div>}
 
-    {!isCustomerAuthPage && !isAccountPage && !isCheckoutPage && !isInfoPage && !isProductPage && <nav className="storefront-mobile-nav" aria-label="Mobile shopping navigation"><button type="button" className={routePath === "/" ? "is-active" : ""} onClick={openShopHome}><Home size={19}/><span>Home</span></button><button type="button" onClick={() => { openShopHome(); window.setTimeout(() => document.getElementById("categories")?.scrollIntoView({ behavior: "smooth" }), 0); }}><ShoppingCart size={19}/><span>Categories</span></button><button type="button" onClick={() => { window.scrollTo({ top: 0, behavior: "smooth" }); window.setTimeout(() => document.querySelector(".storefront-header-search input")?.focus(), 80); }}><Search size={19}/><span>Search</span></button><button type="button" onClick={() => { if (!customerAuth) { openCustomerAuth("login", "/account"); return; } setAccountSection("orders"); openAccount(); loadMyOrders(); }}><Package size={19}/><span>Orders</span></button><button type="button" onClick={() => customerAuth ? openAccount() : openCustomerAuth("login", "/account")}><UserRound size={19}/><span>Account</span></button></nav>}
+    {!isCustomerAuthPage && !isAccountPage && !isCheckoutPage && !isInfoPage && !isSearchPage && !isProductPage && <nav className="storefront-mobile-nav" aria-label="Mobile shopping navigation"><button type="button" className={routePath === "/" ? "is-active" : ""} onClick={openShopHome}><Home size={19}/><span>Home</span></button><button type="button" onClick={() => { openShopHome(); window.setTimeout(() => document.getElementById("categories")?.scrollIntoView({ behavior: "smooth" }), 0); }}><ShoppingCart size={19}/><span>Categories</span></button><button type="button" onClick={() => { window.scrollTo({ top: 0, behavior: "smooth" }); window.setTimeout(() => document.querySelector(".storefront-header-search input")?.focus(), 80); }}><Search size={19}/><span>Search</span></button><button type="button" onClick={() => { if (!customerAuth) { openCustomerAuth("login", "/account"); return; } setAccountSection("orders"); openAccount(); loadMyOrders(); }}><Package size={19}/><span>Orders</span></button><button type="button" onClick={() => customerAuth ? openAccount() : openCustomerAuth("login", "/account")}><UserRound size={19}/><span>Account</span></button></nav>}
     <footer className="storefront-footer">
       <div className="storefront-footer-top"><a className="storefront-brand" href="/" onClick={event=>{event.preventDefault();openShopHome();}}><span className="storefront-logo"><img src="/superbajaar.svg" alt="" /></span><span><strong>Super Bajaar</strong><small>Your Everyday Super Store</small></span></a><p>Everyday made a little brighter.</p></div>
       <div className="storefront-footer-links">
