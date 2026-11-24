@@ -759,6 +759,8 @@ def _save_complete_product(
                 "VALUES(%s,%s,%s::jsonb,%s)",
                 (product_id, attribute_id, json.dumps(option), option_key),
             )
+        if attribute["value_type"] == "text" and added:
+            _promote_text_options_to_master(conn, attribute_id, added)
 
     seen_combinations = set()
     existing_variants = conn.execute(
@@ -964,6 +966,8 @@ def add_product_attribute_options(product_id: int, attribute_id: int, payload: P
                     (product_id, attribute_id, json.dumps(option), key),
                 ).fetchone()
                 inserted.append(row)
+            if kind == "text" and added:
+                _promote_text_options_to_master(conn, attribute_id, added)
         return {"items": inserted}
     except HTTPException:
         raise
@@ -1046,6 +1050,31 @@ def _lock_and_get_global_colour_attributes(conn) -> list[dict[str, Any]]:
     return conn.execute(
         "SELECT id, name, value_type, options FROM product_attributes WHERE value_type = 'colour'"
     ).fetchall()
+
+
+def _promote_text_options_to_master(conn, attribute_id: int, added: list[Any]) -> None:
+    """Add newly typed Text values (e.g. "5 Kg") to the shared attribute's option list.
+
+    This only makes the value *available* in the Attributes section and as an unticked choice on other
+    products. It never creates variants or selects the value for any other product.
+    """
+    import json
+    wanted = [str(item).strip() for item in added if str(item).strip()]
+    if not wanted:
+        return
+    row = conn.execute("SELECT options FROM product_attributes WHERE id=%s FOR UPDATE", (attribute_id,)).fetchone()
+    if row is None:
+        return
+    current = list(row["options"] or [])
+    known = {str(item).strip().casefold() for item in current}
+    changed = False
+    for value in wanted:
+        if value.casefold() not in known:
+            current.append(value)
+            known.add(value.casefold())
+            changed = True
+    if changed:
+        conn.execute("UPDATE product_attributes SET options=%s::jsonb WHERE id=%s", (json.dumps(current), attribute_id))
 
 
 def _merge_attribute_options(existing: list[Any], incoming: list[Any], value_type: str = "text") -> list[Any]:
@@ -1319,11 +1348,42 @@ def list_variants(product_id: int, limit: int = Query(default=100, ge=1, le=500)
     with _connection() as conn:
         _require_product(conn, product_id)
         rows = conn.execute(
-            "SELECT id, product_id, sku, barcode, attributes, selling_price, mrp, cost_price, is_active, created_at, updated_at "
-            "FROM product_variants WHERE product_id = %s ORDER BY sku LIMIT %s OFFSET %s",
+            "SELECT id, product_id, sku, barcode, attributes, selling_price, mrp, cost_price, is_active, sort_order, created_at, updated_at "
+            "FROM product_variants WHERE product_id = %s ORDER BY sort_order, sku LIMIT %s OFFSET %s",
             (product_id, limit, offset),
         ).fetchall()
     return {"product_id": product_id, "items": rows, "limit": limit, "offset": offset}
+
+
+class VariantOrderUpdate(BaseModel):
+    variant_ids: list[int] = Field(min_length=1, max_length=500)
+
+
+@router.put("/products/{product_id}/variants/order")
+def update_variant_order(product_id: int, payload: VariantOrderUpdate):
+    """Save the storefront display order of a product's variants (first id is shown first)."""
+    if len(set(payload.variant_ids)) != len(payload.variant_ids):
+        raise HTTPException(status_code=422, detail="Variant order contains duplicate variants")
+    try:
+        with _connection() as conn:
+            _require_product(conn, product_id)
+            owned = {row["id"] for row in conn.execute(
+                "SELECT id FROM product_variants WHERE product_id = %s AND id = ANY(%s)",
+                (product_id, payload.variant_ids),
+            ).fetchall()}
+            missing = [vid for vid in payload.variant_ids if vid not in owned]
+            if missing:
+                raise HTTPException(status_code=422, detail="Some variants do not belong to this product")
+            for position, variant_id in enumerate(payload.variant_ids, start=1):
+                conn.execute(
+                    "UPDATE product_variants SET sort_order = %s WHERE id = %s AND product_id = %s",
+                    (position, variant_id, product_id),
+                )
+        return {"product_id": product_id, "variant_ids": payload.variant_ids}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
 
 
 @router.post("/products/{product_id}/variants", status_code=201)
@@ -1678,7 +1738,7 @@ def list_all_variants(limit: int = Query(default=200, ge=1, le=500), offset: int
         with _connection() as conn:
             rows = conn.execute(
                 "SELECT v.id, v.product_id, p.name AS product_name, v.sku, v.barcode, v.attributes, "
-                "v.selling_price, v.mrp, v.cost_price, v.is_active, "
+                "v.selling_price, v.mrp, v.cost_price, v.is_active, v.sort_order, "
                 "COALESCE((SELECT MIN(x.price) FROM ("
                 "SELECT h.selling_price AS price FROM variant_price_history h WHERE h.variant_id=v.id AND h.recorded_at >= now() - interval '30 days' "
                 "UNION ALL "
@@ -1690,7 +1750,7 @@ def list_all_variants(limit: int = Query(default=200, ge=1, le=500), offset: int
                 "ORDER BY (g.variant_id IS NULL), g.is_primary DESC, g.sort_order, g.id) "
                 "FROM product_images g WHERE g.product_id=p.id AND (g.variant_id=v.id OR g.variant_id IS NULL)), '[]'::json) AS images "
                 "FROM product_variants v JOIN products p ON p.id = v.product_id "
-                "WHERE v.is_active = TRUE AND p.status = 'active' ORDER BY p.name, v.sku LIMIT %s OFFSET %s",
+                "WHERE v.is_active = TRUE AND p.status = 'active' ORDER BY p.name, v.sort_order, v.sku LIMIT %s OFFSET %s",
                 (limit, offset),
             ).fetchall()
         return {"items": rows, "limit": limit, "offset": offset}
