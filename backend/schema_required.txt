@@ -47,3 +47,5 @@
 050_variant_price_history.sql
 051_product_reviews.sql
 052_product_purchase_mode.sql
+053_attribute_display_types.sql
+054_variant_display_order.sql
