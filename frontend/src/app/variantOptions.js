@@ -1,5 +1,5 @@
 import { normalizeDisplayType } from "../features/catalogue/attributeDisplay.js";
-import { colourOptionLabel, colourHexForValue } from "../features/catalogue/colourOptions.js";
+import { colourOptionLabel, colourHexForValue, normalizeColourOption } from "../features/catalogue/colourOptions.js";
 
 // Turns one saved variant attribute value into a stable key and a label.
 function optionOf(raw) {
@@ -25,12 +25,19 @@ export function variantAttributeGroups(variants = [], definitions = []) {
     if (options.size < 2) continue;
     const definition = definitions.find(item => item.code === code) || {};
     const valueType = definition.value_type || "text";
+    // Hex codes picked in Catalogue live on the attribute definition's options ({name, hex}).
+    // Variants only store the colour name, so look the saved hex up by name first.
+    const savedHex = new Map();
+    for (const saved of definition.options || []) {
+      const { name, hex } = normalizeColourOption(saved);
+      if (name && /^#[0-9A-F]{6}$/i.test(hex)) savedHex.set(name.toLowerCase(), hex);
+    }
     groups.push({
       code,
       name: definition.name || code.replace(/_/g, " ").replace(/^./, c => c.toUpperCase()),
       valueType,
       displayType: normalizeDisplayType(definition.display_type, valueType),
-      options: [...options.values()].map(option => ({ ...option, hex: valueType === "colour" ? colourHexForValue(option.raw) : "" })),
+      options: [...options.values()].map(option => ({ ...option, hex: valueType === "colour" ? (savedHex.get(option.key) || colourHexForValue(option.raw)) : "" })),
     });
   }
   return groups;
