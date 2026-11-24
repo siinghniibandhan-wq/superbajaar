@@ -237,7 +237,7 @@ export default function ProductCreateForm({ categories = [], product = null, dup
       if (!form.slug.trim()) throw new Error("Product slug could not be generated. Enter a valid product name.");
       const price = Number(form.selling_price);
       const mrp = Number(form.mrp);
-      if ((!product?.id || chosenAttributes.length) && (!Number.isFinite(price) || !Number.isFinite(mrp) || form.selling_price === "" || form.mrp === "" || price < 0 || mrp < price)) {
+      if ((!product?.id || chosenAttributes.length) && !multiVariantEdit && (!Number.isFinite(price) || !Number.isFinite(mrp) || form.selling_price === "" || form.mrp === "" || price < 0 || mrp < price)) {
         setActiveTab("general");
         throw new Error("Enter a valid selling price and an MRP equal to or higher than the selling price before creating variants.");
       }
