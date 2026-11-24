@@ -50,3 +50,4 @@
 053_attribute_display_types.sql
 054_variant_display_order.sql
 055_hsn_rules.sql
+056_category_hero_images.sql
