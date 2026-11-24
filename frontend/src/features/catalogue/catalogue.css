@@ -242,3 +242,4 @@ dialog.sb-modal .sb-variant-pricing-list .sb-strip-row{display:grid;grid-templat
   .sb-bulk-price,.sb-variant-price-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
   .sb-variant-price-row strong,.sb-bulk-price button{grid-column:1/-1}
 }
+.sb-image-group{margin-top:18px}.sb-image-group-title{margin:0 0 6px;font-size:14px;font-weight:700}

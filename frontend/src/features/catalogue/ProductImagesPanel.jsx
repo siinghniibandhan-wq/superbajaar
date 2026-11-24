@@ -1,6 +1,24 @@
 import { useEffect, useState } from "react";
 import { apiRequest } from "../../services/api.js";
 import { prepareProductImage } from "./productImageFormat.js";
+import { colourOptionLabel } from "./colourOptions.js";
+
+// Readable variant name for pickers and gallery headings, e.g. "Red / 0.5 KG".
+function variantName(variant) {
+  const parts = Object.values(variant?.attributes || {}).map(raw => {
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    return colourOptionLabel(value) || String(value ?? "").trim();
+  }).filter(Boolean);
+  return parts.length ? parts.join(" / ") : (variant?.sku || "Variant");
+}
+function variantCode(variant) {
+  const tail = String(variant?.sku || "").split("-").pop();
+  return /^V\d+$/i.test(tail) ? tail.toUpperCase() : "";
+}
+function variantOptionLabel(variant) {
+  const code = variantCode(variant);
+  return variantName(variant) + (code ? " · " + code : "");
+}
 
 export default function ProductImagesPanel({ products = [], initialProductId = "", embedded = false }) {
   const [productId, setProductId] = useState(initialProductId ? String(initialProductId) : "");
@@ -75,7 +93,7 @@ export default function ProductImagesPanel({ products = [], initialProductId = "
           }),
         });
       }
-      setImageUrl(""); setImageFile(null); setAltText(""); setVariantId(""); setSortOrder("0"); setIsPrimary(false);
+      setImageUrl(""); setImageFile(null); setAltText(""); setSortOrder("0"); setIsPrimary(false);
       setMessage(imageFile
         ? (uploadedFile?.type === "image/webp" && imageFile.type !== "image/webp" ? "Image converted to WebP and uploaded." : "Image uploaded and saved.")
         : "Image reference saved.");
@@ -96,12 +114,12 @@ export default function ProductImagesPanel({ products = [], initialProductId = "
         <label className="sb-span-all">Image file (JPEG/PNG converted to WebP; WebP and GIF supported; max 10 MB)<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={e=>{setImageFile(e.target.files?.[0] || null); if(e.target.files?.[0]) setImageUrl("");}}/></label>
         <label className="sb-span-all">Or image URL<input type="url" maxLength="2048" value={imageUrl} disabled={Boolean(imageFile)} onChange={e=>setImageUrl(e.target.value)} placeholder="https://…"/></label>
         <label>Alt text<input maxLength="300" value={altText} onChange={e=>setAltText(e.target.value)}/></label>
-        <label>Variant (optional)<select value={variantId} onChange={e=>setVariantId(e.target.value)}><option value="">Product-level image</option>{variants.map(v=><option key={v.id} value={v.id}>{v.sku}</option>)}</select></label>
+        <label>Variant (optional)<select value={variantId} onChange={e=>setVariantId(e.target.value)}><option value="">Product-level image</option>{variants.filter(v=>v.is_active!==false).map(v=><option key={v.id} value={v.id}>{variantOptionLabel(v)}</option>)}</select></label>
         <label>Sort order<input type="number" min="0" max="10000" value={sortOrder} onChange={e=>setSortOrder(e.target.value)}/></label>
         <label className="sb-check"><input type="checkbox" checked={isPrimary} onChange={e=>setIsPrimary(e.target.checked)}/> Set as main cover image</label>
       </div>
-      <button className="sb-primary" disabled={busy || !productId || (!imageFile && !imageUrl.trim())} type={embedded ? "button" : "submit"} onClick={embedded ? () => submit({ preventDefault: () => {} }) : undefined}>{busy ? "Saving…" : imageFile ? "Upload image" : "Add image reference"}</button>
+      <button className="sb-primary" disabled={busy || !productId || (!imageFile && !imageUrl.trim())} type={embedded ? "button" : "submit"} onClick={embedded ? () => submit({ preventDefault: () => {} }) : undefined}>{busy ? "Saving…" : (imageFile ? "Upload image" : "Add image reference") + (variantId ? " for " + variantName(variants.find(v=>String(v.id)===String(variantId))) : "")}</button>
     </ImageForm>
-    {images.length ? <div className="sb-image-grid">{images.map(image=><article className="sb-image-item" key={image.id}><img src={image.image_url} alt={image.alt_text || ""} loading="lazy" onError={e=>{e.currentTarget.style.display="none";}}/><div><strong>{image.alt_text || "Product image"}{image.is_primary ? " · Main cover" : ""}</strong><small>{image.variant_id ? "Variant #" + image.variant_id : "Product-level"} · Order {image.sort_order}</small><a href={image.image_url} target="_blank" rel="noreferrer">Open image</a>{!image.is_primary && <button type="button" className="sb-row-action" disabled={busy} onClick={() => setPrimary(image)}>Make cover</button>}<button type="button" className="sb-row-action" disabled={busy} onClick={() => removeImage(image)}>Delete</button></div></article>)}</div> : <p className="sb-empty">No images saved for this product.</p>}
+    {images.length ? <div>{[{ id: "", title: "Product-level images (shown for every variant without its own image)", items: images.filter(i=>!i.variant_id) }, ...variants.map(v=>({ id: String(v.id), title: "Variant: " + variantName(v), items: images.filter(i=>String(i.variant_id)===String(v.id)) }))].filter(g=>g.id==="" ? g.items.length : true).map(g=><div key={g.id || "product"} className="sb-image-group"><h3 className="sb-image-group-title">{g.title}</h3>{g.items.length ? <div className="sb-image-grid">{g.items.map(image=><article className="sb-image-item" key={image.id}><img src={image.image_url} alt={image.alt_text || ""} loading="lazy" onError={e=>{e.currentTarget.style.display="none";}}/><div><strong>{image.alt_text || "Product image"}{image.is_primary ? " · Main cover" : ""}</strong><small>{image.variant_id ? "Variant image" : "Product-level"} · Order {image.sort_order}</small><a href={image.image_url} target="_blank" rel="noreferrer">Open image</a>{!image.is_primary && <button type="button" className="sb-row-action" disabled={busy} onClick={() => setPrimary(image)}>Make cover</button>}<button type="button" className="sb-row-action" disabled={busy} onClick={() => removeImage(image)}>Delete</button></div></article>)}</div> : <p className="sb-muted">No image yet for this variant. The shop shows the product-level image until you add one.</p>}</div>)}</div> : <p className="sb-empty">No images saved for this product.</p>}
   </section>;
 }
