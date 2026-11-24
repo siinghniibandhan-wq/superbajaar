@@ -97,10 +97,11 @@ export default function ProductCreateForm({ categories = [], product = null, dup
       return [def.id, (result.items || []).map(item => item.value)];
     })).then(entries => setCustomAttributeOptions(Object.fromEntries(entries)))
       .catch(e => setError(e.message || "Unable to load product-specific attribute options."));
-    apiRequest("/catalogue/products/" + product.id + "/variants")
+    apiRequest("/catalogue/products/" + product.id + "/variants?limit=500")
       .then(result => {
         const values = {};
-        for (const row of result.items || []) {
+        // Only active variants count: un-ticked (retired) values must not come back ticked.
+        for (const row of (result.items || []).filter(item => item.is_active !== false)) {
           for (const [code, raw] of Object.entries(row.attributes || {})) {
             const list = Array.isArray(raw) ? raw : [raw];
             values[code] = [...new Set([...(values[code] || []), ...list])];
