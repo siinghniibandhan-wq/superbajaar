@@ -832,6 +832,42 @@ def _save_complete_product(
             ([row["id"] for row in empty_defaults],),
         )
 
+    # Un-ticked attribute values: when the form submits selectable variants, any other active
+    # variant of this product with attributes (e.g. a colour or weight that was un-ticked) is retired.
+    # The empty default variant is handled above and never touched here.
+    if seen_combinations and any(key != "{}" for key in seen_combinations):
+        removed = [
+            row for row in existing_variants
+            if (row["attributes"] or {})
+            and json.dumps(row["attributes"], sort_keys=True, separators=(",", ":")) not in seen_combinations
+        ]
+        for row in removed:
+            has_live_stock = conn.execute(
+                "SELECT 1 FROM inventory_balances WHERE variant_id=%s AND (on_hand>0 OR reserved>0) LIMIT 1",
+                (row["id"],),
+            ).fetchone()
+            has_open_purchase = conn.execute(
+                "SELECT 1 FROM purchase_order_lines pol JOIN purchase_orders po ON po.id=pol.purchase_order_id "
+                "WHERE pol.variant_id=%s AND pol.quantity_received<pol.quantity_ordered "
+                "AND po.status IN ('draft','ordered','partially_received') LIMIT 1",
+                (row["id"],),
+            ).fetchone()
+            if has_live_stock or has_open_purchase:
+                label = " / ".join(
+                    ", ".join(map(str, v)) if isinstance(v, list) else str(v.get("name", v)) if isinstance(v, dict) else str(v)
+                    for v in row["attributes"].values()
+                )
+                raise HTTPException(
+                    409,
+                    f"Variant '{label}' cannot be removed because it still has stock or open purchase orders. "
+                    "Transfer the stock and close or reassign the purchase lines first, or keep this value ticked.",
+                )
+        if removed:
+            conn.execute(
+                "UPDATE product_variants SET is_active=FALSE,updated_at=now() WHERE id=ANY(%s) AND is_active=TRUE",
+                ([row["id"] for row in removed],),
+            )
+
     if product_id is not None and availability_rules is not None:
         for rule in availability_rules:
             if not (rule.region_code or rule.pincode or rule.location_id):
