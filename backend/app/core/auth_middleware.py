@@ -20,6 +20,7 @@ def _is_public_catalogue_read(method: str, path: str, prefix: str) -> bool:
         prefix + "/catalogue/categories",
         prefix + "/catalogue/products",
         prefix + "/catalogue/variants",
+        prefix + "/catalogue/attributes",
     }
 
 
