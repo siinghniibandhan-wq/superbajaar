@@ -465,7 +465,7 @@ def list_products(
             "(SELECT MIN(v.selling_price) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS min_selling_price, "
             "(SELECT MAX(v.selling_price) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS max_selling_price, "
             "(SELECT MIN(v.mrp) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS min_mrp, "
-            "(SELECT pi.image_url FROM product_images pi WHERE pi.product_id=p.id AND pi.variant_id IS NULL ORDER BY pi.is_primary DESC, pi.sort_order, pi.id LIMIT 1) AS image_url, "
+            "(SELECT pi.image_url FROM product_images pi WHERE pi.product_id=p.id ORDER BY (pi.variant_id IS NOT NULL), pi.is_primary DESC, pi.sort_order, pi.id LIMIT 1) AS image_url, "
             f"{stock_projection} "
             f"FROM products p {where} ORDER BY p.name LIMIT %s OFFSET %s", tuple(params)
         ).fetchall()
@@ -583,7 +583,7 @@ def list_archived_products(
             "(SELECT MIN(v.selling_price) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS min_selling_price, "
             "(SELECT MAX(v.selling_price) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS max_selling_price, "
             "(SELECT MIN(v.mrp) FROM product_variants v WHERE v.product_id=p.id AND v.is_active=TRUE) AS min_mrp, "
-            "(SELECT pi.image_url FROM product_images pi WHERE pi.product_id=p.id AND pi.variant_id IS NULL ORDER BY pi.is_primary DESC, pi.sort_order, pi.id LIMIT 1) AS image_url, "
+            "(SELECT pi.image_url FROM product_images pi WHERE pi.product_id=p.id ORDER BY (pi.variant_id IS NOT NULL), pi.is_primary DESC, pi.sort_order, pi.id LIMIT 1) AS image_url, "
             f"{stock_projection} "
             "FROM products p WHERE p.status = 'archived' ORDER BY p.name LIMIT %s OFFSET %s", (limit, offset)
         ).fetchall()
