@@ -581,3 +581,16 @@ def test_products_without_variants_do_not_require_variant_attributes():
     definitions = [{"code": "weight", "name": "Weight", "is_required": True}]
 
     assert _required_variant_attributes_for_product(definitions, []) == []
+
+
+def test_product_rejects_hsn_that_is_not_8_digits():
+    for bad in ("1006", "1006309A", "100630901"):
+        response = client.post("/api/catalogue/products", json={"name": "Rice", "slug": "rice", "tax_code": bad})
+        assert response.status_code == 422
+
+
+def test_hsn_rule_requires_8_digit_code_and_supported_rate():
+    response = client.post("/api/catalogue/hsn-rules", json={"hsn_code": "1006", "gst_rate": 5})
+    assert response.status_code == 422
+    response = client.post("/api/catalogue/hsn-rules", json={"hsn_code": "10063090", "gst_rate": 4})
+    assert response.status_code == 422
