@@ -1975,3 +1975,27 @@
 .storefront-suggest-price { color:#32105f; font-weight:700; font-size:13px; }
 .storefront-suggest-all { display:block; width:100%; margin-top:4px; padding:10px; border:0; border-top:1px solid #f1eaf9; background:transparent; color:#5928c8; font:inherit; font-weight:600; font-size:13px; cursor:pointer; text-align:center; }
 .storefront-suggest-empty { margin:0; padding:12px; color:#685c76; font-size:13px; line-height:1.5; }
+
+/* Category hero image slider */
+.storefront-hero-slider { position:relative; overflow:hidden; border-radius:30px; border:1px solid #fff; background:#f0e5ff; box-shadow:10px 12px 30px #32105f0b,-5px -5px 14px #fff; touch-action:pan-y; }
+.storefront-hero-slider-track { display:flex; transition:transform .55s ease; will-change:transform; }
+.storefront-hero-slide { flex:0 0 100%; aspect-ratio:8/3; }
+.storefront-hero-slide img { display:block; width:100%; height:100%; object-fit:cover; user-select:none; }
+.storefront-hero-arrow { position:absolute; top:50%; transform:translateY(-50%); width:38px; height:38px; display:grid; place-items:center; border:0; border-radius:50%; background:#ffffffd9; color:#35116f; font-size:24px; line-height:1; cursor:pointer; box-shadow:0 4px 14px #32105f26; }
+.storefront-hero-arrow.is-prev { left:14px; }
+.storefront-hero-arrow.is-next { right:14px; }
+.storefront-hero-dots { position:absolute; left:0; right:0; bottom:12px; display:flex; justify-content:center; gap:7px; }
+.storefront-hero-dots button { width:8px; height:8px; padding:0; border:0; border-radius:99px; background:#ffffffb3; box-shadow:0 1px 4px #32105f40; cursor:pointer; transition:width .2s, background .2s; }
+.storefront-hero-dots button.is-active { width:22px; background:#fff; }
+.storefront-category-hero.is-compact { min-height:0; margin-top:14px; padding:clamp(16px,3vw,26px) clamp(18px,3vw,32px); grid-template-columns:minmax(0,1fr); gap:0; }
+.storefront-category-hero.is-compact h1 { margin:6px 0 6px; font-size:clamp(24px,3.6vw,36px); }
+.storefront-category-hero.is-compact p { margin:0; }
+.storefront-category-hero.is-compact .storefront-category-hero-actions { margin-top:14px; }
+@media (max-width:640px) {
+  .storefront-hero-slider { border-radius:20px; }
+  .storefront-hero-slide { aspect-ratio:16/9; }
+  .storefront-hero-arrow { width:32px; height:32px; font-size:20px; }
+  .storefront-hero-arrow.is-prev { left:8px; }
+  .storefront-hero-arrow.is-next { right:8px; }
+}
+@media (prefers-reduced-motion:reduce) { .storefront-hero-slider-track { transition:none; } }

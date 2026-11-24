@@ -5,6 +5,7 @@ import RelatedProducts from "./RelatedProducts.jsx";
 import LoyaltyProgrammePage from "./LoyaltyProgrammePage.jsx";
 import { buildSearchIndex } from "./searchEngine.js";
 import { variantAttributeGroups } from "./variantOptions.js";
+import CategoryHeroSlider from "./CategoryHeroSlider.jsx";
 import { useEffect, useMemo, useState } from "react";
 import { Heart, ShoppingBag, Search, Sparkles, Flame, Clock3, ChevronLeft, ChevronRight, UserRound, MapPin, X, Coins, CreditCard, CalendarClock, Star } from "lucide-react";
 import { Users, HeartPulse, Package, ShoppingCart, Leaf, Shirt, Droplets, Headphones, Home, PawPrint, Gift, Car, Trophy, Pill, ShieldCheck } from "lucide-react";
@@ -127,6 +128,7 @@ export default function Storefront() {
   const [ticketBusy, setTicketBusy] = useState(false);
   const [loyaltyRules, setLoyaltyRules] = useState([]);
   const [attributeDefinitions, setAttributeDefinitions] = useState([]);
+  const [categoryHeroImages, setCategoryHeroImages] = useState({});
   const [reviewSummary, setReviewSummary] = useState({});
   const [reviewsVersion, setReviewsVersion] = useState(0);
   const [loyaltyDefaultRate, setLoyaltyDefaultRate] = useState(1);
@@ -283,6 +285,17 @@ export default function Storefront() {
         setLoyaltyDefaultRate(Number(result?.default_coins_per_100 ?? 0));
       }
     }).catch(() => { if (active) { setLoyaltyRules([]); setLoyaltyDefaultRate(0); } });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    apiRequest("/catalogue/category-hero-images", { skipAuth: true }).then(result => {
+      if (!active) return;
+      const byCategory = {};
+      (Array.isArray(result?.items) ? result.items : []).forEach(item => { const key = Number(item.category_id); byCategory[key] = [...(byCategory[key] || []), item]; });
+      setCategoryHeroImages(byCategory);
+    }).catch(() => { if (active) setCategoryHeroImages({}); });
     return () => { active = false; };
   }, []);
 
@@ -1211,9 +1224,10 @@ export default function Storefront() {
     {isProductPage && selectedProduct && (() => { const product = productById.get(Number(selectedProduct.product_id)); const productVariants = variants.filter(item => Number(item.product_id) === Number(selectedProduct.product_id) && item.is_active !== false); const saved = productVariants.some(item => wishlist.some(id => Number(id) === Number(item.id))); const categoryName = product?.category_name || product?.category || orderedCategories.find(c => String(c.id) === String(product?.category_id))?.name; const tile = categoryArt[categoryName] || art[0]; const optionGroups = variantAttributeGroups(productVariants, attributeDefinitions); const variantLabel = item => { const values = Object.entries(item.attributes || {}).map(([key, value]) => (Array.isArray(value) ? value.join(", ") : String(value))); return values.length ? values.join(" / ") : "Standard"; }; return <main className="storefront-product-page"><button type="button" className="storefront-product-back" onClick={openShopHome}>← Continue shopping</button><div className="storefront-product-page-layout"><ProductGallery images={selectedProduct.images} fallbackUrl={selectedProduct.image_url} alt={product?.name || selectedProduct.product_name || "Product"} placeholder={<span>{(() => { const I = catIcons[tile.icon]; return I ? <I size={48} strokeWidth={1.5} aria-hidden="true" /> : null; })()}</span>} /><section className="storefront-product-page-details"><span className="storefront-kicker">PRODUCT DETAILS</span><h1>{product?.name || selectedProduct.product_name || "Product"}</h1><p className="storefront-modal-brand">{product?.brand || "Super Bajaar"}{categoryName ? " · " + categoryName : ""}</p>{productVariants.length > 1 && (optionGroups.length ? <VariantOptionPicker groups={optionGroups} variants={productVariants} selected={selectedProduct} productName={product?.name || selectedProduct.product_name || ""} onSelect={chosen => { rememberViewed(chosen); setSelectedProduct(chosen); }} /> : <label className="storefront-variant-select">Choose variant<select aria-label={"Choose variant for " + (product?.name || selectedProduct.product_name)} value={String(selectedProduct.id)} onChange={event => { const chosen = productVariants.find(item => String(item.id) === event.target.value); if (chosen) { rememberViewed(chosen); setSelectedProduct(chosen); } }}>{productVariants.map(item => <option key={item.id} value={item.id}>{variantLabel(item)} · {money(item.selling_price)}</option>)}</select></label>)}<label className="storefront-product-page-quantity">Quantity<input type="number" inputMode="numeric" min="1" max="100000" step="1" value={productPageQuantity} onChange={event => { const value = event.target.value; setProductPageQuantity(value === "" ? "" : Math.min(100000, Math.max(1, Math.floor(Number(value) || 1)))); }} onBlur={() => setProductPageQuantity(Math.min(100000, Math.max(1, Math.floor(Number(productPageQuantity) || 1))))} /></label><p className="storefront-modal-sku">SKU: {selectedProduct.sku || "Not available"}</p><strong className="storefront-modal-price">{money(selectedProduct.selling_price)}</strong>{selectedProduct.lowest_price_30d != null && <small className="storefront-lowest-price">Lowest price in last 30 days: <strong>{money(Math.min(Number(selectedProduct.lowest_price_30d), Number(selectedProduct.selling_price)))}</strong></small>}{coinsFor(product, Number(selectedProduct.selling_price || 0) * Number(productPageQuantity || 1)) > 0 && <p className="storefront-product-coins storefront-product-coins-page"><Coins size={15} /> Earn {coinsFor(product, Number(selectedProduct.selling_price || 0) * Number(productPageQuantity || 1))} Super Coins on this purchase, credited after delivery</p>}<div className="storefront-modal-actions"><button type="button" className="storefront-primary" onClick={() => { addToCart(selectedProduct, productPageQuantity); setProductPageQuantity(1); }}><ShoppingBag size={17}/> Add to basket</button><button type="button" className="storefront-modal-wishlist" onClick={() => setWishlist(old => saved ? old.filter(id => !productVariants.some(item => Number(item.id) === Number(id))) : [...new Set([...old, ...productVariants.map(item => Number(item.id))])])}><Heart size={17} fill={saved ? "currentColor" : "none"} />{saved ? "Remove from wishlist" : "Save to wishlist"}</button></div></section></div><ProductDescription text={product?.description} /><RelatedProducts current={selectedProduct} variants={variants} productById={productById} onOpen={openProductPage} money={money} /><ProductReviews productId={selectedProduct.product_id} customerToken={customerToken} request={customerRequest} onSignIn={() => openCustomerAuth("login", window.location.pathname)} onChanged={() => setReviewsVersion(v => v + 1)} /></main>; })()}
     {isCategoryPage && !isCategoryListingPage && !isWishlistPage && !isAccountPage && !isCheckoutPage && !isInfoPage && !isSearchPage && !isProductPage && <section className="storefront-category-landing">
       <div className="storefront-category-breadcrumb"><a href="/" onClick={event => { event.preventDefault(); openShopHome(); }}>Home</a><span>/</span><span>{routeCategoryName}</span></div>
-      <div className={"storefront-category-hero tone-" + (categoryArt[routeCategoryName]?.tone || "lavender")}>
+      {(() => { const heroImages = categoryHeroImages[Number(categories.find(c => c.name === routeCategoryName)?.id)] || []; return heroImages.length ? <CategoryHeroSlider key={routeCategoryName} images={heroImages} title={routeCategoryName} /> : null; })()}
+      <div className={"storefront-category-hero tone-" + (categoryArt[routeCategoryName]?.tone || "lavender") + ((categoryHeroImages[Number(categories.find(c => c.name === routeCategoryName)?.id)] || []).length ? " is-compact" : "")}>
         <div className="storefront-category-hero-copy"><span className="storefront-kicker">EXPLORE THE COLLECTION</span><h1>{routeCategoryName}</h1><p>{categoryArt[routeCategoryName]?.detail || categories.find(c => c.name === routeCategoryName)?.description || "Discover everyday favourites selected for you."}</p><div className="storefront-category-hero-actions"><button className="storefront-primary" type="button" onClick={openCategoryListing}>View all {routeCategoryName} <span>→</span></button><span>{visibleVariants.length} products and variants</span></div></div>
-        <div className="storefront-category-hero-art" aria-hidden="true"><span>{(() => { const I = catIcons[categoryArt[routeCategoryName]?.icon] || ShoppingBag; return <I size={64} strokeWidth={1.5} />; })()}</span><i>✦</i><b>SUPER<br/>PICKS</b></div>
+        {!(categoryHeroImages[Number(categories.find(c => c.name === routeCategoryName)?.id)] || []).length && <div className="storefront-category-hero-art" aria-hidden="true"><span>{(() => { const I = catIcons[categoryArt[routeCategoryName]?.icon] || ShoppingBag; return <I size={64} strokeWidth={1.5} />; })()}</span><i>✦</i><b>SUPER<br/>PICKS</b></div>}
       </div>
       {routeCategoryName === "Insurance" && <section className="storefront-insurance-section">
         <div className="storefront-section-heading"><div><span className="storefront-kicker">PERSONALISED GUIDANCE</span><h2>Choose an insurance consultation</h2><p>Each consultation costs ₹100. Compare your options with our team.</p></div></div>
