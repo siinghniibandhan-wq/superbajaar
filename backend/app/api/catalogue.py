@@ -1,4 +1,5 @@
 """PostgreSQL-backed catalogue, attribute and variant API foundation."""
+import re
 from typing import Any
 
 import psycopg
@@ -51,6 +52,16 @@ class ProductCreate(BaseModel):
     is_pos_available: bool = True
     is_website_available: bool = True
     delivery_options: list[str] = Field(default_factory=lambda: ["standard"], max_length=2)
+
+    @field_validator("tax_code")
+    @classmethod
+    def valid_hsn_code(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        cleaned = value.strip().replace(" ", "")
+        if not re.fullmatch(r"[0-9]{8}", cleaned):
+            raise ValueError("HSN code must be exactly 8 digits (numbers only)")
+        return cleaned
 
     @field_validator("tax_rate")
     @classmethod
@@ -1775,6 +1786,157 @@ def update_variant_price(variant_id: int, payload: VariantPriceUpdate):
                 (payload.selling_price, payload.mrp, payload.cost_price, variant_id),
             ).fetchone()
         return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+# ---------------------------------------------------------------------------
+# HSN / GST rules
+# ---------------------------------------------------------------------------
+_GST_RATES = {0, 0.1, 0.25, 1, 1.5, 3, 5, 6, 7.5, 12, 18, 28, 40}
+
+
+class HsnRuleIn(BaseModel):
+    category_id: int | None = Field(default=None, gt=0)
+    conditions: dict[str, str] = Field(default_factory=dict, max_length=10)
+    hsn_code: str
+    gst_rate: float = Field(ge=0, le=100)
+    note: str | None = Field(default=None, max_length=300)
+
+    @field_validator("hsn_code")
+    @classmethod
+    def eight_digits(cls, value: str) -> str:
+        cleaned = str(value).strip().replace(" ", "")
+        if not re.fullmatch(r"[0-9]{8}", cleaned):
+            raise ValueError("HSN code must be exactly 8 digits (numbers only)")
+        return cleaned
+
+    @field_validator("gst_rate")
+    @classmethod
+    def supported_rate(cls, value: float) -> float:
+        if round(value, 2) not in _GST_RATES:
+            raise ValueError("Select a supported GST rate from the configured rate list")
+        return value
+
+    @field_validator("conditions")
+    @classmethod
+    def clean_conditions(cls, value: dict[str, str]) -> dict[str, str]:
+        cleaned = {}
+        for code, raw in value.items():
+            code = str(code).strip()
+            text = str(raw).strip()
+            if code and text:
+                cleaned[code] = text
+        return cleaned
+
+
+class HsnRuleBulk(BaseModel):
+    items: list[HsnRuleIn] = Field(min_length=1, max_length=500)
+
+
+_HSN_RULE_COLUMNS = "id, category_id, conditions, hsn_code, gst_rate, note, is_active, created_at, updated_at"
+
+
+def _check_rule_category(conn, category_id: int | None) -> None:
+    if category_id is not None and conn.execute("SELECT 1 FROM categories WHERE id=%s", (category_id,)).fetchone() is None:
+        raise HTTPException(status_code=422, detail="Category not found")
+
+
+@router.get("/hsn-rules")
+def list_hsn_rules():
+    try:
+        with _connection() as conn:
+            rows = conn.execute(
+                f"SELECT {_HSN_RULE_COLUMNS} FROM hsn_rules WHERE is_active = TRUE ORDER BY category_id NULLS FIRST, id"
+            ).fetchall()
+        return {"items": rows}
+    except psycopg.Error as exc:
+        if getattr(exc, "sqlstate", None) == "42P01":
+            raise HTTPException(status_code=503, detail="HSN rules are not available until database migration 055 is applied") from exc
+        raise _db_error(exc) from exc
+
+
+@router.post("/hsn-rules", status_code=201)
+def create_hsn_rule(payload: HsnRuleIn):
+    import json
+    try:
+        with _connection() as conn:
+            _check_rule_category(conn, payload.category_id)
+            row = conn.execute(
+                "INSERT INTO hsn_rules (category_id, conditions, hsn_code, gst_rate, note) VALUES (%s, %s::jsonb, %s, %s, %s) "
+                f"RETURNING {_HSN_RULE_COLUMNS}",
+                (payload.category_id, json.dumps(payload.conditions, sort_keys=True), payload.hsn_code, payload.gst_rate, payload.note),
+            ).fetchone()
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        if getattr(exc, "sqlstate", None) == "23505":
+            raise HTTPException(status_code=409, detail="A rule for this category and these conditions already exists. Edit that rule instead.") from exc
+        raise _db_error(exc) from exc
+
+
+@router.put("/hsn-rules/{rule_id}")
+def update_hsn_rule(rule_id: int, payload: HsnRuleIn):
+    import json
+    try:
+        with _connection() as conn:
+            _check_rule_category(conn, payload.category_id)
+            row = conn.execute(
+                "UPDATE hsn_rules SET category_id=%s, conditions=%s::jsonb, hsn_code=%s, gst_rate=%s, note=%s, updated_at=now() "
+                f"WHERE id=%s AND is_active = TRUE RETURNING {_HSN_RULE_COLUMNS}",
+                (payload.category_id, json.dumps(payload.conditions, sort_keys=True), payload.hsn_code, payload.gst_rate, payload.note, rule_id),
+            ).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="HSN rule not found")
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        if getattr(exc, "sqlstate", None) == "23505":
+            raise HTTPException(status_code=409, detail="A rule for this category and these conditions already exists.") from exc
+        raise _db_error(exc) from exc
+
+
+@router.delete("/hsn-rules/{rule_id}")
+def delete_hsn_rule(rule_id: int):
+    try:
+        with _connection() as conn:
+            row = conn.execute("UPDATE hsn_rules SET is_active = FALSE, updated_at=now() WHERE id=%s AND is_active = TRUE RETURNING id", (rule_id,)).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="HSN rule not found")
+        return {"id": rule_id, "deleted": True}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.post("/hsn-rules/bulk")
+def bulk_upsert_hsn_rules(payload: HsnRuleBulk):
+    """Create or update many rules at once (used by the CSV upload). All-or-nothing."""
+    import json
+    created = updated = 0
+    try:
+        with _connection() as conn:
+            for item in payload.items:
+                _check_rule_category(conn, item.category_id)
+                conditions = json.dumps(item.conditions, sort_keys=True)
+                existing = conn.execute(
+                    "SELECT id FROM hsn_rules WHERE is_active AND COALESCE(category_id,0)=COALESCE(%s,0) AND conditions=%s::jsonb FOR UPDATE",
+                    (item.category_id, conditions),
+                ).fetchone()
+                if existing:
+                    conn.execute("UPDATE hsn_rules SET hsn_code=%s, gst_rate=%s, note=%s, updated_at=now() WHERE id=%s",
+                                 (item.hsn_code, item.gst_rate, item.note, existing["id"]))
+                    updated += 1
+                else:
+                    conn.execute("INSERT INTO hsn_rules (category_id, conditions, hsn_code, gst_rate, note) VALUES (%s,%s::jsonb,%s,%s,%s)",
+                                 (item.category_id, conditions, item.hsn_code, item.gst_rate, item.note))
+                    created += 1
+        return {"created": created, "updated": updated}
     except HTTPException:
         raise
     except psycopg.Error as exc:
