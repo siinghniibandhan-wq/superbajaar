@@ -4,6 +4,7 @@ import ProductImagesPanel from "./ProductImagesPanel.jsx";
 import ColourOptionEditor from "./ColourOptionEditor.jsx";
 import { colourOptionLabel, normalizeColourOption } from "./colourOptions.js";
 import { buildCompleteProductPayload } from "./catalogueComplete.js";
+import { sortValuesLowToHigh, orderByList, moveValue, variantIdsInOrder } from "./variantOrder.js";
 import "./ProductCreateForm.css";
 
 const EMPTY = { name: "", slug: "", brand: "", category_id: "", category_ids: [], description: "", tax_code: "", tax_rate: "", selling_price: "", mrp: "", is_pos_available: true, is_website_available: true, delivery_options: ["standard"] };
@@ -45,6 +46,8 @@ export default function ProductCreateForm({ categories = [], product = null, dup
   } : EMPTY);
   const [definitions, setDefinitions] = useState([]);
   const [selected, setSelected] = useState({});
+  // Storefront display order of the selected values, per attribute code, e.g. { weight: ["0.1 Kg", "0.5 Kg", "1 Kg"] }.
+  const [valueOrder, setValueOrder] = useState({});
   const [productAttributeValues, setProductAttributeValues] = useState({});
   const [customAttributeOptions, setCustomAttributeOptions] = useState({});
   const [pendingCustomOptions, setPendingCustomOptions] = useState({});
@@ -97,6 +100,7 @@ export default function ProductCreateForm({ categories = [], product = null, dup
           }
         }
         setSelected(old => ({ ...values, ...old }));
+        setValueOrder(old => ({ ...values, ...old }));
       })
       .catch(e => setError(e.message || "Unable to load existing product variants."));
   }, [product?.id, definitions]);
@@ -156,6 +160,7 @@ export default function ProductCreateForm({ categories = [], product = null, dup
           };
         }
         setSelected(values);
+        setValueOrder(values);
         setVariantPricing(pricing);
       })
       .catch(e => setError(e.message || "Unable to copy product variants."));
@@ -192,8 +197,11 @@ export default function ProductCreateForm({ categories = [], product = null, dup
   const chosenAttributes = useMemo(() => definitions.filter(def => def.is_variant_attribute && OPTION_TYPES.includes(def.value_type) && (selected[def.code] || []).length), [definitions, selected]);
   const variantCombinations = useMemo(() => {
     if (!chosenAttributes.length) return [{}];
-    return combinations(chosenAttributes.map(def => ({ code: def.code, values: def.value_type === "multi_select" ? [[...(selected[def.code] || [])]] : (selected[def.code] || []) })));
-  }, [chosenAttributes, selected]);
+    return combinations(chosenAttributes.map(def => ({ code: def.code, values: def.value_type === "multi_select" ? [[...(selected[def.code] || [])]] : orderByList(selected[def.code] || [], valueOrder[def.code] || []) })));
+  }, [chosenAttributes, selected, valueOrder]);
+
+  const reorderValue = (def, value, direction) => setValueOrder(old => ({ ...old, [def.code]: moveValue(orderByList(selected[def.code] || [], old[def.code] || []), value, direction) }));
+  const autoSortValues = def => setValueOrder(old => ({ ...old, [def.code]: sortValuesLowToHigh(selected[def.code] || []) }));
 
   function toggleValue(def, value) {
     setSelected(old => {
@@ -290,6 +298,18 @@ export default function ProductCreateForm({ categories = [], product = null, dup
         product?.id ? "/catalogue/products/" + product.id + "/complete" : "/catalogue/products/complete",
         { method: product?.id ? "PUT" : "POST", body: JSON.stringify(completePayload) },
       );
+      try {
+        const orderCodes = definitions.filter(def => def.is_variant_attribute && (selected[def.code] || []).length > 1).map(def => def.code);
+        if (orderCodes.length) {
+          const saved = await apiRequest("/catalogue/products/" + savedProduct.id + "/variants?limit=500");
+          const active = (saved.items || []).filter(item => item.is_active !== false);
+          if (active.length > 1) {
+            await apiRequest("/catalogue/products/" + savedProduct.id + "/variants/order", { method: "PUT", body: JSON.stringify({ variant_ids: variantIdsInOrder(active, orderCodes, valueOrder) }) });
+          }
+        }
+      } catch (orderError) {
+        setError("Product saved, but the option order could not be saved: " + (orderError.message || "unknown error") + " Open the product and save again to retry.");
+      }
       if (soleVariant && (Number(soleVariant.selling_price) !== price || Number(soleVariant.mrp) !== mrp)) {
         await apiRequest("/catalogue/variants/" + soleVariant.id + "/price", {
           method: "PUT",
@@ -310,6 +330,7 @@ export default function ProductCreateForm({ categories = [], product = null, dup
       setSuccess(product?.id
         ? (savedProduct.created_variant_count ? "Product updated and " + savedProduct.created_variant_count + " new variant(s) added. Existing variants were preserved." : "Product details saved atomically. Existing variants were preserved; no duplicate variants were created.")
         : "Product saved atomically with " + (savedProduct.created_variant_count ?? variantPayloads.length) + " variant(s) and default prices.");
+      loadDefinitions().catch(() => {});
       await onSaved?.(savedProduct);
     } catch (e) {
       setError((e.message || "Unable to save product.") + (savedProduct
@@ -418,6 +439,16 @@ export default function ProductCreateForm({ categories = [], product = null, dup
               <input value={(selected[def.code] || [])[0] || ""} placeholder={"Enter " + def.name.toLowerCase()} onChange={e => setSelected(old => ({ ...old, [def.code]: e.target.value ? [e.target.value] : [] }))} />}
             {def.value_type === "colour" ? <ColourOptionEditor existingOptions={[...(def.options || []), ...(customAttributeOptions[def.id] || [])]} disabled={busy} compact onAdd={option => addOption(def, option)} /> :
               OPTION_TYPES.includes(def.value_type) && <div className="sb-add-option"><input aria-label={"New " + def.name + " option"} value={newOptions[def.code] || ""} placeholder={"Add new " + def.name.toLowerCase() + " option"} onChange={e => setNewOptions(old => ({ ...old, [def.code]: e.target.value }))} /><button type="button" className="sb-secondary" disabled={busy || !(newOptions[def.code] || "").trim()} onClick={() => addOption(def).catch(e => setError(e.message || "Unable to add option."))}>Add value</button></div>}
+            {OPTION_TYPES.includes(def.value_type) && (selected[def.code] || []).length > 1 && <div className="sb-value-order" aria-label={def.name + " display order"}>
+              <div className="sb-value-order-head"><small className="sb-muted">Storefront order for {def.name}</small><button type="button" className="sb-secondary" disabled={busy} onClick={() => autoSortValues(def)}>Sort low to high</button></div>
+              <ol>{orderByList(selected[def.code] || [], valueOrder[def.code] || []).map((value, i, list) => <li key={String(value)}>
+                <span>{def.value_type === "colour" ? colourOptionLabel(value) : String(value)}</span>
+                <span className="sb-value-order-actions">
+                  <button type="button" className="sb-secondary" aria-label={"Move " + String(value) + " up"} disabled={busy || i === 0} onClick={() => reorderValue(def, value, -1)}>▲</button>
+                  <button type="button" className="sb-secondary" aria-label={"Move " + String(value) + " down"} disabled={busy || i === list.length - 1} onClick={() => reorderValue(def, value, 1)}>▼</button>
+                </span>
+              </li>)}</ol>
+            </div>}
           </div>)}
           {definitions.filter(def => def.is_variant_attribute && !OPTION_TYPES.includes(def.value_type) && selected[def.code]?.length).map(def => <p className="sb-muted" key={def.id}>{def.name} · Legacy attribute (read-only): {(selected[def.code] || []).join(", ")}. Existing variant values will be preserved.</p>)}
           {definitions.some(def => !def.is_variant_attribute && OPTION_TYPES.includes(def.value_type)) && <div className="sb-product-attributes"><h3>Product-level attributes</h3>{definitions.filter(def => !def.is_variant_attribute && OPTION_TYPES.includes(def.value_type)).map(def => { const options = [...(def.options || []), ...(customAttributeOptions[def.id] || [])]; const current = productAttributeValues[def.id] ?? ""; const displayValue = typeof current === "string" ? current : current == null ? "" : JSON.stringify(current); return <label className="sb-attribute-picker" key={def.id}><strong>{def.name}</strong><small className="sb-muted">{def.value_type} · Product attribute{def.is_required ? " · Required" : ""}</small>{def.value_type === "text" ? <input value={displayValue} placeholder={"Enter " + def.name.toLowerCase()} onChange={e => setProductAttributeValues(old => ({ ...old, [def.id]: e.target.value }))} /> : <select value={displayValue} onChange={e => setProductAttributeValues(old => ({ ...old, [def.id]: e.target.value }))}><option value="">Select {def.name.toLowerCase()}</option>{options.map(option => { const value = def.value_type === "colour" ? colourOptionLabel(option) : String(option); return <option key={value} value={value}>{value}</option>; })}</select>}</label>; })}</div>}
