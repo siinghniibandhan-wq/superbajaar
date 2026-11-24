@@ -1573,6 +1573,29 @@ def archive_variant(variant_id: int):
         raise _db_error(exc) from exc
 
 
+@router.get("/media-library")
+def list_media_library(q: str = Query(default="", max_length=120), limit: int = Query(default=48, ge=1, le=200), offset: int = Query(default=0, ge=0)):
+    """List every distinct image already uploaded/registered, so it can be reused without re-uploading."""
+    term = q.strip()
+    like = "%" + term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    try:
+        with _connection() as conn:
+            rows = conn.execute(
+                "SELECT pi.image_url, MAX(pi.alt_text) AS alt_text, COUNT(*)::int AS use_count, "
+                "MAX(pi.created_at) AS created_at, (ARRAY_AGG(DISTINCT p.name))[1:3] AS product_names "
+                "FROM product_images pi JOIN products p ON p.id = pi.product_id "
+                "WHERE (%s = '' OR pi.image_url ILIKE %s OR COALESCE(pi.alt_text,'') ILIKE %s OR p.name ILIKE %s) "
+                "GROUP BY pi.image_url ORDER BY MAX(pi.created_at) DESC, pi.image_url LIMIT %s OFFSET %s",
+                (term, like, like, like, limit + 1, offset),
+            ).fetchall()
+        has_more = len(rows) > limit
+        return {"items": rows[:limit], "has_more": has_more}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
 @router.get("/products/{product_id}/images")
 def list_product_images(product_id: int):
     try:
@@ -1671,7 +1694,11 @@ def delete_product_image(product_id: int, image_id: int):
                 )
         base = (settings.media_public_base_url or "").rstrip("/") + "/"
         url = image["image_url"] or ""
-        if settings.media_bucket and base != "/" and url.startswith(base + "products/"):
+        with _connection() as conn:
+            still_used = conn.execute(
+                "SELECT 1 FROM product_images WHERE image_url=%s LIMIT 1", (url,)
+            ).fetchone() is not None
+        if not still_used and settings.media_bucket and base != "/" and url.startswith(base + "products/"):
             try:
                 import boto3
                 boto3.client("s3", region_name=settings.aws_region).delete_object(
