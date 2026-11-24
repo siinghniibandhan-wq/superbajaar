@@ -4,6 +4,7 @@ import ProductImagesPanel from "./ProductImagesPanel.jsx";
 import ColourOptionEditor from "./ColourOptionEditor.jsx";
 import { colourOptionLabel, normalizeColourOption } from "./colourOptions.js";
 import { buildCompleteProductPayload } from "./catalogueComplete.js";
+import { cleanHsn, isValidHsn, matchHsnRule } from "./hsnRules.js";
 import { sortValuesLowToHigh, orderByList, moveValue, variantIdsInOrder } from "./variantOrder.js";
 import "./ProductCreateForm.css";
 
@@ -48,6 +49,9 @@ export default function ProductCreateForm({ categories = [], product = null, dup
   const [selected, setSelected] = useState({});
   // Storefront display order of the selected values, per attribute code, e.g. { weight: ["0.1 Kg", "0.5 Kg", "1 Kg"] }.
   const [valueOrder, setValueOrder] = useState({});
+  const [hsnRules, setHsnRules] = useState([]);
+  // Once someone types an HSN/GST by hand (or the product already has one), rules only suggest instead of overwriting.
+  const [taxManual, setTaxManual] = useState(Boolean(product?.tax_code || duplicateFrom?.tax_code));
   const [productAttributeValues, setProductAttributeValues] = useState({});
   const [customAttributeOptions, setCustomAttributeOptions] = useState({});
   const [pendingCustomOptions, setPendingCustomOptions] = useState({});
@@ -71,6 +75,9 @@ export default function ProductCreateForm({ categories = [], product = null, dup
     setDefinitions(result.items || []);
   }
   useEffect(() => { loadDefinitions().catch(e => setError(e.message || "Unable to load attributes.")); }, []);
+  useEffect(() => {
+    apiRequest("/catalogue/hsn-rules").then(result => setHsnRules(result.items || [])).catch(() => setHsnRules([]));
+  }, []);
   useEffect(() => {
     apiRequest("/catalogue/stock-locations").then(result => setStockLocations(result.items || [])).catch(() => setStockLocations([]));
   }, []);
@@ -194,6 +201,21 @@ export default function ProductCreateForm({ categories = [], product = null, dup
     const cost = edit.cost_price === "" || edit.cost_price === undefined ? null : Number(edit.cost_price);
     return { row, selling, mrp: mrpValue, cost };
   });
+  // Product details (Form, Formulation, Packaging...) by attribute code, used to pick the most specific HSN rule.
+  const hsnSuggestion = useMemo(() => {
+    const values = {};
+    for (const def of definitions) {
+      if (def.is_variant_attribute) continue;
+      const raw = productAttributeValues[def.id];
+      if (typeof raw === "string" && raw.trim()) values[def.code] = raw;
+    }
+    return matchHsnRule(hsnRules, categories, { categoryIds: form.category_ids || [], values });
+  }, [hsnRules, categories, definitions, productAttributeValues, form.category_ids]);
+  useEffect(() => {
+    if (!hsnSuggestion || taxManual) return;
+    setForm(old => (old.tax_code === hsnSuggestion.hsn_code && String(old.tax_rate) === String(Number(hsnSuggestion.gst_rate))) ? old : { ...old, tax_code: hsnSuggestion.hsn_code, tax_rate: String(Number(hsnSuggestion.gst_rate)) });
+  }, [hsnSuggestion, taxManual]);
+  const hsnMatchesForm = hsnSuggestion && form.tax_code === hsnSuggestion.hsn_code && String(form.tax_rate) === String(Number(hsnSuggestion.gst_rate));
   const chosenAttributes = useMemo(() => definitions.filter(def => def.is_variant_attribute && OPTION_TYPES.includes(def.value_type) && (selected[def.code] || []).length), [definitions, selected]);
   const variantCombinations = useMemo(() => {
     if (!chosenAttributes.length) return [{}];
@@ -270,6 +292,10 @@ export default function ProductCreateForm({ categories = [], product = null, dup
       if (soleVariant && (form.selling_price === "" || form.mrp === "" || !Number.isFinite(price) || !Number.isFinite(mrp) || price < 0 || mrp < price)) {
         setActiveTab("general");
         throw new Error("Enter a valid selling price and an MRP equal to or higher than the selling price.");
+      }
+      if (form.tax_code && !isValidHsn(form.tax_code)) {
+        setActiveTab("general");
+        throw new Error("HSN code must be exactly 8 digits (numbers only).");
       }
       const categoryIds = [...new Set((form.category_ids || []).map(Number).filter(id => Number.isInteger(id) && id > 0))];
       if (!categoryIds.length) {
@@ -374,8 +400,13 @@ export default function ProductCreateForm({ categories = [], product = null, dup
             </div>;
           })}
         </div>}
-        <label>HSN/SAC code<input maxLength="32" inputMode="numeric" value={form.tax_code || ""} onChange={e => change("tax_code", e.target.value.replace(/\s+/g, ""))} placeholder="Enter HSN/SAC code" /></label>
-        <label>GST rate<select value={form.tax_rate ?? ""} onChange={e => change("tax_rate", e.target.value)}><option value="">Select GST rate</option>{["0","0.1","0.25","1","1.5","3","5","6","7.5","12","18","28","40"].map(rate => <option key={rate} value={rate}>{rate}%</option>)}</select></label>
+        <label>HSN code (8 digits)<input maxLength="8" inputMode="numeric" pattern="[0-9]{8}" value={form.tax_code || ""} onChange={e => { setTaxManual(true); change("tax_code", cleanHsn(e.target.value)); }} placeholder="Auto-filled from HSN rules, or enter 8 digits" /></label>
+        <label>GST rate<select value={form.tax_rate ?? ""} onChange={e => { setTaxManual(true); change("tax_rate", e.target.value); }}><option value="">Select GST rate</option>{["0","0.1","0.25","1","1.5","3","5","6","7.5","12","18","28","40"].map(rate => <option key={rate} value={rate}>{rate}%</option>)}</select></label>
+        <div className="sb-span-all">
+          {hsnSuggestion && hsnMatchesForm && <small className="sb-muted">Auto-filled from an HSN rule{hsnSuggestion.note ? " (" + hsnSuggestion.note + ")" : ""}. You can still change it.</small>}
+          {hsnSuggestion && !hsnMatchesForm && <small className="sb-muted">An HSN rule suggests {hsnSuggestion.hsn_code} at {Number(hsnSuggestion.gst_rate)}% GST. <button type="button" className="sb-secondary" onClick={() => { setTaxManual(false); setForm(old => ({ ...old, tax_code: hsnSuggestion.hsn_code, tax_rate: String(Number(hsnSuggestion.gst_rate)) })); }}>Use suggestion</button></small>}
+          {!hsnSuggestion && !form.tax_code && (form.category_ids || []).length > 0 && <small className="sb-muted">No HSN rule matches yet. Enter the 8-digit HSN, or add a rule in Catalogue → HSN rules.</small>}
+        </div>
         <label className="sb-span-all">Product description<textarea rows="4" value={form.description || ""} onChange={e => change("description", e.target.value)} placeholder="Features, material, fit, usage and care instructions" /></label>
       </div>
       <button type="button" className="sb-secondary sb-step-next" onClick={() => { if (!form.name.trim() || !form.slug.trim() || (!product?.id && (form.selling_price === "" || form.mrp === "" || Number(form.selling_price) < 0 || Number(form.mrp) < Number(form.selling_price)))) { setError("Complete product name, selling price and valid MRP before continuing."); return; } setError(""); setActiveTab("attributes"); }}>Continue to Attributes &amp; Variants</button>

@@ -10,8 +10,8 @@ export const TEMPLATE_HEADERS = [
 ];
 
 export const TEMPLATE_SAMPLE_ROWS = [
-  ["Basmati Rice 5kg", "India Gate", "Grocery > Atta Dal Rice (ADR)", "Long grain aged basmati rice", "1006", "5", "649", "720", "590", "", "", "active"],
-  ["Face Wash 100ml", "Himalaya", "Beauty | Personal Care", "Daily gentle face wash", "3304", "18", "125", "140", "", "FW-100", "", "active"],
+  ["Basmati Rice 5kg", "India Gate", "Grocery > Atta Dal Rice (ADR)", "Long grain aged basmati rice", "10063020", "5", "649", "720", "590", "", "", "active"],
+  ["Face Wash 100ml", "Himalaya", "Beauty | Personal Care", "Daily gentle face wash", "33049990", "18", "125", "140", "", "FW-100", "", "active"],
 ];
 
 const ALIASES = {
@@ -182,7 +182,7 @@ export function buildImportPlan(rows, { categories = [] } = {}) {
     }
     const status = (rec.status || "active").toLowerCase();
     if (!["active", "draft"].includes(status)) errors.push(`Row ${g.lines[0]}: Status must be active or draft`);
-    if (rec.tax_code && rec.tax_code.length > 32) errors.push(`Row ${g.lines[0]}: HSN/SAC code is longer than 32 characters`);
+    if (rec.tax_code && !/^\d{8}$/.test(String(rec.tax_code).replace(/\s+/g, ""))) errors.push(`Row ${g.lines[0]}: HSN code must be exactly 8 digits`);
     if (rec.brand && rec.brand.length > 160) errors.push(`Row ${g.lines[0]}: Brand is longer than 160 characters`);
     const delivery = rec.delivery_options ? [...new Set(rec.delivery_options.toLowerCase().split(/[|;,]/).map(s => s.trim()).filter(Boolean))] : ["standard"];
     if (!delivery.length || delivery.some(d => !["standard", "express"].includes(d))) errors.push(`Row ${g.lines[0]}: Delivery must be standard and/or express`);
