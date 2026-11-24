@@ -31,6 +31,13 @@ export function normalizeColourOption(option) {
   }
   return { name: String(option ?? "").trim(), hex: "" };
 }
+// Hex for a colour value: uses the saved hex when present, otherwise looks the name up in the named list.
+export function colourHexForValue(option) {
+  const { name, hex } = normalizeColourOption(option);
+  if (/^#[0-9A-F]{6}$/i.test(hex)) return hex;
+  const found = NAMED_COLOURS.find(([colourName]) => colourName.toLowerCase() === name.toLowerCase());
+  return found ? found[1] : "";
+}
 export function colourOptionLabel(option) { return normalizeColourOption(option).name; }
 export function isDuplicateOption(existing, candidate, valueType) {
   if (valueType === "colour") {
