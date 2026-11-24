@@ -5,6 +5,7 @@ import CatalogueVariantsPanel from "./CatalogueVariantsPanel.jsx";
 import ProductImagesPanel from "./ProductImagesPanel.jsx";
 import CatalogueModal from "./CatalogueModal.jsx";
 import CatalogueImportModal from "./CatalogueImportModal.jsx";
+import { duplicateProductRecord } from "./duplicateProduct.js";
 import "./catalogue.css";
 
 export default function CatalogueWorkspace({ onBack, currentUser }) {
@@ -20,6 +21,7 @@ export default function CatalogueWorkspace({ onBack, currentUser }) {
   const [showImport, setShowImport] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [duplicatingProduct, setDuplicatingProduct] = useState(null);
+  const [duplicatingId, setDuplicatingId] = useState(null);
   const [productFormBusy, setProductFormBusy] = useState(false);
   const [selectedVariantProductId, setSelectedVariantProductId] = useState("");
   const [showCategoryForm, setShowCategoryForm] = useState(false);
@@ -41,6 +43,23 @@ export default function CatalogueWorkspace({ onBack, currentUser }) {
       setProductOffset(previousOffset);
       if (previousOffset !== offset) return refreshProducts(previousOffset, view);
     }
+  }
+
+  async function duplicateProduct(item) {
+    if (duplicatingId) return;
+    if (!window.confirm("Make a copy of " + item.name + "? The copy is saved right away, so you can then edit it. Stock is not copied.")) return;
+    setDuplicatingId(item.id); setError(""); setMessage("");
+    try {
+      const copy = await duplicateProductRecord(apiRequest, item);
+      setProductView("active"); setProductOffset(0);
+      await refreshProducts(0, "active");
+      setMessage("Copy saved: " + copy.product.name + " with " + copy.variantCount + " variant(s)" + (copy.imageCount ? " and " + copy.imageCount + " image(s)" : "") + "." + (copy.imageFailures ? " " + copy.imageFailures + " image(s) could not be copied." : "") + " It is open below so you can change the name or anything else.");
+      setDuplicatingProduct(null);
+      setEditingProduct({ ...item, ...copy.product });
+      setShowProductForm(true);
+    } catch (e) {
+      setError((e.message || "Unable to duplicate product.") + " Nothing was copied.");
+    } finally { setDuplicatingId(null); }
   }
 
   function switchProductView(view) {
@@ -246,7 +265,7 @@ export default function CatalogueWorkspace({ onBack, currentUser }) {
           </div>
           <span className={"sb-status-pill sb-status-" + item.status}>{item.status}</span>
           <button type="button" className="sb-row-action sb-product-edit" onClick={() => { setDuplicatingProduct(null); setEditingProduct(item); setShowProductForm(true); }}>Edit</button>
-          {item.status !== "archived" && <button type="button" className="sb-row-action sb-product-duplicate" aria-label={"Duplicate " + item.name} title="Duplicate product" onClick={() => { setEditingProduct(null); setDuplicatingProduct(item); setShowProductForm(true); }}><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg></button>}
+          {item.status !== "archived" && <button type="button" className="sb-row-action sb-product-duplicate" aria-label={"Duplicate " + item.name} title="Duplicate product" disabled={duplicatingId === item.id} onClick={() => duplicateProduct(item)}><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg></button>}
           {item.status !== "archived" && <button type="button" className="sb-row-action sb-product-archive" onClick={async () => { if (!window.confirm("Archive " + item.name + "?")) return; try { await apiRequest("/catalogue/products/" + item.id + "/archive", {method:"POST"}); await refresh(); } catch (e) { setError(e.message || "Unable to archive product"); } }}>Archive</button>}
           {item.status === "archived" && <button type="button" className="sb-row-action sb-product-archive sb-product-restore" onClick={async () => { if (!window.confirm("Restore " + item.name + "?")) return; try { await apiRequest("/catalogue/products/" + item.id + "/restore", {method:"POST"}); setMessage("Product restored."); await refresh(); } catch (e) { setError(e.message || "Unable to restore product"); } }}>Restore</button>}
           {canDeleteProducts && <button type="button" className="sb-row-action sb-product-delete" onClick={() => deleteProduct(item)}>Delete</button>}

@@ -232,3 +232,13 @@ dialog.sb-modal .sb-variant-pricing-list .sb-strip-row{display:grid;grid-templat
 .sb-attr-pic{display:inline-block;width:26px;height:26px;border-radius:6px;background:linear-gradient(135deg,#cfe0ef,#9fbfd9)}
 .sb-attr-image_circle .sb-attr-pic{border-radius:50%}
 .sb-attr-preview-text{font-size:13px;color:#3a4651}
+
+/* Edit product: per-variant price editor */
+.sb-variant-price-edit{display:grid;gap:10px}
+.sb-bulk-price{display:grid;grid-template-columns:repeat(2,minmax(0,1fr)) auto;gap:10px;align-items:end;padding:10px;border:1px dashed #b9cde0;border-radius:12px;background:#f4f9fd}
+.sb-variant-price-row{display:grid;grid-template-columns:minmax(0,1.4fr) repeat(3,minmax(0,1fr));gap:10px;align-items:end;padding:10px;border:1px solid #e3eaf0;border-radius:12px;background:#fff}
+.sb-variant-price-row strong{align-self:center;font-size:13px;overflow-wrap:anywhere}
+@media(max-width:680px){
+  .sb-bulk-price,.sb-variant-price-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .sb-variant-price-row strong,.sb-bulk-price button{grid-column:1/-1}
+}
