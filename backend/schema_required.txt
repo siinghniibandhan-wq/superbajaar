@@ -49,3 +49,4 @@
 052_product_purchase_mode.sql
 053_attribute_display_types.sql
 054_variant_display_order.sql
+055_hsn_rules.sql
