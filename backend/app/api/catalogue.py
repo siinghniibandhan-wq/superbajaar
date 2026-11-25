@@ -120,13 +120,20 @@ def _clean_image_option(option: Any) -> Any:
 def _option_keys(option: Any) -> set[str]:
     """Names/links that identify one option (an image option is known by its name and by its image)."""
     if isinstance(option, dict):
-        return {k for k in (str(option.get("name", "")).strip().casefold(), str(option.get("image", "")).strip().casefold()) if k}
+        image = str(option.get("image", "")).strip().casefold()
+        if image:
+            # Image values may share a name (several "Black" designs), so the image link is the identity.
+            return {image}
+        return {k for k in (str(option.get("name", "")).strip().casefold(),) if k}
     return {str(option).strip().casefold()}
 
 
 def _custom_option_key(kind: str, option: Any) -> str:
     if isinstance(option, dict) and kind == "colour":
         return str(option.get("name", "")).strip().casefold() + "|" + str(option.get("hex", "")).strip().upper()
+    if isinstance(option, dict) and kind == "image":
+        # Names may repeat for image values; the image link is what makes each one unique.
+        return str(option.get("image", "")).strip().casefold()
     if isinstance(option, dict):
         return str(option.get("name", "")).strip().casefold()
     return str(option).strip().casefold()
@@ -177,13 +184,11 @@ class AttributeCreate(BaseModel):
                 if error:
                     raise ValueError(error)
                 option = _clean_image_option(option)
+                # Image value names may repeat (e.g. several "Black" designs); only the image must be unique.
                 if isinstance(option, dict):
-                    normalized_names.append(option["name"].casefold())
                     image_links.append(option["image"].casefold())
                 else:
-                    normalized_names.append(option.casefold())
                     image_links.append(option.casefold())
-                normalized_hexes.append(None)
                 cleaned.append(option)
                 continue
             cleaned.append(option)
@@ -1231,8 +1236,7 @@ def _merge_attribute_options(existing: list[Any], incoming: list[Any], value_typ
             option = _clean_image_option(option)
             label = option["name"] if isinstance(option, dict) else option
             link = option["image"] if isinstance(option, dict) else option
-            if label.casefold() in names:
-                raise HTTPException(status_code=409, detail=f'"{label}" already exists in this attribute. Choose a different name.')
+            # Names may repeat for image values (several "Black" designs); the image must be unique.
             if link.casefold() in images:
                 raise HTTPException(status_code=409, detail="This image is already used by another value in this attribute.")
             names.add(label.casefold()); images.add(link.casefold()); combined.append(option)
@@ -1358,10 +1362,7 @@ def update_attribute(attribute_id: int, payload: AttributeUpdate):
                     if error:
                         raise HTTPException(status_code=422, detail=error)
                 next_options = [_clean_image_option(option) for option in next_options]
-                labels = [str(o.get("name", "") if isinstance(o, dict) else o).strip().casefold() for o in next_options]
                 links = [str(o.get("image", "") if isinstance(o, dict) else o).strip().casefold() for o in next_options]
-                if len(set(labels)) != len(labels):
-                    raise HTTPException(status_code=409, detail="Duplicate name: each image value needs a different name.")
                 if len(set(links)) != len(links):
                     raise HTTPException(status_code=409, detail="The same image is used by more than one value in this attribute.")
             else:
@@ -1388,18 +1389,32 @@ def update_attribute(attribute_id: int, payload: AttributeUpdate):
                 new_by_image = {
                     str(o.get("image", "") if isinstance(o, dict) else o).strip().casefold(): o for o in next_options
                 }
+                seen_current_names: set[str] = set()
+                seen_next_names: set[str] = set()
+                next_value_by_image: dict[str, str] = {}
+                for o in next_options:
+                    if isinstance(o, dict):
+                        # The first option with a name stores that name; later same-named options store their image link.
+                        nm = o["name"].casefold()
+                        next_value_by_image[o["image"].casefold()] = o["image"] if nm in seen_next_names else o["name"]
+                        seen_next_names.add(nm)
                 for cur in current["options"] or []:
                     cur_name = str(cur.get("name", "") if isinstance(cur, dict) else cur).strip()
                     cur_image = str(cur.get("image", "") if isinstance(cur, dict) else cur).strip()
+                    # Only the first option holding a name owns variants stored under that bare name.
+                    owns_name = bool(cur_name) and cur_name.casefold() not in seen_current_names
+                    seen_current_names.add(cur_name.casefold())
                     target = new_by_image.get(cur_image.casefold())
                     if not isinstance(target, dict):
                         continue
-                    stale = [v for v in {cur_name, cur_image} if v and v != target["name"]]
+                    canonical = next_value_by_image.get(cur_image.casefold(), target["name"])
+                    candidates = {cur_image} | ({cur_name} if owns_name else set())
+                    stale = [v for v in candidates if v and v != canonical]
                     if stale:
                         conn.execute(
                             "UPDATE product_variants SET attributes = jsonb_set(attributes, ARRAY[%s]::text[], to_jsonb(%s::text)) "
                             "WHERE attributes ? %s AND attributes->>%s = ANY(%s)",
-                            (current["code"], target["name"], current["code"], current["code"], stale),
+                            (current["code"], canonical, current["code"], current["code"], stale),
                         )
             row = conn.execute(
                 "UPDATE product_attributes SET name=%s, value_type=%s, display_type=%s, is_variant_attribute=%s, is_required=%s, options=%s::jsonb "
