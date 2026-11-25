@@ -770,7 +770,7 @@ def _save_complete_product(
                 "VALUES(%s,%s,%s::jsonb,%s)",
                 (product_id, attribute_id, json.dumps(option), option_key),
             )
-        if attribute["value_type"] == "text" and added:
+        if attribute["value_type"] in {"text", "colour"} and added:
             _promote_text_options_to_master(conn, attribute_id, added)
 
     seen_combinations = set()
@@ -1013,7 +1013,7 @@ def add_product_attribute_options(product_id: int, attribute_id: int, payload: P
                     (product_id, attribute_id, json.dumps(option), key),
                 ).fetchone()
                 inserted.append(row)
-            if kind == "text" and added:
+            if kind in {"text", "colour"} and added:
                 _promote_text_options_to_master(conn, attribute_id, added)
         return {"items": inserted}
     except HTTPException:
@@ -1106,13 +1106,29 @@ def _promote_text_options_to_master(conn, attribute_id: int, added: list[Any]) -
     products. It never creates variants or selects the value for any other product.
     """
     import json
-    wanted = [str(item).strip() for item in added if str(item).strip()]
-    if not wanted:
-        return
-    row = conn.execute("SELECT options FROM product_attributes WHERE id=%s FOR UPDATE", (attribute_id,)).fetchone()
+    row = conn.execute("SELECT options, value_type FROM product_attributes WHERE id=%s FOR UPDATE", (attribute_id,)).fetchone()
     if row is None:
         return
     current = list(row["options"] or [])
+    if row["value_type"] == "colour":
+        # Colour values are {name, hex}. The storefront reads the swatch hex from the shared attribute, so the
+        # hex must be promoted together with the name or the swatch renders blank.
+        known = {str(item.get("name", "")).strip().casefold() if isinstance(item, dict) else str(item).strip().casefold() for item in current}
+        changed = False
+        for item in added:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name", "")).strip()
+            if name and name.casefold() not in known:
+                current.append({"name": name, "hex": str(item.get("hex", "")).strip().upper()})
+                known.add(name.casefold())
+                changed = True
+        if changed:
+            conn.execute("UPDATE product_attributes SET options=%s::jsonb WHERE id=%s", (json.dumps(current), attribute_id))
+        return
+    wanted = [str(item).strip() for item in added if str(item).strip()]
+    if not wanted:
+        return
     known = {str(item).strip().casefold() for item in current}
     changed = False
     for value in wanted:
