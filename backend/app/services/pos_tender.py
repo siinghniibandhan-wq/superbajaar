@@ -20,4 +20,6 @@ def checkout_payload_for_hash(payload):
     normalized = dict(payload)
     if normalized.get("pos_payment_method") is None:
         normalized.pop("pos_payment_method", None)
+    if normalized.get("delivery_type") is None:
+        normalized.pop("delivery_type", None)
     return normalized
