@@ -758,7 +758,7 @@ def _save_complete_product(
         added = combined[len(existing):]
         if attribute["value_type"] == "colour" and added:
             global_colours = _lock_and_get_global_colour_attributes(conn)
-            _validate_global_colour_uniqueness(global_colours, added)
+            _validate_global_colour_uniqueness(global_colours, added, reuse_attribute_id=attribute_id)
         for option in added:
             option_key = (
                 str(option.get("name", "")).strip().casefold() + "|" + str(option.get("hex", "")).strip().upper()
@@ -1003,7 +1003,7 @@ def add_product_attribute_options(product_id: int, attribute_id: int, payload: P
                 # Product-specific additions are scoped to this product/attribute,
                 # so they never mutate the shared attribute definition.
                 global_colours = _lock_and_get_global_colour_attributes(conn)
-                _validate_global_colour_uniqueness(global_colours, added)
+                _validate_global_colour_uniqueness(global_colours, added, reuse_attribute_id=attribute_id)
             inserted = []
             for option in added:
                 key = (str(option.get("name", "")).strip().casefold() + "|" + str(option.get("hex", "")).strip().upper()) if kind == "colour" and isinstance(option, dict) else str(option).strip().casefold()
@@ -1050,11 +1050,23 @@ def _validate_global_colour_uniqueness(
     existing_attributes: list[dict[str, Any]],
     candidate_options: list[Any],
     exclude_attribute_id: int | None = None,
+    reuse_attribute_id: int | None = None,
 ) -> None:
-    """Reject colour names and HEX codes already registered by another attribute."""
+    """Reject colour names and HEX codes already registered by another attribute.
+
+    ``reuse_attribute_id`` is the attribute the options are being attached to. A colour that
+    already exists *identically* (same name and HEX) in that attribute's master list is a reuse,
+    not a duplicate, so it is allowed. This is what lets a product be copied: its colours were
+    promoted to the shared list when the original was created.
+    """
     existing_names: set[str] = set()
     existing_hexes: set[str] = set()
+    reusable: set[tuple[str, str]] = set()
     for attribute in existing_attributes:
+        if reuse_attribute_id is not None and attribute.get("id") == reuse_attribute_id and attribute.get("value_type") == "colour":
+            for option in attribute.get("options") or []:
+                if isinstance(option, dict):
+                    reusable.add((str(option.get("name", "")).strip().casefold(), str(option.get("hex", "")).strip().upper()))
         if exclude_attribute_id is not None and attribute.get("id") == exclude_attribute_id:
             continue
         if attribute.get("value_type") != "colour":
@@ -1078,6 +1090,8 @@ def _validate_global_colour_uniqueness(
         else:
             name = str(option).strip()
             hex_value = ""
+        if (name.casefold(), hex_value) in reusable:
+            continue
         if name and name.casefold() in existing_names:
             raise HTTPException(
                 status_code=409,
@@ -1806,6 +1820,50 @@ async def upload_product_image(
         raise _db_error(exc) from exc
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Product image upload failed") from exc
+
+
+@router.post("/attribute-images/upload", status_code=201)
+async def upload_attribute_image(file: UploadFile = File(...)):
+    """Upload an image to use as an Image-attribute value (e.g. a pattern or style swatch).
+
+    Returns the public URL, which is stored as the attribute option value. Unlike product gallery
+    images this is not tied to a product, so no gallery record is created.
+    """
+    allowed_types = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif"}
+    content_type = (file.content_type or "").lower()
+    if content_type not in allowed_types:
+        raise HTTPException(status_code=415, detail="Upload a JPEG, PNG, WebP or GIF image")
+    if not settings.media_bucket:
+        raise HTTPException(status_code=503, detail="Image uploads are disabled: configure MEDIA_BUCKET with the product media S3 bucket name.")
+    if not settings.media_public_base_url:
+        raise HTTPException(status_code=503, detail="Image uploads are disabled: configure MEDIA_PUBLIC_BASE_URL with the CloudFront URL for the product media bucket.")
+    data = await file.read(10 * 1024 * 1024 + 1)
+    if not data:
+        raise HTTPException(status_code=422, detail="Image file is empty")
+    if len(data) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Image files must be 10 MB or smaller")
+    signatures = {
+        "image/jpeg": data.startswith(b"\xff\xd8\xff"),
+        "image/png": data.startswith(b"\x89PNG\r\n\x1a\n"),
+        "image/webp": len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP",
+        "image/gif": data.startswith((b"GIF87a", b"GIF89a")),
+    }
+    if not signatures[content_type]:
+        raise HTTPException(status_code=415, detail="The uploaded file content does not match its image type")
+    try:
+        import boto3
+        key = f"attributes/{uuid4().hex}.{allowed_types[content_type]}"
+        client = boto3.client("s3", region_name=settings.aws_region)
+        client.put_object(
+            Bucket=settings.media_bucket,
+            Key=key,
+            Body=data,
+            ContentType=content_type,
+            CacheControl="public, max-age=31536000, immutable",
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Attribute image upload failed") from exc
+    return {"image_url": settings.media_public_base_url.rstrip("/") + "/" + key, "filename": (file.filename or "")[:300]}
 
 
 class VariantPriceUpdate(BaseModel):
