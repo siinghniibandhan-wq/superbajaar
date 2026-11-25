@@ -829,7 +829,7 @@ def _save_complete_product(
                 "VALUES(%s,%s,%s::jsonb,%s)",
                 (product_id, attribute_id, json.dumps(option), option_key),
             )
-        if attribute["value_type"] in {"text", "colour"} and added:
+        if attribute["value_type"] in {"text", "colour", "image"} and added:
             _promote_text_options_to_master(conn, attribute_id, added)
 
     seen_combinations = set()
@@ -1072,7 +1072,7 @@ def add_product_attribute_options(product_id: int, attribute_id: int, payload: P
                     (product_id, attribute_id, json.dumps(option), key),
                 ).fetchone()
                 inserted.append(row)
-            if kind in {"text", "colour"} and added:
+            if kind in {"text", "colour", "image"} and added:
                 _promote_text_options_to_master(conn, attribute_id, added)
         return {"items": inserted}
     except HTTPException:
@@ -1183,6 +1183,24 @@ def _promote_text_options_to_master(conn, attribute_id: int, added: list[Any]) -
     if row is None:
         return
     current = list(row["options"] or [])
+    if row["value_type"] == "image":
+        # Image values are {name, image}. The storefront reads names from the shared attribute, so a value
+        # typed on the Product page must be promoted too or the storefront can only show its link.
+        # Names may repeat (several "Black" designs); the image link is what identifies a value.
+        known_images = {str(item.get("image", "") if isinstance(item, dict) else item).strip().casefold() for item in current}
+        changed = False
+        for item in added:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name", "")).strip()
+            image = str(item.get("image", "")).strip()
+            if name and image and image.casefold() not in known_images:
+                current.append({"name": name, "image": image})
+                known_images.add(image.casefold())
+                changed = True
+        if changed:
+            conn.execute("UPDATE product_attributes SET options=%s::jsonb WHERE id=%s", (json.dumps(current), attribute_id))
+        return
     if row["value_type"] == "colour":
         # Colour values are {name, hex}. The storefront reads the swatch hex from the shared attribute, so the
         # hex must be promoted together with the name or the swatch renders blank.
@@ -1455,6 +1473,119 @@ def archive_attribute(attribute_id: int):
         raise _db_error(exc) from exc
 
 
+class ImageValueEdit(BaseModel):
+    image: str = Field(min_length=1, max_length=2048)  # current image link: identifies which value to edit
+    name: str | None = Field(default=None, max_length=120)
+    new_image: str | None = Field(default=None, max_length=2048)
+
+
+def _image_value_parts(option: Any) -> tuple[str, str]:
+    if isinstance(option, dict):
+        return str(option.get("name", "")).strip(), str(option.get("image", "")).strip()
+    text = str(option).strip()
+    return text, text
+
+
+def _image_stored_values(options: list[Any]) -> list[str]:
+    """What a variant stores for each image value: the name for the first holder of a name, the image link after that."""
+    seen: set[str] = set()
+    result: list[str] = []
+    for option in options:
+        name, image = _image_value_parts(option)
+        key = name.casefold()
+        result.append(image if (key in seen and image) else (name or image))
+        seen.add(key)
+    return result
+
+
+@router.patch("/attributes/{attribute_id}/image-values")
+def edit_image_value(attribute_id: int, payload: ImageValueEdit):
+    """Rename an Image value and/or replace its picture, keeping every variant and product that uses it."""
+    import json
+    try:
+        with _connection() as conn:
+            row = conn.execute(
+                "SELECT id, name, code, value_type, options, is_active FROM product_attributes WHERE id=%s FOR UPDATE",
+                (attribute_id,),
+            ).fetchone()
+            if row is None or not row["is_active"]:
+                raise HTTPException(status_code=404, detail="Active attribute not found")
+            if row["value_type"] != "image":
+                raise HTTPException(status_code=422, detail="Only Image attribute values can be edited here")
+            options = list(row["options"] or [])
+            target = payload.image.strip().casefold()
+            index = next((i for i, option in enumerate(options) if _image_value_parts(option)[1].casefold() == target), None)
+            if index is None:
+                raise HTTPException(status_code=404, detail="Image value not found")
+            current_name, current_image = _image_value_parts(options[index])
+            new_name = current_name if payload.name is None else payload.name.strip()
+            new_image = current_image if payload.new_image is None else payload.new_image.strip()
+            candidate = {"name": new_name, "image": new_image}
+            error = _image_option_error(candidate)
+            if error:
+                raise HTTPException(status_code=422, detail=error)
+            if new_image.casefold() != current_image.casefold() and any(
+                i != index and _image_value_parts(option)[1].casefold() == new_image.casefold() for i, option in enumerate(options)
+            ):
+                raise HTTPException(status_code=409, detail="This image is already used by another value in this attribute.")
+            before = _image_stored_values(options)
+            options[index] = candidate
+            after = _image_stored_values(options)
+            # Move every value whose stored form changed (the edited one, plus any whose "first holder of a name"
+            # status moved) in two steps through unique temporary values, so two variants of one product can never
+            # briefly share a value and trip the unique-variant rule.
+            moves: list[tuple[str, list[str], str]] = []
+            previous_for_edited: list[str] = []
+            for i in range(len(options)):
+                old_image = current_image if i == index else _image_value_parts(options[i])[1]
+                stale = [v for v in {before[i], old_image} if v and v != after[i]]
+                if i == index:
+                    previous_for_edited = stale
+                if stale:
+                    moves.append((f"__img_move_{i}__", stale, after[i]))
+            for temp, stale, _final in moves:
+                conn.execute(
+                    "UPDATE product_variants SET attributes = jsonb_set(attributes, ARRAY[%s]::text[], to_jsonb(%s::text)) "
+                    "WHERE attributes ? %s AND attributes->>%s = ANY(%s)",
+                    (row["code"], temp, row["code"], row["code"], stale),
+                )
+                conn.execute(
+                    "UPDATE product_attribute_values SET value = to_jsonb(%s::text) "
+                    "WHERE attribute_id=%s AND jsonb_typeof(value)='string' AND value #>> '{}' = ANY(%s)",
+                    (temp, attribute_id, stale),
+                )
+            for temp, _stale, final in moves:
+                conn.execute(
+                    "UPDATE product_variants SET attributes = jsonb_set(attributes, ARRAY[%s]::text[], to_jsonb(%s::text)) "
+                    "WHERE attributes ? %s AND attributes->>%s = %s",
+                    (row["code"], final, row["code"], row["code"], temp),
+                )
+                conn.execute(
+                    "UPDATE product_attribute_values SET value = to_jsonb(%s::text) "
+                    "WHERE attribute_id=%s AND jsonb_typeof(value)='string' AND value #>> '{}' = %s",
+                    (final, attribute_id, temp),
+                )
+            # Keep product-specific copies of this value in step with the shared one.
+            try:
+                conn.execute(
+                    "UPDATE product_attribute_custom_options SET value=%s::jsonb, option_key=%s "
+                    "WHERE attribute_id=%s AND lower(value->>'image') = %s",
+                    (json.dumps(candidate), new_image.casefold(), attribute_id, current_image.casefold()),
+                )
+            except psycopg.errors.UndefinedTable:
+                pass
+            updated = conn.execute(
+                "UPDATE product_attributes SET options=%s::jsonb WHERE id=%s "
+                "RETURNING id, name, code, value_type, display_type, is_variant_attribute, is_required, options, is_active, created_at",
+                (json.dumps(options), attribute_id),
+            ).fetchone()
+        return {**updated, "stored_value": after[index], "previous_values": previous_for_edited}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
 @router.delete("/attributes/{attribute_id}/options")
 def remove_attribute_option(attribute_id: int, payload: AttributeOptionRemove):
     try:
@@ -1466,11 +1597,19 @@ def remove_attribute_option(attribute_id: int, payload: AttributeOptionRemove):
             if row is None or not row["is_active"]:
                 raise HTTPException(status_code=404, detail="Active attribute not found")
             options = list(row["options"] or [])
-            index = next((i for i, option in enumerate(options) if option == payload.value or (
-                isinstance(option, dict) and isinstance(payload.value, dict)
-                and str(option.get("name", "")).casefold() == str(payload.value.get("name", "")).casefold()
-                and str(option.get("hex", "")).upper() == str(payload.value.get("hex", "")).upper()
-            )), None)
+            def _same_option(option):
+                if option == payload.value:
+                    return True
+                if isinstance(option, dict) and isinstance(payload.value, dict):
+                    if option.get("image") or payload.value.get("image"):
+                        # Image values may share a name; only the image link identifies one.
+                        return str(option.get("image", "")).strip().casefold() == str(payload.value.get("image", "")).strip().casefold()
+                    return (
+                        str(option.get("name", "")).casefold() == str(payload.value.get("name", "")).casefold()
+                        and str(option.get("hex", "")).upper() == str(payload.value.get("hex", "")).upper()
+                    )
+                return False
+            index = next((i for i, option in enumerate(options) if _same_option(option)), None)
             if index is None:
                 raise HTTPException(status_code=404, detail="Shared attribute value not found")
             if len(options) == 1:
