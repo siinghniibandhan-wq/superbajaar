@@ -1,5 +1,5 @@
 import { normalizeDisplayType } from "../features/catalogue/attributeDisplay.js";
-import { isImageUrl, imageOptionLabel } from "../features/catalogue/imageOptions.js";
+import { isImageUrl, imageOptionLabel, resolveImageValue } from "../features/catalogue/imageOptions.js";
 import { colourOptionLabel, colourHexForValue, normalizeColourOption } from "../features/catalogue/colourOptions.js";
 
 // Turns one saved variant attribute value into a stable key and a label.
@@ -42,7 +42,14 @@ export function variantAttributeGroups(variants = [], definitions = []) {
       name: definition.name || code.replace(/_/g, " ").replace(/^./, c => c.toUpperCase()),
       valueType,
       displayType: normalizeDisplayType(definition.display_type, valueType),
-      options: [...options.values()].map(option => ({ ...option, hex: valueType === "colour" ? (savedHex.get(option.key) || colourHexForValue(option.raw)) : "" })),
+      options: [...options.values()].map(option => {
+        if (valueType === "image") {
+          // Variants store the value NAME (older data: the image link). Look the picture up on the attribute.
+          const item = resolveImageValue(option.raw, definition.options || []);
+          return { ...option, label: item.name, image: item.image, hex: "" };
+        }
+        return { ...option, hex: valueType === "colour" ? (savedHex.get(option.key) || colourHexForValue(option.raw)) : "" };
+      }),
     });
   }
   return groups;
