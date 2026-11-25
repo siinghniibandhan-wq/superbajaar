@@ -45,6 +45,23 @@ export function normalizeImageOptions(options = []) {
   });
 }
 
+// Joins shared and product-specific option lists, listing each picture once (a value copied onto
+// the shared attribute must not appear twice).
+export function combineImageOptions(...lists) {
+  const seen = new Set();
+  const result = [];
+  for (const list of lists) {
+    for (const option of list || []) {
+      const item = normalizeImageOption(option);
+      const key = (item.image || item.name).toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      result.push(option);
+    }
+  }
+  return result;
+}
+
 // Turns a value saved on a variant (a name, or an old image link) into { name, image }.
 export function resolveImageValue(raw, options = []) {
   const value = String(Array.isArray(raw) ? raw[0] : raw ?? "").trim();

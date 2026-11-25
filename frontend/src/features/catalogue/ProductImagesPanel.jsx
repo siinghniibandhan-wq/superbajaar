@@ -3,12 +3,14 @@ import { apiRequest } from "../../services/api.js";
 import { prepareProductImage } from "./productImageFormat.js";
 import { colourOptionLabel } from "./colourOptions.js";
 import ImageLibraryPicker from "./ImageLibraryPicker.jsx";
-import { imageOptionLabel } from "./imageOptions.js";
+import { imageOptionLabel, resolveImageValue } from "./imageOptions.js";
 
 // Readable variant name for pickers and gallery headings, e.g. "Red / 0.5 KG".
-function variantName(variant) {
-  const parts = Object.values(variant?.attributes || {}).map(raw => {
+function variantName(variant, definitions = []) {
+  const parts = Object.entries(variant?.attributes || {}).map(([code, raw]) => {
     const value = Array.isArray(raw) ? raw[0] : raw;
+    const definition = definitions.find(item => item.code === code);
+    if (definition?.value_type === "image") return resolveImageValue(value, definition.options || []).name;
     return imageOptionLabel(colourOptionLabel(value) || String(value ?? "").trim());
   }).filter(Boolean);
   return parts.length ? parts.join(" / ") : (variant?.sku || "Variant");
@@ -17,9 +19,9 @@ function variantCode(variant) {
   const tail = String(variant?.sku || "").split("-").pop();
   return /^V\d+$/i.test(tail) ? tail.toUpperCase() : "";
 }
-function variantOptionLabel(variant) {
+function variantOptionLabel(variant, definitions = []) {
   const code = variantCode(variant);
-  return variantName(variant) + (code ? " · " + code : "");
+  return variantName(variant, definitions) + (code ? " · " + code : "");
 }
 
 export default function ProductImagesPanel({ products = [], initialProductId = "", embedded = false }) {
@@ -38,6 +40,8 @@ export default function ProductImagesPanel({ products = [], initialProductId = "
   const [busy, setBusy] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickedUrls, setPickedUrls] = useState([]);
+  const [definitions, setDefinitions] = useState([]);
+  useEffect(() => { apiRequest("/catalogue/attributes").then(result => setDefinitions(result.items || [])).catch(() => setDefinitions([])); }, []);
 
   function openPicker() { setPickerOpen(true); }
   function confirmPicked(pickerSelection) {
@@ -144,12 +148,12 @@ export default function ProductImagesPanel({ products = [], initialProductId = "
         {pickerOpen && <div className="sb-span-all"><ImageLibraryPicker initialSelection={pickedUrls} onCancel={()=>setPickerOpen(false)} onConfirm={sel=>confirmPicked(sel)} /></div>}
         <label className="sb-span-all">Or image URL<input type="url" maxLength="2048" value={imageUrl} disabled={imageFiles.length>0 || pickedUrls.length>0} onChange={e=>setImageUrl(e.target.value)} placeholder="https://…"/></label>
         <label>Alt text<input maxLength="300" value={altText} onChange={e=>setAltText(e.target.value)}/></label>
-        <label>Variant (optional)<select value={variantId} onChange={e=>setVariantId(e.target.value)}><option value="">Product-level image</option>{variants.filter(v=>v.is_active!==false).map(v=><option key={v.id} value={v.id}>{variantOptionLabel(v)}</option>)}</select></label>
+        <label>Variant (optional)<select value={variantId} onChange={e=>setVariantId(e.target.value)}><option value="">Product-level image</option>{variants.filter(v=>v.is_active!==false).map(v=><option key={v.id} value={v.id}>{variantOptionLabel(v, definitions)}</option>)}</select></label>
         <label>Sort order<input type="number" min="0" max="10000" value={sortOrder} onChange={e=>setSortOrder(e.target.value)}/></label>
         <label className="sb-check"><input type="checkbox" checked={isPrimary} onChange={e=>setIsPrimary(e.target.checked)}/> Set as main cover image</label>
       </div>
       <button className="sb-primary" disabled={busy || !productId || (!imageFiles.length && !pickedUrls.length && !imageUrl.trim())} type={embedded ? "button" : "submit"} onClick={embedded ? () => submit({ preventDefault: () => {} }) : undefined}>{busy ? "Saving…" : (imageFiles.length ? (imageFiles.length>1 ? "Upload " + imageFiles.length + " images" : "Upload image") : pickedUrls.length ? (pickedUrls.length>1 ? "Add " + pickedUrls.length + " selected images" : "Add selected image") : "Add image reference") + (variantId ? " for " + variantName(variants.find(v=>String(v.id)===String(variantId))) : "")}</button>
     </ImageForm>
-    {images.length ? <div>{[{ id: "", title: "Product-level images (shown for every variant without its own image)", items: images.filter(i=>!i.variant_id) }, ...variants.map(v=>({ id: String(v.id), title: "Variant: " + variantName(v), items: images.filter(i=>String(i.variant_id)===String(v.id)) }))].filter(g=>g.id==="" ? g.items.length : true).map(g=><div key={g.id || "product"} className="sb-image-group"><h3 className="sb-image-group-title">{g.title}</h3>{g.items.length ? <div className="sb-image-grid">{g.items.map(image=><article className="sb-image-item" key={image.id}><img src={image.image_url} alt={image.alt_text || ""} loading="lazy" onError={e=>{e.currentTarget.style.display="none";}}/><div><strong>{image.alt_text || "Product image"}{image.is_primary ? " · Main cover" : ""}</strong><small>{image.variant_id ? "Variant image" : "Product-level"} · Order {image.sort_order}</small><a href={image.image_url} target="_blank" rel="noreferrer">Open image</a>{!image.is_primary && <button type="button" className="sb-row-action" disabled={busy} onClick={() => setPrimary(image)}>Make cover</button>}<button type="button" className="sb-row-action" disabled={busy} onClick={() => removeImage(image)}>Delete</button></div></article>)}</div> : <p className="sb-muted">No image yet for this variant. The shop shows the product-level image until you add one.</p>}</div>)}</div> : <p className="sb-empty">No images saved for this product.</p>}
+    {images.length ? <div>{[{ id: "", title: "Product-level images (shown for every variant without its own image)", items: images.filter(i=>!i.variant_id) }, ...variants.map(v=>({ id: String(v.id), title: "Variant: " + variantName(v, definitions), items: images.filter(i=>String(i.variant_id)===String(v.id)) }))].filter(g=>g.id==="" ? g.items.length : true).map(g=><div key={g.id || "product"} className="sb-image-group"><h3 className="sb-image-group-title">{g.title}</h3>{g.items.length ? <div className="sb-image-grid">{g.items.map(image=><article className="sb-image-item" key={image.id}><img src={image.image_url} alt={image.alt_text || ""} loading="lazy" onError={e=>{e.currentTarget.style.display="none";}}/><div><strong>{image.alt_text || "Product image"}{image.is_primary ? " · Main cover" : ""}</strong><small>{image.variant_id ? "Variant image" : "Product-level"} · Order {image.sort_order}</small><a href={image.image_url} target="_blank" rel="noreferrer">Open image</a>{!image.is_primary && <button type="button" className="sb-row-action" disabled={busy} onClick={() => setPrimary(image)}>Make cover</button>}<button type="button" className="sb-row-action" disabled={busy} onClick={() => removeImage(image)}>Delete</button></div></article>)}</div> : <p className="sb-muted">No image yet for this variant. The shop shows the product-level image until you add one.</p>}</div>)}</div> : <p className="sb-empty">No images saved for this product.</p>}
   </section>;
 }

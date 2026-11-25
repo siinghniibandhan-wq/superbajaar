@@ -6,6 +6,7 @@ import { colourOptionLabel, normalizeColourOption } from "./colourOptions.js";
 import AttributeDisplayPicker from "./AttributeDisplayPicker.jsx";
 import ImageOptionEditor from "./ImageOptionEditor.jsx";
 import { normalizeImageOption, normalizeImageOptions } from "./imageOptions.js";
+import ImageValueEditor from "./ImageValueEditor.jsx";
 import { defaultDisplayType, displayStyleLabel, normalizeDisplayType } from "./attributeDisplay.js";
 
 const initialAttribute = { name: "", code: "", value_type: "text", display_type: "button", is_variant_attribute: true, is_required: false, options: "" };
@@ -59,6 +60,7 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
   const [optionDrafts, setOptionDrafts] = useState({});
   const [colourOptions, setColourOptions] = useState([]);
   const [imageOptions, setImageOptions] = useState([]);
+  const [editingImageValue, setEditingImageValue] = useState(null);
 
   function closeAttributeForm() {
     if (busy) return;
@@ -100,6 +102,19 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
       setNotice('Attribute "' + definition.name + '" archived. Historical values were retained.');
     } catch (e) { setError(e.message || "Unable to archive attribute."); }
     finally { setBusy(false); }
+  }
+
+  // Rename an Image value or replace its picture; variants and products that use it keep working.
+  async function saveImageValue(definition, original, edits) {
+    const item = normalizeImageOption(original);
+    await apiRequest("/catalogue/attributes/" + definition.id + "/image-values", {
+      method: "PATCH",
+      body: JSON.stringify({ image: item.image, name: edits.name, new_image: edits.image !== item.image ? edits.image : undefined }),
+    });
+    setEditingImageValue(null);
+    setError("");
+    await loadDefinitions();
+    setNotice('Value "' + edits.name + '" updated everywhere it is used.');
   }
 
   async function removeAttributeOption(definition, value) {
@@ -280,14 +295,15 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
               <input aria-label={"New shared " + definition.name + " value"} value={optionDrafts[definition.id] || ""} placeholder={"Add a shared " + definition.name.toLowerCase() + " value"} onChange={e => setOptionDrafts(old => ({ ...old, [definition.id]: e.target.value }))} />
               <button type="button" className="sb-secondary" disabled={busy || !(optionDrafts[definition.id] || "").trim()} onClick={() => addAttributeOption(definition)}>Add value</button>
             </div>}
-            {!!definition.options?.length && <div className="sb-option-chips" aria-label={definition.name + " shared values"}>
+            {!!definition.options?.length && <><div className="sb-option-chips" aria-label={definition.name + " shared values"}>
               {definition.options.map((value, index) => <span className="sb-option-chip" key={JSON.stringify(value) + index}>
                 {definition.value_type === "colour" && <i className="sb-colour-swatch" style={{backgroundColor:normalizeColourOption(value).hex || "#999"}} />}
                 {definition.value_type === "image" && normalizeImageOption(value).image && <img className="sb-image-thumb" src={normalizeImageOption(value).image} alt="" />}
                 {definition.value_type === "colour" ? colourOptionLabel(value) + (normalizeColourOption(value).hex ? " · " + normalizeColourOption(value).hex : "") : definition.value_type === "image" ? normalizeImageOption(value).name : String(value)}
+                {definition.value_type === "image" && <button type="button" className="sb-row-action" disabled={busy} aria-label={"Edit " + normalizeImageOption(value).name} title="Edit name or picture" onClick={() => setEditingImageValue({ defId: definition.id, option: value })}>✎</button>}
                 <button type="button" className="sb-row-action" disabled={busy} aria-label={"Remove " + (definition.value_type === "image" ? normalizeImageOption(value).name : colourOptionLabel(value))} onClick={() => removeAttributeOption(definition, value)}>×</button>
               </span>)}
-            </div>}
+            </div>{editingImageValue && editingImageValue.defId === definition.id && <ImageValueEditor key={normalizeImageOption(editingImageValue.option).image} option={editingImageValue.option} disabled={busy} note="Changes apply everywhere this value is used (all products and the storefront)." onCancel={() => setEditingImageValue(null)} onSave={edits => saveImageValue(definition, editingImageValue.option, edits)} />}</>}
           </>}
         </div>
         <span className="sb-status-pill">Optional</span>
