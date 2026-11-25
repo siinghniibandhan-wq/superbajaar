@@ -2095,7 +2095,8 @@ async def upload_category_hero_image(
         with _connection() as conn:
             _require_category(conn, category_id)
         import boto3
-        key = f"category-heroes/{category_id}/{uuid4().hex}.{_HERO_IMAGE_TYPES[content_type]}"
+        # Stored under products/ because the media bucket role and CloudFront only cover products/*.
+        key = f"products/category-heroes/{category_id}/{uuid4().hex}.{_HERO_IMAGE_TYPES[content_type]}"
         boto3.client("s3", region_name=settings.aws_region).put_object(
             Bucket=settings.media_bucket, Key=key, Body=data, ContentType=content_type,
             CacheControl="public, max-age=31536000, immutable",
@@ -2114,6 +2115,8 @@ async def upload_category_hero_image(
     except psycopg.Error as exc:
         raise _db_error(exc) from exc
     except Exception as exc:
+        import logging
+        logging.getLogger(__name__).exception("Category hero image upload failed")
         raise HTTPException(status_code=503, detail="Category image upload failed") from exc
 
 
@@ -2181,7 +2184,7 @@ def delete_category_hero_image(category_id: int, image_id: int):
                 "SELECT 1 FROM category_hero_images WHERE image_url=%s LIMIT 1", (url,)
             ).fetchone() is not None
         base = (settings.media_public_base_url or "").rstrip("/") + "/"
-        if not still_used and settings.media_bucket and base != "/" and url.startswith(base + "category-heroes/"):
+        if not still_used and settings.media_bucket and base != "/" and url.startswith(base + "products/category-heroes/"):
             try:
                 import boto3
                 boto3.client("s3", region_name=settings.aws_region).delete_object(
