@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { apiRequest } from "../../services/api.js";
 import ProductImagesPanel from "./ProductImagesPanel.jsx";
 import ColourOptionEditor from "./ColourOptionEditor.jsx";
+import ImageOptionEditor from "./ImageOptionEditor.jsx";
+import { imageOptionLabel, isImageUrl } from "./imageOptions.js";
 import { colourOptionLabel, normalizeColourOption } from "./colourOptions.js";
 import { buildCompleteProductPayload } from "./catalogueComplete.js";
 import { cleanHsn, isValidHsn, matchHsnRule } from "./hsnRules.js";
@@ -272,8 +274,8 @@ export default function ProductCreateForm({ categories = [], product = null, dup
     });
   }
 
-  async function addOption(def, colourOption = null) {
-    const raw = def.value_type === "colour" ? colourOption : (newOptions[def.code] || "").trim();
+  async function addOption(def, colourOption = null, imageUrl = null) {
+    const raw = def.value_type === "colour" ? colourOption : (imageUrl != null ? String(imageUrl).trim() : (newOptions[def.code] || "").trim());
     if (!raw) return;
     const existing = customAttributeOptions[def.id] || [];
     const label = def.value_type === "colour" ? colourOptionLabel(raw) : String(raw).trim();
@@ -518,14 +520,14 @@ export default function ProductCreateForm({ categories = [], product = null, dup
             <strong>{def.name}</strong><small className="sb-muted">{def.value_type}{def.is_variant_attribute ? " · Variant attribute" : ""}{def.is_required ? " · Required" : ""}</small>
             {def.value_type === "text" && !(def.options || []).length ?
               <input value={(selected[def.code] || [])[0] || ""} placeholder={"Enter " + def.name.toLowerCase()} onChange={e => setSelected(old => ({ ...old, [def.code]: e.target.value ? [e.target.value] : [] }))} /> :
-              OPTION_TYPES.includes(def.value_type) ? <div className="sb-option-chips">{(def.value_type === "text" ? [...new Set([...(def.options || []), ...(customAttributeOptions[def.id] || []), ...(selected[def.code] || [])])] : [...(def.options || []), ...(customAttributeOptions[def.id] || [])]).map(value => { const optionValue = def.value_type === "colour" ? colourOptionLabel(value) : value; return <label className="sb-option-chip" key={String(optionValue)}>{def.value_type === "colour" && <i className="sb-colour-swatch" style={{backgroundColor:normalizeColourOption(value).hex || "#999"}} />}<input type="checkbox" checked={(selected[def.code] || []).includes(optionValue)} onChange={() => toggleValue(def, optionValue)} />{String(optionValue)}</label>; })}</div> :
+              OPTION_TYPES.includes(def.value_type) ? <div className="sb-option-chips">{(def.value_type === "text" ? [...new Set([...(def.options || []), ...(customAttributeOptions[def.id] || []), ...(selected[def.code] || [])])] : [...(def.options || []), ...(customAttributeOptions[def.id] || [])]).map(value => { const optionValue = def.value_type === "colour" ? colourOptionLabel(value) : value; return <label className="sb-option-chip" key={String(optionValue)}>{def.value_type === "colour" && <i className="sb-colour-swatch" style={{backgroundColor:normalizeColourOption(value).hex || "#999"}} />}<input type="checkbox" checked={(selected[def.code] || []).includes(optionValue)} onChange={() => toggleValue(def, optionValue)} />{def.value_type === "image" && isImageUrl(optionValue) && <img className="sb-image-thumb" src={optionValue} alt="" />}{def.value_type === "image" ? imageOptionLabel(optionValue) : String(optionValue)}</label>; })}</div> :
               <input value={(selected[def.code] || [])[0] || ""} placeholder={"Enter " + def.name.toLowerCase()} onChange={e => setSelected(old => ({ ...old, [def.code]: e.target.value ? [e.target.value] : [] }))} />}
             {def.value_type === "colour" ? <ColourOptionEditor existingOptions={[...(def.options || []), ...(customAttributeOptions[def.id] || [])]} disabled={busy} compact onAdd={option => addOption(def, option)} /> :
-              OPTION_TYPES.includes(def.value_type) && <div className="sb-add-option"><input aria-label={"New " + def.name + " option"} value={newOptions[def.code] || ""} placeholder={"Add new " + def.name.toLowerCase() + " option"} onChange={e => setNewOptions(old => ({ ...old, [def.code]: e.target.value }))} /><button type="button" className="sb-secondary" disabled={busy || !(newOptions[def.code] || "").trim()} onClick={() => addOption(def).catch(e => setError(e.message || "Unable to add option."))}>Add value</button></div>}
+              def.value_type === "image" ? <ImageOptionEditor disabled={busy} onAdd={url => addOption(def, null, url)} /> : OPTION_TYPES.includes(def.value_type) && <div className="sb-add-option"><input aria-label={"New " + def.name + " option"} value={newOptions[def.code] || ""} placeholder={"Add new " + def.name.toLowerCase() + " option"} onChange={e => setNewOptions(old => ({ ...old, [def.code]: e.target.value }))} /><button type="button" className="sb-secondary" disabled={busy || !(newOptions[def.code] || "").trim()} onClick={() => addOption(def).catch(e => setError(e.message || "Unable to add option."))}>Add value</button></div>}
             {OPTION_TYPES.includes(def.value_type) && (selected[def.code] || []).length > 1 && <div className="sb-value-order" aria-label={def.name + " display order"}>
               <div className="sb-value-order-head"><small className="sb-muted">Storefront order for {def.name}</small><button type="button" className="sb-secondary" disabled={busy} onClick={() => autoSortValues(def)}>Sort low to high</button></div>
               <ol>{orderByList(selected[def.code] || [], valueOrder[def.code] || []).map((value, i, list) => <li key={String(value)}>
-                <span>{def.value_type === "colour" ? colourOptionLabel(value) : String(value)}</span>
+                <span>{def.value_type === "colour" ? colourOptionLabel(value) : def.value_type === "image" ? imageOptionLabel(value) : String(value)}</span>
                 <span className="sb-value-order-actions">
                   <button type="button" className="sb-secondary" aria-label={"Move " + String(value) + " up"} disabled={busy || i === 0} onClick={() => reorderValue(def, value, -1)}>▲</button>
                   <button type="button" className="sb-secondary" aria-label={"Move " + String(value) + " down"} disabled={busy || i === list.length - 1} onClick={() => reorderValue(def, value, 1)}>▼</button>

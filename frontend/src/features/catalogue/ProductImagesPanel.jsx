@@ -2,12 +2,14 @@ import { useEffect, useState } from "react";
 import { apiRequest } from "../../services/api.js";
 import { prepareProductImage } from "./productImageFormat.js";
 import { colourOptionLabel } from "./colourOptions.js";
+import ImageLibraryPicker from "./ImageLibraryPicker.jsx";
+import { imageOptionLabel } from "./imageOptions.js";
 
 // Readable variant name for pickers and gallery headings, e.g. "Red / 0.5 KG".
 function variantName(variant) {
   const parts = Object.values(variant?.attributes || {}).map(raw => {
     const value = Array.isArray(raw) ? raw[0] : raw;
-    return colourOptionLabel(value) || String(value ?? "").trim();
+    return imageOptionLabel(colourOptionLabel(value) || String(value ?? "").trim());
   }).filter(Boolean);
   return parts.length ? parts.join(" / ") : (variant?.sku || "Variant");
 }
@@ -35,28 +37,10 @@ export default function ProductImagesPanel({ products = [], initialProductId = "
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [library, setLibrary] = useState([]);
-  const [libQuery, setLibQuery] = useState("");
-  const [libLoading, setLibLoading] = useState(false);
-  const [libHasMore, setLibHasMore] = useState(false);
   const [pickedUrls, setPickedUrls] = useState([]);
-  const [pickerSelection, setPickerSelection] = useState([]);
 
-  async function loadLibrary(query = libQuery, append = false) {
-    setLibLoading(true);
-    try {
-      const offset = append ? library.length : 0;
-      const result = await apiRequest("/catalogue/media-library?limit=48&offset=" + offset + "&q=" + encodeURIComponent(query.trim()));
-      setLibrary(prev => append ? [...prev, ...(result.items || [])] : (result.items || []));
-      setLibHasMore(Boolean(result.has_more));
-    } catch (e) { setError(e.message || "Unable to load the image library."); }
-    finally { setLibLoading(false); }
-  }
-  function openPicker() { setPickerOpen(true); setPickerSelection(pickedUrls); loadLibrary("", false); setLibQuery(""); }
-  function togglePicked(item) {
-    setPickerSelection(prev => prev.some(i => i.image_url === item.image_url) ? prev.filter(i => i.image_url !== item.image_url) : [...prev, { image_url: item.image_url, alt_text: item.alt_text || "" }]);
-  }
-  function confirmPicked() {
+  function openPicker() { setPickerOpen(true); }
+  function confirmPicked(pickerSelection) {
     setPickedUrls(pickerSelection); setImageFiles([]); setFileInputKey(k => k + 1); setImageUrl("");
     setPickerOpen(false);
     setMessage(pickerSelection.length ? pickerSelection.length + " existing image" + (pickerSelection.length > 1 ? "s" : "") + " selected. Choose a variant if needed, then add them." : "");
@@ -157,7 +141,7 @@ export default function ProductImagesPanel({ products = [], initialProductId = "
       <div className="sb-form-grid">
         <label className="sb-span-all">Image files — select one or many (JPEG/PNG converted to WebP; WebP and GIF supported; max 10 MB each)<input key={fileInputKey} type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif" onChange={e=>{const files=Array.from(e.target.files||[]); setImageFiles(files); if(files.length){ setImageUrl(""); setPickedUrls([]); }}}/>{imageFiles.length>0 && <small className="sb-muted">{imageFiles.length} file{imageFiles.length>1?"s":""} selected</small>}</label>
         <div className="sb-span-all sb-media-choose"><button type="button" className="sb-row-action" onClick={openPicker}>Choose from already uploaded images</button>{pickedUrls.length>0 && <span className="sb-media-selected">{pickedUrls.slice(0,4).map(i=><img key={i.image_url} src={i.image_url} alt="" />)} {pickedUrls.length} existing selected <button type="button" className="sb-row-action" onClick={()=>setPickedUrls([])}>Clear</button></span>}</div>
-        {pickerOpen && <div className="sb-span-all sb-media-picker" role="dialog" aria-label="Image library"><div className="sb-media-picker-head"><input type="search" placeholder="Search by product, name or file…" value={libQuery} onChange={e=>setLibQuery(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); loadLibrary(libQuery,false);} }}/><button type="button" className="sb-row-action" onClick={()=>loadLibrary(libQuery,false)}>Search</button><button type="button" className="sb-row-action" onClick={()=>setPickerOpen(false)}>Cancel</button><button type="button" className="sb-primary" onClick={confirmPicked}>Use selected ({pickerSelection.length})</button></div>{libLoading && !library.length ? <p className="sb-muted">Loading images…</p> : library.length ? <div className="sb-media-grid">{library.map(item=>{const on=pickerSelection.some(i=>i.image_url===item.image_url); return <button type="button" key={item.image_url} aria-pressed={on} className={"sb-media-tile"+(on?" is-selected":"")} onClick={()=>togglePicked(item)} title={item.alt_text || item.image_url}><img src={item.image_url} alt={item.alt_text || ""} loading="lazy" onError={e=>{e.currentTarget.style.visibility="hidden";}}/><span>{on?"✓ ":""}{item.alt_text || "Image"}</span><small>{(item.product_names||[]).join(", ")}{item.use_count>1 ? " · used " + item.use_count + "×" : ""}</small></button>;})}</div> : <p className="sb-empty">No uploaded images found.</p>}{libHasMore && <button type="button" className="sb-row-action" disabled={libLoading} onClick={()=>loadLibrary(libQuery,true)}>{libLoading ? "Loading…" : "Load more"}</button>}</div>}
+        {pickerOpen && <div className="sb-span-all"><ImageLibraryPicker initialSelection={pickedUrls} onCancel={()=>setPickerOpen(false)} onConfirm={sel=>confirmPicked(sel)} /></div>}
         <label className="sb-span-all">Or image URL<input type="url" maxLength="2048" value={imageUrl} disabled={imageFiles.length>0 || pickedUrls.length>0} onChange={e=>setImageUrl(e.target.value)} placeholder="https://…"/></label>
         <label>Alt text<input maxLength="300" value={altText} onChange={e=>setAltText(e.target.value)}/></label>
         <label>Variant (optional)<select value={variantId} onChange={e=>setVariantId(e.target.value)}><option value="">Product-level image</option>{variants.filter(v=>v.is_active!==false).map(v=><option key={v.id} value={v.id}>{variantOptionLabel(v)}</option>)}</select></label>

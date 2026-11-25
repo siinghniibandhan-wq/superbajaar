@@ -12,7 +12,9 @@ export function copyName(name, attempt = 1) {
   return attempt <= 1 ? base + " (Copy)" : base + " (Copy " + attempt + ")";
 }
 
-const isNameTaken = error => /already exists|unique/i.test(String(error?.message || ""));
+// Only a product name/slug clash should trigger a "(Copy 2)" retry. Attribute messages such as
+// 'Colour name "Green" already exists...' are real errors and must be shown, not retried 25 times.
+const isNameTaken = error => /unique value already exists/i.test(String(error?.message || ""));
 
 export async function duplicateProductRecord(api, item, { maxTries = 25 } = {}) {
   if (!item?.id) throw new Error("Choose a product to duplicate.");

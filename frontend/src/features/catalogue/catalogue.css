@@ -270,3 +270,26 @@ dialog.sb-modal .sb-variant-pricing-list .sb-strip-row{display:grid;grid-templat
 .sb-hero-actions{display:flex;flex-wrap:wrap;gap:8px}
 .sb-hero-actions .sb-secondary{padding:7px 11px;font-size:12px}
 @media(max-width:560px){.sb-hero-item{grid-template-columns:1fr}}
+
+/* Image library picker (shared) — fixed square thumbnails, readable on phones */
+.sb-lib{display:grid;gap:10px;border:1px solid #dde6ee;border-radius:13px;background:#fcfdfd;padding:12px;min-width:0;width:100%;box-sizing:border-box}
+.sb-lib-head{display:grid;gap:8px}.sb-lib-head input{width:100%;min-width:0;box-sizing:border-box}
+.sb-lib-actions{display:flex;flex-wrap:wrap;gap:8px}.sb-lib-actions button{flex:1 1 auto}
+.sb-lib-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:10px;max-height:380px;overflow-y:auto;overflow-x:hidden;padding:2px}
+.sb-lib-tile{display:flex;flex-direction:column;gap:4px;min-width:0;padding:6px;border:1px solid #e3eaf0;border-radius:11px;background:#fff;cursor:pointer;box-sizing:border-box;text-align:left}
+.sb-lib-tile:hover,.sb-lib-tile:focus-visible{border-color:#4582b8;outline:none}
+.sb-lib-tile.is-selected{border-color:#4582b8;box-shadow:0 0 0 2px #4582b833;background:#f3f8fc}
+.sb-lib-thumb{position:relative;width:100%;aspect-ratio:1/1;border-radius:8px;background:#f2f4f6;overflow:hidden}
+.sb-lib-thumb img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block}
+.sb-lib-tick{position:absolute;top:4px;right:4px;width:20px;height:20px;border-radius:50%;background:#4582b8;color:#fff;font-size:12px;line-height:20px;text-align:center;font-weight:700}
+.sb-lib-name{font-size:11px;font-weight:700;line-height:1.25;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word}
+.sb-lib-meta{font-size:10px;color:#78838d;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-height:12px}
+@media(max-width:480px){.sb-lib-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}}
+
+/* Image attribute options */
+.sb-image-option-editor{display:grid;gap:8px;min-width:0}
+.sb-image-option-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.sb-image-option-file{display:grid;gap:4px;font-size:12px;font-weight:700;color:#38444e;min-width:0;flex:1 1 200px}
+.sb-image-option-file input{font-weight:400;max-width:100%}
+.sb-image-thumb{display:inline-block;width:36px;height:36px;object-fit:contain;border:1px solid #e3eaf0;border-radius:8px;background:#fafbfb;vertical-align:middle;flex:none}
+.sb-option-chip .sb-image-thumb{margin-right:2px}
