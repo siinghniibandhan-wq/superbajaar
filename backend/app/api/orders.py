@@ -16,6 +16,7 @@ from app.services.order_inventory import ensure_order_can_be_cancelled, order_ha
 from app.services.loyalty_redemption import redeem_for_order, restore_order_redemption
 from app.services.loyalty_accounting import post_earning_accrual
 from app.services.pos_tender import checkout_payload_for_hash, validate_pos_tender
+from app.services.serviceability import blocked_product_ids, eligible_locations, lookup_pin
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 ORDER_STATUSES = {"draft", "placed", "confirmed", "processing", "ready_for_dispatch", "dispatched", "delivered", "cancelled"}
@@ -51,6 +52,28 @@ def _lock_checkout_idempotency_key(conn, key: str) -> None:
     )
 
 
+def _enforce_regional_availability(conn, delivery_pin: str, variant_ids: list[int], delivery_type: str) -> None:
+    """Website checkout guard: the region must be served, products must be sold there, express must be offered."""
+    info = lookup_pin(conn, delivery_pin)
+    standard = eligible_locations(conn, delivery_pin, False, info)
+    if not standard:
+        raise HTTPException(status_code=409, detail="Sorry, Super Bajaar isn't available in your region yet.")
+    products = conn.execute(
+        "SELECT DISTINCT p.id, p.name, p.delivery_options FROM product_variants v "
+        "JOIN products p ON p.id=v.product_id WHERE v.id = ANY(%s)", (variant_ids,),
+    ).fetchall()
+    blocked = blocked_product_ids(conn, delivery_pin, info, standard, "website", [int(row["id"]) for row in products])
+    if blocked:
+        names = ", ".join(sorted(str(row["name"]) for row in products if int(row["id"]) in blocked))
+        raise HTTPException(status_code=422, detail="Not available in your area: " + names + ". Please remove these items to continue.")
+    if delivery_type == "express":
+        no_express = [str(row["name"]) for row in products if "express" not in (row["delivery_options"] or [])]
+        if no_express:
+            raise HTTPException(status_code=422, detail="Express delivery is not offered for: " + ", ".join(sorted(no_express)))
+        if not eligible_locations(conn, delivery_pin, True, info):
+            raise HTTPException(status_code=422, detail="Express delivery is not available in your area yet. Please choose standard delivery.")
+
+
 class OrderLineCreate(BaseModel):
     variant_id: int = Field(gt=0)
     quantity: int = Field(gt=0, le=100000)
@@ -63,6 +86,7 @@ class OrderCreate(BaseModel):
     customer_email: EmailStr | None = None
     delivery_pin: str | None = Field(default=None, pattern=r"^[0-9]{6}$")
     location_id: int | None = Field(default=None, gt=0)
+    delivery_type: str | None = Field(default=None, pattern=r"^(standard|express)$")
     notes: str | None = Field(default=None, max_length=2000)
     redeem_coins: int = Field(default=0, ge=0, le=10000000)
     checkout_idempotency_key: str | None = Field(default=None, min_length=8, max_length=100)
@@ -126,7 +150,7 @@ def list_orders(
     try:
         with _connect() as conn:
             items = conn.execute(
-                "SELECT o.id, o.order_number, o.channel, o.customer_name, o.customer_phone, o.delivery_pin, "
+                "SELECT o.id, o.order_number, o.channel, o.customer_name, o.customer_phone, o.delivery_pin, o.delivery_type, "
                 "o.status, o.subtotal, o.total, o.notes, o.created_at, o.updated_at, "
                 "assigned_location.id AS inventory_location_id, assigned_location.name AS inventory_location_name, "
                 "(SELECT count(*) FROM order_lines l WHERE l.order_id=o.id) AS line_count "
@@ -161,7 +185,7 @@ def get_order(order_id: int):
     try:
         with _connect() as conn:
             order = conn.execute(
-                "SELECT o.id, o.order_number, o.channel, o.customer_name, o.customer_phone, o.delivery_pin, "
+                "SELECT o.id, o.order_number, o.channel, o.customer_name, o.customer_phone, o.delivery_pin, o.delivery_type, "
                 "o.status, o.subtotal, o.total, o.notes, o.created_at, o.updated_at, "
                 "assigned_location.id AS inventory_location_id, assigned_location.name AS inventory_location_name "
                 "FROM orders o LEFT JOIN stock_locations assigned_location ON assigned_location.id=COALESCE("
@@ -254,13 +278,16 @@ def create_order(payload: OrderCreate, request: Request):
                 missing = set(variant_ids) - set(by_id)
                 if missing:
                     raise HTTPException(status_code=422, detail="One or more variants are missing or inactive")
+                delivery_type = payload.delivery_type or "standard"
+                if payload.channel == "website":
+                    _enforce_regional_availability(conn, payload.delivery_pin, variant_ids, delivery_type)
                 subtotal = sum((Decimal(str(by_id[line.variant_id]["selling_price"])) * line.quantity for line in payload.lines), Decimal("0"))
                 order_number = "SB-" + __import__("uuid").uuid4().hex[:12].upper()
                 order = conn.execute(
-                    "INSERT INTO orders (order_number, channel, customer_name, customer_phone, customer_email, delivery_pin, status, subtotal, total, notes, checkout_idempotency_key, checkout_payload_hash) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,'placed',%s,%s,%s,%s,%s) "
-                    "RETURNING id, order_number, channel, customer_name, customer_phone, customer_email, delivery_pin, status, subtotal, total, notes, created_at, updated_at",
-                    (order_number, payload.channel, payload.customer_name, payload.customer_phone, str(payload.customer_email).lower() if payload.customer_email else None, payload.delivery_pin, subtotal, subtotal, payload.notes, payload.checkout_idempotency_key, payload_hash),
+                    "INSERT INTO orders (order_number, channel, customer_name, customer_phone, customer_email, delivery_pin, delivery_type, status, subtotal, total, notes, checkout_idempotency_key, checkout_payload_hash) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,'placed',%s,%s,%s,%s,%s) "
+                    "RETURNING id, order_number, channel, customer_name, customer_phone, customer_email, delivery_pin, delivery_type, status, subtotal, total, notes, created_at, updated_at",
+                    (order_number, payload.channel, payload.customer_name, payload.customer_phone, str(payload.customer_email).lower() if payload.customer_email else None, payload.delivery_pin, delivery_type, subtotal, subtotal, payload.notes, payload.checkout_idempotency_key, payload_hash),
                 ).fetchone()
                 for line in payload.lines:
                     unit_price = Decimal(str(by_id[line.variant_id]["selling_price"]))
@@ -291,6 +318,7 @@ def create_order(payload: OrderCreate, request: Request):
                         [(line.variant_id, line.quantity) for line in payload.lines],
                         location_id=payload.location_id,
                         profile_routing=payload.channel == "website",
+                        express=delivery_type == "express",
                     )
                 except ValueError as exc:
                     raise HTTPException(status_code=409, detail=str(exc)) from exc

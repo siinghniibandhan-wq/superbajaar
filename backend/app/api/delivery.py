@@ -15,6 +15,7 @@ from app.services.fulfilment_dispatch import (
     order_has_reservation,
 )
 from app.services.order_inventory import order_reservation_locations
+from app.services.serviceability import check_pin
 
 
 
@@ -110,38 +111,29 @@ class DeliveryStatusUpdate(BaseModel):
 
 @router.get("/serviceability/{pin_code}")
 def check_serviceability(pin_code: str):
-    """Return eligible physical fulfilment facilities for this exact PIN; never expose internal bins."""
+    """Region-aware answer for a customer PIN: standard/express coverage and products blocked there."""
     if not pin_code.isdigit() or len(pin_code) != 6 or pin_code.startswith("0"):
         raise HTTPException(status_code=422, detail="Enter a valid six-digit Indian PIN code")
     try:
         with _connect() as conn:
-            locations = conn.execute(
-                "SELECT sl.id, sl.name, sl.location_type, sl.pin_code, sl.region_code, sl.city, sl.district, sl.state "
-                "FROM stock_locations sl LEFT JOIN stock_location_profiles p ON p.location_id=sl.id "
-                "WHERE sl.is_active=TRUE AND sl.is_fulfillable=TRUE "
-                "AND COALESCE((p.profile_data->>'storefront_available')::boolean, TRUE)=TRUE "
-            "AND COALESCE((p.profile_data->>'dispatches_stock')::boolean, TRUE)=TRUE "
-                "AND COALESCE(p.profile_data->'service_pin_codes', "
-                "CASE WHEN sl.pin_code IS NULL THEN '[]'::jsonb ELSE jsonb_build_array(sl.pin_code) END) "
-                "@> jsonb_build_array(%s::text) "
-                "AND (COALESCE(jsonb_array_length(p.profile_data->'operating_days'),0)=0 "
-                "OR p.profile_data->'operating_days' ? lower(to_char(now() AT TIME ZONE 'Asia/Kolkata','Dy'))) "
-                "AND (p.profile_data->>'opening_time' IS NULL OR "
-                "to_char(now() AT TIME ZONE 'Asia/Kolkata','HH24:MI') >= p.profile_data->>'opening_time') "
-                "AND (p.profile_data->>'closing_time' IS NULL OR "
-                "to_char(now() AT TIME ZONE 'Asia/Kolkata','HH24:MI') <= p.profile_data->>'closing_time') "
-                "ORDER BY COALESCE((p.profile_data->>'routing_priority')::integer,100), sl.id",
-                (pin_code,),
-            ).fetchall()
-        return {
-            "pin_code": pin_code,
-            "serviceable": bool(locations),
-            "status": "serviceable" if locations else "not_configured",
-            "locations": [{"id": row["id"], "name": row["name"], "location_type": row["location_type"], "region_code": row["region_code"], "city": row["city"], "district": row["district"], "state": row["state"]} for row in locations],
-            "message": "Delivery is configured for this PIN." if locations else "Delivery is not configured for this PIN yet.",
-        }
+            return check_pin(conn, pin_code)
     except psycopg.Error as exc:
         raise _db_error(exc) from exc
+
+
+@router.get("/regions/districts")
+def list_region_districts(state: str = Query(min_length=2, max_length=100)):
+    """District suggestions for the warehouse coverage editor (from the PIN directory)."""
+    try:
+        with _connect() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT district FROM india_pin_directory "
+                "WHERE lower(state)=lower(%s) AND district IS NOT NULL ORDER BY district",
+                (state.strip(),),
+            ).fetchall()
+        return {"state": state.strip(), "districts": [row["district"] for row in rows]}
+    except psycopg.Error:
+        return {"state": state.strip(), "districts": []}
 
 
 @router.get("/shipments")

@@ -151,7 +151,13 @@ class FacilityProfileCreate(BaseModel):
     state: str = Field(min_length=2, max_length=100)
     country: str = Field(default="India", min_length=2, max_length=80)
     pin_code: str = Field(pattern=r"^[1-9][0-9]{5}$")
+    service_states: list[str] = Field(default_factory=list, max_length=40)
+    service_districts: list[str] = Field(default_factory=list, max_length=500)
     service_pin_codes: list[str] = Field(default_factory=list, max_length=500)
+    express_enabled: bool = False
+    express_states: list[str] = Field(default_factory=list, max_length=40)
+    express_districts: list[str] = Field(default_factory=list, max_length=500)
+    express_pin_codes: list[str] = Field(default_factory=list, max_length=500)
     routing_priority: int = Field(default=100, ge=0, le=100000)
     storefront_available: bool = True
     is_fulfillable: bool | None = None
@@ -182,7 +188,18 @@ class FacilityProfileCreate(BaseModel):
             raise ValueError("This field cannot be blank")
         return value
 
-    @field_validator("service_pin_codes")
+    @field_validator("service_states", "service_districts", "express_states", "express_districts")
+    @classmethod
+    def clean_area_names(cls, value: list[str]) -> list[str]:
+        cleaned, seen = [], set()
+        for item in value:
+            name = re.sub(r"\s+", " ", str(item or "").strip())
+            if name and name.lower() not in seen:
+                seen.add(name.lower())
+                cleaned.append(name[:100])
+        return cleaned
+
+    @field_validator("service_pin_codes", "express_pin_codes")
     @classmethod
     def valid_service_pin_codes(cls, value: list[str]) -> list[str]:
         normalised = [pin.strip() for pin in value]
@@ -626,8 +643,8 @@ def create_location(payload: StockLocationCreate, request: Request):
                     if payload.pin_code and payload.pin_code != profile.pin_code:
                         raise HTTPException(status_code=422, detail="Facility PIN must match the profile's primary PIN")
                     profile_data = profile.model_dump(mode="json")
-                    if not profile_data["service_pin_codes"]:
-                        profile_data["service_pin_codes"] = [profile.pin_code]
+                    if not profile_data["service_states"] and not profile_data["service_districts"] and not profile_data["service_pin_codes"]:
+                        profile_data["service_states"] = [profile.state]
                     conn.execute(
                         "UPDATE stock_locations SET pin_code=%s WHERE id=%s",
                         (profile.pin_code, row["id"]),
@@ -736,8 +753,8 @@ def update_location_profile(location_id: int, profile: FacilityProfileCreate, re
                 if not exists:
                     raise HTTPException(404, "Stock location not found")
                 profile_data = profile.model_dump(mode="json")
-                if not profile_data["service_pin_codes"]:
-                    profile_data["service_pin_codes"] = [profile.pin_code]
+                if not profile_data["service_states"] and not profile_data["service_districts"] and not profile_data["service_pin_codes"]:
+                    profile_data["service_states"] = [profile.state]
                 conn.execute(
                     "UPDATE stock_locations SET pin_code=%s,is_fulfillable=COALESCE(%s,is_fulfillable) WHERE id=%s",
                     (profile.pin_code, profile.is_fulfillable, location_id),
