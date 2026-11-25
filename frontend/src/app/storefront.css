@@ -1999,3 +1999,17 @@
   .storefront-hero-arrow.is-next { right:8px; }
 }
 @media (prefers-reduced-motion:reduce) { .storefront-hero-slider-track { transition:none; } }
+
+/* Regional availability: unavailable products, delivery type selector */
+.storefront-product-card.is-unavailable .storefront-product-art { filter: grayscale(1); opacity: .55; }
+.storefront-product-card.is-unavailable h3,
+.storefront-product-card.is-unavailable .storefront-card-price { opacity: .65; }
+.storefront-product-card.is-unavailable .storefront-add,
+.storefront-add:disabled,
+.storefront-primary:disabled { background: #e7e2ee; color: #7a7388; cursor: not-allowed; transform: none; box-shadow: none; }
+.storefront-product-card.is-unavailable .storefront-add:hover { background: #e7e2ee; color: #7a7388; transform: none; }
+.storefront-delivery-type-options { display: grid; gap: 10px; margin-top: 10px; }
+.storefront-delivery-type-options label { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid rgba(107,53,181,.22); border-radius: 14px; background: rgba(255,255,255,.7); cursor: pointer; }
+.storefront-delivery-type-options label.is-selected { border-color: #6b35b5; background: #f4ecff; }
+.storefront-delivery-type-options label span { display: grid; gap: 2px; }
+.storefront-delivery-type-options label small { color: #6d6580; }
