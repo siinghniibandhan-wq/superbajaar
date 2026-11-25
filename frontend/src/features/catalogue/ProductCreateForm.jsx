@@ -3,7 +3,7 @@ import { apiRequest } from "../../services/api.js";
 import ProductImagesPanel from "./ProductImagesPanel.jsx";
 import ColourOptionEditor from "./ColourOptionEditor.jsx";
 import ImageOptionEditor from "./ImageOptionEditor.jsx";
-import { imageOptionLabel, isImageUrl } from "./imageOptions.js";
+import { normalizeImageOption, resolveImageValue } from "./imageOptions.js";
 import { colourOptionLabel, normalizeColourOption } from "./colourOptions.js";
 import { buildCompleteProductPayload } from "./catalogueComplete.js";
 import { cleanHsn, isValidHsn, matchHsnRule } from "./hsnRules.js";
@@ -274,12 +274,16 @@ export default function ProductCreateForm({ categories = [], product = null, dup
     });
   }
 
-  async function addOption(def, colourOption = null, imageUrl = null) {
-    const raw = def.value_type === "colour" ? colourOption : (imageUrl != null ? String(imageUrl).trim() : (newOptions[def.code] || "").trim());
-    if (!raw) return;
+  async function addOption(def, colourOption = null, imageOption = null) {
+    const raw = def.value_type === "colour" ? colourOption : (imageOption != null ? { name: String(imageOption.name || "").trim(), image: String(imageOption.image || "").trim() } : (newOptions[def.code] || "").trim());
+    if (!raw || (def.value_type === "image" && (!raw.name || !raw.image))) return;
     const existing = customAttributeOptions[def.id] || [];
-    const label = def.value_type === "colour" ? colourOptionLabel(raw) : String(raw).trim();
+    const label = def.value_type === "colour" ? colourOptionLabel(raw) : def.value_type === "image" ? raw.name : String(raw).trim();
     const duplicate = [...(def.options || []), ...existing].some(option => {
+      if (def.value_type === "image") {
+        const current = normalizeImageOption(option);
+        return current.name.toLowerCase() === raw.name.toLowerCase() || (current.image && current.image === raw.image);
+      }
       if (def.value_type === "colour") {
         const current = normalizeColourOption(option);
         const candidate = normalizeColourOption(raw);
@@ -287,7 +291,7 @@ export default function ProductCreateForm({ categories = [], product = null, dup
       }
       return String(option).trim().toLowerCase() === label.toLowerCase();
     });
-    if (duplicate) throw new Error("This value already exists for the selected attribute. Choose a different value.");
+    if (duplicate) throw new Error(def.value_type === "image" ? '"' + raw.name + '" (or this image) already exists for this attribute. Choose a different name or image.' : "This value already exists for the selected attribute. Choose a different value.");
     setCustomAttributeOptions(old => ({ ...old, [def.id]: [...(old[def.id] || []), raw] }));
     setPendingCustomOptions(old => ({ ...old, [def.id]: [...(old[def.id] || []), raw] }));
     setSelected(old => {
@@ -520,14 +524,14 @@ export default function ProductCreateForm({ categories = [], product = null, dup
             <strong>{def.name}</strong><small className="sb-muted">{def.value_type}{def.is_variant_attribute ? " · Variant attribute" : ""}{def.is_required ? " · Required" : ""}</small>
             {def.value_type === "text" && !(def.options || []).length ?
               <input value={(selected[def.code] || [])[0] || ""} placeholder={"Enter " + def.name.toLowerCase()} onChange={e => setSelected(old => ({ ...old, [def.code]: e.target.value ? [e.target.value] : [] }))} /> :
-              OPTION_TYPES.includes(def.value_type) ? <div className="sb-option-chips">{(def.value_type === "text" ? [...new Set([...(def.options || []), ...(customAttributeOptions[def.id] || []), ...(selected[def.code] || [])])] : [...(def.options || []), ...(customAttributeOptions[def.id] || [])]).map(value => { const optionValue = def.value_type === "colour" ? colourOptionLabel(value) : value; return <label className="sb-option-chip" key={String(optionValue)}>{def.value_type === "colour" && <i className="sb-colour-swatch" style={{backgroundColor:normalizeColourOption(value).hex || "#999"}} />}<input type="checkbox" checked={(selected[def.code] || []).includes(optionValue)} onChange={() => toggleValue(def, optionValue)} />{def.value_type === "image" && isImageUrl(optionValue) && <img className="sb-image-thumb" src={optionValue} alt="" />}{def.value_type === "image" ? imageOptionLabel(optionValue) : String(optionValue)}</label>; })}</div> :
+              OPTION_TYPES.includes(def.value_type) ? <div className="sb-option-chips">{(def.value_type === "text" ? [...new Set([...(def.options || []), ...(customAttributeOptions[def.id] || []), ...(selected[def.code] || [])])] : [...(def.options || []), ...(customAttributeOptions[def.id] || [])]).map(value => { const imageItem = def.value_type === "image" ? normalizeImageOption(value) : null; const optionValue = def.value_type === "colour" ? colourOptionLabel(value) : imageItem ? imageItem.value : value; return <label className="sb-option-chip" key={String(optionValue)}>{def.value_type === "colour" && <i className="sb-colour-swatch" style={{backgroundColor:normalizeColourOption(value).hex || "#999"}} />}<input type="checkbox" checked={(selected[def.code] || []).includes(optionValue)} onChange={() => toggleValue(def, optionValue)} />{imageItem && imageItem.image && <img className="sb-image-thumb" src={imageItem.image} alt="" />}{imageItem ? imageItem.name : String(optionValue)}</label>; })}</div> :
               <input value={(selected[def.code] || [])[0] || ""} placeholder={"Enter " + def.name.toLowerCase()} onChange={e => setSelected(old => ({ ...old, [def.code]: e.target.value ? [e.target.value] : [] }))} />}
             {def.value_type === "colour" ? <ColourOptionEditor existingOptions={[...(def.options || []), ...(customAttributeOptions[def.id] || [])]} disabled={busy} compact onAdd={option => addOption(def, option)} /> :
-              def.value_type === "image" ? <ImageOptionEditor disabled={busy} onAdd={url => addOption(def, null, url)} /> : OPTION_TYPES.includes(def.value_type) && <div className="sb-add-option"><input aria-label={"New " + def.name + " option"} value={newOptions[def.code] || ""} placeholder={"Add new " + def.name.toLowerCase() + " option"} onChange={e => setNewOptions(old => ({ ...old, [def.code]: e.target.value }))} /><button type="button" className="sb-secondary" disabled={busy || !(newOptions[def.code] || "").trim()} onClick={() => addOption(def).catch(e => setError(e.message || "Unable to add option."))}>Add value</button></div>}
+              def.value_type === "image" ? <ImageOptionEditor disabled={busy} onAdd={option => addOption(def, null, option)} /> : OPTION_TYPES.includes(def.value_type) && <div className="sb-add-option"><input aria-label={"New " + def.name + " option"} value={newOptions[def.code] || ""} placeholder={"Add new " + def.name.toLowerCase() + " option"} onChange={e => setNewOptions(old => ({ ...old, [def.code]: e.target.value }))} /><button type="button" className="sb-secondary" disabled={busy || !(newOptions[def.code] || "").trim()} onClick={() => addOption(def).catch(e => setError(e.message || "Unable to add option."))}>Add value</button></div>}
             {OPTION_TYPES.includes(def.value_type) && (selected[def.code] || []).length > 1 && <div className="sb-value-order" aria-label={def.name + " display order"}>
               <div className="sb-value-order-head"><small className="sb-muted">Storefront order for {def.name}</small><button type="button" className="sb-secondary" disabled={busy} onClick={() => autoSortValues(def)}>Sort low to high</button></div>
               <ol>{orderByList(selected[def.code] || [], valueOrder[def.code] || []).map((value, i, list) => <li key={String(value)}>
-                <span>{def.value_type === "colour" ? colourOptionLabel(value) : def.value_type === "image" ? imageOptionLabel(value) : String(value)}</span>
+                <span>{def.value_type === "colour" ? colourOptionLabel(value) : def.value_type === "image" ? resolveImageValue(value, [...(def.options || []), ...(customAttributeOptions[def.id] || [])]).name : String(value)}</span>
                 <span className="sb-value-order-actions">
                   <button type="button" className="sb-secondary" aria-label={"Move " + String(value) + " up"} disabled={busy || i === 0} onClick={() => reorderValue(def, value, -1)}>▲</button>
                   <button type="button" className="sb-secondary" aria-label={"Move " + String(value) + " down"} disabled={busy || i === list.length - 1} onClick={() => reorderValue(def, value, 1)}>▼</button>
@@ -536,7 +540,7 @@ export default function ProductCreateForm({ categories = [], product = null, dup
             </div>}
           </div>)}
           {definitions.filter(def => def.is_variant_attribute && !OPTION_TYPES.includes(def.value_type) && selected[def.code]?.length).map(def => <p className="sb-muted" key={def.id}>{def.name} · Legacy attribute (read-only): {(selected[def.code] || []).join(", ")}. Existing variant values will be preserved.</p>)}
-          {definitions.some(def => !def.is_variant_attribute && OPTION_TYPES.includes(def.value_type)) && <div className="sb-product-attributes"><h3>Product-level attributes</h3>{definitions.filter(def => !def.is_variant_attribute && OPTION_TYPES.includes(def.value_type)).map(def => { const options = [...(def.options || []), ...(customAttributeOptions[def.id] || [])]; const current = productAttributeValues[def.id] ?? ""; const displayValue = typeof current === "string" ? current : current == null ? "" : JSON.stringify(current); return <label className="sb-attribute-picker" key={def.id}><strong>{def.name}</strong><small className="sb-muted">{def.value_type} · Product attribute{def.is_required ? " · Required" : ""}</small>{def.value_type === "text" ? <input value={displayValue} placeholder={"Enter " + def.name.toLowerCase()} onChange={e => setProductAttributeValues(old => ({ ...old, [def.id]: e.target.value }))} /> : <select value={displayValue} onChange={e => setProductAttributeValues(old => ({ ...old, [def.id]: e.target.value }))}><option value="">Select {def.name.toLowerCase()}</option>{options.map(option => { const value = def.value_type === "colour" ? colourOptionLabel(option) : String(option); return <option key={value} value={value}>{value}</option>; })}</select>}</label>; })}</div>}
+          {definitions.some(def => !def.is_variant_attribute && OPTION_TYPES.includes(def.value_type)) && <div className="sb-product-attributes"><h3>Product-level attributes</h3>{definitions.filter(def => !def.is_variant_attribute && OPTION_TYPES.includes(def.value_type)).map(def => { const options = [...(def.options || []), ...(customAttributeOptions[def.id] || [])]; const current = productAttributeValues[def.id] ?? ""; const displayValue = typeof current === "string" ? current : current == null ? "" : JSON.stringify(current); return <label className="sb-attribute-picker" key={def.id}><strong>{def.name}</strong><small className="sb-muted">{def.value_type} · Product attribute{def.is_required ? " · Required" : ""}</small>{def.value_type === "text" ? <input value={displayValue} placeholder={"Enter " + def.name.toLowerCase()} onChange={e => setProductAttributeValues(old => ({ ...old, [def.id]: e.target.value }))} /> : <select value={displayValue} onChange={e => setProductAttributeValues(old => ({ ...old, [def.id]: e.target.value }))}><option value="">Select {def.name.toLowerCase()}</option>{options.map(option => { const image = def.value_type === "image" ? normalizeImageOption(option) : null; const value = def.value_type === "colour" ? colourOptionLabel(option) : image ? image.value : String(option); return <option key={value} value={value}>{image ? image.name : value}</option>; })}</select>}</label>; })}</div>}
           {!definitions.length && <p className="sb-empty">Create an attribute in the Attributes tab first, or continue with a product that has no variants.</p>}
           <p className="sb-muted">This product will have {includedCombinations.length} of {variantCombinations.length} possible variant(s). Untick a combination that does not exist (for example 1 kg in a can) to hide it. Hidden combinations are not sold or shown in the shop. Prices below are stored on each variant, not on the reusable attribute definition.</p>
           {chosenAttributes.length > 0 && variantCombinations.length > 1 && <div className="sb-combo-tools">

@@ -293,3 +293,9 @@ dialog.sb-modal .sb-variant-pricing-list .sb-strip-row{display:grid;grid-templat
 .sb-image-option-file input{font-weight:400;max-width:100%}
 .sb-image-thumb{display:inline-block;width:36px;height:36px;object-fit:contain;border:1px solid #e3eaf0;border-radius:8px;background:#fafbfb;vertical-align:middle;flex:none}
 .sb-option-chip .sb-image-thumb{margin-right:2px}
+.sb-image-pending{display:grid;gap:8px;padding:10px;border:1px dashed #c9d8e6;border-radius:12px;background:#fafcfe}
+.sb-image-pending-row{display:flex;align-items:center;gap:8px;min-width:0}
+.sb-image-pending-row input{flex:1 1 auto;min-width:0}
+.sb-image-name-list{display:grid;gap:8px}
+.sb-image-name-row{display:flex;align-items:center;gap:8px;min-width:0}
+.sb-image-name-row input{flex:1 1 auto;min-width:0}
