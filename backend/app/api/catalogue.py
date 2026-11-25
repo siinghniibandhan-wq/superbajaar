@@ -94,6 +94,44 @@ class ProductCreate(BaseModel):
         return value.strip()
 
 
+def _image_option_error(option: Any) -> str | None:
+    """Image attribute values are {"name": "Black", "image": "https://..."}; plain URL strings are legacy."""
+    if isinstance(option, dict):
+        name = str(option.get("name", "")).strip()
+        image = str(option.get("image", "")).strip()
+        if not name:
+            return "Every image value needs a name"
+        if len(name) > 120:
+            return "Image value names must be 120 characters or fewer"
+        if not re.fullmatch(r"(https?://|/)\S+", image, flags=re.IGNORECASE) or len(image) > 2048:
+            return "Every image value needs an uploaded image or a valid image link"
+        return None
+    if isinstance(option, str) and option.strip():
+        return None
+    return "Image values must have a name and an image"
+
+
+def _clean_image_option(option: Any) -> Any:
+    if isinstance(option, dict):
+        return {"name": str(option.get("name", "")).strip(), "image": str(option.get("image", "")).strip()}
+    return option.strip() if isinstance(option, str) else option
+
+
+def _option_keys(option: Any) -> set[str]:
+    """Names/links that identify one option (an image option is known by its name and by its image)."""
+    if isinstance(option, dict):
+        return {k for k in (str(option.get("name", "")).strip().casefold(), str(option.get("image", "")).strip().casefold()) if k}
+    return {str(option).strip().casefold()}
+
+
+def _custom_option_key(kind: str, option: Any) -> str:
+    if isinstance(option, dict) and kind == "colour":
+        return str(option.get("name", "")).strip().casefold() + "|" + str(option.get("hex", "")).strip().upper()
+    if isinstance(option, dict):
+        return str(option.get("name", "")).strip().casefold()
+    return str(option).strip().casefold()
+
+
 class AttributeCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     code: str = Field(min_length=1, max_length=120, pattern=r"^[a-z][a-z0-9_]*$")
@@ -131,7 +169,24 @@ class AttributeCreate(BaseModel):
             raise ValueError("Colour and image attributes require at least one value")
         normalized_names = []
         normalized_hexes = []
+        image_links: list[str] = []
+        cleaned: list[Any] = []
         for option in value:
+            if value_type == "image":
+                error = _image_option_error(option)
+                if error:
+                    raise ValueError(error)
+                option = _clean_image_option(option)
+                if isinstance(option, dict):
+                    normalized_names.append(option["name"].casefold())
+                    image_links.append(option["image"].casefold())
+                else:
+                    normalized_names.append(option.casefold())
+                    image_links.append(option.casefold())
+                normalized_hexes.append(None)
+                cleaned.append(option)
+                continue
+            cleaned.append(option)
             if value_type == "colour" and isinstance(option, dict):
                 name = str(option.get("name", "")).strip()
                 hex_value = str(option.get("hex", "")).strip().upper()
@@ -149,7 +204,9 @@ class AttributeCreate(BaseModel):
         hexes = [item for item in normalized_hexes if item]
         if len(set(hexes)) != len(hexes):
             raise ValueError("This colour HEX already exists in this attribute")
-        return value
+        if len(set(image_links)) != len(image_links):
+            raise ValueError("The same image is used by more than one value in this attribute")
+        return cleaned
 
 
 
@@ -343,7 +400,8 @@ def _validate_attribute_value(conn, attribute: dict[str, Any], value: Any, produ
     elif kind == "multi_select":
         valid = isinstance(value, list) and all(item in options for item in value) and len(value) == len(set(map(str, value)))
     elif kind == "image":
-        valid = isinstance(value, str) and value in options
+        # New values are stored by name; older variants may hold the image link itself.
+        valid = isinstance(value, str) and any(value.strip() in {str(option.get("name", "")).strip(), str(option.get("image", "")).strip()} if isinstance(option, dict) else str(option).strip() == value.strip() for option in options)
     elif kind == "text":
         valid = isinstance(value, str)
     elif kind == "number":
@@ -760,11 +818,7 @@ def _save_complete_product(
             global_colours = _lock_and_get_global_colour_attributes(conn)
             _validate_global_colour_uniqueness(global_colours, added, reuse_attribute_id=attribute_id)
         for option in added:
-            option_key = (
-                str(option.get("name", "")).strip().casefold() + "|" + str(option.get("hex", "")).strip().upper()
-                if attribute["value_type"] == "colour" and isinstance(option, dict)
-                else str(option).strip().casefold()
-            )
+            option_key = _custom_option_key(attribute["value_type"], option)
             conn.execute(
                 "INSERT INTO product_attribute_custom_options(product_id,attribute_id,value,option_key) "
                 "VALUES(%s,%s,%s::jsonb,%s)",
@@ -1006,7 +1060,7 @@ def add_product_attribute_options(product_id: int, attribute_id: int, payload: P
                 _validate_global_colour_uniqueness(global_colours, added, reuse_attribute_id=attribute_id)
             inserted = []
             for option in added:
-                key = (str(option.get("name", "")).strip().casefold() + "|" + str(option.get("hex", "")).strip().upper()) if kind == "colour" and isinstance(option, dict) else str(option).strip().casefold()
+                key = _custom_option_key(kind, option)
                 row = conn.execute(
                     "INSERT INTO product_attribute_custom_options (product_id, attribute_id, value, option_key) "
                     "VALUES (%s,%s,%s::jsonb,%s) RETURNING id,product_id,attribute_id,value,created_at",
@@ -1159,13 +1213,30 @@ def _merge_attribute_options(existing: list[Any], incoming: list[Any], value_typ
     combined = list(existing or [])
     names = set()
     hexes = set()
+    images = set()
     for item in combined:
-        if value_type == "colour" and isinstance(item, dict):
+        if value_type == "image":
+            names.add(str(item.get("name", "") if isinstance(item, dict) else item).strip().casefold())
+            images.add(str(item.get("image", "") if isinstance(item, dict) else item).strip().casefold())
+        elif value_type == "colour" and isinstance(item, dict):
             names.add(str(item.get("name", "")).strip().casefold())
             hexes.add(str(item.get("hex", "")).strip().upper())
         else:
             names.add(str(item).strip().casefold())
     for option in incoming:
+        if value_type == "image":
+            error = _image_option_error(option)
+            if error:
+                raise HTTPException(status_code=422, detail=error)
+            option = _clean_image_option(option)
+            label = option["name"] if isinstance(option, dict) else option
+            link = option["image"] if isinstance(option, dict) else option
+            if label.casefold() in names:
+                raise HTTPException(status_code=409, detail=f'"{label}" already exists in this attribute. Choose a different name.')
+            if link.casefold() in images:
+                raise HTTPException(status_code=409, detail="This image is already used by another value in this attribute.")
+            names.add(label.casefold()); images.add(link.casefold()); combined.append(option)
+            continue
         if value_type == "colour" and isinstance(option, dict):
             name = str(option.get("name", "")).strip()
             hex_value = str(option.get("hex", "")).strip().upper()
@@ -1281,6 +1352,18 @@ def update_attribute(attribute_id: int, payload: AttributeUpdate):
                     if newly_added:
                         existing_colours = _lock_and_get_global_colour_attributes(conn)
                         _validate_global_colour_uniqueness(existing_colours, newly_added, exclude_attribute_id=attribute_id)
+            elif next_type == "image":
+                for option in next_options:
+                    error = _image_option_error(option)
+                    if error:
+                        raise HTTPException(status_code=422, detail=error)
+                next_options = [_clean_image_option(option) for option in next_options]
+                labels = [str(o.get("name", "") if isinstance(o, dict) else o).strip().casefold() for o in next_options]
+                links = [str(o.get("image", "") if isinstance(o, dict) else o).strip().casefold() for o in next_options]
+                if len(set(labels)) != len(labels):
+                    raise HTTPException(status_code=409, detail="Duplicate name: each image value needs a different name.")
+                if len(set(links)) != len(links):
+                    raise HTTPException(status_code=409, detail="The same image is used by more than one value in this attribute.")
             else:
                 if any(not isinstance(option, (str, int, float, bool)) for option in next_options):
                     raise HTTPException(status_code=422, detail="Attribute options must be simple scalar values")
@@ -1289,13 +1372,35 @@ def update_attribute(attribute_id: int, payload: AttributeUpdate):
                     raise HTTPException(status_code=409, detail="Duplicate value: each value must be unique within this attribute.")
             if in_use and next_type != current["value_type"]:
                 raise HTTPException(status_code=409, detail="Attribute type cannot change while products or variants use this attribute")
-            def option_identity(option):
-                return str(option.get("name", "") if isinstance(option, dict) else option).strip().casefold()
-            removed = {option_identity(v) for v in (current["options"] or [])} - {option_identity(v) for v in next_options}
+            next_keys: set[str] = set()
+            for option in next_options:
+                next_keys |= _option_keys(option)
+            # A value is "removed" only if neither its name nor its image survives. Naming an existing
+            # image value (legacy link -> {name, image}) therefore keeps it, and variants keep working.
+            removed = [option for option in (current["options"] or []) if not (_option_keys(option) & next_keys)]
             if in_use and removed:
                 raise HTTPException(status_code=409, detail="Existing shared values cannot be removed while products or variants use this attribute")
             if in_use and current["is_variant_attribute"] and not next_variant and has_variant_values:
                 raise HTTPException(status_code=409, detail="This attribute is used by existing variants and cannot be disabled as a variant attribute")
+            if next_type == "image" and current["value_type"] == "image" and "options" in changes:
+                # Naming or renaming an image value keeps its image. Variants store the value by name
+                # (or, for older data, by image link), so point them at the new name.
+                new_by_image = {
+                    str(o.get("image", "") if isinstance(o, dict) else o).strip().casefold(): o for o in next_options
+                }
+                for cur in current["options"] or []:
+                    cur_name = str(cur.get("name", "") if isinstance(cur, dict) else cur).strip()
+                    cur_image = str(cur.get("image", "") if isinstance(cur, dict) else cur).strip()
+                    target = new_by_image.get(cur_image.casefold())
+                    if not isinstance(target, dict):
+                        continue
+                    stale = [v for v in {cur_name, cur_image} if v and v != target["name"]]
+                    if stale:
+                        conn.execute(
+                            "UPDATE product_variants SET attributes = jsonb_set(attributes, ARRAY[%s]::text[], to_jsonb(%s::text)) "
+                            "WHERE attributes ? %s AND attributes->>%s = ANY(%s)",
+                            (current["code"], target["name"], current["code"], current["code"], stale),
+                        )
             row = conn.execute(
                 "UPDATE product_attributes SET name=%s, value_type=%s, display_type=%s, is_variant_attribute=%s, is_required=%s, options=%s::jsonb "
                 "WHERE id=%s RETURNING id, name, code, value_type, display_type, is_variant_attribute, is_required, options, is_active, created_at",
