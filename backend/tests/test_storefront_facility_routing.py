@@ -2,6 +2,8 @@
 
 from decimal import Decimal
 
+import pytest
+
 from app.services.order_inventory import reserve_order_stock
 
 
@@ -17,6 +19,18 @@ class _Result:
         return self.row
 
 
+def _loc(location_id, **profile):
+    data = {"service_pin_codes": ["800001"]}
+    data.update(profile)
+    return {"id": location_id, "name": "L", "location_type": "warehouse", "pin_code": "800001",
+            "region_code": None, "city": "Patna", "district": "Patna", "state": "Bihar", "profile_data": data}
+
+
+@pytest.fixture(autouse=True)
+def _offline_pin_lookup(monkeypatch):
+    monkeypatch.setenv("SB_PIN_LOOKUP_ONLINE", "0")
+
+
 class _Connection:
     def __init__(self, location_rows, balance_rows_by_location):
         self.location_rows = location_rows
@@ -25,8 +39,10 @@ class _Connection:
         self.updates = []
         self.movements = []
 
-    def execute(self, query, params):
+    def execute(self, query, params=None):
         self.calls.append((query, params))
+        if "FROM india_pin_directory" in query:
+            return _Result(row=None)
         if "FROM stock_locations sl" in query or "FROM stock_locations WHERE" in query:
             return _Result(rows=self.location_rows)
         if "FROM inventory_balances" in query:
@@ -42,7 +58,7 @@ class _Connection:
 
 def test_storefront_reservation_queries_profile_service_pins_priority_and_hours():
     conn = _Connection(
-        location_rows=[{"id": 22}, {"id": 11}],
+        location_rows=[_loc(22), _loc(11)],
         balance_rows_by_location={
             22: [{"variant_id": 7, "on_hand": Decimal("10"), "reserved": Decimal("0")}],
             11: [{"variant_id": 7, "on_hand": Decimal("10"), "reserved": Decimal("0")}],
@@ -52,22 +68,20 @@ def test_storefront_reservation_queries_profile_service_pins_priority_and_hours(
     selected = reserve_order_stock(conn, 900, "800001", [(7, 2)], profile_routing=True)
 
     assert selected == 22
-    query, params = conn.calls[0]
+    query, params = next(call for call in conn.calls if "FROM stock_locations sl" in call[0])
     assert "stock_location_profiles" in query
-    assert "service_pin_codes" in query
     assert "routing_priority" in query
     assert "storefront_available" in query
     assert "dispatches_stock" in query
     assert "operating_days" in query
     assert "Asia/Kolkata" in query
-    assert params == ("800001",)
     assert len(conn.updates) == 1
     assert len(conn.movements) == 1
 
 
 def test_storefront_reservation_skips_higher_priority_facility_without_all_stock():
     conn = _Connection(
-        location_rows=[{"id": 22}, {"id": 11}],
+        location_rows=[_loc(22), _loc(11)],
         balance_rows_by_location={
             22: [{"variant_id": 7, "on_hand": Decimal("1"), "reserved": Decimal("0")}],
             11: [{"variant_id": 7, "on_hand": Decimal("10"), "reserved": Decimal("0")}],
@@ -83,7 +97,7 @@ def test_storefront_reservation_skips_higher_priority_facility_without_all_stock
 
 def test_storefront_reservation_never_splits_order_across_facilities():
     conn = _Connection(
-        location_rows=[{"id": 22}, {"id": 11}],
+        location_rows=[_loc(22), _loc(11)],
         balance_rows_by_location={
             22: [{"variant_id": 7, "on_hand": Decimal("10"), "reserved": Decimal("0")}],
             11: [{"variant_id": 8, "on_hand": Decimal("10"), "reserved": Decimal("0")}],
@@ -121,11 +135,11 @@ def test_manual_order_keeps_legacy_pin_and_location_ordering():
 
 
 def test_storefront_reports_when_no_facility_serves_pin_and_hours():
-    conn = _Connection(location_rows=[], balance_rows_by_location={})
+    conn = _Connection(location_rows=[_loc(5)], balance_rows_by_location={})
 
     try:
         reserve_order_stock(conn, 904, "800009", [(7, 1)], profile_routing=True)
     except ValueError as exc:
-        assert "No active fulfilment facility serves this delivery PIN" in str(exc)
+        assert "not available in your region" in str(exc)
     else:
         raise AssertionError("Checkout must reject a PIN with no eligible facility")

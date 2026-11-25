@@ -55,14 +55,8 @@ def test_delivery_history_rejects_invalid_limit():
 
 
 
-def test_serviceability_uses_profile_service_pins_and_operating_hours(monkeypatch):
+def test_serviceability_reports_available_region_message(monkeypatch):
     from app.api import delivery
-
-    class Result:
-        def fetchall(self):
-            return [{"id": 5, "name": "Patna Dark Store", "location_type": "dark_store",
-                     "pin_code": "800001", "region_code": None, "city": "Patna",
-                     "district": "Patna", "state": "Bihar"}]
 
     class Connection:
         def __enter__(self):
@@ -71,24 +65,19 @@ def test_serviceability_uses_profile_service_pins_and_operating_hours(monkeypatc
         def __exit__(self, *args):
             return False
 
-        def execute(self, query, params):
-            self.query = query
-            self.params = params
-            return Result()
+    seen = {}
 
-    conn = Connection()
-    monkeypatch.setattr(delivery, "_connect", lambda: conn)
+    def fake_check_pin(conn, pin):
+        seen["pin"] = pin
+        return {"pin_code": pin, "serviceable": True, "message": "Super Bajaar is available in your region."}
+
+    monkeypatch.setattr(delivery, "_connect", lambda: Connection())
+    monkeypatch.setattr(delivery, "check_pin", fake_check_pin)
 
     result = delivery.check_serviceability("800002")
 
     assert result["serviceable"] is True
-    assert result["locations"][0]["id"] == 5
-    assert "stock_location_profiles" in conn.query
-    assert "service_pin_codes" in conn.query
-    assert "storefront_available" in conn.query
-    assert "dispatches_stock" in conn.query
-    assert "Asia/Kolkata" in conn.query
-    assert conn.params == ("800002",)
+    assert seen["pin"] == "800002"
 
 
 def test_shipment_origin_is_derived_from_reserved_stock_location(monkeypatch):
