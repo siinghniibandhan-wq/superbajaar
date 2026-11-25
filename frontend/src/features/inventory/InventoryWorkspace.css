@@ -60,3 +60,12 @@
 .inventory-fold[open]>summary{border-bottom:1px solid #eceef0;margin-bottom:12px}
 .inventory-fold[open]{padding-bottom:14px}
 @media(max-width:640px){.inventory-main-nav{grid-template-columns:repeat(2,minmax(0,1fr))}.inventory-main-nav button{font-size:13px}.inventory-section .sb-form-grid{grid-template-columns:1fr}.inventory-section .sb-form-grid>*{grid-column:1/-1}.inventory-section .sb-form input,.inventory-section .sb-form select{min-height:44px;font-size:16px}.inventory-section .sb-form button.sb-primary,.inventory-section .sb-form button.sb-secondary{min-height:46px}}
+
+.sb-coverage { border: 1px solid rgba(107,53,181,.22); border-radius: 14px; padding: 12px 14px; }
+.sb-coverage legend { font-weight: 700; padding: 0 6px; }
+.sb-chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.sb-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: #f2eaff; color: #4b1d96; font-size: 13px; }
+.sb-chip button { border: 0; background: transparent; cursor: pointer; font-size: 15px; line-height: 1; color: inherit; }
+.sb-inline-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.sb-inline-row select, .sb-inline-row input { flex: 1 1 180px; min-width: 0; }
+.sb-coverage-summary { margin: 0; color: #4b1d96; }
