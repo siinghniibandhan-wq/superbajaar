@@ -18,7 +18,8 @@ export default function VariantOptionPicker({ groups, variants, selected, onSele
               key={option.key} className={"storefront-option" + (active ? " is-selected" : "")}
               onClick={() => { const chosen = pickVariant(variants, selected, group.code, option.key); if (chosen) onSelect(chosen); }}>
               {isSwatch && <i className="storefront-option-swatch" style={{ background: option.hex }} aria-hidden="true" />}
-              {(!isSwatch || style === "colour_chip") && <span>{option.label}</span>}
+              {option.image && <img className="storefront-option-image" src={option.image} alt="" loading="lazy" />}
+              {!option.image && (!isSwatch || style === "colour_chip") && <span>{option.label}</span>}
             </button>;
           })}
         </div>

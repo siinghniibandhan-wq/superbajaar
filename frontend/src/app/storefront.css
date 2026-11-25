@@ -2013,3 +2013,9 @@
 .storefront-delivery-type-options label.is-selected { border-color: #6b35b5; background: #f4ecff; }
 .storefront-delivery-type-options label span { display: grid; gap: 2px; }
 .storefront-delivery-type-options label small { color: #6d6580; }
+
+/* Image-type variant options (pattern / style pictures) */
+.storefront-option-image{display:block;width:100%;height:100%;object-fit:cover;border-radius:inherit}
+.storefront-option-list.is-image .storefront-option,.storefront-option-list.is-image_circle .storefront-option{width:56px;height:56px;min-width:56px;padding:2px;overflow:hidden;border-radius:10px}
+.storefront-option-list.is-image_circle .storefront-option{border-radius:50%}
+.storefront-option-list.is-image .storefront-option.is-selected,.storefront-option-list.is-image_circle .storefront-option.is-selected{background:#fff;border-color:#4c168c;box-shadow:0 0 0 3px rgba(76,22,140,.25)}

@@ -1,9 +1,14 @@
 import { normalizeDisplayType } from "../features/catalogue/attributeDisplay.js";
+import { isImageUrl, imageOptionLabel } from "../features/catalogue/imageOptions.js";
 import { colourOptionLabel, colourHexForValue, normalizeColourOption } from "../features/catalogue/colourOptions.js";
 
 // Turns one saved variant attribute value into a stable key and a label.
 function optionOf(raw) {
   const value = Array.isArray(raw) ? raw[0] : raw;
+  if (isImageUrl(value)) {
+    const url = String(value).trim();
+    return { key: url.toLowerCase(), label: imageOptionLabel(url), raw: value, image: url };
+  }
   const label = colourOptionLabel(value) || String(value ?? "").trim();
   return { key: label.toLowerCase(), label, raw: value };
 }
