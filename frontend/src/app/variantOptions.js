@@ -13,6 +13,13 @@ function optionOf(raw) {
   return { key: label.toLowerCase(), label, raw: value };
 }
 
+// Readable text for one saved variant value (an Image value shows its name, never its link).
+export function variantValueLabel(code, raw, definitions = []) {
+  const definition = (definitions || []).find(item => item.code === code);
+  if (definition?.value_type === "image") return resolveImageValue(raw, definition.options || []).name;
+  return Array.isArray(raw) ? raw.join(", ") : String(raw ?? "");
+}
+
 // Builds the choosers shown on the product page: one group per attribute that
 // has at least two different values across the product's variants.
 export function variantAttributeGroups(variants = [], definitions = []) {
