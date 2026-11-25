@@ -2019,3 +2019,13 @@
 .storefront-option-list.is-image .storefront-option,.storefront-option-list.is-image_circle .storefront-option{width:56px;height:56px;min-width:56px;padding:2px;overflow:hidden;border-radius:10px}
 .storefront-option-list.is-image_circle .storefront-option{border-radius:50%}
 .storefront-option-list.is-image .storefront-option.is-selected,.storefront-option-list.is-image_circle .storefront-option.is-selected{background:#fff;border-color:#4c168c;box-shadow:0 0 0 3px rgba(76,22,140,.25)}
+
+/* Uniform product-card image area: every card gets the same square box.
+   Keep this block last so it overrides the earlier min-height rules. */
+.storefront-product-art {
+  aspect-ratio: 1 / 1;
+  min-height: 0;
+}
+.storefront-product-art .storefront-product-image {
+  object-fit: cover;
+}
