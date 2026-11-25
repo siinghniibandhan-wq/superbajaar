@@ -5,7 +5,7 @@ import ColourOptionEditor from "./ColourOptionEditor.jsx";
 import { colourOptionLabel, normalizeColourOption } from "./colourOptions.js";
 import AttributeDisplayPicker from "./AttributeDisplayPicker.jsx";
 import ImageOptionEditor from "./ImageOptionEditor.jsx";
-import { normalizeImageOption } from "./imageOptions.js";
+import { normalizeImageOption, normalizeImageOptions } from "./imageOptions.js";
 import { defaultDisplayType, displayStyleLabel, normalizeDisplayType } from "./attributeDisplay.js";
 
 const initialAttribute = { name: "", code: "", value_type: "text", display_type: "button", is_variant_attribute: true, is_required: false, options: "" };
@@ -178,9 +178,8 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
     event.preventDefault(); setBusy(true); setError(""); setNotice("");
     try {
       if (attribute.value_type === "image") {
-        const names = imageOptions.map(o => String(o.name || "").trim().toLowerCase());
-        if (names.some(n => !n)) throw new Error("Give every image value a name.");
-        if (new Set(names).size !== names.length) throw new Error("Each image value needs a different name.");
+        // Names may repeat (several "Black" designs); each value only needs a name and its own image.
+        if (imageOptions.some(o => !String(o.name || "").trim())) throw new Error("Give every image value a name.");
       }
       const options = attribute.value_type === "colour" ? colourOptions : attribute.value_type === "image" ? imageOptions.map(o => ({ name: String(o.name).trim(), image: o.image })) : attribute.options.split(",").map(x => x.trim()).filter(Boolean);
       if (attribute.is_variant_attribute && !options.length) throw new Error("Enter at least one value for a variant attribute.");
@@ -256,7 +255,6 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
           </div> : attribute.value_type === "image" ? <div className="sb-form-grid-wide">
             <strong>Image values</strong>
             <ImageOptionEditor disabled={busy} onAdd={async option => {
-              if (imageOptions.some(v => String(v.name).trim().toLowerCase() === option.name.trim().toLowerCase())) throw new Error('"' + option.name + '" already exists in this attribute. Choose a different name.');
               if (imageOptions.some(v => v.image === option.image)) throw new Error("This image is already in the list.");
               setImageOptions(old => [...old, option]);
             }} />
@@ -308,7 +306,7 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
       {productId && !selectableAttributes.length && <p className="sb-empty">No option-based variant attributes yet. Add a Colour, Size or Select attribute above first.</p>}
       {productId && selectableAttributes.map(def => <div className="sb-attribute-picker" key={def.id}>
         <strong>{def.name}</strong><small className="sb-muted">{def.code} · select every value this product offers</small>
-        <div className="sb-option-chips">{(def.options || []).map(value => { const optionValue = def.value_type === "colour" ? colourOptionLabel(value) : def.value_type === "image" ? normalizeImageOption(value).value : value; return <label className="sb-option-chip" key={String(optionValue)}>{def.value_type === "colour" && <i className="sb-colour-swatch" style={{backgroundColor:normalizeColourOption(value).hex || "#999"}} />}<input type="checkbox" checked={(selectedValues[def.code] || []).includes(optionValue)} onChange={() => toggleAttributeValue(def, optionValue)} />{def.value_type === "image" && normalizeImageOption(value).image && <img className="sb-image-thumb" src={normalizeImageOption(value).image} alt="" />}{def.value_type === "image" ? normalizeImageOption(value).name : String(optionValue)}</label>; })}</div>
+        <div className="sb-option-chips">{(def.options || []).map((value, optionIndex) => { const optionValue = def.value_type === "colour" ? colourOptionLabel(value) : def.value_type === "image" ? normalizeImageOptions(def.options)[optionIndex].value : value; return <label className="sb-option-chip" key={String(optionValue)}>{def.value_type === "colour" && <i className="sb-colour-swatch" style={{backgroundColor:normalizeColourOption(value).hex || "#999"}} />}<input type="checkbox" checked={(selectedValues[def.code] || []).includes(optionValue)} onChange={() => toggleAttributeValue(def, optionValue)} />{def.value_type === "image" && normalizeImageOption(value).image && <img className="sb-image-thumb" src={normalizeImageOption(value).image} alt="" />}{def.value_type === "image" ? normalizeImageOption(value).name : String(optionValue)}</label>; })}</div>
       </div>)}
       <div className="sb-form-grid">
         <label>Default selling price (₹)<input type="number" min="0" step="0.01" value={defaultPrice} onChange={e=>setDefaultPrice(e.target.value)} placeholder="Can be edited per variant"/></label>

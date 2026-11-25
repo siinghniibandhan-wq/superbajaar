@@ -1,5 +1,6 @@
 // Image-type attribute values are { name, image }. Variants store the NAME, so the product page,
-// SKUs and admin screens read "Black" instead of a file link. Older data stored just the image
+// SKUs and admin screens read "Black" instead of a file link. Names may repeat (several "Black"
+// designs): the first one keeps the bare name, later ones are stored by their (unique) image link. Older data stored just the image
 // link as a plain string; those values are still understood.
 export const isImageUrl = value => /^(https?:)?\/\//i.test(String(value ?? "").trim()) || /^\/[^\s]+\.(webp|png|jpe?g|gif|svg)(\?.*)?$/i.test(String(value ?? "").trim());
 
@@ -31,12 +32,25 @@ export function normalizeImageOption(option) {
   return { name: imageOptionLabel(text), image: isImageUrl(text) ? text : "", value: text, legacy: true };
 }
 
+// Normalises a whole option list so that same-named values get distinct stored values.
+// Each item is { name, image, value, legacy, duplicateName }; `value` is what variants store.
+export function normalizeImageOptions(options = []) {
+  const seen = new Set();
+  return (options || []).map(option => {
+    const item = normalizeImageOption(option);
+    const key = item.name.toLowerCase();
+    const duplicateName = seen.has(key);
+    seen.add(key);
+    return { ...item, value: duplicateName && item.image ? item.image : item.value, duplicateName };
+  });
+}
+
 // Turns a value saved on a variant (a name, or an old image link) into { name, image }.
 export function resolveImageValue(raw, options = []) {
   const value = String(Array.isArray(raw) ? raw[0] : raw ?? "").trim();
-  for (const option of options || []) {
-    const item = normalizeImageOption(option);
-    if (item.value === value || item.name === value || (item.image && item.image === value)) return item;
-  }
-  return { name: imageOptionLabel(value), image: isImageUrl(value) ? value : "", value, legacy: true };
+  const items = normalizeImageOptions(options);
+  // Exact stored value or image link first (identifies one design), then the bare name (first match).
+  return items.find(item => item.value === value || (item.image && item.image === value))
+    || items.find(item => item.name === value)
+    || { name: imageOptionLabel(value), image: isImageUrl(value) ? value : "", value, legacy: true };
 }
