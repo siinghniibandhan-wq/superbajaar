@@ -469,10 +469,10 @@ export default function ProductCreateForm({ categories = [], product = null, dup
       <label className="sb-check"><input type="checkbox" checked={Boolean(form.is_website_available)} onChange={e=>change("is_website_available",e.target.checked)}/> Available on Website</label>
       <h3>Region, pincode and warehouse restrictions</h3>
       {product?.id ? <>
-        <p className="sb-muted">Restrictions are saved for this product. Each rule can target POS or Website and must specify a region, six-digit pincode, or active stock location/warehouse ID.</p>
+        <p className="sb-muted">Restrictions are saved for this product. Each rule can target POS or Website and must specify a state/district/region, six-digit pincode, or warehouse. With no rules the product sells everywhere. If you add Allow rules, the product sells ONLY in those areas; Block rules always hide it in their area. Website customers outside the allowed area see it as unavailable and cannot order it.</p>
         <div className="sb-form-grid">
           <label>Channel<select value={ruleDraft.channel} onChange={e=>setRuleDraft(v=>({...v,channel:e.target.value}))}><option value="website">Website</option><option value="pos">POS</option></select></label>
-          <label>Region code (optional)<input value={ruleDraft.region_code} onChange={e=>setRuleDraft(v=>({...v,region_code:e.target.value}))} placeholder="e.g. IN-JH"/></label>
+          <label>State, district or region code (optional)<input value={ruleDraft.region_code} onChange={e=>setRuleDraft(v=>({...v,region_code:e.target.value}))} placeholder="e.g. Jharkhand, Palamu or IN-JH"/></label>
           <label>Pincode (optional)<input inputMode="numeric" maxLength="6" pattern="[0-9]{6}" value={ruleDraft.pincode} onChange={e=>setRuleDraft(v=>({...v,pincode:e.target.value.replace(/\D/g,"")}))} placeholder="6-digit pincode"/></label>
           <label>Warehouse / store (optional)<select value={ruleDraft.location_id} onChange={e=>setRuleDraft(v=>({...v,location_id:e.target.value}))}><option value="">No location restriction</option>{stockLocations.map(location=><option key={location.id} value={location.id}>{location.name} · {location.location_type}{location.pin_code ? " · "+location.pin_code : ""} · #{location.id}</option>)}</select></label>
           <label>Restriction effect<select value={ruleDraft.is_allowed ? "allow" : "block"} onChange={e=>setRuleDraft(v=>({...v,is_allowed:e.target.value==="allow"}))}><option value="allow">Allow availability</option><option value="block">Block availability</option></select></label>
