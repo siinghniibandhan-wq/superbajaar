@@ -53,3 +53,4 @@
 056_category_hero_images.sql
 057_regional_serviceability.sql
 058_promote_colour_custom_options.sql
+059_allow_image_attribute_type.sql
