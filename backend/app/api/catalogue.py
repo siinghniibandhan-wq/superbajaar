@@ -429,7 +429,7 @@ def _required_variant_attributes_for_product(
 
 
 @router.get("/categories")
-def list_categories(request: Request, limit: int = Query(default=100, ge=1, le=500), offset: int = Query(default=0, ge=0)):
+def list_categories(request: Request, limit: int = Query(default=1000, ge=1, le=5000), offset: int = Query(default=0, ge=0)):
     with _connection() as conn:
         rows = conn.execute(
             "SELECT id, parent_id, name, slug, description, is_active, created_at, updated_at "
@@ -496,7 +496,7 @@ def list_products(
     request: Request,
     category_id: int | None = Query(default=None, gt=0),
     status: str = Query(default="active", pattern="^(draft|active|archived|all)$"),
-    limit: int = Query(default=100, ge=1, le=500),
+    limit: int = Query(default=5000, ge=1, le=5000),
     offset: int = Query(default=0, ge=0),
 ):
     clauses: list[str] = []
@@ -628,7 +628,7 @@ def restore_product(product_id: int):
 
 @router.get("/archived-products")
 def list_archived_products(
-    limit: int = Query(default=100, ge=1, le=500),
+    limit: int = Query(default=5000, ge=1, le=5000),
     offset: int = Query(default=0, ge=0),
 ):
     """Staff-only list of archived products. Not public: it is not in the public catalogue read list,
@@ -1636,7 +1636,7 @@ def remove_attribute_option(attribute_id: int, payload: AttributeOptionRemove):
 
 
 @router.get("/attributes")
-def list_attributes(limit: int = Query(default=100, ge=1, le=500), offset: int = Query(default=0, ge=0)):
+def list_attributes(limit: int = Query(default=1000, ge=1, le=5000), offset: int = Query(default=0, ge=0)):
     with _connection() as conn:
         rows = conn.execute(
             "SELECT id, name, code, value_type, display_type, is_variant_attribute, is_required, options, is_active, created_at "
@@ -1681,7 +1681,7 @@ def set_product_attribute_value(product_id: int, attribute_id: int, payload: Att
 
 
 @router.get("/products/{product_id}/variants")
-def list_variants(product_id: int, limit: int = Query(default=100, ge=1, le=500), offset: int = Query(default=0, ge=0)):
+def list_variants(product_id: int, limit: int = Query(default=1000, ge=1, le=5000), offset: int = Query(default=0, ge=0)):
     with _connection() as conn:
         _require_product(conn, product_id)
         rows = conn.execute(
@@ -2142,7 +2142,7 @@ class VariantPriceUpdate(BaseModel):
 
 
 @router.get("/variants")
-def list_all_variants(limit: int = Query(default=200, ge=1, le=500), offset: int = Query(default=0, ge=0)):
+def list_all_variants(limit: int = Query(default=5000, ge=1, le=5000), offset: int = Query(default=0, ge=0)):
     try:
         with _connection() as conn:
             rows = conn.execute(
