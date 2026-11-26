@@ -210,13 +210,26 @@ async def require_active_session(request: Request) -> None:
             and request.method == "POST"
             and path.count("/") == 6
         )
+        is_customer_support_attachment_upload = (
+            path.startswith(prefix + "/customers/support-portal/tickets/")
+            and path.endswith("/attachments")
+            and request.method == "POST"
+            and path.count("/") == 6
+        )
+        is_customer_support_attachment_download = (
+            path.startswith(prefix + "/customers/support-portal/tickets/")
+            and path.endswith("/download")
+            and request.method == "GET"
+            and path.count("/") == 8
+            and path.split("/")[-3] == "attachments"
+        )
         is_customer_order_detail = (
             request.method == "GET"
             and path.startswith(prefix + "/customer-auth/orders/")
             and path.count("/") == 4
         )
         is_website_order = request.method == "POST" and path == prefix + "/orders"
-        if (request.method, path) not in customer_routes and not is_customer_identity_claim_route(request.method, path, prefix) and not is_customer_identity_verification_claim_route(request.method, path, prefix) and not is_customer_identity_document_download and not is_customer_support_detail and not is_customer_support_reply and not is_customer_order_detail and not is_website_order:
+        if (request.method, path) not in customer_routes and not is_customer_identity_claim_route(request.method, path, prefix) and not is_customer_identity_verification_claim_route(request.method, path, prefix) and not is_customer_identity_document_download and not is_customer_support_detail and not is_customer_support_reply and not is_customer_support_attachment_upload and not is_customer_support_attachment_download and not is_customer_order_detail and not is_website_order:
             raise HTTPException(status_code=403, detail="Customer session cannot access staff resources")
         try:
             with psycopg.connect(settings.database_url, row_factory=dict_row, connect_timeout=3) as conn:
