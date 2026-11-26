@@ -7,7 +7,7 @@ import { buildSearchIndex } from "./searchEngine.js";
 import { variantAttributeGroups, variantValueLabel } from "./variantOptions.js";
 import CategoryHeroSlider from "./CategoryHeroSlider.jsx";
 import { useEffect, useMemo, useState } from "react";
-import { Heart, ShoppingBag, Search, Sparkles, Flame, Clock3, ChevronLeft, ChevronRight, UserRound, MapPin, X, Coins, CreditCard, CalendarClock, Star } from "lucide-react";
+import { Heart, ShoppingBag, Search, Sparkles, Flame, Clock3, ChevronLeft, ChevronRight, UserRound, MapPin, X, Coins, CreditCard, CalendarClock, Star, Paperclip, FileText } from "lucide-react";
 import { Users, HeartPulse, Package, ShoppingCart, Leaf, Shirt, Droplets, Headphones, Home, PawPrint, Gift, Car, Trophy, Pill, ShieldCheck } from "lucide-react";
 import { apiRequest } from "../services/api.js";
 import GoogleAnalytics, { getAnalyticsConsent, setAnalyticsConsent, trackAnalyticsEvent } from "./GoogleAnalytics.jsx";
@@ -16,6 +16,35 @@ import ProductReviews from "./ProductReviews.jsx";
 import { clampRedeemCoins } from "../features/loyalty/checkout.js";
 import "./storefront.css";
 import "./storefront-responsive.css";
+
+const SUPPORT_SUBJECTS = [
+  ["item_not_listed", "Item Not Listed"],
+  ["account_issue", "Account Issue"],
+  ["supercoin", "Supercoin"],
+  ["order_delayed", "Order Delayed"],
+  ["cancellation_refund", "Cancellation & Refund"],
+  ["payment_issue", "Payment Issue"],
+  ["referral_earning", "Referral Earning"],
+  ["feedback", "Feedback"],
+];
+const TICKET_FILE_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
+const TICKET_MAX_FILES = 3;
+const TICKET_MAX_BYTES = 5 * 1024 * 1024;
+const formatFileSize = bytes => bytes >= 1024 * 1024 ? (bytes / (1024 * 1024)).toFixed(1) + " MB" : Math.max(1, Math.round(bytes / 1024)) + " KB";
+// Returns the next file list plus a customer-readable problem, if any file was refused.
+function mergeTicketFiles(current, incoming) {
+  const next = [...current];
+  let problem = "";
+  for (const file of incoming) {
+    if (next.length >= TICKET_MAX_FILES) { problem = "You can attach up to " + TICKET_MAX_FILES + " files."; break; }
+    if (!TICKET_FILE_TYPES.includes(file.type)) { problem = file.name + " is not supported. Attach a JPG, PNG, WebP or PDF."; continue; }
+    if (file.size > TICKET_MAX_BYTES) { problem = file.name + " is larger than 5 MB."; continue; }
+    if (file.size === 0) { problem = file.name + " is empty."; continue; }
+    if (next.some(item => item.name === file.name && item.size === file.size)) continue;
+    next.push(file);
+  }
+  return { files: next, problem };
+}
 
 const categoryOrder = [
   "Grocery", "Fresh Daily", "Fashion", "Personal Care", "Electronics",
@@ -122,7 +151,11 @@ export default function Storefront() {
   const [accountSection, setAccountSection] = useState("overview");
   const [analyticsEnabled, setAnalyticsEnabled] = useState(getAnalyticsConsent);
   const [canOpenAdmin, setCanOpenAdmin] = useState(false);
-  const [ticketDraft, setTicketDraft] = useState({ subject: "", description: "" });
+  const [ticketDraft, setTicketDraft] = useState({ category: "", description: "" });
+  const [ticketFiles, setTicketFiles] = useState([]);
+  const [replyFiles, setReplyFiles] = useState([]);
+  const [ticketFileProblem, setTicketFileProblem] = useState("");
+  const [ticketUploadIssue, setTicketUploadIssue] = useState("");
   const [ticketCreated, setTicketCreated] = useState(null);
   const [ticketLookup, setTicketLookup] = useState({ caseNumber: "" });
   const [ticketTracked, setTicketTracked] = useState(null);
@@ -660,19 +693,38 @@ export default function Storefront() {
     catch (reason) { setError(reason.message || "Could not open this order."); }
     finally { setOrdersBusy(false); }
   };
+  const uploadTicketAttachments = (caseNumber, files, messageId) => {
+    const body = new FormData();
+    files.forEach(file => body.append("files", file));
+    return customerRequest("/customers/support-portal/tickets/" + encodeURIComponent(caseNumber) + "/attachments" + (messageId ? "?message_id=" + messageId : ""), { method: "POST", body });
+  };
+  const pickTicketFiles = (event, current, setFiles) => {
+    const { files, problem } = mergeTicketFiles(current, Array.from(event.target.files || []));
+    setFiles(files); setTicketFileProblem(problem);
+    event.target.value = "";
+  };
   const submitSupportTicket = async event => {
     event.preventDefault();
     if (!customerToken || !customerAuth) { openCustomerAuth("login", "/account"); setError("Sign in to raise a support ticket."); return; }
-    setTicketBusy(true); setError(""); setTicketCreated(null); setTicketTracked(null);
+    if (!ticketDraft.category) { setError("Choose a subject for your ticket."); return; }
+    setTicketBusy(true); setError(""); setTicketCreated(null); setTicketTracked(null); setTicketUploadIssue(""); setTicketFileProblem("");
+    let result;
     try {
-      const result = await customerRequest("/customers/support-portal/tickets", { method: "POST", body: JSON.stringify(ticketDraft) });
-      setTicketCreated(result.ticket);
-      setTicketLookup({ caseNumber: result.ticket.case_number });
-      setTicketDraft({ subject: "", description: "" });
+      result = await customerRequest("/customers/support-portal/tickets", { method: "POST", body: JSON.stringify({ category: ticketDraft.category, description: ticketDraft.description.trim() }) });
+    } catch (reason) { setError(reason.message || "Could not create your support ticket."); setTicketBusy(false); return; }
+    setTicketCreated(result.ticket);
+    setTicketLookup({ caseNumber: result.ticket.case_number });
+    if (ticketFiles.length) {
+      try { await uploadTicketAttachments(result.ticket.case_number, ticketFiles, result.message_id); }
+      catch (reason) { setTicketUploadIssue((reason.message || "Attachments could not be uploaded.") + " Your ticket was created. Open it and reply to attach the files again."); }
+    }
+    setTicketDraft({ category: "", description: "" });
+    setTicketFiles([]);
+    try {
       const list = await customerRequest("/customers/support-portal/tickets");
       setMyTickets(list.items || []);
-    } catch (reason) { setError(reason.message || "Could not create your support ticket."); }
-    finally { setTicketBusy(false); }
+    } catch { /* The ticket exists; the list refreshes the next time this tab opens. */ }
+    setTicketBusy(false);
   };
   const submitInsuranceRequest = async event => {
     event.preventDefault();
@@ -726,16 +778,31 @@ export default function Storefront() {
     } catch (reason) { setError(reason.message || "Could not open this ticket."); }
     finally { setTicketBusy(false); }
   };
+  const downloadTicketAttachment = async (caseNumber, attachment) => {
+    setError("");
+    try {
+      const result = await customerRequest("/customers/support-portal/tickets/" + encodeURIComponent(caseNumber) + "/attachments/" + attachment.id + "/download");
+      const link = document.createElement("a");
+      link.href = result.url; link.target = "_blank"; link.rel = "noopener noreferrer";
+      document.body.appendChild(link); link.click(); link.remove();
+    } catch (reason) { setError(reason.message || "Could not open this attachment."); }
+  };
   const replyToCustomerTicket = async event => {
     event.preventDefault();
-    if (!ticketTracked?.ticket?.case_number || !ticketReply.trim()) return;
-    setTicketBusy(true); setError("");
+    const caseNumber = ticketTracked?.ticket?.case_number;
+    if (!caseNumber || !ticketReply.trim()) return;
+    setTicketBusy(true); setError(""); setTicketFileProblem("");
     try {
-      await customerRequest("/customers/support-portal/tickets/" + encodeURIComponent(ticketTracked.ticket.case_number) + "/messages", {
+      const sent = await customerRequest("/customers/support-portal/tickets/" + encodeURIComponent(caseNumber) + "/messages", {
         method: "POST", body: JSON.stringify({ body: ticketReply.trim() }),
       });
       setTicketReply("");
-      const result = await customerRequest("/customers/support-portal/tickets/" + encodeURIComponent(ticketTracked.ticket.case_number));
+      if (replyFiles.length) {
+        try { await uploadTicketAttachments(caseNumber, replyFiles, sent.message?.id); }
+        catch (reason) { setError("Your reply was sent, but the attachments could not be uploaded: " + (reason.message || "please try again.")); }
+      }
+      setReplyFiles([]);
+      const result = await customerRequest("/customers/support-portal/tickets/" + encodeURIComponent(caseNumber));
       setTicketTracked(result);
     } catch (reason) { setError(reason.message || "Could not send your reply."); }
     finally { setTicketBusy(false); }
@@ -1198,18 +1265,33 @@ export default function Storefront() {
               <div className="storefront-order-lines">{myOrderDetail.lines.map(line => <div key={line.id}><span>{line.product_name} <small>× {line.quantity}</small></span><strong>{money(line.line_total)}</strong></div>)}<div className="storefront-order-total"><span>Total</span><strong>{money(myOrderDetail.order.total)}</strong></div></div>
               <h4>Payment</h4>{myOrderDetail.payments.length ? myOrderDetail.payments.map((pay, i) => <p key={i}>{money(pay.amount)} · {String(pay.status).replaceAll("_"," ")}</p>) : <p>No payment recorded yet.</p>}
               <h4>Delivery</h4>{myOrderDetail.shipments.length ? myOrderDetail.shipments.map(sh => <p key={sh.shipment_reference}>{sh.shipment_reference} · {String(sh.status).replaceAll("_"," ")}{sh.tracking_reference ? " · Tracking: " + sh.tracking_reference : ""}</p>) : <p>Not dispatched yet. We will update this page when it ships.</p>}
-              <p><button type="button" className="storefront-inline-link" onClick={() => { setAccountSection("tickets"); setTicketDraft({ subject: "Help with order " + myOrderDetail.order.order_number, description: "" }); }}>Need help with this order?</button></p>
+              <p><button type="button" className="storefront-inline-link" onClick={() => { setAccountSection("tickets"); setTicketDraft({ category: "", description: "Order " + myOrderDetail.order.order_number + ": " }); setTicketFiles([]); }}>Need help with this order?</button></p>
             </div>}
           </div>}
           {accountSection==="tickets" && <div className="storefront-account-section">
             <h2>My Support Tickets</h2><p>Your tickets are tied to your signed-in account. No email or phone lookup is used to grant access.</p>
-            <form className="storefront-account-form" onSubmit={submitSupportTicket}>
+            <form className="storefront-account-form storefront-ticket-form" onSubmit={submitSupportTicket}>
               <h3>Raise a ticket</h3>
-              <label>Subject<input required minLength="3" maxLength="200" value={ticketDraft.subject} onChange={event=>setTicketDraft(old=>({...old,subject:event.target.value}))}/></label>
-              <label>How can we help?<textarea required rows="4" maxLength="5000" value={ticketDraft.description} onChange={event=>setTicketDraft(old=>({...old,description:event.target.value}))}/></label>
+              <label>Subject
+                <select required value={ticketDraft.category} onChange={event=>setTicketDraft(old=>({...old,category:event.target.value}))}>
+                  <option value="" disabled>Select a subject</option>
+                  {SUPPORT_SUBJECTS.map(([key,text])=><option key={key} value={key}>{text}</option>)}
+                </select>
+              </label>
+              <label>How can we help?<textarea required rows="4" maxLength="5000" placeholder="Tell us what happened. Include your order number if it relates to an order." value={ticketDraft.description} onChange={event=>setTicketDraft(old=>({...old,description:event.target.value}))}/></label>
+              <div className="storefront-ticket-attach">
+                <span className="storefront-ticket-attach-title">Attachments (optional)</span>
+                <label className={"storefront-ticket-attach-button" + (ticketFiles.length >= TICKET_MAX_FILES ? " is-disabled" : "")}>
+                  <Paperclip size={16} aria-hidden="true"/>Add photo or PDF
+                  <input className="storefront-file-input" type="file" multiple accept={TICKET_FILE_TYPES.join(",")} disabled={ticketBusy || ticketFiles.length >= TICKET_MAX_FILES} onChange={event=>pickTicketFiles(event, ticketFiles, setTicketFiles)}/>
+                </label>
+                <small>Up to {TICKET_MAX_FILES} files. JPG, PNG, WebP or PDF, 5 MB each.</small>
+                {ticketFileProblem && <small className="storefront-ticket-attach-problem" role="alert">{ticketFileProblem}</small>}
+                {ticketFiles.length > 0 && <ul className="storefront-ticket-files">{ticketFiles.map(file=><li key={file.name + file.size}><FileText size={15} aria-hidden="true"/><span>{file.name}</span><small>{formatFileSize(file.size)}</small><button type="button" aria-label={"Remove " + file.name} onClick={()=>setTicketFiles(old=>old.filter(item=>item!==file))}><X size={14} aria-hidden="true"/></button></li>)}</ul>}
+              </div>
               <button className="storefront-primary" type="submit" disabled={ticketBusy}>{ticketBusy?"Submitting…":"Create support ticket"}</button>
             </form>
-            {ticketCreated && <div className="storefront-account-summary" role="status"><div><small>Ticket created</small><strong>{ticketCreated.case_number}</strong></div><p>Your ticket is now linked to this signed-in account.</p></div>}
+            {ticketCreated && <div className="storefront-account-summary" role="status"><div><small>Ticket created</small><strong>{ticketCreated.case_number}</strong></div><p>{ticketUploadIssue ? "" : "Your ticket is now linked to this signed-in account."}</p>{ticketUploadIssue && <p className="storefront-ticket-attach-problem" role="alert">{ticketUploadIssue}</p>}</div>}
             <div className="storefront-account-form">
               <h3>Your tickets</h3>
               {myTickets.length ? myTickets.map(ticket => <button className="storefront-account-summary" type="button" key={ticket.case_number} onClick={() => openCustomerTicket(ticket.case_number)}><div><small>{ticket.case_number}</small><strong>{ticket.subject}</strong></div><div><small>Status</small><strong>{String(ticket.status).replaceAll("_"," ")}</strong></div><div><small>Priority</small><strong>{ticket.priority}</strong></div></button>) : <p>No support tickets yet.</p>}
@@ -1225,8 +1307,9 @@ export default function Storefront() {
               <div><small>Status</small><strong>{String(ticketTracked.ticket.status).replaceAll("_"," ")}</strong></div>
               <div><small>Last updated</small><strong>{ticketTracked.ticket.updated_at ? new Date(ticketTracked.ticket.updated_at).toLocaleString() : "Not available"}</strong></div>
               <div><small>Resolution</small><strong>{ticketTracked.ticket.resolution || "Awaiting support response"}</strong></div>
-              <div>{(ticketTracked.messages || []).map(message => <article key={message.id}><small>{message.author_type === "customer" ? "You" : "Super Bajaar support"} · {new Date(message.created_at).toLocaleString()}</small><p>{message.body}</p></article>)}</div>
-              {![ "resolved", "closed" ].includes(ticketTracked.ticket.status) && <form onSubmit={replyToCustomerTicket}><label>Reply to support<textarea required rows="3" maxLength="10000" value={ticketReply} onChange={event=>setTicketReply(event.target.value)}/></label><button className="storefront-primary" type="submit" disabled={ticketBusy || !ticketReply.trim()}>{ticketBusy?"Sending…":"Send reply"}</button></form>}
+              <div>{(ticketTracked.messages || []).map(message => <article key={message.id}><small>{message.author_type === "customer" ? "You" : "Super Bajaar support"} · {new Date(message.created_at).toLocaleString()}</small><p>{message.body}</p>{(ticketTracked.attachments || []).filter(item => item.message_id === message.id).map(item => <button type="button" className="storefront-ticket-file-link" key={item.id} onClick={() => downloadTicketAttachment(ticketTracked.ticket.case_number, item)}><Paperclip size={14} aria-hidden="true"/>{item.original_filename} <small>{formatFileSize(item.file_size_bytes)}</small></button>)}</article>)}
+                {(ticketTracked.attachments || []).some(item => !item.message_id) && <article><small>Other attachments</small>{(ticketTracked.attachments || []).filter(item => !item.message_id).map(item => <button type="button" className="storefront-ticket-file-link" key={item.id} onClick={() => downloadTicketAttachment(ticketTracked.ticket.case_number, item)}><Paperclip size={14} aria-hidden="true"/>{item.original_filename} <small>{formatFileSize(item.file_size_bytes)}</small></button>)}</article>}</div>
+              {![ "resolved", "closed" ].includes(ticketTracked.ticket.status) && <form onSubmit={replyToCustomerTicket}><label>Reply to support<textarea required rows="3" maxLength="10000" value={ticketReply} onChange={event=>setTicketReply(event.target.value)}/></label><div className="storefront-ticket-attach"><label className={"storefront-ticket-attach-button" + (replyFiles.length >= TICKET_MAX_FILES ? " is-disabled" : "")}><Paperclip size={16} aria-hidden="true"/>Add photo or PDF<input className="storefront-file-input" type="file" multiple accept={TICKET_FILE_TYPES.join(",")} disabled={ticketBusy || replyFiles.length >= TICKET_MAX_FILES} onChange={event=>pickTicketFiles(event, replyFiles, setReplyFiles)}/></label>{ticketFileProblem && <small className="storefront-ticket-attach-problem" role="alert">{ticketFileProblem}</small>}{replyFiles.length > 0 && <ul className="storefront-ticket-files">{replyFiles.map(file=><li key={file.name + file.size}><FileText size={15} aria-hidden="true"/><span>{file.name}</span><small>{formatFileSize(file.size)}</small><button type="button" aria-label={"Remove " + file.name} onClick={()=>setReplyFiles(old=>old.filter(item=>item!==file))}><X size={14} aria-hidden="true"/></button></li>)}</ul>}</div><button className="storefront-primary" type="submit" disabled={ticketBusy || !ticketReply.trim()}>{ticketBusy?"Sending…":"Send reply"}</button></form>}
             </div>}
             {error && <p className="storefront-account-note" role="alert">{error}</p>}
           </div>}

@@ -2032,3 +2032,23 @@
 
 .storefront-home-banner { margin: 18px auto 8px; width: min(1180px, calc(100% - 32px)); }
 @media (max-width:760px) { .storefront-home-banner { margin: 12px auto 4px; width: calc(100% - 24px); } }
+
+/* Support tickets: subject dropdown and attachments */
+.storefront-account-form select { width:100%; min-width:0; box-sizing:border-box; padding:13px 40px 13px 14px; border:1px solid #e7dced; border-radius:12px; background:rgba(255,255,255,.92) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%236428c7' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 14px center; color:var(--sb-ink); font:inherit; font-size:13px; appearance:none; -webkit-appearance:none; cursor:pointer; box-shadow:inset 2px 2px 5px rgba(72,36,105,.035),0 1px #fff; }
+.storefront-account-form select:invalid { color:#8a809a; }
+.storefront-account-form select:focus { outline:3px solid #6428c721; border-color:#9b77d5; }
+.storefront-ticket-form { grid-template-columns:minmax(0,1fr); max-width:620px; }
+.storefront-ticket-form > h3 { margin:0; }
+.storefront-ticket-attach { display:grid; gap:8px; justify-items:start; min-width:0; }
+.storefront-ticket-attach-title { color:#625873; font-size:12px; font-weight:700; }
+.storefront-ticket-attach small { color:#756b82; font-size:11px; line-height:1.4; }
+.storefront-ticket-attach .storefront-ticket-attach-problem,.storefront-account-summary .storefront-ticket-attach-problem { color:#b3261e; font-weight:600; }
+.storefront-account-form label.storefront-ticket-attach-button,.storefront-ticket-attach-button { position:relative; display:inline-flex; grid-auto-flow:column; align-items:center; gap:8px; padding:10px 14px; border:1px dashed #9b77d5; border-radius:12px; background:#faf6ff; color:#4b1d8f; font-size:12px; font-weight:700; cursor:pointer; }
+.storefront-ticket-attach-button:focus-within { outline:3px solid #6428c721; }
+.storefront-ticket-attach-button.is-disabled { opacity:.5; cursor:not-allowed; }
+.storefront-file-input { position:absolute; width:1px; height:1px; opacity:0; overflow:hidden; pointer-events:none; }
+.storefront-ticket-files { display:grid; gap:6px; width:100%; margin:0; padding:0; list-style:none; }
+.storefront-ticket-files li { display:flex; align-items:center; gap:8px; min-width:0; padding:8px 10px; border:1px solid #eee8f4; border-radius:10px; background:#fff; font-size:12px; }
+.storefront-ticket-files li span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.storefront-ticket-files li button { display:grid; place-items:center; width:26px; height:26px; border:0; border-radius:50%; background:#f3ecfb; color:#4b1d8f; cursor:pointer; }
+.storefront-ticket-file-link { display:inline-flex; align-items:center; gap:6px; margin-top:6px; padding:6px 10px; border:1px solid #e7dced; border-radius:999px; background:#faf6ff; color:#4b1d8f; font:inherit; font-size:12px; cursor:pointer; max-width:100%; overflow-wrap:anywhere; }
