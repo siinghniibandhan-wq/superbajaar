@@ -3,9 +3,9 @@ import { apiRequest } from "../../services/api.js";
 
 const definitions = {
   catalogue: [
-    { key: "products", label: "Products", path: "/catalogue/products?status=all&limit=500", value: r => r.total ?? (r.items || []).length, note: "Catalogue records" },
-    { key: "variants", label: "Variants", path: "/catalogue/variants?limit=500", value: r => r.total ?? (r.items || []).length, note: "Active SKU variants" },
-    { key: "categories", label: "Categories", path: "/catalogue/categories?limit=500", value: r => r.total ?? (r.items || []).length, note: "Category records" },
+    { key: "products", label: "Products", path: "/catalogue/products?status=all&limit=5000", value: r => r.total ?? (r.items || []).length, note: "Catalogue records" },
+    { key: "variants", label: "Variants", path: "/catalogue/variants?limit=5000", value: r => r.total ?? (r.items || []).length, note: "Active SKU variants" },
+    { key: "categories", label: "Categories", path: "/catalogue/categories?limit=5000", value: r => r.total ?? (r.items || []).length, note: "Category records" },
   ],
   orders: [
     { key: "orders", label: "Orders loaded", path: "/orders?limit=500", value: r => r.total ?? (r.items || []).length, note: "Latest 500 records at most", breakdown: "status" },
