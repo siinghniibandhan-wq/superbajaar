@@ -2532,3 +2532,166 @@ def delete_category_hero_image(category_id: int, image_id: int):
         raise
     except psycopg.Error as exc:
         raise _db_error(exc) from exc
+
+
+# ---------------------------------------------------------------------------
+# Homepage hero slider images (managed in Admin > Catalogue > Category banners > Homepage)
+# ---------------------------------------------------------------------------
+_HOME_HERO_COLUMNS = "id, image_url, alt_text, sort_order, is_active, created_at, updated_at"
+
+
+@router.get("/homepage-hero-images")
+def list_public_homepage_hero_images():
+    """Public: active homepage hero images, in slider order."""
+    try:
+        with _connection() as conn:
+            rows = conn.execute(
+                "SELECT id, image_url, alt_text, sort_order FROM homepage_hero_images "
+                "WHERE is_active = TRUE ORDER BY sort_order, id"
+            ).fetchall()
+        return {"items": rows}
+    except psycopg.errors.UndefinedTable:
+        return {"items": []}
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.get("/homepage-hero-images/all")
+def list_homepage_hero_images():
+    """Admin: every homepage hero image, including hidden ones."""
+    try:
+        with _connection() as conn:
+            rows = conn.execute(
+                f"SELECT {_HOME_HERO_COLUMNS} FROM homepage_hero_images ORDER BY sort_order, id"
+            ).fetchall()
+        return {"items": rows}
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.post("/homepage-hero-images/upload", status_code=201)
+async def upload_homepage_hero_image(
+    file: UploadFile = File(...),
+    alt_text: str | None = Form(default=None, max_length=300),
+):
+    """Upload one hero image to object storage and add it to the end of the homepage slider."""
+    content_type = (file.content_type or "").lower()
+    if content_type not in _HERO_IMAGE_TYPES:
+        raise HTTPException(status_code=415, detail="Upload a JPEG, PNG, WebP or GIF image")
+    if not settings.media_bucket:
+        raise HTTPException(status_code=503, detail="Image uploads are disabled: configure MEDIA_BUCKET with the media S3 bucket name.")
+    if not settings.media_public_base_url:
+        raise HTTPException(status_code=503, detail="Image uploads are disabled: configure MEDIA_PUBLIC_BASE_URL with the CloudFront URL for the media bucket.")
+    data = await file.read(10 * 1024 * 1024 + 1)
+    if not data:
+        raise HTTPException(status_code=422, detail="Image file is empty")
+    if len(data) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Image files must be 10 MB or smaller")
+    signatures = {
+        "image/jpeg": data.startswith(b"\xff\xd8\xff"),
+        "image/png": data.startswith(b"\x89PNG\r\n\x1a\n"),
+        "image/webp": len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP",
+        "image/gif": data.startswith((b"GIF87a", b"GIF89a")),
+    }
+    if not signatures[content_type]:
+        raise HTTPException(status_code=415, detail="The uploaded file content does not match its image type")
+    try:
+        import boto3
+        # Stored under products/ because the media bucket role and CloudFront only cover products/*.
+        key = f"products/homepage-heroes/{uuid4().hex}.{_HERO_IMAGE_TYPES[content_type]}"
+        boto3.client("s3", region_name=settings.aws_region).put_object(
+            Bucket=settings.media_bucket, Key=key, Body=data, ContentType=content_type,
+            CacheControl="public, max-age=31536000, immutable",
+        )
+        image_url = settings.media_public_base_url.rstrip("/") + "/" + key
+        with _connection() as conn:
+            row = conn.execute(
+                "INSERT INTO homepage_hero_images (image_url, alt_text, sort_order) "
+                "VALUES (%s, %s, COALESCE((SELECT MAX(sort_order) + 1 FROM homepage_hero_images), 0)) "
+                f"RETURNING {_HOME_HERO_COLUMNS}",
+                (image_url, alt_text or (file.filename or "")[:300] or None),
+            ).fetchone()
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).exception("Homepage hero image upload failed")
+        raise HTTPException(status_code=503, detail="Homepage image upload failed") from exc
+
+
+@router.put("/homepage-hero-images/{image_id}")
+def update_homepage_hero_image(image_id: int, payload: CategoryHeroImageUpdate):
+    changes = payload.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(status_code=422, detail="Nothing to update")
+    sets = ", ".join(f"{column}=%s" for column in changes)
+    try:
+        with _connection() as conn:
+            row = conn.execute(
+                f"UPDATE homepage_hero_images SET {sets}, updated_at=now() WHERE id=%s RETURNING {_HOME_HERO_COLUMNS}",
+                (*changes.values(), image_id),
+            ).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Homepage image not found")
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.post("/homepage-hero-images/reorder")
+def reorder_homepage_hero_images(payload: CategoryHeroImageOrder):
+    """Save the slider order: ids are listed in the order they should appear."""
+    if len(set(payload.ids)) != len(payload.ids):
+        raise HTTPException(status_code=422, detail="Image ids must be unique")
+    try:
+        with _connection() as conn:
+            existing = {r["id"] for r in conn.execute("SELECT id FROM homepage_hero_images").fetchall()}
+            if set(payload.ids) != existing:
+                raise HTTPException(status_code=422, detail="Order must list every homepage image exactly once")
+            for position, image_id in enumerate(payload.ids):
+                conn.execute(
+                    "UPDATE homepage_hero_images SET sort_order=%s, updated_at=now() WHERE id=%s",
+                    (position, image_id),
+                )
+            rows = conn.execute(
+                f"SELECT {_HOME_HERO_COLUMNS} FROM homepage_hero_images ORDER BY sort_order, id"
+            ).fetchall()
+        return {"items": rows}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.delete("/homepage-hero-images/{image_id}")
+def delete_homepage_hero_image(image_id: int):
+    try:
+        with _connection() as conn:
+            row = conn.execute(
+                "DELETE FROM homepage_hero_images WHERE id=%s RETURNING image_url", (image_id,)
+            ).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Homepage image not found")
+            url = row["image_url"] or ""
+            still_used = conn.execute(
+                "SELECT 1 FROM homepage_hero_images WHERE image_url=%s LIMIT 1", (url,)
+            ).fetchone() is not None
+        base = (settings.media_public_base_url or "").rstrip("/") + "/"
+        if not still_used and settings.media_bucket and base != "/" and url.startswith(base + "products/homepage-heroes/"):
+            try:
+                import boto3
+                boto3.client("s3", region_name=settings.aws_region).delete_object(
+                    Bucket=settings.media_bucket, Key=url[len(base):]
+                )
+            except Exception:
+                pass
+        return {"deleted": True, "id": image_id}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
