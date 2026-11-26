@@ -89,7 +89,7 @@ export default function PurchasingWorkspace({ onBack }) {
         apiRequest("/purchasing/suppliers?limit=500"),
         apiRequest("/inventory/locations?limit=500"),
         apiRequest("/purchasing/orders?limit=200"),
-        apiRequest("/catalogue/variants?limit=500"),
+        apiRequest("/catalogue/variants?limit=5000"),
       ]);
       setSuppliers(s.items || []); setLocations(l.items || []); setOrders(p.items || []); setVariants(v.items || []);
     } catch (e) { setError(e.message || "Unable to load purchasing data."); }
