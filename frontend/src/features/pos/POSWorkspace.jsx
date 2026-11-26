@@ -40,7 +40,7 @@ export default function POSWorkspace({ onBack }) {
     setLoading(true); setError("");
     try {
       const [result, locationResult] = await Promise.all([
-        apiRequest("/catalogue/variants?limit=500"),
+        apiRequest("/catalogue/variants?limit=5000"),
         apiRequest("/inventory/locations?limit=500"),
       ]);
       setVariants(result.items || []);
