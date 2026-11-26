@@ -154,7 +154,7 @@ export default function CatalogueVariantsPanel({ products, categories = [], init
 
   async function loadVariants(id = productId) {
     if (!id) { setVariants([]); return; }
-    try { const result = await apiRequest("/catalogue/products/" + id + "/variants"); setVariants(result.items || []); }
+    try { const result = await apiRequest("/catalogue/products/" + id + "/variants?limit=500"); setVariants(result.items || []); }
     catch (e) { setError(e.message || "Unable to load variants."); }
   }
   useEffect(() => { loadDefinitions(); }, []);

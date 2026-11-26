@@ -199,7 +199,15 @@ export default function ProductCreateForm({ categories = [], product = null, dup
   // Editing a product with several variants: prices are edited per variant in the form (no more locked fields).
   const multiVariantEdit = Boolean(product?.id) && existingVariants.length > 1;
   const variantLabel = row => {
-    const parts = Object.values(row.attributes || {}).flat().map(value => (value && typeof value === "object") ? (value.name || value.label || value.value || "") : String(value)).filter(Boolean);
+    // Image values may be saved as an image link; show the same readable name the Images tab shows.
+    const parts = Object.entries(row.attributes || {}).flatMap(([code, raw]) => {
+      const definition = definitions.find(item => item.code === code);
+      return (Array.isArray(raw) ? raw : [raw]).map(value => {
+        if (value && typeof value === "object") return value.name || value.label || value.value || "";
+        if (definition?.value_type === "image") return resolveImageValue(value, combineImageOptions(definition.options || [], (customAttributeOptions || {})[definition.id] || [])).name;
+        return String(value);
+      });
+    }).filter(Boolean);
     return (parts.join(" / ") || "Default") + (row.sku ? " · " + row.sku : "");
   };
   const setVariantPrice = (id, key, value) => setVariantPriceEdits(old => ({ ...old, [id]: { ...(old[id] || {}), [key]: value } }));
