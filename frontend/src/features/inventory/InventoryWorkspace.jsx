@@ -81,7 +81,7 @@ export default function InventoryWorkspace({ onBack }) {
     try {
       const [l, p, b, m, c, cr, ar, o, av] = await Promise.all([
         apiRequest("/inventory/locations"),
-        apiRequest("/catalogue/products?status=all&limit=500"),
+        apiRequest("/catalogue/products?status=all&limit=5000"),
         fetchAllItems("/inventory/balances").then(items => ({ items })),
         apiRequest("/inventory/movements"),
         apiRequest("/inventory/cost-layers"),
@@ -270,7 +270,7 @@ export default function InventoryWorkspace({ onBack }) {
   }
   useEffect(() => {
     if (!productId) { setVariants([]); return; }
-    apiRequest("/catalogue/products/" + productId + "/variants?limit=500")
+    apiRequest("/catalogue/products/" + productId + "/variants?limit=5000")
       .then(result => setVariants(result.items || []))
       .catch(e => setError(e.message || "Unable to load variants."));
   }, [productId]);
