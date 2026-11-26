@@ -3,11 +3,23 @@ import logging
 
 import psycopg
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from psycopg.rows import dict_row
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from app.core.config import settings
 from app.services.identity import IdentityService
+from app.services.support_attachments import (
+    MAX_ATTACHMENT_BYTES,
+    MAX_FILES_PER_TICKET,
+    MAX_FILES_PER_UPLOAD,
+    SupportAttachmentConfigurationError,
+    SupportAttachmentError,
+    clean_filename,
+    create_support_attachment_download_url,
+    delete_support_attachment_object,
+    upload_support_attachment,
+    validate_attachment,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +28,21 @@ CASE_STATUSES={"open","in_progress","waiting_customer","resolved","closed"}
 CASE_PRIORITIES={"low","normal","high","urgent"}
 
 CASE_TERMINAL_STATUSES = {"resolved", "closed"}
+
+# Customer-facing ticket subjects, in display order. The key is stored in
+# support_cases.category and the label becomes the ticket subject.
+SUPPORT_CATEGORIES = {
+    "item_not_listed": "Item Not Listed",
+    "account_issue": "Account Issue",
+    "supercoin": "Supercoin",
+    "order_delayed": "Order Delayed",
+    "cancellation_refund": "Cancellation & Refund",
+    "payment_issue": "Payment Issue",
+    "referral_earning": "Referral Earning",
+    "feedback": "Feedback",
+}
+# Triage defaults for customer-raised tickets; everything else is "normal".
+SUPPORT_CATEGORY_PRIORITY = {"payment_issue": "high", "feedback": "low"}
 
 
 def _build_customer_360(customer, orders, cases):
@@ -108,14 +135,28 @@ class CaseUpdate(BaseModel):
         return v
 
 class CustomerSupportTicketIn(BaseModel):
-    subject:str=Field(min_length=3,max_length=200)
+    category:str|None=Field(default=None,max_length=40)
+    subject:str|None=Field(default=None,min_length=3,max_length=200)
     description:str=Field(min_length=1,max_length=5000)
+    @field_validator("category")
+    @classmethod
+    def valid_category(cls,v):
+        if v is None:return v
+        value=v.strip()
+        if value not in SUPPORT_CATEGORIES:raise ValueError("Choose a valid ticket subject")
+        return value
     @field_validator("subject","description")
     @classmethod
     def clean_support_text(cls,v):
+        if v is None:return v
         value=v.strip()
         if not value:raise ValueError("This field cannot be blank")
         return value
+    @model_validator(mode="after")
+    def category_or_subject(self):
+        if not self.category and not self.subject:
+            raise ValueError("Choose a ticket subject")
+        return self
 
 class SupportMessageIn(BaseModel):
     body:str=Field(min_length=1,max_length=10000)
@@ -272,7 +313,7 @@ def list_cases(
     try:
         with _connect() as conn:
             rows=conn.execute(
-                "SELECT s.id,s.case_number,s.customer_id,cu.name AS customer_name,s.order_id,s.subject,s.description,s.priority,s.status,s.assigned_to,s.resolution,s.created_at,s.updated_at,s.first_response_due_at,s.resolution_due_at,s.first_response_at,s.resolved_at "
+                "SELECT s.id,s.case_number,s.category,s.customer_id,cu.name AS customer_name,s.order_id,s.subject,s.description,s.priority,s.status,s.assigned_to,s.resolution,s.created_at,s.updated_at,s.first_response_due_at,s.resolution_due_at,s.first_response_at,s.resolved_at "
                 "FROM support_cases s LEFT JOIN customers cu ON cu.id=s.customer_id"+where+
                 " ORDER BY CASE s.priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'normal' THEN 3 ELSE 4 END,s.created_at DESC LIMIT %s OFFSET %s",
                 (*params,limit,offset),
@@ -390,7 +431,7 @@ def list_customer_support_tickets(request:Request):
         with _connect() as conn:
             customer_id=_linked_customer_id(conn,request.state.customer_id)
             rows=conn.execute(
-                "SELECT case_number,subject,priority,status,resolution,created_at,updated_at,first_response_due_at,resolution_due_at,first_response_at,resolved_at "
+                "SELECT case_number,category,subject,priority,status,resolution,created_at,updated_at,first_response_due_at,resolution_due_at,first_response_at,resolved_at "
                 "FROM support_cases WHERE customer_id=%s ORDER BY created_at DESC LIMIT 100",
                 (customer_id,),
             ).fetchall()
@@ -402,30 +443,33 @@ def list_customer_support_tickets(request:Request):
 @router.post("/support-portal/tickets",status_code=201)
 def create_customer_support_ticket(payload:CustomerSupportTicketIn,request:Request):
     import uuid
+    category=payload.category
+    subject=SUPPORT_CATEGORIES[category] if category else payload.subject
+    priority=SUPPORT_CATEGORY_PRIORITY.get(category,"normal") if category else "normal"
     try:
         with _connect() as conn:
             with conn.transaction():
                 customer_id=_linked_customer_id(conn,request.state.customer_id)
-                policy=_active_sla(conn,"normal")
+                policy=_active_sla(conn,priority)
                 case_number="SUP-"+uuid.uuid4().hex[:16].upper()
                 row=conn.execute(
-                    "INSERT INTO support_cases(case_number,customer_id,subject,description,priority,sla_policy_id,first_response_due_at,resolution_due_at) "
-                    "VALUES(%s,%s,%s,%s,'normal',%s,%s,%s) "
-                    "RETURNING id,case_number,subject,priority,status,created_at,updated_at,first_response_due_at,resolution_due_at",
-                    (case_number,customer_id,payload.subject,payload.description,policy["id"] if policy else None,
+                    "INSERT INTO support_cases(case_number,customer_id,category,subject,description,priority,sla_policy_id,first_response_due_at,resolution_due_at) "
+                    "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                    "RETURNING id,case_number,category,subject,priority,status,created_at,updated_at,first_response_due_at,resolution_due_at",
+                    (case_number,customer_id,category,subject,payload.description,priority,policy["id"] if policy else None,
                      policy["first_response_due_at"] if policy else None,policy["resolution_due_at"] if policy else None),
                 ).fetchone()
-                conn.execute(
+                message=conn.execute(
                     "INSERT INTO support_case_messages(case_id,author_type,author_customer_account_id,visibility,body) "
-                    "VALUES(%s,'customer',%s,'public',%s)",
+                    "VALUES(%s,'customer',%s,'public',%s) RETURNING id",
                     (row["id"],request.state.customer_id,payload.description),
-                )
+                ).fetchone()
                 conn.execute(
                     "INSERT INTO support_case_events(case_id,actor_type,actor_customer_account_id,event_type,after_values) "
-                    "VALUES(%s,'customer',%s,'ticket_created',jsonb_build_object('status',%s,'priority','normal'))",
-                    (row["id"],request.state.customer_id,row["status"]),
+                    "VALUES(%s,'customer',%s,'ticket_created',jsonb_build_object('status',%s::text,'priority',%s::text,'category',%s::text))",
+                    (row["id"],request.state.customer_id,row["status"],priority,category),
                 )
-        return {"ticket":row}
+        return {"ticket":row,"message_id":message["id"]}
     except HTTPException: raise
     except psycopg.Error as exc: raise _error(exc) from exc
 
@@ -436,7 +480,7 @@ def get_customer_support_ticket(case_number:str,request:Request):
         with _connect() as conn:
             customer_id=_linked_customer_id(conn,request.state.customer_id)
             ticket=conn.execute(
-                "SELECT id,case_number,subject,description,priority,status,resolution,created_at,updated_at,first_response_due_at,resolution_due_at,first_response_at,resolved_at "
+                "SELECT id,case_number,category,subject,description,priority,status,resolution,created_at,updated_at,first_response_due_at,resolution_due_at,first_response_at,resolved_at "
                 "FROM support_cases WHERE upper(case_number)=upper(%s) AND customer_id=%s",
                 (case_number.strip(),customer_id),
             ).fetchone()
@@ -446,7 +490,8 @@ def get_customer_support_ticket(case_number:str,request:Request):
                 "WHERE case_id=%s AND visibility='public' ORDER BY created_at,id",
                 (ticket["id"],),
             ).fetchall()
-        return {"ticket":ticket,"messages":messages}
+            attachments=_case_attachments(conn,ticket["id"])
+        return {"ticket":ticket,"messages":messages,"attachments":attachments}
     except HTTPException: raise
     except psycopg.Error as exc: raise _error(exc) from exc
 
@@ -477,6 +522,120 @@ def reply_to_customer_support_ticket(case_number:str,payload:SupportMessageIn,re
                 conn.execute("UPDATE support_cases SET updated_at=now() WHERE id=%s",(ticket["id"],))
         return {"message":message}
     except HTTPException: raise
+    except psycopg.Error as exc: raise _error(exc) from exc
+
+
+def _case_attachments(conn, case_id:int):
+    return conn.execute(
+        "SELECT id,message_id,original_filename,content_type,file_size_bytes,created_at "
+        "FROM support_case_attachments WHERE case_id=%s ORDER BY created_at,id",
+        (case_id,),
+    ).fetchall()
+
+
+@router.post("/support-portal/tickets/{case_number}/attachments",status_code=201)
+async def upload_customer_ticket_attachments(
+    case_number:str,
+    request:Request,
+    files:list[UploadFile]=File(...),
+    message_id:int|None=Query(default=None,gt=0),
+):
+    """Attach photos or PDFs to one of the signed-in customer's own tickets."""
+    if not files: raise HTTPException(422,"Choose at least one file to attach")
+    if len(files)>MAX_FILES_PER_UPLOAD:
+        raise HTTPException(422,f"You can attach up to {MAX_FILES_PER_UPLOAD} files at a time")
+    payloads=[]
+    try:
+        for upload in files:
+            content=await upload.read(MAX_ATTACHMENT_BYTES+1)
+            payloads.append((clean_filename(upload.filename),upload.content_type or "",content))
+    finally:
+        for upload in files: await upload.close()
+    try:
+        for name,content_type,content in payloads:
+            try: validate_attachment(content,content_type)
+            except SupportAttachmentError as exc: raise SupportAttachmentError(f"{name}: {exc}") from exc
+    except SupportAttachmentError as exc: raise HTTPException(422,str(exc)) from exc
+
+    stored=[]
+    try:
+        with _connect() as conn:
+            customer_id=_linked_customer_id(conn,request.state.customer_id)
+            ticket=conn.execute(
+                "SELECT id,status FROM support_cases WHERE upper(case_number)=upper(%s) AND customer_id=%s",
+                (case_number.strip(),customer_id),
+            ).fetchone()
+            if ticket is None: raise HTTPException(404,"Ticket not found")
+            if ticket["status"] in CASE_TERMINAL_STATUSES:
+                raise HTTPException(409,"This ticket is closed; create a new ticket if you need further help")
+            if message_id is not None:
+                owned=conn.execute(
+                    "SELECT 1 FROM support_case_messages WHERE id=%s AND case_id=%s AND author_customer_account_id=%s",
+                    (message_id,ticket["id"],request.state.customer_id),
+                ).fetchone()
+                if owned is None: raise HTTPException(404,"Message not found on this ticket")
+            existing=conn.execute(
+                "SELECT count(*) AS total FROM support_case_attachments WHERE case_id=%s",(ticket["id"],),
+            ).fetchone()["total"]
+            if existing+len(payloads)>MAX_FILES_PER_TICKET:
+                raise HTTPException(422,f"A ticket can hold up to {MAX_FILES_PER_TICKET} attachments")
+        for name,content_type,content in payloads:
+            info=upload_support_attachment(
+                case_id=ticket["id"],customer_account_id=request.state.customer_id,
+                content_type=content_type,content=content,
+            )
+            stored.append((name,info))
+        rows=[]
+        with _connect() as conn:
+            with conn.transaction():
+                for name,info in stored:
+                    rows.append(conn.execute(
+                        "INSERT INTO support_case_attachments(case_id,message_id,uploaded_by_customer_account_id,object_key,original_filename,content_type,file_size_bytes,sha256_hex) "
+                        "VALUES(%s,%s,%s,%s,%s,%s,%s,%s) "
+                        "RETURNING id,message_id,original_filename,content_type,file_size_bytes,created_at",
+                        (ticket["id"],message_id,request.state.customer_id,info["object_key"],name,info["content_type"],info["file_size_bytes"],info["sha256_hex"]),
+                    ).fetchone())
+                conn.execute(
+                    "INSERT INTO support_case_events(case_id,actor_type,actor_customer_account_id,event_type,after_values) "
+                    "VALUES(%s,'customer',%s,'attachments_added',jsonb_build_object('count',%s::int))",
+                    (ticket["id"],request.state.customer_id,len(rows)),
+                )
+                conn.execute("UPDATE support_cases SET updated_at=now() WHERE id=%s",(ticket["id"],))
+        return {"attachments":rows}
+    except HTTPException:
+        for _name,info in stored: delete_support_attachment_object(info["object_key"])
+        raise
+    except SupportAttachmentConfigurationError as exc:
+        raise HTTPException(503,"Attachment storage is not configured yet") from exc
+    except SupportAttachmentError as exc:
+        for _name,info in stored: delete_support_attachment_object(info["object_key"])
+        raise HTTPException(422,str(exc)) from exc
+    except psycopg.Error as exc:
+        for _name,info in stored: delete_support_attachment_object(info["object_key"])
+        raise _error(exc) from exc
+    except Exception as exc:
+        for _name,info in stored: delete_support_attachment_object(info["object_key"])
+        logger.exception("Support attachment upload failed")
+        raise HTTPException(503,"Attachment storage is unavailable") from exc
+
+
+@router.get("/support-portal/tickets/{case_number}/attachments/{attachment_id}/download")
+def download_customer_ticket_attachment(case_number:str,attachment_id:int,request:Request):
+    try:
+        with _connect() as conn:
+            customer_id=_linked_customer_id(conn,request.state.customer_id)
+            row=conn.execute(
+                "SELECT a.case_id,a.object_key,a.original_filename FROM support_case_attachments a "
+                "JOIN support_cases s ON s.id=a.case_id "
+                "WHERE a.id=%s AND upper(s.case_number)=upper(%s) AND s.customer_id=%s",
+                (attachment_id,case_number.strip(),customer_id),
+            ).fetchone()
+            if row is None: raise HTTPException(404,"Attachment not found")
+        url=create_support_attachment_download_url(case_id=row["case_id"],object_key=row["object_key"],filename=row["original_filename"])
+        return {"url":url,"expires_in_seconds":300}
+    except HTTPException: raise
+    except (SupportAttachmentError,SupportAttachmentConfigurationError) as exc:
+        raise HTTPException(503,"Attachment storage is unavailable") from exc
     except psycopg.Error as exc: raise _error(exc) from exc
 
 
@@ -602,7 +761,7 @@ def get_staff_support_case(case_id:int):
     try:
         with _connect() as conn:
             ticket=conn.execute(
-                "SELECT s.id,s.case_number,s.customer_id,c.name AS customer_name,s.order_id,s.subject,s.description,s.priority,s.status,s.assigned_to,s.resolution,s.created_at,s.updated_at,s.sla_policy_id,s.first_response_due_at,s.resolution_due_at,s.first_response_at,s.resolved_at "
+                "SELECT s.id,s.case_number,s.category,s.customer_id,c.name AS customer_name,s.order_id,s.subject,s.description,s.priority,s.status,s.assigned_to,s.resolution,s.created_at,s.updated_at,s.sla_policy_id,s.first_response_due_at,s.resolution_due_at,s.first_response_at,s.resolved_at "
                 "FROM support_cases s LEFT JOIN customers c ON c.id=s.customer_id WHERE s.id=%s",
                 (case_id,),
             ).fetchone()
@@ -617,8 +776,26 @@ def get_staff_support_case(case_id:int):
                 "SELECT id,actor_type,event_type,before_values,after_values,created_at FROM support_case_events WHERE case_id=%s ORDER BY created_at,id",
                 (case_id,),
             ).fetchall()
-        return {"ticket":ticket,"messages":messages,"events":events}
+            attachments=_case_attachments(conn,case_id)
+        return {"ticket":ticket,"messages":messages,"events":events,"attachments":attachments}
     except HTTPException: raise
+    except psycopg.Error as exc: raise _error(exc) from exc
+
+
+@router.get("/support-cases/{case_id}/attachments/{attachment_id}/download")
+def download_staff_support_attachment(case_id:int,attachment_id:int):
+    try:
+        with _connect() as conn:
+            row=conn.execute(
+                "SELECT case_id,object_key,original_filename FROM support_case_attachments WHERE id=%s AND case_id=%s",
+                (attachment_id,case_id),
+            ).fetchone()
+            if row is None: raise HTTPException(404,"Attachment not found")
+        url=create_support_attachment_download_url(case_id=row["case_id"],object_key=row["object_key"],filename=row["original_filename"])
+        return {"url":url,"expires_in_seconds":300}
+    except HTTPException: raise
+    except (SupportAttachmentError,SupportAttachmentConfigurationError) as exc:
+        raise HTTPException(503,"Attachment storage is unavailable") from exc
     except psycopg.Error as exc: raise _error(exc) from exc
 
 
