@@ -1,4 +1,5 @@
 """PostgreSQL-backed catalogue, attribute and variant API foundation."""
+import logging
 import re
 from typing import Any
 
@@ -2111,7 +2112,7 @@ async def upload_attribute_image(file: UploadFile = File(...)):
         raise HTTPException(status_code=415, detail="The uploaded file content does not match its image type")
     try:
         import boto3
-        key = f"attributes/{uuid4().hex}.{allowed_types[content_type]}"
+        key = f"products/attributes/{uuid4().hex}.{allowed_types[content_type]}"
         client = boto3.client("s3", region_name=settings.aws_region)
         client.put_object(
             Bucket=settings.media_bucket,
@@ -2121,6 +2122,7 @@ async def upload_attribute_image(file: UploadFile = File(...)):
             CacheControl="public, max-age=31536000, immutable",
         )
     except Exception as exc:
+        logging.getLogger(__name__).exception("Attribute image upload failed")
         raise HTTPException(status_code=503, detail="Attribute image upload failed") from exc
     return {"image_url": settings.media_public_base_url.rstrip("/") + "/" + key, "filename": (file.filename or "")[:300]}
 
