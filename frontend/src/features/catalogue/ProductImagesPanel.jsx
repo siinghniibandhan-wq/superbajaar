@@ -85,6 +85,24 @@ export default function ProductImagesPanel({ products = [], initialProductId = "
     finally { setBusy(false); }
   }
 
+  async function removeGroupImages(group) {
+    const list = group.items || [];
+    if (!list.length) return;
+    if (!window.confirm("Delete all " + list.length + " image" + (list.length > 1 ? "s" : "") + " for \"" + group.title + "\"? This cannot be undone.")) return;
+    setBusy(true); setError(""); setMessage("");
+    let done = 0; const failed = [];
+    for (const image of list) {
+      try {
+        await apiRequest("/catalogue/products/" + productId + "/images/" + image.id, { method: "DELETE" });
+        done += 1;
+      } catch (e) { failed.push(e.message || "failed"); }
+    }
+    if (done) setMessage(done + " image" + (done > 1 ? "s" : "") + " deleted.");
+    if (failed.length) setError(failed.length + " could not be deleted — " + failed[0]);
+    await loadImages(productId);
+    setBusy(false);
+  }
+
   async function submit(event) {
     event.preventDefault(); setBusy(true); setError(""); setMessage("");
     const base = Number(sortOrder) || 0;
@@ -154,6 +172,6 @@ export default function ProductImagesPanel({ products = [], initialProductId = "
       </div>
       <button className="sb-primary" disabled={busy || !productId || (!imageFiles.length && !pickedUrls.length && !imageUrl.trim())} type={embedded ? "button" : "submit"} onClick={embedded ? () => submit({ preventDefault: () => {} }) : undefined}>{busy ? "Saving…" : (imageFiles.length ? (imageFiles.length>1 ? "Upload " + imageFiles.length + " images" : "Upload image") : pickedUrls.length ? (pickedUrls.length>1 ? "Add " + pickedUrls.length + " selected images" : "Add selected image") : "Add image reference") + (variantId ? " for " + variantName(variants.find(v=>String(v.id)===String(variantId))) : "")}</button>
     </ImageForm>
-    {images.length ? <div>{[{ id: "", title: "Product-level images (shown for every variant without its own image)", items: images.filter(i=>!i.variant_id) }, ...variants.filter(v=>v.is_active!==false || images.some(i=>String(i.variant_id)===String(v.id))).map(v=>({ id: String(v.id), title: "Variant: " + variantName(v, definitions), items: images.filter(i=>String(i.variant_id)===String(v.id)) }))].filter(g=>g.id==="" ? g.items.length : true).map(g=><div key={g.id || "product"} className="sb-image-group"><h3 className="sb-image-group-title">{g.title}</h3>{g.items.length ? <div className="sb-image-grid">{g.items.map(image=><article className="sb-image-item" key={image.id}><img src={image.image_url} alt={image.alt_text || ""} loading="lazy" onError={e=>{e.currentTarget.style.display="none";}}/><div><strong>{image.alt_text || "Product image"}{image.is_primary ? " · Main cover" : ""}</strong><small>{image.variant_id ? "Variant image" : "Product-level"} · Order {image.sort_order}</small><a href={image.image_url} target="_blank" rel="noreferrer">Open image</a>{!image.is_primary && <button type="button" className="sb-row-action" disabled={busy} onClick={() => setPrimary(image)}>Make cover</button>}<button type="button" className="sb-row-action" disabled={busy} onClick={() => removeImage(image)}>Delete</button></div></article>)}</div> : <p className="sb-muted">No image yet for this variant. The shop shows the product-level image until you add one.</p>}</div>)}</div> : <p className="sb-empty">No images saved for this product.</p>}
+    {images.length ? <div>{[{ id: "", title: "Product-level images (shown for every variant without its own image)", items: images.filter(i=>!i.variant_id) }, ...variants.filter(v=>v.is_active!==false || images.some(i=>String(i.variant_id)===String(v.id))).map(v=>({ id: String(v.id), title: "Variant: " + variantName(v, definitions), items: images.filter(i=>String(i.variant_id)===String(v.id)) }))].filter(g=>g.id==="" ? g.items.length : true).map(g=><div key={g.id || "product"} className="sb-image-group"><h3 className="sb-image-group-title">{g.title}</h3>{g.items.length > 1 && <button type="button" className="sb-row-action" disabled={busy} onClick={() => removeGroupImages(g)}>{"Delete all " + g.items.length + " images"}</button>}{g.items.length ? <div className="sb-image-grid">{g.items.map(image=><article className="sb-image-item" key={image.id}><img src={image.image_url} alt={image.alt_text || ""} loading="lazy" onError={e=>{e.currentTarget.style.display="none";}}/><div><strong>{image.alt_text || "Product image"}{image.is_primary ? " · Main cover" : ""}</strong><small>{image.variant_id ? "Variant image" : "Product-level"} · Order {image.sort_order}</small><a href={image.image_url} target="_blank" rel="noreferrer">Open image</a>{!image.is_primary && <button type="button" className="sb-row-action" disabled={busy} onClick={() => setPrimary(image)}>Make cover</button>}<button type="button" className="sb-row-action" disabled={busy} onClick={() => removeImage(image)}>Delete</button></div></article>)}</div> : <p className="sb-muted">No image yet for this variant. The shop shows the product-level image until you add one.</p>}</div>)}</div> : <p className="sb-empty">No images saved for this product.</p>}
   </section>;
 }
