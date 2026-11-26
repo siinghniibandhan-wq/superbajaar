@@ -24,8 +24,8 @@ export default function ReportsWorkspace({ onBack }) {
     setLoading(true); setError("");
     const results = await Promise.allSettled([
       apiRequest("/orders?limit=500"), apiRequest("/payments?limit=500"),
-      apiRequest("/inventory/balances?limit=500"), apiRequest("/catalogue/products?limit=500"),
-      apiRequest("/catalogue/variants?limit=500"),
+      apiRequest("/inventory/balances?limit=500"), apiRequest("/catalogue/products?limit=5000"),
+      apiRequest("/catalogue/variants?limit=5000"),
       apiRequest("/reports/overview?from_date=" + fromDate + "&to_date=" + toDate),
     ]);
     const keys = ["orders", "payments", "balances", "products", "variants", "overview"];
