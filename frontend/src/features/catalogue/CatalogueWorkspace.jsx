@@ -208,7 +208,7 @@ export default function CatalogueWorkspace({ onBack, currentUser }) {
       <button type="button" role="tab" aria-selected={activeTab === "categories"} className={activeTab === "categories" ? "is-active" : ""} onClick={() => { setActiveTab("categories"); setError(""); setMessage(""); }}>Categories <span>{categories.length}</span></button>
       <button type="button" role="tab" aria-selected={activeTab === "attributes"} className={activeTab === "attributes" ? "is-active" : ""} onClick={() => { setActiveTab("attributes"); setError(""); setMessage(""); }}>Attributes</button>
       <button type="button" role="tab" aria-selected={activeTab === "hsn"} className={activeTab === "hsn" ? "is-active" : ""} onClick={() => { setActiveTab("hsn"); setError(""); setMessage(""); }}>HSN rules</button>
-      <button type="button" role="tab" aria-selected={activeTab === "banners"} className={activeTab === "banners" ? "is-active" : ""} onClick={() => { setActiveTab("banners"); setError(""); setMessage(""); }}>Category banners</button>
+      <button type="button" role="tab" aria-selected={activeTab === "banners"} className={activeTab === "banners" ? "is-active" : ""} onClick={() => { setActiveTab("banners"); setError(""); setMessage(""); }}>Banners</button>
     </nav>
 
     {error && <p role="alert" className="sb-alert">{error}</p>}

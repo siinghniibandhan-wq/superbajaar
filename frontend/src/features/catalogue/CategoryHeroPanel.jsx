@@ -15,11 +15,13 @@ export default function CategoryHeroPanel({ categories = [] }) {
 
   const sortedCategories = useMemo(() => [...categories].filter(c => c.is_active !== false)
     .map(c => ({ ...c, path: categoryPath(categories, c.id) })).sort((a, b) => a.path.localeCompare(b.path)), [categories]);
-  const base = "/catalogue/categories/" + categoryId + "/hero-images";
+  const isHome = categoryId === "home";
+  const base = isHome ? "/catalogue/homepage-hero-images" : "/catalogue/categories/" + categoryId + "/hero-images";
+  const listPath = isHome ? base + "/all" : base;
 
   async function load(id = categoryId) {
     if (!id) { setImages([]); return; }
-    try { const result = await apiRequest("/catalogue/categories/" + id + "/hero-images"); setImages(result.items || []); }
+    try { const result = await apiRequest(id === "home" ? "/catalogue/homepage-hero-images/all" : "/catalogue/categories/" + id + "/hero-images"); setImages(result.items || []); }
     catch (e) { setError(e.message || "Unable to load banner images."); }
   }
   useEffect(() => { setError(""); setMessage(""); setFiles([]); setFileInputKey(k => k + 1); load(categoryId); }, [categoryId]);
@@ -63,14 +65,15 @@ export default function CategoryHeroPanel({ categories = [] }) {
   const saveAlt = (image, alt_text) => { if ((alt_text || "") !== (image.alt_text || "")) run(() => apiRequest(base + "/" + image.id, { method: "PUT", body: JSON.stringify({ alt_text }) }), "Description saved."); };
 
   return <section className="sb-data-card sb-hero-panel">
-    <h2>Category banners</h2>
-    <p className="sb-muted">Upload images for the hero slider at the top of a category page. Add more than one and they play as a slider, in the order shown here. A category with no images keeps the standard banner.</p>
+    <h2>Homepage &amp; category banners</h2>
+    <p className="sb-muted">Upload images for the hero slider at the top of the homepage or a category page. Add more than one and they play as a slider, in the order shown here. A page with no images keeps its standard banner.</p>
     {error && <p role="alert" className="sb-alert">{error}</p>}
     {message && <p role="status" className="sb-success">{message}</p>}
 
-    <label className="sb-hero-field">Category
+    <label className="sb-hero-field">Page
       <select value={categoryId} onChange={event => setCategoryId(event.target.value)}>
-        <option value="">Choose a category…</option>
+        <option value="">Choose a page…</option>
+        <option value="home">Homepage (main banner)</option>
         {sortedCategories.map(c => <option key={c.id} value={c.id}>{c.path}</option>)}
       </select>
     </label>
