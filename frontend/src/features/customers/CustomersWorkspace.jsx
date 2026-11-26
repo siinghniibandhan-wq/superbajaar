@@ -172,6 +172,16 @@ export default function CustomersWorkspace({ onBack }) {
     finally { setCaseDetailLoading(false); }
   }
 
+  async function openCaseAttachment(attachment) {
+    setError("");
+    try {
+      const data = await apiRequest("/customers/support-cases/" + caseDetail.ticket.id + "/attachments/" + attachment.id + "/download");
+      const link = document.createElement("a");
+      link.href = data.url; link.target = "_blank"; link.rel = "noopener noreferrer";
+      document.body.appendChild(link); link.click(); link.remove();
+    } catch (e) { setError(e.message || "Unable to open attachment."); }
+  }
+
   async function sendCaseMessage(e) {
     e.preventDefault();
     if (!caseDetail || !messageDraft.trim()) return;
@@ -304,12 +314,13 @@ export default function CustomersWorkspace({ onBack }) {
       {caseDetailLoading && <p className="sb-empty" role="status">Loading conversation…</p>}
       {caseDetail && <section className="sb-customer-360" aria-label="Support case conversation">
         <div className="sb-customer-360-heading">
-          <div><p className="sb-eyebrow">CASE CONVERSATION</p><h2>{caseDetail.ticket.case_number} · {caseDetail.ticket.subject}</h2><small>{label(caseDetail.ticket.status)} · {label(caseDetail.ticket.priority)} · {caseDetail.ticket.customer_name || "Unlinked customer"}</small></div>
+          <div><p className="sb-eyebrow">CASE CONVERSATION</p><h2>{caseDetail.ticket.case_number} · {caseDetail.ticket.subject}</h2><small>{label(caseDetail.ticket.status)} · {label(caseDetail.ticket.priority)} · {caseDetail.ticket.customer_name || "Unlinked customer"}{caseDetail.ticket.category ? " · " + label(caseDetail.ticket.category) : ""}</small></div>
           <button type="button" onClick={() => setCaseDetail(null)}>Close</button>
         </div>
         <div className="sb-case-message-list">{caseDetail.messages.map(message => <article className={"sb-case-message " + (message.visibility === "internal" ? "is-internal" : "")} key={message.id}>
           <div><strong>{message.author_type === "customer" ? (message.customer_author || "Customer") : message.author_type === "system" ? "System" : (message.staff_author || "Staff")}</strong><small>{message.visibility === "internal" ? "Internal note" : "Public reply"} · {new Date(message.created_at).toLocaleString("en-IN")}</small></div>
           <p>{message.body}</p>
+          {(caseDetail.attachments || []).filter(item => item.message_id === message.id).map(item => <button type="button" key={item.id} onClick={() => openCaseAttachment(item)}>📎 {item.original_filename} ({Math.max(1, Math.round(item.file_size_bytes / 1024))} KB)</button>)}
         </article>)}</div>
         <form className="sb-customer-form" onSubmit={sendCaseMessage}>
           <label>Reply type<select value={messageVisibility} onChange={e => setMessageVisibility(e.target.value)}><option value="public">Customer reply</option><option value="internal">Internal note</option></select></label>
