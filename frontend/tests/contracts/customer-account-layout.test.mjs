@@ -22,3 +22,17 @@ test("account navigation and cards collapse cleanly on narrow screens", () => {
   assert.match(css, /\.storefront-account-nav\s*\{[^}]*overflow-x:\s*auto/s);
   assert.match(css, /\.storefront-loyalty-summary\s*\{[^}]*grid-template-columns:\s*repeat\(2,minmax\(0,\s*1fr\)\)/s);
 });
+
+test("support ticket subject is a dropdown of the approved topics with attachments", () => {
+  const labels = ["Item Not Listed", "Account Issue", "Supercoin", "Order Delayed", "Cancellation & Refund", "Payment Issue", "Referral Earning", "Feedback"];
+  let last = -1;
+  for (const label of labels) {
+    const at = storefront.indexOf('"' + label + '"', storefront.indexOf("SUPPORT_SUBJECTS"));
+    assert.ok(at > last, label + " is missing or out of order");
+    last = at;
+  }
+  assert.match(storefront, /<select required value=\{ticketDraft\.category\}/);
+  assert.doesNotMatch(storefront, /<label>Subject<input/);
+  assert.match(storefront, /type="file" multiple accept=\{TICKET_FILE_TYPES\.join/);
+  assert.match(storefront, /\/attachments/);
+});
