@@ -55,3 +55,4 @@
 058_promote_colour_custom_options.sql
 059_allow_image_attribute_type.sql
 060_promote_image_custom_options.sql
+061_homepage_hero_images.sql
