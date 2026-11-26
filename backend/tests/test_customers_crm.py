@@ -353,3 +353,30 @@ def test_super_admin_and_admin_can_create_sla_policies_for_every_priority(monkey
             assert len(connection.calls) == 1
             assert "INSERT INTO support_sla_policies" in connection.calls[0][0]
             assert connection.calls[0][1][0] == priority
+
+
+def test_ticket_attachment_routes_require_a_signed_in_customer(monkeypatch):
+    from app.core import auth_middleware
+
+    monkeypatch.setattr(auth_middleware.settings, "database_url", "postgresql://test.invalid/sb_app")
+    upload = client.post(
+        "/api/customers/support-portal/tickets/SUP-ABC/attachments",
+        files={"files": ("a.png", b"x", "image/png")},
+    )
+    download = client.get("/api/customers/support-portal/tickets/SUP-ABC/attachments/1/download")
+    assert upload.status_code == 401
+    assert download.status_code == 401
+
+
+def test_customer_session_can_reach_attachment_routes_but_not_other_staff_paths(monkeypatch):
+    from app.core import auth_middleware
+
+    monkeypatch.setattr(auth_middleware.settings, "database_url", "postgresql://test.invalid/sb_app")
+    monkeypatch.setattr(
+        auth_middleware, "_decode",
+        lambda token: {"typ": "customer", "sub": "42", "jti": "test-session"},
+    )
+    headers = {"Authorization": "Bearer customer-test-token"}
+    # Staff attachment download must stay closed to customer sessions.
+    staff = client.get("/api/customers/support-cases/1/attachments/1/download", headers=headers)
+    assert staff.status_code == 403
