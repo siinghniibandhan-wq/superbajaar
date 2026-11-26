@@ -132,6 +132,7 @@ export default function Storefront() {
   const [loyaltyRules, setLoyaltyRules] = useState([]);
   const [attributeDefinitions, setAttributeDefinitions] = useState([]);
   const [categoryHeroImages, setCategoryHeroImages] = useState({});
+  const [homeHeroImages, setHomeHeroImages] = useState([]);
   const [reviewSummary, setReviewSummary] = useState({});
   const [reviewsVersion, setReviewsVersion] = useState(0);
   const [loyaltyDefaultRate, setLoyaltyDefaultRate] = useState(1);
@@ -299,6 +300,14 @@ export default function Storefront() {
       (Array.isArray(result?.items) ? result.items : []).forEach(item => { const key = Number(item.category_id); byCategory[key] = [...(byCategory[key] || []), item]; });
       setCategoryHeroImages(byCategory);
     }).catch(() => { if (active) setCategoryHeroImages({}); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    apiRequest("/catalogue/homepage-hero-images", { skipAuth: true })
+      .then(result => { if (active) setHomeHeroImages(Array.isArray(result?.items) ? result.items : []); })
+      .catch(() => { if (active) setHomeHeroImages([]); });
     return () => { active = false; };
   }, []);
 
@@ -1090,7 +1099,8 @@ export default function Storefront() {
     </header>
     {accountOpen && <div className="storefront-account-sheet-backdrop" role="presentation" onClick={event => { if (event.target === event.currentTarget) setAccountOpen(false); }}><section className="storefront-account-sheet" role="dialog" aria-modal="true" aria-labelledby="storefront-account-sheet-title"><div className="storefront-account-sheet-handle" aria-hidden="true" /><div className="storefront-account-sheet-heading"><div><span className="storefront-kicker">SUPER BAJAAR</span><h2 id="storefront-account-sheet-title">Your account</h2></div><button type="button" className="storefront-modal-close" aria-label="Close account menu" onClick={() => setAccountOpen(false)}><X size={19} /></button></div><p>Manage your profile and shopping experience.</p><button type="button" className="storefront-account-sheet-action" onClick={customerAuth ? openAccount : () => { setAccountOpen(false); openCustomerAuth("login", "/account"); }}><span className="storefront-account-sheet-action-icon"><UserRound size={20} /></span><span><strong>{customerAuth ? "My Account" : "Customer Sign in"}</strong><small>{customerAuth ? "Contact and delivery details" : "Sign in to manage your account"}</small></span><span aria-hidden="true">›</span></button>{customerAuth && <button type="button" className="storefront-account-sheet-action" onClick={signOutCustomer}><span className="storefront-account-sheet-action-icon">↪</span><span><strong>Sign out</strong><small>Sign out of your customer account</small></span><span aria-hidden="true">›</span></button>}{canOpenAdmin && <a className="storefront-account-sheet-action" href="/admin"><span className="storefront-account-sheet-action-icon">⌘</span><span><strong>Admin Console</strong><small>Store management</small></span><span aria-hidden="true">›</span></a>}</section></div>}
     <nav className="storefront-department-nav" aria-label="Shop departments"><a href="/#categories" onClick={event => { event.preventDefault(); openShopHome(); setTimeout(() => document.getElementById("categories")?.scrollIntoView({ behavior: "smooth" }), 0); }}>☰ All Categories</a><a href="/deals" onClick={event => { event.preventDefault(); openDealsPage(); }}>Deals <Flame size={14} /></a><button type="button" onClick={() => { openShopHome(); setTimeout(() => document.getElementById("products")?.scrollIntoView({ behavior: "smooth" }), 0); }}>Shop All</button>{departmentCategories.map(category => <a key={category.id} href={"/category/" + categorySlug(category.name)} aria-current={routeSlug === categorySlug(category.name) ? "page" : undefined}>{category.name === "Fresh Daily" ? "Fresh" : category.name}</a>)}</nav>
-    {!isProductPage && !isCustomerAuthPage && !isCategoryPage && !isDealsPage && !isWishlistPage && !isAccountPage && !isCheckoutPage && !isInfoPage && !isSearchPage && <section className="storefront-hero storefront-home-hero">
+    {homeHeroImages.length > 0 && !isProductPage && !isCustomerAuthPage && !isCategoryPage && !isDealsPage && !isWishlistPage && !isAccountPage && !isCheckoutPage && !isInfoPage && !isSearchPage && <section className="storefront-home-banner" aria-label="Featured offers"><CategoryHeroSlider images={homeHeroImages} title="Super Bajaar" /></section>}
+    {!isProductPage && !isCustomerAuthPage && !isCategoryPage && !isDealsPage && !isWishlistPage && !isAccountPage && !isCheckoutPage && !isInfoPage && !isSearchPage && !homeHeroImages.length && <section className="storefront-hero storefront-home-hero">
       <div className="storefront-hero-copy"><span className="storefront-kicker"><i /> YOUR EVERYDAY SUPER STORE</span><h1>Daily essentials<br /><em>at your fingertips.</em></h1><p>Groceries, fresh picks and everyday favourites for your home — all in one easy shopping destination.</p><a className="storefront-primary" href="#products">Start shopping <span>→</span></a><div className="storefront-trust"><span>Easy everyday shopping</span><span>Delivery availability by PIN</span></div></div>
       <div className="storefront-hero-art" aria-hidden="true"><div className="hero-icon-grid">{[ShoppingCart, Leaf, Shirt, Gift, Headphones, Home].map((I, i) => <span key={i}><I size={34} strokeWidth={1.6} /></span>)}</div><div className="art-caption">Everything for your everyday</div></div>
     </section>}
