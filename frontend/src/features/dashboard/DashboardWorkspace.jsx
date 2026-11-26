@@ -38,8 +38,8 @@ export default function DashboardWorkspace({ onOpen, permissions = {} }) {
   const refresh = useCallback(async () => {
     setLoading(true);
     const requests = {
-      products: () => apiRequest("/catalogue/products?status=all&limit=500"),
-      variants: () => apiRequest("/catalogue/variants?limit=500"),
+      products: () => apiRequest("/catalogue/products?status=all&limit=5000"),
+      variants: () => apiRequest("/catalogue/variants?limit=5000"),
       balances: () => apiRequest("/inventory/balances?limit=500"),
       inventoryOverview: () => apiRequest("/inventory/overview"),
       reportSummary: () => apiRequest("/reports/overview?from_date=" + from + "&to_date=" + to),
