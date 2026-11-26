@@ -98,3 +98,85 @@ img,svg,video{max-width:100%}
 @media (prefers-reduced-motion: reduce) {
   .storefront-home-section .storefront-carousel-track { scroll-behavior: auto; }
 }
+
+/* ==========================================================================
+   Phone polish (final layer). Keep this block LAST so it wins over the older
+   patches above. It makes the top of every page compact on small screens:
+   row 1 = logo + wishlist + basket + account, row 2 = search, row 3 = PIN.
+   ========================================================================== */
+html, body { max-width: 100%; overflow-x: clip; }
+.storefront-header-search input::placeholder { color: #8a7d99; opacity: 1; }
+
+@media (max-width: 640px) {
+  /* promo strip: one tidy line, no wrapping */
+  .storefront-promo { padding: 7px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* header: compact 3-row grid */
+  .storefront-header {
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
+    column-gap: 4px; row-gap: 8px;
+    padding: 10px 12px 8px;
+  }
+  .storefront-actions { display: contents; }
+  .storefront-brand { grid-column: 1; grid-row: 1; gap: 9px; }
+  .storefront-brand small { display: none; }
+  .storefront-brand strong { font-size: 18px; white-space: nowrap; }
+  .storefront-logo { width: 36px; height: 36px; border-radius: 12px; flex: 0 0 auto; }
+  .storefront-actions > .storefront-icon-action,
+  .storefront-actions > .storefront-account-wrap { grid-row: 1; align-self: center; }
+  .storefront-actions > .storefront-icon-action { min-width: 42px; min-height: 42px; flex: none; }
+  .storefront-account-button { min-width: 42px; min-height: 42px; padding: 0; border-radius: 14px; }
+  .storefront-header-search { grid-column: 1 / -1; grid-row: 2; min-height: 44px; padding: 0 14px; }
+  .storefront-header-search input { padding: 10px 0; }
+  .storefront-header-search input::placeholder { font-size: 14px; }
+
+  /* delivery PIN: one slim line under the search box instead of a big card */
+  .storefront-header .storefront-delivery {
+    grid-column: 1 / -1; grid-row: 3;
+    display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 6px;
+    min-height: 32px; min-width: 0; width: fit-content; max-width: 100%;
+    padding: 4px 10px; border-radius: 999px;
+    background: #f5efff; box-shadow: none; border: 1px solid #e5d8fb;
+  }
+  .storefront-header .storefront-delivery small { font-size: 11px; }
+  .storefront-header .storefront-delivery strong { font-size: 12px; }
+
+  /* department chips: slightly tighter */
+  .storefront-department-nav { margin: 4px 8px 0; padding: 6px; }
+
+  /* category banner: shorter picture, smaller corners */
+  .storefront-hero-slider { border-radius: 16px; }
+  .storefront-hero-slide { aspect-ratio: 2 / 1; }
+
+  /* subcategory tiles: compact 2-column cards */
+  .storefront-subcategory-section { margin: 20px 0; }
+  .storefront-subcategory-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .storefront-subcategory-card { gap: 8px; padding: 12px; border-radius: 16px; min-width: 0; }
+  .storefront-subcategory-icon { width: 40px; height: 40px; border-radius: 13px; }
+  .storefront-subcategory-card strong { font-size: 13px; line-height: 1.25; overflow-wrap: anywhere; }
+  .storefront-section-heading h1, .storefront-section-heading h2 { font-size: 22px; line-height: 1.15; }
+
+  /* never let long words or wide tables push the page sideways */
+  .storefront h1, .storefront h2, .storefront h3, .storefront p { overflow-wrap: anywhere; }
+  .storefront table { display: block; max-width: 100%; overflow-x: auto; }
+}
+
+/* very small phones (320-360px) */
+@media (max-width: 360px) {
+  .storefront-brand strong { font-size: 16px; }
+  .storefront-actions > .storefront-icon-action { min-width: 38px; }
+  .storefront-subcategory-grid { gap: 8px; }
+  .storefront-subcategory-card { padding: 10px; }
+}
+
+/* small tablets and big phones in landscape (641-900px) */
+@media (min-width: 641px) and (max-width: 900px) {
+  .storefront-subcategory-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .storefront-hero-slide { aspect-ratio: 5 / 2; }
+}
+
+/* landscape phones: bottom bar should not eat the screen */
+@media (max-width: 900px) and (max-height: 480px) {
+  .storefront-mobile-nav { position: static; }
+  .storefront { padding-bottom: 0; }
+}
