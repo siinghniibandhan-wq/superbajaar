@@ -313,13 +313,13 @@ export default function Storefront() {
 
   useEffect(() => {
     let active = true;
-    apiRequest("/catalogue/attributes?limit=500", { skipAuth: true })
+    apiRequest("/catalogue/attributes?limit=5000", { skipAuth: true })
       .then(result => { if (active) setAttributeDefinitions(Array.isArray(result?.items) ? result.items : []); })
       .catch(() => { if (active) setAttributeDefinitions([]); });
     const endpoints = [
-      ["categories", () => apiRequest("/catalogue/categories", { skipAuth: true })],
-      ["products", () => apiRequest("/catalogue/products", { skipAuth: true })],
-      ["variants", () => apiRequest("/catalogue/variants?limit=500", { skipAuth: true })],
+      ["categories", () => apiRequest("/catalogue/categories?limit=5000", { skipAuth: true })],
+      ["products", () => apiRequest("/catalogue/products?limit=5000", { skipAuth: true })],
+      ["variants", () => apiRequest("/catalogue/variants?limit=5000", { skipAuth: true })],
     ];
     // Load each resource independently: one failing request must not discard
     // successful catalogue data or hide which endpoint actually failed.
