@@ -60,7 +60,7 @@ export default function ProductImagesPanel({ products = [], initialProductId = "
     setVariants([]); setVariantId(""); setImages([]);
     if (!productId) return;
     Promise.all([
-      apiRequest("/catalogue/products/" + productId + "/variants?limit=500"),
+      apiRequest("/catalogue/products/" + productId + "/variants?limit=5000"),
       apiRequest("/catalogue/products/" + productId + "/images"),
     ]).then(([v, i]) => { setVariants(v.items || []); setImages(i.items || []); })
       .catch(e => setError(e.message || "Unable to load product media."));

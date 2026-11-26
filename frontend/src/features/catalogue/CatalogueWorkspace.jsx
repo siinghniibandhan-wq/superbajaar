@@ -76,7 +76,7 @@ export default function CatalogueWorkspace({ onBack, currentUser }) {
   async function refresh() {
     try {
       const [c] = await Promise.all([
-        apiRequest("/catalogue/categories?limit=500"),
+        apiRequest("/catalogue/categories?limit=5000"),
         refreshProducts(productOffset),
       ]);
       setCategories(c.items || []);
@@ -247,7 +247,7 @@ export default function CatalogueWorkspace({ onBack, currentUser }) {
           product={editingProduct}
           duplicateFrom={duplicatingProduct}
           onBusyChange={setProductFormBusy}
-          onSaved={async () => { setProductOffset(0); await refreshProducts(0); await apiRequest("/catalogue/categories?limit=500").then(result => setCategories(result.items || [])); setShowProductForm(false); setEditingProduct(null); setDuplicatingProduct(null); }}
+          onSaved={async () => { setProductOffset(0); await refreshProducts(0); await apiRequest("/catalogue/categories?limit=5000").then(result => setCategories(result.items || [])); setShowProductForm(false); setEditingProduct(null); setDuplicatingProduct(null); }}
         />}
       </CatalogueModal>
       <div className="sb-catalogue-pagination" aria-label="Product pagination">

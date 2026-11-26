@@ -112,7 +112,7 @@ export default function ProductCreateForm({ categories = [], product = null, dup
       return [def.id, (result.items || []).map(item => item.value)];
     })).then(entries => setCustomAttributeOptions(Object.fromEntries(entries)))
       .catch(e => setError(e.message || "Unable to load product-specific attribute options."));
-    apiRequest("/catalogue/products/" + product.id + "/variants?limit=500")
+    apiRequest("/catalogue/products/" + product.id + "/variants?limit=5000")
       .then(result => {
         const values = {};
         // Only active variants count: un-ticked (retired) values must not come back ticked.
@@ -130,7 +130,7 @@ export default function ProductCreateForm({ categories = [], product = null, dup
   }, [product?.id, definitions]);
   useEffect(() => {
     if (!product?.id) return;
-    apiRequest("/catalogue/products/" + product.id + "/variants?limit=500")
+    apiRequest("/catalogue/products/" + product.id + "/variants?limit=5000")
       .then(result => {
         const active = (result.items || []).filter(item => item.is_active !== false);
         setExistingVariants(active);
@@ -169,7 +169,7 @@ export default function ProductCreateForm({ categories = [], product = null, dup
       setCustomAttributeOptions(options);
       setPendingCustomOptions(options);
     }).catch(e => setError(e.message || "Unable to copy product-specific attribute options."));
-    apiRequest("/catalogue/products/" + sourceId + "/variants?limit=500")
+    apiRequest("/catalogue/products/" + sourceId + "/variants?limit=5000")
       .then(result => {
         const values = {}; const pricing = {};
         for (const row of (result.items || []).filter(item => item.is_active !== false)) {
@@ -436,7 +436,7 @@ export default function ProductCreateForm({ categories = [], product = null, dup
       try {
         const orderCodes = definitions.filter(def => def.is_variant_attribute && (selected[def.code] || []).length > 1).map(def => def.code);
         if (orderCodes.length) {
-          const saved = await apiRequest("/catalogue/products/" + savedProduct.id + "/variants?limit=500");
+          const saved = await apiRequest("/catalogue/products/" + savedProduct.id + "/variants?limit=5000");
           const active = (saved.items || []).filter(item => item.is_active !== false);
           if (active.length > 1) {
             await apiRequest("/catalogue/products/" + savedProduct.id + "/variants/order", { method: "PUT", body: JSON.stringify({ variant_ids: variantIdsInOrder(active, orderCodes, valueOrder) }) });

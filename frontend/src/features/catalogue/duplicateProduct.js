@@ -21,7 +21,7 @@ export async function duplicateProductRecord(api, item, { maxTries = 25 } = {}) 
   const id = item.id;
   const [attributeResult, variantResult, ruleResult, imageResult, definitionResult] = await Promise.all([
     api("/catalogue/products/" + id + "/attributes"),
-    api("/catalogue/products/" + id + "/variants?limit=500"),
+    api("/catalogue/products/" + id + "/variants?limit=5000"),
     api("/catalogue/products/" + id + "/availability-rules").catch(() => ({ items: [] })),
     api("/catalogue/products/" + id + "/images").catch(() => ({ items: [] })),
     api("/catalogue/attributes"),

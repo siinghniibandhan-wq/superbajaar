@@ -17,7 +17,7 @@ export default function HsnRulesPanel({ categories = [] }) {
   async function load() {
     const [ruleResult, attributeResult] = await Promise.all([
       apiRequest("/catalogue/hsn-rules"),
-      apiRequest("/catalogue/attributes?limit=500").catch(() => ({ items: [] })),
+      apiRequest("/catalogue/attributes?limit=5000").catch(() => ({ items: [] })),
     ]);
     setRules(ruleResult.items || []);
     setDefinitions(attributeResult.items || []);
