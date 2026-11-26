@@ -270,7 +270,7 @@ export default function InventoryWorkspace({ onBack }) {
   }
   useEffect(() => {
     if (!productId) { setVariants([]); return; }
-    apiRequest("/catalogue/products/" + productId + "/variants")
+    apiRequest("/catalogue/products/" + productId + "/variants?limit=500")
       .then(result => setVariants(result.items || []))
       .catch(e => setError(e.message || "Unable to load variants."));
   }, [productId]);
