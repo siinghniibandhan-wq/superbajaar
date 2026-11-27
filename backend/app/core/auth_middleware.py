@@ -137,7 +137,7 @@ async def require_active_session(request: Request) -> None:
     """Authenticate a valid request and enforce role-based write access."""
     path = request.url.path
     prefix = settings.api_prefix.rstrip("/")
-    if path.startswith(prefix + "/") and request.method != "OPTIONS":
+    if path.startswith(prefix + "/") and path != prefix + "/health" and request.method != "OPTIONS":
         enforce_csrf_origin(request)
         await asyncio.to_thread(enforce_distributed_rate_limit, request)
     public = {prefix + "/health", prefix + "/auth/login", prefix + "/customer-auth/register", prefix + "/customer-auth/login", prefix + "/portal-invitations/accept"}
