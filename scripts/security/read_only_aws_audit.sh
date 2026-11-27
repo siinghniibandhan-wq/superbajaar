@@ -46,10 +46,28 @@ else
   echo "IMDSv2 token request: FAIL or metadata endpoint unavailable"
 fi
 if command -v aws >/dev/null 2>&1 && [ -n "$ROLE" ]; then
+  ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>/dev/null)
   run aws iam list-attached-role-policies --role-name "$ROLE" --query 'AttachedPolicies[].{Name:PolicyName,Arn:PolicyArn}' --output table
-  run aws iam list-role-policies --role-name "$ROLE" --output table
+  for POLICY_ARN in $(aws iam list-attached-role-policies --role-name "$ROLE" --query 'AttachedPolicies[].PolicyArn' --output text 2>/dev/null); do
+    VERSION=$(aws iam get-policy --policy-arn "$POLICY_ARN" --query 'Policy.DefaultVersionId' --output text 2>/dev/null)
+    if [ -n "$VERSION" ] && [ "$VERSION" != "None" ]; then
+      run aws iam get-policy-version --policy-arn "$POLICY_ARN" --version-id "$VERSION" --query 'PolicyVersion.Document' --output json
+    fi
+  done
+  INLINE_NAMES=$(aws iam list-role-policies --role-name "$ROLE" --query 'PolicyNames[]' --output text 2>/dev/null)
+  echo "Inline IAM policies: ${INLINE_NAMES:-none}"
+  for POLICY_NAME in $INLINE_NAMES; do
+    run aws iam get-role-policy --role-name "$ROLE" --policy-name "$POLICY_NAME" --query 'PolicyDocument' --output json
+  done
+  if [ -n "$ACCOUNT_ID" ]; then
+    run aws s3control get-public-access-block --account-id "$ACCOUNT_ID"
+  fi
   if [ -n "$INSTANCE_ID" ]; then
+    SG_IDS=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --region "$REGION" --query 'Reservations[].Instances[].SecurityGroups[].GroupId' --output text 2>/dev/null)
     run aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --region "$REGION" --query 'Reservations[].Instances[].{State:State.Name,MetadataOptions:MetadataOptions,SecurityGroups:SecurityGroups[].GroupId}' --output json
+    if [ -n "$SG_IDS" ]; then
+      run aws ec2 describe-security-groups --group-ids $SG_IDS --region "$REGION" --query 'SecurityGroups[].{GroupId:GroupId,GroupName:GroupName,Ingress:IpPermissions,Egress:IpPermissionsEgress}' --output json
+    fi
   fi
 else
   echo "SKIP: AWS CLI or attached instance role unavailable"
@@ -64,6 +82,8 @@ if command -v aws >/dev/null 2>&1 && [ -n "$BUCKET" ]; then
   echo "Media bucket name: $BUCKET"
   run aws s3api get-public-access-block --bucket "$BUCKET" --region "${REGION:-ap-south-1}"
   run aws s3api get-bucket-policy-status --bucket "$BUCKET" --region "${REGION:-ap-south-1}"
+  run aws s3api get-bucket-policy --bucket "$BUCKET" --region "${REGION:-ap-south-1}"
+  run aws s3api get-bucket-ownership-controls --bucket "$BUCKET" --region "${REGION:-ap-south-1}"
   run aws s3api get-bucket-encryption --bucket "$BUCKET" --region "${REGION:-ap-south-1}"
   run aws s3api get-bucket-versioning --bucket "$BUCKET" --region "${REGION:-ap-south-1}"
   run aws s3api get-bucket-lifecycle-configuration --bucket "$BUCKET" --region "${REGION:-ap-south-1}"
