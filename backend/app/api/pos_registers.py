@@ -246,6 +246,50 @@ def add_cash_movement(shift_id: int, payload: CashMovement, request: Request):
         raise HTTPException(status_code=503, detail="Cash movement could not be recorded") from exc
 
 
+
+@router.post("/shifts/{shift_id}/payments/{payment_id}/confirm-cash")
+def confirm_cash_payment(shift_id: int, payment_id: int, request: Request):
+    """Capture a physical cash tender only from the cashier shift that owns the sale."""
+    actor = _actor(request)
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                shift = conn.execute(
+                    "SELECT id,register_id,cashier_user_id FROM pos_register_shifts WHERE id=%s AND status='open' FOR UPDATE",
+                    (shift_id,),
+                ).fetchone()
+                if shift is None:
+                    raise HTTPException(status_code=409, detail="Cash confirmation requires an open shift")
+                if int(shift["cashier_user_id"]) != actor and getattr(request.state, "role", "") not in {"manager","admin","super_admin"}:
+                    raise HTTPException(status_code=403, detail="Only the assigned cashier or a manager can confirm this cash tender")
+                payment = conn.execute(
+                    """SELECT p.id,p.payment_reference,p.method,p.amount,p.status,o.id AS order_id,o.order_number
+                       FROM payments p JOIN orders o ON o.id=p.order_id
+                       WHERE p.id=%s AND o.channel='pos' AND o.pos_register_shift_id=%s
+                       FOR UPDATE OF p,o""",
+                    (payment_id,shift_id),
+                ).fetchone()
+                if payment is None:
+                    raise HTTPException(status_code=404, detail="Cash tender does not belong to this register shift")
+                if payment["method"] != "cod":
+                    raise HTTPException(status_code=422, detail="Only physical cash tenders can be confirmed here")
+                if payment["status"] != "pending":
+                    raise HTTPException(status_code=409, detail="Cash tender is not pending confirmation")
+                updated = conn.execute(
+                    "UPDATE payments SET status='captured',note='Physical cash received and confirmed by POS cashier',updated_at=now() WHERE id=%s AND status='pending' RETURNING id,payment_reference,method,amount,status,updated_at",
+                    (payment_id,),
+                ).fetchone()
+                conn.execute(
+                    "INSERT INTO pos_register_audit(register_id,shift_id,event_type,actor_user_id,event_data) VALUES(%s,%s,'cash_tender_confirmed',%s,%s)",
+                    (shift["register_id"],shift_id,actor,Jsonb({"payment_id":payment_id,"order_number":payment["order_number"],"amount":str(payment["amount"])})),
+                )
+        return updated
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(status_code=503, detail="Cash tender could not be confirmed") from exc
+
+
 @router.post("/shifts/{shift_id}/close")
 def close_shift(shift_id: int, payload: ShiftClose, request: Request):
     actor = _actor(request)
