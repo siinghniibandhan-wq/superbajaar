@@ -20,7 +20,7 @@ This document separates implemented code from workflows that are still incomplet
 
 | Area | Current code behaviour | Missing / not yet implemented |
 |---|---|---|
-| POS register controls | Order checkout and pending tender creation exist. | Register sessions, cash-drawer opening/closing and shift cash reconciliation. The POS UI itself states these controls are still required. |
+| POS register controls | This feature branch adds multiple registers per store, one open shift per register/cashier, opening float, cash-in/out, cashier-confirmed cash tenders, closing count/variance, immutable cash/audit history and a register-aware POS workspace. | Pending CI and review; migration 065 must be applied before the new register APIs can run. Not yet deployed or production-verified. |
 | Refunds and settlements | Payment statuses include refunded; payment records can be reconciled at application-record level. | A controlled provider refund-request/refund API, settlement batches, provider fees, chargeback handling and bank-deposit reconciliation. A recorded refunded status is not proof that a provider refund occurred. |
 | Delivery carriers | Internal shipment assignment, tracking and status history are available. | Carrier-provider integrations, label generation and carrier webhook/status synchronization. The Delivery workspace explicitly says carrier integrations are not enabled. |
 | Identity OTP channels | Customer email OTP is implemented for email verification and identity-claim confirmation. | SMS, WhatsApp and Telegram OTP delivery/verification channels. Do not represent these channels as active. |
@@ -48,6 +48,6 @@ This document separates implemented code from workflows that are still incomplet
 - `backend/app/api/payments.py` and `frontend/src/features/payments/PaymentsWorkspace.jsx` — payment status and reconciliation limitations.
 - `backend/app/api/delivery.py` and `frontend/src/features/delivery/DeliveryWorkspace.jsx` — internal delivery workflow and carrier limitation.
 - `backend/app/api/customer_identity_verification.py` — email-only OTP delivery paths.
-- `frontend/src/features/pos/POSWorkspace.jsx` — pending tender behaviour and explicit register-control limitation.
+- `frontend/src/features/pos/POSWorkspace.jsx` and `backend/app/api/pos_registers.py` — register-aware POS workspace, shift and drawer APIs (feature branch implementation).
 - `backend/app/api/hr.py` and the HR implementation notes in the root README — shift/attendance and payroll boundaries.
 - `backend/schema/048_purchasing_replenishment.sql`, `backend/app/services/purchasing_replenishment.py`, `backend/app/api/purchasing.py` and `frontend/src/features/purchasing/ReplenishmentWorkspace.jsx` — replenishment implementation surfaces.

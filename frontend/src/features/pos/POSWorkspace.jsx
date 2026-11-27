@@ -5,13 +5,27 @@ import "./POSWorkspace.css";
 const money = value => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(Number(value || 0));
 
 export default function POSWorkspace({ onBack }) {
+  const [activeView, setActiveView] = useState("checkout");
   const [variants, setVariants] = useState([]);
   const [posSummary, setPosSummary] = useState(null);
   const [recentSales, setRecentSales] = useState([]);
   const [analyticsError, setAnalyticsError] = useState("");
   const [locations, setLocations] = useState([]);
+  const [registers, setRegisters] = useState([]);
+  const [selectedRegisterId, setSelectedRegisterId] = useState("");
+  const [activeShift, setActiveShift] = useState(null);
+  const [shiftCash, setShiftCash] = useState(null);
+  const [shiftMovements, setShiftMovements] = useState([]);
+  const [shiftHistory, setShiftHistory] = useState([]);
+  const [openingFloat, setOpeningFloat] = useState("0.00");
+  const [countedCash, setCountedCash] = useState("");
+  const [cashMove, setCashMove] = useState({ type: "cash_in", amount: "", reason: "" });
+  const [registerDraft, setRegisterDraft] = useState({ code: "", name: "" });
+  const [registerBusy, setRegisterBusy] = useState(false);
+  const [canManageRegisters, setCanManageRegisters] = useState(false);
   const [cart, setCart] = useState([]);
   const [locationId, setLocationId] = useState("");
+  const [registerLocationId, setRegisterLocationId] = useState("");
   const [customer, setCustomer] = useState({ name: "Walk-in Customer", phone: "", pin: "" });
   const [method, setMethod] = useState("upi");
   const [loading, setLoading] = useState(true);
@@ -39,21 +53,102 @@ export default function POSWorkspace({ onBack }) {
   async function load() {
     setLoading(true); setError("");
     try {
-      const [result, locationResult] = await Promise.all([
+      const [result, locationResult, registerResult, meResult] = await Promise.all([
         apiRequest("/catalogue/variants?limit=5000"),
         apiRequest("/inventory/locations?limit=500"),
+        apiRequest("/pos/registers"),
+        apiRequest("/auth/me"),
       ]);
       setVariants(result.items || []);
-      setLocations((locationResult.items || []).filter(location => location.is_active !== false));
+      const activeLocations = (locationResult.items || []).filter(location => location.is_active !== false);
+      setLocations(activeLocations);
+      if (!registerLocationId && activeLocations.length) setRegisterLocationId(String(activeLocations[0].id));
+      const nextRegisters = registerResult.items || [];
+      setRegisters(nextRegisters);
+      setCanManageRegisters(["manager", "admin", "super_admin"].includes(meResult.user?.role));
+      if (!selectedRegisterId && nextRegisters.length) {
+        setSelectedRegisterId(String(nextRegisters[0].id));
+        setLocationId(String(nextRegisters[0].location_id));
+        setRegisterLocationId(String(nextRegisters[0].location_id));
+      }
       await refreshAnalytics();
     } catch (e) { setError(e.message || "Unable to load active catalogue variants."); }
     finally { setLoading(false); }
   }
   useEffect(() => { load(); }, []);
 
+  useEffect(() => {
+    if (!selectedRegisterId) { setActiveShift(null); setShiftCash(null); setShiftMovements([]); setShiftHistory([]); return; }
+    let live = true;
+    Promise.all([apiRequest("/pos/registers/" + selectedRegisterId + "/shift"), apiRequest("/pos/registers/" + selectedRegisterId + "/shifts?limit=20")]).then(([result, history]) => {
+      if (live) { setActiveShift(result.shift || null); setShiftCash(result.cash || null); setShiftMovements(result.movements || []); setShiftHistory(history.items || []); }
+    }).catch(e => { if (live) setError(e.message || "Unable to load register shift."); });
+    return () => { live = false; };
+  }, [selectedRegisterId]);
+
+  async function refreshShift() {
+    if (!selectedRegisterId) return;
+    const [result, history] = await Promise.all([apiRequest("/pos/registers/" + selectedRegisterId + "/shift"), apiRequest("/pos/registers/" + selectedRegisterId + "/shifts?limit=20")]);
+    setActiveShift(result.shift || null); setShiftCash(result.cash || null); setShiftMovements(result.movements || []); setShiftHistory(history.items || []);
+  }
+
+  async function openShift(event) {
+    event.preventDefault(); setRegisterBusy(true); setError("");
+    try {
+      await apiRequest("/pos/registers/" + selectedRegisterId + "/open", { method: "POST", body: JSON.stringify({ opening_float: Number(openingFloat || 0) }) });
+      await refreshShift(); await load(); setNotice("Cashier shift opened. Sales are now enabled for this register.");
+    } catch (e) { setError(e.message || "Unable to open cashier shift."); }
+    finally { setRegisterBusy(false); }
+  }
+
+  async function createRegister(event) {
+    event.preventDefault(); setRegisterBusy(true); setError("");
+    try {
+      const created = await apiRequest("/pos/registers", { method: "POST", body: JSON.stringify({ location_id: Number(registerLocationId), register_code: registerDraft.code, name: registerDraft.name }) });
+      setRegisterDraft({ code: "", name: "" });
+      const next = await apiRequest("/pos/registers"); setRegisters(next.items || []); setSelectedRegisterId(String(created.id)); setLocationId(String(registerLocationId));
+      setNotice("Register created. Open a cashier shift to start selling.");
+    } catch (e) { setError(e.message || "Unable to create register."); }
+    finally { setRegisterBusy(false); }
+  }
+
+  async function addCashMovement(event) {
+    event.preventDefault(); if (!activeShift) return; setRegisterBusy(true); setError("");
+    try {
+      await apiRequest("/pos/shifts/" + activeShift.id + "/cash-movements", { method: "POST", body: JSON.stringify({ movement_type: cashMove.type, amount: Number(cashMove.amount), reason: cashMove.reason }) });
+      setCashMove({ type: "cash_in", amount: "", reason: "" }); await refreshShift();
+      setNotice("Cash drawer movement recorded in the shift audit.");
+    } catch (e) { setError(e.message || "Unable to record cash movement."); }
+    finally { setRegisterBusy(false); }
+  }
+
+
+  async function confirmCashTender() {
+    if (!activeShift || !receipt?.payment?.id) return;
+    setRegisterBusy(true); setError("");
+    try {
+      const payment = await apiRequest("/pos/shifts/" + activeShift.id + "/payments/" + receipt.payment.id + "/confirm-cash", { method: "POST" });
+      setReceipt(old => ({ ...old, payment: { ...old.payment, ...payment } }));
+      await refreshShift(); void refreshAnalytics();
+      setNotice("Cash received and confirmed against this cashier shift.");
+    } catch (e) { setError(e.message || "Cash tender could not be confirmed."); }
+    finally { setRegisterBusy(false); }
+  }
+
+  async function closeShift(event) {
+    event.preventDefault(); if (!activeShift) return; setRegisterBusy(true); setError("");
+    try {
+      const closed = await apiRequest("/pos/shifts/" + activeShift.id + "/close", { method: "POST", body: JSON.stringify({ counted_cash: Number(countedCash), closing_note: "Cashier drawer count" }) });
+      setActiveShift(null); setShiftCash(null); setShiftMovements([]); setCountedCash("");
+      setNotice("Shift closed. Expected " + money(closed.expected_cash) + ", counted " + money(closed.counted_cash) + ", variance " + money(closed.cash_variance) + ".");
+      await load();
+    } catch (e) { setError(e.message || "Unable to close cashier shift."); }
+    finally { setRegisterBusy(false); }
+  }
+
   const visible = useMemo(() => {
     const term = search.trim().toLowerCase();
-    return variants.filter(v => v.is_active !== false && (!term || [v.sku, v.product_name, v.name, v.brand].some(x => String(x || "").toLowerCase().includes(term))));
+    return variants.filter(v => v.is_active !== false && (!term || [v.sku, v.barcode, v.product_name, v.name, v.brand].some(x => String(x || "").toLowerCase().includes(term))));
   }, [variants]);
   const groupedVisible = useMemo(() => {
     const groups = new Map();
@@ -94,7 +189,7 @@ export default function POSWorkspace({ onBack }) {
     setSaving(true); setError(""); setNotice(""); setReceipt(null);
     const checkoutPayload = {
       channel: "pos", customer_name: customer.name.trim(), customer_phone: customer.phone.trim() || null,
-      delivery_pin: customer.pin.trim() || null, location_id: Number(locationId), pos_payment_method: method,
+      delivery_pin: customer.pin.trim() || null, location_id: Number(locationId), pos_register_id: Number(selectedRegisterId), pos_payment_method: method,
       notes: "Created at POS", lines: cart.map(line => ({ variant_id: line.id, quantity: line.quantity })),
     };
     const signature = JSON.stringify(checkoutPayload);
@@ -124,22 +219,35 @@ export default function POSWorkspace({ onBack }) {
   return <section className="sb-workspace sb-pos">
     <button className="sb-back" type="button" onClick={onBack}>← All workspaces</button>
     <p className="sb-eyebrow">OPERATIONS · STORES</p><h1>POS & Stores</h1>
-    <p>Create a walk-in sale with an atomic order and pending tender record. Tender confirmation remains a separate controlled step.</p>
+    <p>Retail checkout, independent counters, cashier shifts and auditable cash-drawer controls.</p>
     {error && <p className="sb-alert" role="alert">{error}</p>}
     {analyticsError && <p className="sb-alert" role="status">{analyticsError}</p>}
     {notice && <p className="sb-success" role="status">{notice}</p>}
-    {posSummary && <div className="sb-report-grid" aria-label="POS overview">
+    <nav className="sb-pos-nav" aria-label="POS modules"><button type="button" className={activeView === "checkout" ? "is-active" : ""} onClick={() => setActiveView("checkout")}>Checkout</button><button type="button" className={activeView === "sales" ? "is-active" : ""} onClick={() => setActiveView("sales")}>Sales history</button><button type="button" className={activeView === "registers" ? "is-active" : ""} onClick={() => setActiveView("registers")}>Registers & cash</button><span>{activeShift ? "Counter active" : "No active shift"}</span></nav>
+    <div className="sb-data-card sb-pos-register-panel" style={{ display: activeView === "registers" ? "block" : "none" }}>
+      <div className="sb-data-heading"><h2>Counter & cashier shift</h2><span className={activeShift ? "sb-pos-status is-open" : "sb-pos-status"}>{activeShift ? "SHIFT OPEN" : "REGISTER CLOSED"}</span></div>
+      <div className="sb-pos-register-grid">
+        <label>Store counter<select value={selectedRegisterId} onChange={e => { const r = registers.find(x => String(x.id) === e.target.value); setSelectedRegisterId(e.target.value); if (r) { setLocationId(String(r.location_id)); setRegisterLocationId(String(r.location_id)); } }}><option value="">Select register</option>{registers.map(r => <option key={r.id} value={r.id}>{r.location_name} · {r.register_code} — {r.name}</option>)}</select></label>
+        {activeShift ? <div className="sb-pos-shift-meta"><strong>{activeShift.register_code} · {activeShift.register_name}</strong><span>Cashier ID: {activeShift.cashier_user_id} · Opened {new Date(activeShift.opened_at).toLocaleString("en-IN")}</span><span>Opening float: {money(activeShift.opening_float)}</span></div> : <form className="sb-pos-inline-form" onSubmit={openShift}><label>Opening cash float (₹)<input type="number" min="0" step="0.01" required value={openingFloat} onChange={e => setOpeningFloat(e.target.value)} /></label><button className="sb-primary" type="submit" disabled={!selectedRegisterId || registerBusy}>{registerBusy ? "Please wait…" : "Open cashier shift"}</button></form>}
+      </div>
+      {!registers.length && canManageRegisters && <form className="sb-pos-register-create" onSubmit={createRegister}><strong>Create first counter register</strong><label>Store location<select required value={registerLocationId} onChange={e => setRegisterLocationId(e.target.value)}><option value="">Choose store</option>{locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</select></label><label>Register code<input required minLength="2" maxLength="40" value={registerDraft.code} onChange={e => setRegisterDraft(v => ({ ...v, code: e.target.value }))} placeholder="COUNTER-01" /></label><label>Counter name<input required minLength="2" maxLength="120" value={registerDraft.name} onChange={e => setRegisterDraft(v => ({ ...v, name: e.target.value }))} /></label><button className="sb-primary" type="submit" disabled={!registerLocationId || registerBusy}>Create register</button></form>}
+      {activeShift && <div className="sb-pos-cash-controls"><div className="sb-pos-cash-metrics"><span>Cash sales<strong>{money(shiftCash?.cash_sales)}</strong></span><span>Cash refunds<strong>{money(shiftCash?.cash_refunds)}</strong></span><span>Cash in<strong>{money(shiftCash?.cash_in)}</strong></span><span>Cash out<strong>{money(shiftCash?.cash_out)}</strong></span></div><form className="sb-pos-inline-form" onSubmit={addCashMovement}><label>Drawer action<select value={cashMove.type} onChange={e => setCashMove(v => ({ ...v, type: e.target.value }))}><option value="cash_in">Cash in</option><option value="cash_out">Cash out</option></select></label><label>Amount (₹)<input type="number" min="0.01" step="0.01" required value={cashMove.amount} onChange={e => setCashMove(v => ({ ...v, amount: e.target.value }))} /></label><label>Reason<input required minLength="3" value={cashMove.reason} onChange={e => setCashMove(v => ({ ...v, reason: e.target.value }))} placeholder="Petty cash / float top-up" /></label><button type="submit" disabled={registerBusy}>Record movement</button></form>{shiftMovements.length > 0 && <div className="sb-pos-movements"><strong>Drawer movement history</strong>{shiftMovements.map(item => <div key={item.id}><span>{item.movement_type.replace("_", " ").toUpperCase()} · {item.reason}</span><b>{money(item.amount)}</b></div>)}</div>}<form className="sb-pos-inline-form sb-pos-close-form" onSubmit={closeShift}><label>Counted drawer cash (₹)<input type="number" min="0" step="0.01" required value={countedCash} onChange={e => setCountedCash(e.target.value)} placeholder="Enter physical cash count" /></label><button type="submit" disabled={registerBusy || countedCash === ""}>Close shift & reconcile</button></form></div>}
+      {shiftHistory.length > 0 && <div className="sb-pos-shift-history"><strong>Recent shift history</strong><div className="sb-table-wrap"><table><thead><tr><th>Shift</th><th>Cashier</th><th>Status</th><th>Expected</th><th>Counted</th><th>Variance</th></tr></thead><tbody>{shiftHistory.map(s => <tr key={s.id}><td>#{s.id}<br/><small>{new Date(s.opened_at).toLocaleString("en-IN")}</small></td><td>{s.cashier_user_id}</td><td>{s.status}</td><td>{money(s.expected_cash)}</td><td>{money(s.counted_cash)}</td><td>{s.cash_variance == null ? "—" : money(s.cash_variance)}</td></tr>)}</tbody></table></div></div>}
+      {!registers.length && !canManageRegisters && <p className="sb-muted">No counter is configured for this store yet. Ask a manager to create the first POS register.</p>}
+      {registers.length > 0 && canManageRegisters && <details className="sb-pos-register-create"><summary>Manager: add another counter</summary><form onSubmit={createRegister}><label>Store location<select required value={locationId} onChange={e => setLocationId(e.target.value)}><option value="">Choose store</option>{locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</select></label><label>Register code<input required value={registerDraft.code} onChange={e => setRegisterDraft(v => ({ ...v, code: e.target.value }))} /></label><label>Counter name<input required value={registerDraft.name} onChange={e => setRegisterDraft(v => ({ ...v, name: e.target.value }))} /></label><button type="submit" disabled={!locationId || registerBusy}>Create register</button></form></details>}
+    </div>
+    {posSummary && <div className="sb-report-grid" aria-label="POS overview" style={{ display: activeView === "sales" ? "grid" : "none" }}>
       <article className="sb-report-card"><small>POS orders</small><strong>{Number(posSummary.orders?.order_count || 0).toLocaleString("en-IN")}</strong><span>All recorded POS orders</span></article>
       <article className="sb-report-card"><small>Today's sales value</small><strong>{money(posSummary.orders?.today_order_value)}</strong><span>{Number(posSummary.orders?.today_order_count || 0)} orders today</span></article>
       <article className="sb-report-card"><small>Captured payments</small><strong>{money(posSummary.payments?.captured_amount)}</strong><span>{Number(posSummary.payments?.captured_count || 0)} confirmed records</span></article>
       <article className="sb-report-card"><small>Pending payments</small><strong>{money(posSummary.payments?.pending_amount)}</strong><span>{Number(posSummary.payments?.pending_count || 0)} awaiting confirmation</span></article>
     </div>}
-    {receipt && <div className="sb-data-card"><h2>Latest order</h2><p><strong>{receipt.order.order_number}</strong> · {money(receipt.order.total)} · {receipt.order.status}</p><p>Payment record: {receipt.payment ? receipt.payment.payment_reference + " · " + receipt.payment.status : "Not returned — reconcile before retrying."}</p></div>}
-    <div className="sb-data-card">
+    {receipt && <div className="sb-data-card" style={{ display: activeView === "sales" ? "block" : "none" }}><h2>Latest order</h2><p><strong>{receipt.order.order_number}</strong> · {money(receipt.order.total)} · {receipt.order.status}</p><p>Payment record: {receipt.payment ? receipt.payment.payment_reference + " · " + receipt.payment.status : "Not returned — reconcile before retrying."}</p>{receipt.payment?.method === "cod" && receipt.payment.status === "pending" && activeShift && <button type="button" className="sb-primary" onClick={confirmCashTender} disabled={registerBusy}>Confirm cash received</button>}</div>}
+    <div className="sb-data-card" style={{ display: activeView === "sales" ? "block" : "none" }}>
       <div className="sb-data-heading"><h2>Recent POS sales</h2><button type="button" onClick={load} disabled={loading}>Refresh sales</button></div>
       {recentSales.length ? <div className="sb-table-wrap"><table><thead><tr><th>Order</th><th>Customer</th><th>Status</th><th>Total</th><th>Captured</th><th>Payment state</th></tr></thead><tbody>{recentSales.map(sale => <tr key={sale.id}><td>{sale.order_number}</td><td>{sale.customer_name}</td><td>{sale.status}</td><td>{money(sale.total)}</td><td>{money(sale.captured_amount)}</td><td>{sale.payment_statuses || "No payment record"}</td></tr>)}</tbody></table></div> : <p className="sb-empty">No POS sales recorded yet.</p>}
     </div>
-    <div className="sb-pos-layout">
+    <div className="sb-pos-layout" style={{ display: activeView === "checkout" ? "grid" : "none" }}>
       <div className="sb-data-card">
         <div className="sb-data-heading"><h2>Catalogue</h2><button type="button" onClick={load} disabled={loading}>{loading ? "Loading…" : "Refresh"}</button></div>
         <label>Search product or SKU<input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search catalogue…" /></label>
@@ -152,13 +260,13 @@ export default function POSWorkspace({ onBack }) {
         <div className="sb-pos-total"><span>Subtotal</span><strong>{money(total)}</strong></div>
         <form className="sb-form" onSubmit={checkout}>
           <h3>Customer & tender intent</h3>
-          <label>Stock location<select required value={locationId} onChange={e => setLocationId(e.target.value)}><option value="">Choose stock location</option>{locations.map(location => <option key={location.id} value={location.id}>{location.name} · {location.location_type || "location"}</option>)}</select></label>
+          <label>Stock location<select required disabled={Boolean(selectedRegisterId)} value={locationId} onChange={e => setLocationId(e.target.value)}><option value="">Choose stock location</option>{locations.map(location => <option key={location.id} value={location.id}>{location.name} · {location.location_type || "location"}</option>)}</select></label>
           <label>Customer name<input required minLength="1" maxLength="200" value={customer.name} onChange={e => setCustomer(v => ({ ...v, name: e.target.value }))} /></label>
           <label>Phone (optional)<input maxLength="20" value={customer.phone} onChange={e => setCustomer(v => ({ ...v, phone: e.target.value }))} /></label>
           <label>Delivery PIN (optional)<input inputMode="numeric" pattern="[0-9]{6}" maxLength="6" value={customer.pin} onChange={e => setCustomer(v => ({ ...v, pin: e.target.value }))} /></label>
           <label>Payment method<select value={method} onChange={e => setMethod(e.target.value)}><option value="upi">UPI</option><option value="card">Card</option><option value="netbanking">Net banking</option><option value="cod">Cash (pending confirmation)</option><option value="wallet">Wallet</option><option value="bank_transfer">Bank transfer</option></select></label>
-          <p className="sb-muted">Order and pending tender are saved in one transaction. Cash must be confirmed by an authorised cashier; electronic tender remains pending until verified provider confirmation. Register shifts and cash-drawer reconciliation require the approved POS register controls.</p>
-          <button className="sb-primary" type="submit" disabled={saving || !cart.length || !locationId}>{saving ? "Creating sale…" : "Create sale & pending tender"}</button>
+          <p className="sb-muted">This sale is attached to the open counter shift. Electronic tenders remain pending until provider verification; cash confirmation remains controlled by the payment workflow.</p>
+          <button className="sb-primary" type="submit" disabled={saving || !cart.length || !locationId || !selectedRegisterId || !activeShift}>{saving ? "Creating sale…" : "Complete POS sale"}</button>
           {!locations.length && !loading && <small>No active stock locations are available. Create or activate a store or warehouse in Inventory before checkout.</small>}
         </form>
       </div>

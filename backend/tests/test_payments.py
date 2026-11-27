@@ -58,8 +58,10 @@ class _FakePaymentConnection:
             return _FakeResult(self.payment)
         if "FROM payments WHERE provider_order_id" in normalized_query:
             return _FakeResult(self.payment)
+        if "FROM payments WHERE order_id" in normalized_query and "provider_order_id IS NOT NULL" in normalized_query:
+            return _FakeResult(self.payment)
         if "FROM payments WHERE order_id" in normalized_query:
-            return _FakeResult()
+            return _FakeResult({"amount": Decimal("12.34")})
         if "FROM orders WHERE id=%s FOR UPDATE" in normalized_query:
             return _FakeResult(self.order)
         return _FakeResult()
@@ -357,6 +359,8 @@ def test_razorpay_webhook_processes_captured_payment_and_deduplicates_event(monk
         "amount": Decimal("12.34"),
         "currency": "INR",
         "status": "pending",
+        "order_total": Decimal("12.34"),
+        "order_status": "placed",
     }
     processed_db = _FakePaymentConnection(payment=payment, event={"id": 77})
     duplicate_db = _FakePaymentConnection(previous_event={"payload_sha256": payload_hash})

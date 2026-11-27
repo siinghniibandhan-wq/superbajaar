@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 import pytest
 
 from app.services.pos_tender import validate_pos_tender
@@ -34,3 +36,24 @@ def test_explicit_pos_tender_participates_in_checkout_hash_payload():
 
     payload = {"channel": "pos", "customer_name": "Walk-in", "pos_payment_method": "upi"}
     assert checkout_payload_for_hash(payload) == payload
+
+
+def test_legacy_checkout_hash_omits_optional_register_id():
+    from app.services.pos_tender import checkout_payload_for_hash
+    payload = {"channel": "website", "customer_name": "Buyer", "pos_register_id": None}
+    assert checkout_payload_for_hash(payload) == {"channel": "website", "customer_name": "Buyer"}
+
+
+def test_pos_register_selection_is_part_of_checkout_hash():
+    from app.services.pos_tender import checkout_payload_for_hash
+    payload = {"channel": "pos", "customer_name": "Walk-in", "pos_register_id": 4}
+    assert checkout_payload_for_hash(payload) == payload
+
+
+
+def test_split_tender_does_not_settle_until_full_order_total_is_captured():
+    from app.services.pos_tender import order_is_fully_paid
+
+    assert not order_is_fully_paid(Decimal("100.00"), Decimal("40.00"))
+    assert order_is_fully_paid(Decimal("100.00"), Decimal("100.00"))
+    assert not order_is_fully_paid(Decimal("100.00"), Decimal("110.00"))

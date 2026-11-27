@@ -1,5 +1,7 @@
 """Validation helpers for POS tender intent attached to order creation."""
 
+from decimal import Decimal
+
 PAYMENT_METHODS = {"upi", "card", "netbanking", "cod", "wallet", "bank_transfer", "other"}
 
 
@@ -22,4 +24,12 @@ def checkout_payload_for_hash(payload):
         normalized.pop("pos_payment_method", None)
     if normalized.get("delivery_type") is None:
         normalized.pop("delivery_type", None)
+    if normalized.get("pos_register_id") is None:
+        normalized.pop("pos_register_id", None)
     return normalized
+
+
+
+def order_is_fully_paid(order_total, captured_total):
+    """Only settle an order when captured tenders exactly cover its payable total."""
+    return Decimal(str(captured_total)) == Decimal(str(order_total))

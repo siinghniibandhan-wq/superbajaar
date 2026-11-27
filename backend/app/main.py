@@ -34,6 +34,7 @@ from app.api.accounting import router as accounting_router
 from app.api.organisation_policies import router as organisation_policies_router
 from app.api.pricing import router as pricing_router
 from app.api.pos import router as pos_router
+from app.api.pos_registers import router as pos_registers_router
 from app.api.reports import router as reports_router
 from app.core.config import settings
 from app.services.loyalty_redemption import expire_due_coins
@@ -124,6 +125,7 @@ app.include_router(accounting_router, prefix=settings.api_prefix)
 app.include_router(organisation_policies_router, prefix=settings.api_prefix)
 app.include_router(pricing_router, prefix=settings.api_prefix)
 app.include_router(pos_router, prefix=settings.api_prefix)
+app.include_router(pos_registers_router, prefix=settings.api_prefix)
 app.include_router(reports_router, prefix=settings.api_prefix)
 
 
