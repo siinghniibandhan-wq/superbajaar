@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 import pytest
 
 from app.services.pos_tender import validate_pos_tender
@@ -47,8 +49,6 @@ def test_pos_register_selection_is_part_of_checkout_hash():
     payload = {"channel": "pos", "customer_name": "Walk-in", "pos_register_id": 4}
     assert checkout_payload_for_hash(payload) == payload
 
-
-from decimal import Decimal
 
 
 def test_split_tender_does_not_settle_until_full_order_total_is_captured():
