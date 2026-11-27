@@ -112,6 +112,19 @@ export default function POSWorkspace({ onBack }) {
     finally { setRegisterBusy(false); }
   }
 
+
+  async function confirmCashTender() {
+    if (!activeShift || !receipt?.payment?.id) return;
+    setRegisterBusy(true); setError("");
+    try {
+      const payment = await apiRequest("/pos/shifts/" + activeShift.id + "/payments/" + receipt.payment.id + "/confirm-cash", { method: "POST" });
+      setReceipt(old => ({ ...old, payment: { ...old.payment, ...payment } }));
+      await refreshShift(); void refreshAnalytics();
+      setNotice("Cash received and confirmed against this cashier shift.");
+    } catch (e) { setError(e.message || "Cash tender could not be confirmed."); }
+    finally { setRegisterBusy(false); }
+  }
+
   async function closeShift(event) {
     event.preventDefault(); if (!activeShift) return; setRegisterBusy(true); setError("");
     try {
@@ -216,7 +229,7 @@ export default function POSWorkspace({ onBack }) {
       <article className="sb-report-card"><small>Captured payments</small><strong>{money(posSummary.payments?.captured_amount)}</strong><span>{Number(posSummary.payments?.captured_count || 0)} confirmed records</span></article>
       <article className="sb-report-card"><small>Pending payments</small><strong>{money(posSummary.payments?.pending_amount)}</strong><span>{Number(posSummary.payments?.pending_count || 0)} awaiting confirmation</span></article>
     </div>}
-    {receipt && <div className="sb-data-card"><h2>Latest order</h2><p><strong>{receipt.order.order_number}</strong> · {money(receipt.order.total)} · {receipt.order.status}</p><p>Payment record: {receipt.payment ? receipt.payment.payment_reference + " · " + receipt.payment.status : "Not returned — reconcile before retrying."}</p></div>}
+    {receipt && <div className="sb-data-card"><h2>Latest order</h2><p><strong>{receipt.order.order_number}</strong> · {money(receipt.order.total)} · {receipt.order.status}</p><p>Payment record: {receipt.payment ? receipt.payment.payment_reference + " · " + receipt.payment.status : "Not returned — reconcile before retrying."}</p>{receipt.payment?.method === "cod" && receipt.payment.status === "pending" && activeShift && <button type="button" className="sb-primary" onClick={confirmCashTender} disabled={registerBusy}>Confirm cash received</button>}</div>}
     <div className="sb-data-card">
       <div className="sb-data-heading"><h2>Recent POS sales</h2><button type="button" onClick={load} disabled={loading}>Refresh sales</button></div>
       {recentSales.length ? <div className="sb-table-wrap"><table><thead><tr><th>Order</th><th>Customer</th><th>Status</th><th>Total</th><th>Captured</th><th>Payment state</th></tr></thead><tbody>{recentSales.map(sale => <tr key={sale.id}><td>{sale.order_number}</td><td>{sale.customer_name}</td><td>{sale.status}</td><td>{money(sale.total)}</td><td>{money(sale.captured_amount)}</td><td>{sale.payment_statuses || "No payment record"}</td></tr>)}</tbody></table></div> : <p className="sb-empty">No POS sales recorded yet.</p>}
