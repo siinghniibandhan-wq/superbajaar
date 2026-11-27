@@ -63,7 +63,7 @@ def _online_lookup(pin: str):
         request = urllib.request.Request(
             "https://api.postalpincode.in/pincode/" + pin, headers={"User-Agent": "SuperBajaar/1.0"}
         )
-        with urllib.request.urlopen(request, timeout=4) as response:  # noqa: S310 - fixed https host
+        with urllib.request.urlopen(request, timeout=4) as response:  # nosec B310 - fixed HTTPS India Post endpoint; PIN is validated.
             data = json.loads(response.read().decode("utf-8"))
         offices = (data[0] or {}).get("PostOffice") or [] if data else []
         if not offices:
