@@ -30,8 +30,8 @@ def classify_rate_limit(method: str, path: str) -> tuple[int, int]:
 
 def rate_limit_bucket_key(client_ip: str, method: str, path: str) -> str:
     # Keep the key opaque; never persist raw IP addresses in the limiter table.
-    route = path
-    if path.startswith("/api/") and path.count("/") > 2:
+    route = path if (method.upper(), path) in _AUTH_LIMITS else path
+    if (method.upper(), path) not in _AUTH_LIMITS and path.startswith("/api/") and path.count("/") > 2:
         parts = path.strip("/").split("/")
         route = "/" + "/".join(parts[:2])
     material = f"{client_ip}|{method.upper()}|{route}".encode("utf-8")
