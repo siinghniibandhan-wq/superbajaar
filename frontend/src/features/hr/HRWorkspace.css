@@ -445,3 +445,33 @@
   .hr-workspace .hr-leave-form{padding:12px}
   .hr-workspace .hr-leave-form .hr-span-all{grid-column:1/-1}
 }
+
+
+/* Employee and department management are separate focused work areas. */
+.hr-workspace .hr-people-switch{
+  display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 18px;
+  padding:5px;border:1px solid var(--border,#dfe5ea);border-radius:12px;
+  background:var(--surface-subtle,#f8fafc);width:max-content;max-width:100%;
+}
+.hr-workspace .hr-people-switch button{
+  display:inline-flex;align-items:center;gap:9px;min-height:40px;
+  padding:8px 14px;border:1px solid transparent;border-radius:8px;
+  background:transparent;color:var(--muted,#667085);font-weight:700;cursor:pointer;
+}
+.hr-workspace .hr-people-switch button.active{
+  border-color:var(--border,#dfe5ea);background:var(--surface,#fff);
+  color:var(--text,#303943);box-shadow:0 1px 2px #10182812;
+}
+.hr-workspace .hr-people-switch button span{
+  display:inline-grid;place-items:center;min-width:22px;height:22px;
+  padding:0 6px;border-radius:999px;background:#eef1f4;color:#475467;font-size:11px;
+}
+.hr-workspace .hr-people-switch button:focus-visible{
+  outline:3px solid #79a9ce;outline-offset:2px;
+}
+.hr-workspace .hr-people-view{min-width:0}
+.hr-workspace .hr-people-view>h2{margin-top:8px}
+@media(max-width:480px){
+  .hr-workspace .hr-people-switch{width:100%}
+  .hr-workspace .hr-people-switch button{flex:1;justify-content:center}
+}
