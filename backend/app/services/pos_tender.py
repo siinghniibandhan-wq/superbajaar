@@ -22,4 +22,6 @@ def checkout_payload_for_hash(payload):
         normalized.pop("pos_payment_method", None)
     if normalized.get("delivery_type") is None:
         normalized.pop("delivery_type", None)
+    if normalized.get("pos_register_id") is None:
+        normalized.pop("pos_register_id", None)
     return normalized
