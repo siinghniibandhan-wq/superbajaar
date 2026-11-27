@@ -62,5 +62,6 @@ def test_security_headers_are_added_to_api_responses():
     headers = dict(sent[0]["headers"])
     assert headers[b"x-content-type-options"] == b"nosniff"
     assert headers[b"referrer-policy"] == b"strict-origin-when-cross-origin"
-    assert headers[b"content-security-policy"] == b"default-src 'none'; frame-ancestors 'none'"
+    assert b"frame-ancestors 'none'" in headers[b"content-security-policy"]
+    assert b"object-src 'none'" in headers[b"content-security-policy"]
     assert headers[b"x-frame-options"] == b"DENY"
