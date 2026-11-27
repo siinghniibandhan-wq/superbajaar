@@ -6,12 +6,16 @@ import psycopg
 import pytest
 
 from app.api.orders import _lock_checkout_idempotency_key
+from app.api.payments import _payment_idempotency_scope
 
 
-@pytest.mark.skipif(not os.getenv("TEST_DATABASE_URL"), reason="TEST_DATABASE_URL is not configured")
-def test_postgres_serializes_concurrent_order_retries_for_the_same_key():
-    dsn = os.environ["TEST_DATABASE_URL"]
-    key = "integration-concurrent-checkout-key-001"
+pytestmark = pytest.mark.skipif(
+    not os.getenv("TEST_DATABASE_URL"),
+    reason="TEST_DATABASE_URL is not configured",
+)
+
+
+def assert_concurrent_retries_are_serialized(dsn, key, lock):
     with psycopg.connect(dsn) as conn:
         conn.execute(
             """
@@ -30,7 +34,7 @@ def test_postgres_serializes_concurrent_order_retries_for_the_same_key():
     def attempt(payload_hash):
         with psycopg.connect(dsn) as conn:
             with conn.transaction():
-                _lock_checkout_idempotency_key(conn, key)
+                lock(conn, key)
                 prior = conn.execute(
                     "SELECT payload_hash FROM security_idempotency_concurrency_test WHERE idempotency_key=%s",
                     (key,),
@@ -59,3 +63,25 @@ def test_postgres_serializes_concurrent_order_retries_for_the_same_key():
 
     assert sorted(results) == ["created", "replay"]
     assert count == 1
+
+
+def test_postgres_serializes_concurrent_order_retries_for_the_same_key():
+    dsn = os.environ["TEST_DATABASE_URL"]
+    assert_concurrent_retries_are_serialized(
+        dsn,
+        "integration-concurrent-checkout-key-001",
+        _lock_checkout_idempotency_key,
+    )
+
+
+def test_postgres_serializes_concurrent_payment_retries_for_the_same_actor_key():
+    dsn = os.environ["TEST_DATABASE_URL"]
+    key = _payment_idempotency_scope(41, "integration-payment-retry-key-001")
+
+    def payment_lock(conn, scoped_key):
+        conn.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+            (scoped_key,),
+        )
+
+    assert_concurrent_retries_are_serialized(dsn, key, payment_lock)
