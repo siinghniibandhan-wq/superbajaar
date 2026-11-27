@@ -9,6 +9,7 @@ from psycopg.rows import dict_row
 
 from app.api.auth import _decode
 from app.core.config import settings
+from app.core.security import enforce_distributed_rate_limit
 
 
 def method_is_public_serviceability(method: str, path: str, prefix: str) -> bool:
@@ -134,6 +135,8 @@ async def require_active_session(request: Request) -> None:
     """Authenticate a valid request and enforce role-based write access."""
     path = request.url.path
     prefix = settings.api_prefix.rstrip("/")
+    if path.startswith(prefix + "/") and request.method != "OPTIONS":
+        enforce_distributed_rate_limit(request)
     public = {prefix + "/health", prefix + "/auth/login", prefix + "/customer-auth/register", prefix + "/customer-auth/login", prefix + "/portal-invitations/accept"}
     if request.method == "GET" and path.startswith(prefix + "/customer-auth/oauth/"):
         return
