@@ -108,7 +108,7 @@ export default function LoyaltyWorkspace({ onBack }) {
     <button className="sb-back" onClick={onBack} type="button">← All workspaces</button>
     <div className="sb-loyalty-heading"><div><p className="sb-eyebrow">CUSTOMERS · RETENTION & REWARDS</p><h1>Loyalty & Super Coins</h1><p>Manage member balances, earning rules, ledger activity and partner enquiries.</p></div><button type="button" onClick={load} disabled={loading}>↻ Refresh</button></div>
     <nav className="sb-loyalty-tabs" aria-label="Loyalty sections">{sections.map(([key, label]) => <button type="button" key={key} className={tab === key ? "active" : ""} onClick={() => setTab(key)}>{label}</button>)}</nav>
-    {readiness && !readiness.ready && <p className="sb-alert" role="alert">Finance setup needed: Super Coins accounting is not fully mapped, so marking orders delivered and redeeming coins at checkout will fail. Approve these mappings in Accounting: {readiness.missing_required.map(item => item.event_type + " / " + item.line_role).join("; ")}.</p>}
+    {readiness && !readiness.ready && <p className="sb-alert" role="alert">Finance setup needed: Super Coins earning and checkout redemption remain blocked until these mappings are approved: {readiness.missing_required.map(item => item.event_type + " / " + item.line_role).join("; ")}. Open Accounting & Tax → Posting rules, submit the prefilled drafts, then ask a different authorised Finance user to approve them.</p>}
     {error && <p className="sb-alert" role="alert">{error}</p>}
     {notice && <p className="sb-loyalty-notice" role="status">{notice}</p>}
     {loading && <p className="sb-empty">Loading loyalty programme…</p>}

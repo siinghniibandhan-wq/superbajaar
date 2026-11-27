@@ -67,3 +67,4 @@
 066_pos_register_shifts.sql
 067_distributed_api_rate_limits.sql
 068_payment_idempotency.sql
+069_super_coins_accounting_setup.sql
