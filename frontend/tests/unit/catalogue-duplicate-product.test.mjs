@@ -12,7 +12,7 @@ function makeApi({ takenSlugs = [], failImages = false } = {}) {
       { id: 1, is_variant_attribute: false, value: "Cotton" },
       { id: 2, is_variant_attribute: true, value: null },
     ] };
-    if (path === "/catalogue/products/7/variants?limit=500") return { items: [
+    if (path === "/catalogue/products/7/variants?limit=5000") return { items: [
       { id: 71, sku: "A-1", is_active: true, attributes: { size: "S" }, selling_price: "100.00", mrp: "120.00", cost_price: "60.00" },
       { id: 72, sku: "A-2", is_active: true, attributes: { size: "M" }, selling_price: "110.00", mrp: null, cost_price: null },
       { id: 73, sku: "A-3", is_active: false, attributes: { size: "L" }, selling_price: "130.00", mrp: "150.00", cost_price: null },

@@ -404,3 +404,12 @@ Use precise status labels:
 - **Production-ready:** security, data integrity, monitoring, backup/recovery and operational acceptance have been verified.
 
 Do not use these labels interchangeably.
+
+
+## CRM support workspace enhancements
+
+- Staff support messages support `visibility='internal'` for private notes; customer-facing ticket APIs return public messages only.
+- Support cases support staff assignment through `assigned_to`.
+- CRM tags are managed through `GET/POST /api/customers/support-tags` and attached to cases through `/api/customers/support-cases/{case_id}/tags`.
+- Bulk case updates use `POST /api/customers/support-cases/bulk-update`, accept up to 100 unique case IDs, and append an audit event for each updated case.
+- Apply `backend/schema/064_crm_support_case_tags.sql` through the normal schema migration process before enabling the tag endpoints.

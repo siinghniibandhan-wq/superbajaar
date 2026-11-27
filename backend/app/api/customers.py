@@ -134,6 +134,59 @@ class CaseUpdate(BaseModel):
         if v is not None and v not in CASE_PRIORITIES:raise ValueError("Invalid support priority")
         return v
 
+class SupportTagIn(BaseModel):
+    name: str = Field(min_length=1, max_length=50)
+    color: str = Field(default="#607d8b", pattern=r"^#[0-9A-Fa-f]{6}$")
+
+    @field_validator("name")
+    @classmethod
+    def clean_tag_name(cls, value):
+        value = value.strip()
+        if not value:
+            raise ValueError("Tag name cannot be blank")
+        return value
+
+
+class BulkCaseUpdate(BaseModel):
+    case_ids: list[int] = Field(min_length=1, max_length=100)
+    status: str | None = None
+    priority: str | None = None
+    assigned_to: str | None = Field(default=None, max_length=200)
+
+    @field_validator("case_ids")
+    @classmethod
+    def unique_positive_case_ids(cls, values):
+        if any(value <= 0 for value in values):
+            raise ValueError("Case IDs must be positive")
+        if len(values) != len(set(values)):
+            raise ValueError("Case IDs must be unique")
+        return values
+
+    @field_validator("status")
+    @classmethod
+    def valid_bulk_status(cls, value):
+        if value is not None and value not in CASE_STATUSES:
+            raise ValueError("Invalid support case status")
+        return value
+
+    @field_validator("priority")
+    @classmethod
+    def valid_bulk_priority(cls, value):
+        if value is not None and value not in CASE_PRIORITIES:
+            raise ValueError("Invalid support priority")
+        return value
+
+    @model_validator(mode="after")
+    def require_update_field(self):
+        if not ({"status", "priority", "assigned_to"} & self.model_fields_set):
+            raise ValueError("Provide at least one field to update")
+        if "status" in self.model_fields_set and self.status is None:
+            raise ValueError("Status cannot be null")
+        if "priority" in self.model_fields_set and self.priority is None:
+            raise ValueError("Priority cannot be null")
+        return self
+
+
 class CustomerSupportTicketIn(BaseModel):
     category:str|None=Field(default=None,max_length=40)
     subject:str|None=Field(default=None,min_length=3,max_length=200)
@@ -400,6 +453,167 @@ def update_case(case_id:int,p:CaseUpdate,request:Request):
             return row
     except HTTPException:raise
     except psycopg.Error as exc:raise _error(exc) from exc
+
+
+@router.get("/support-tags")
+def list_support_tags():
+    try:
+        with _connect() as conn:
+            rows = conn.execute(
+                "SELECT id,name,color,created_at FROM tags ORDER BY lower(name),id"
+            ).fetchall()
+        return {"items": rows}
+    except psycopg.Error as exc:
+        raise _error(exc) from exc
+
+
+@router.post("/support-tags", status_code=201)
+def create_support_tag(payload: SupportTagIn, request: Request):
+    if getattr(request.state, "role", None) not in {"super_admin", "admin"}:
+        raise HTTPException(403, "Only an Super Admin or Admin can manage CRM tags")
+    try:
+        with _connect() as conn:
+            row = conn.execute(
+                "INSERT INTO tags(name,color) VALUES(%s,%s) "
+                "ON CONFLICT DO NOTHING "
+                "RETURNING id,name,color,created_at",
+                (payload.name, payload.color.lower()),
+            ).fetchone()
+        if row is None:
+            raise HTTPException(409, "A CRM tag with this name already exists")
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _error(exc) from exc
+
+
+@router.get("/support-cases/{case_id}/tags")
+def list_case_tags(case_id: int):
+    try:
+        with _connect() as conn:
+            if conn.execute("SELECT 1 FROM support_cases WHERE id=%s", (case_id,)).fetchone() is None:
+                raise HTTPException(404, "Support case not found")
+            rows = conn.execute(
+                "SELECT t.id,t.name,t.color,t.created_at FROM support_case_tags sct "
+                "JOIN tags t ON t.id=sct.tag_id WHERE sct.case_id=%s ORDER BY lower(t.name),t.id",
+                (case_id,),
+            ).fetchall()
+        return {"items": rows}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _error(exc) from exc
+
+
+@router.post("/support-cases/{case_id}/tags/{tag_id}", status_code=201)
+def attach_case_tag(case_id: int, tag_id: int, request: Request):
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                case = conn.execute("SELECT id FROM support_cases WHERE id=%s FOR UPDATE", (case_id,)).fetchone()
+                if case is None:
+                    raise HTTPException(404, "Support case not found")
+                tag = conn.execute("SELECT id FROM tags WHERE id=%s", (tag_id,)).fetchone()
+                if tag is None:
+                    raise HTTPException(404, "CRM tag not found")
+                inserted = conn.execute(
+                    "INSERT INTO support_case_tags(case_id,tag_id) VALUES(%s,%s) "
+                    "ON CONFLICT DO NOTHING RETURNING case_id",
+                    (case_id, tag_id),
+                ).fetchone()
+                if inserted:
+                    conn.execute(
+                        "INSERT INTO support_case_events(case_id,actor_type,actor_staff_user_id,event_type,after_values) "
+                        "VALUES(%s,'staff',%s,'tag_attached',jsonb_build_object('tag_id',%s))",
+                        (case_id, request.state.user_id, tag_id),
+                    )
+        return {"case_id": case_id, "tag_id": tag_id, "attached": True}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _error(exc) from exc
+
+
+@router.delete("/support-cases/{case_id}/tags/{tag_id}")
+def detach_case_tag(case_id: int, tag_id: int, request: Request):
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                case = conn.execute("SELECT id FROM support_cases WHERE id=%s FOR UPDATE", (case_id,)).fetchone()
+                if case is None:
+                    raise HTTPException(404, "Support case not found")
+                removed = conn.execute(
+                    "DELETE FROM support_case_tags WHERE case_id=%s AND tag_id=%s RETURNING tag_id",
+                    (case_id, tag_id),
+                ).fetchone()
+                if removed:
+                    conn.execute(
+                        "INSERT INTO support_case_events(case_id,actor_type,actor_staff_user_id,event_type,after_values) "
+                        "VALUES(%s,'staff',%s,'tag_detached',jsonb_build_object('tag_id',%s))",
+                        (case_id, request.state.user_id, tag_id),
+                    )
+        return {"case_id": case_id, "tag_id": tag_id, "attached": False}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _error(exc) from exc
+
+
+@router.post("/support-cases/bulk-update")
+def bulk_update_cases(payload: BulkCaseUpdate, request: Request):
+    """Atomically update up to 100 support cases and append one audit event per case."""
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                rows = conn.execute(
+                    "SELECT id,status,priority,assigned_to,resolution,first_response_at "
+                    "FROM support_cases WHERE id = ANY(%s) ORDER BY id FOR UPDATE",
+                    (payload.case_ids,),
+                ).fetchall()
+                if len(rows) != len(payload.case_ids):
+                    raise HTTPException(404, "One or more support cases were not found")
+                updated = []
+                for before in rows:
+                    status = payload.status if "status" in payload.model_fields_set else before["status"]
+                    priority = payload.priority if "priority" in payload.model_fields_set else before["priority"]
+                    assigned_to = payload.assigned_to if "assigned_to" in payload.model_fields_set else before["assigned_to"]
+                    reopening = before["status"] in CASE_TERMINAL_STATUSES and status not in CASE_TERMINAL_STATUSES
+                    if priority != before["priority"] or reopening:
+                        policy = _active_sla(conn, priority)
+                        policy_id = policy["id"] if policy else None
+                        first_due = policy["first_response_due_at"] if policy and not before["first_response_at"] else None
+                        resolution_due = policy["resolution_due_at"] if policy else None
+                        row = conn.execute(
+                            "UPDATE support_cases SET status=%s,priority=%s,assigned_to=%s,sla_policy_id=%s,"
+                            "first_response_due_at=CASE WHEN first_response_at IS NULL THEN %s ELSE first_response_due_at END,"
+                            "resolution_due_at=%s,resolved_at=CASE WHEN %s IN ('resolved','closed') "
+                            "THEN COALESCE(resolved_at,now()) ELSE NULL END,updated_at=now() "
+                            "WHERE id=%s RETURNING id,case_number,status,priority,assigned_to,updated_at",
+                            (status,priority,assigned_to,policy_id,first_due,resolution_due,status,before["id"]),
+                        ).fetchone()
+                    else:
+                        row = conn.execute(
+                            "UPDATE support_cases SET status=%s,priority=%s,assigned_to=%s,"
+                            "resolved_at=CASE WHEN %s IN ('resolved','closed') THEN COALESCE(resolved_at,now()) "
+                            "ELSE NULL END,updated_at=now() WHERE id=%s "
+                            "RETURNING id,case_number,status,priority,assigned_to,updated_at",
+                            (status,priority,assigned_to,status,before["id"]),
+                        ).fetchone()
+                    conn.execute(
+                        "INSERT INTO support_case_events(case_id,actor_type,actor_staff_user_id,event_type,before_values,after_values) "
+                        "VALUES(%s,'staff',%s,'case_bulk_updated',"
+                        "jsonb_build_object('status',%s,'priority',%s,'assigned_to',%s),"
+                        "jsonb_build_object('status',%s,'priority',%s,'assigned_to',%s))",
+                        (before["id"],request.state.user_id,before["status"],before["priority"],before["assigned_to"],
+                         row["status"],row["priority"],row["assigned_to"]),
+                    )
+                    updated.append(row)
+        return {"items": updated, "updated_count": len(updated)}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _error(exc) from exc
 
 
 def _linked_customer_id(conn, customer_account_id:int):
