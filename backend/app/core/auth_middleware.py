@@ -139,7 +139,8 @@ async def require_active_session(request: Request) -> None:
     prefix = settings.api_prefix.rstrip("/")
     if path.startswith(prefix + "/") and path != prefix + "/health" and request.method != "OPTIONS":
         enforce_csrf_origin(request)
-        await asyncio.to_thread(enforce_distributed_rate_limit, request)
+        if settings.app_env.lower() in {"production", "prod"}:
+            await asyncio.to_thread(enforce_distributed_rate_limit, request)
     public = {prefix + "/health", prefix + "/auth/login", prefix + "/customer-auth/register", prefix + "/customer-auth/login", prefix + "/portal-invitations/accept"}
     if request.method == "GET" and path.startswith(prefix + "/customer-auth/oauth/"):
         return
