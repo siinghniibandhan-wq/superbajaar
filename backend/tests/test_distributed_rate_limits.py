@@ -21,3 +21,10 @@ def test_bucket_key_is_stable_and_scoped_by_ip_and_route():
     assert a != c
     assert a != d
     assert len(a) == 64
+
+
+
+def test_login_and_otp_use_separate_distributed_buckets():
+    login = rate_limit_bucket_key("203.0.113.10", "POST", "/api/customer-auth/login")
+    otp = rate_limit_bucket_key("203.0.113.10", "POST", "/api/customer-auth/identity-verification/otp/request")
+    assert login != otp
