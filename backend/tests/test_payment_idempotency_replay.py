@@ -8,6 +8,14 @@ from fastapi import HTTPException
 from app.api import payments
 
 
+class QueryResult:
+    def __init__(self, row):
+        self.row = row
+
+    def fetchone(self):
+        return self.row
+
+
 class ReplayConnection:
     def __init__(self, prior):
         self.prior = prior
@@ -25,8 +33,8 @@ class ReplayConnection:
     def execute(self, query, params=()):
         self.statements.append((query, params))
         if "FROM payments WHERE idempotency_key=%s" in query:
-            return type("Result", (), {"fetchone": lambda self: self.prior})()
-        return type("Result", (), {"fetchone": lambda self: None})()
+            return QueryResult(self.prior)
+        return QueryResult(None)
 
 
 def test_payment_create_replays_same_actor_and_payload_without_creating_second_payment(monkeypatch):
