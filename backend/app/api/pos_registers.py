@@ -5,6 +5,7 @@ Cash movements and close snapshots are append-only/auditable records.
 """
 from decimal import Decimal, InvalidOperation
 import psycopg
+from psycopg.types.json import Jsonb
 from fastapi import APIRouter, HTTPException, Request
 from psycopg.rows import dict_row
 from pydantic import BaseModel, Field, field_validator
@@ -113,7 +114,7 @@ def create_register(payload: RegisterCreate, request: Request):
             ).fetchone()
             conn.execute(
                 "INSERT INTO pos_register_audit(register_id,event_type,actor_user_id,event_data) VALUES(%s,'register_created',%s,%s)",
-                (row["id"], actor, {"register_code": row["register_code"], "location_id": payload.location_id}),
+                (row["id"], actor, Jsonb({"register_code": row["register_code"], "location_id": payload.location_id})),
             )
         return row
     except psycopg.errors.UniqueViolation as exc:
@@ -200,7 +201,7 @@ def open_shift(register_id: int, payload: ShiftOpen, request: Request):
                 ).fetchone()
                 conn.execute(
                     "INSERT INTO pos_register_audit(register_id,shift_id,event_type,actor_user_id,event_data) VALUES(%s,%s,'shift_opened',%s,%s)",
-                    (register_id, row["id"], actor, {"cashier_user_id": cashier, "opening_float": str(row["opening_float"])}),
+                    (register_id, row["id"], actor, Jsonb({"cashier_user_id": cashier, "opening_float": str(row["opening_float"])})),
                 )
         return row
     except psycopg.errors.UniqueViolation as exc:
@@ -233,7 +234,7 @@ def add_cash_movement(shift_id: int, payload: CashMovement, request: Request):
                 ).fetchone()
                 conn.execute(
                     "INSERT INTO pos_register_audit(register_id,shift_id,event_type,actor_user_id,event_data) VALUES(%s,%s,'cash_movement',%s,%s)",
-                    (shift["register_id"],shift_id,actor,{"movement_type": payload.movement_type,"amount": str(row["amount"]),"reason": payload.reason}),
+                    (shift["register_id"],shift_id,actor,Jsonb({"movement_type": payload.movement_type,"amount": str(row["amount"]),"reason": payload.reason})),
                 )
         return row
     except HTTPException:
@@ -271,7 +272,7 @@ def close_shift(shift_id: int, payload: ShiftClose, request: Request):
                 ).fetchone()
                 conn.execute(
                     "INSERT INTO pos_register_audit(register_id,shift_id,event_type,actor_user_id,event_data) VALUES(%s,%s,'shift_closed',%s,%s)",
-                    (shift["register_id"],shift_id,actor,{"expected_cash":str(expected),"counted_cash":str(counted),"variance":str(variance)}),
+                    (shift["register_id"],shift_id,actor,Jsonb({"expected_cash":str(expected),"counted_cash":str(counted),"variance":str(variance)})),
                 )
         return row
     except HTTPException:
