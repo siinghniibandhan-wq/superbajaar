@@ -22,7 +22,12 @@ def test_start_redirects_to_google_with_state(monkeypatch):
     assert r.status_code == 302
     assert r.headers["location"].startswith("https://accounts.google.com/")
     assert "state=" in r.headers["location"]
-    assert "sb_oauth_nonce" in r.headers["set-cookie"]
+    cookie = r.headers["set-cookie"].lower()
+    assert "sb_oauth_nonce" in cookie
+    assert "httponly" in cookie
+    assert "secure" in cookie
+    assert "samesite=lax" in cookie
+    assert "max-age=600" in cookie
 
 
 def test_callback_rejects_missing_nonce_cookie(monkeypatch):
