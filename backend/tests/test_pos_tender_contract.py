@@ -34,3 +34,15 @@ def test_explicit_pos_tender_participates_in_checkout_hash_payload():
 
     payload = {"channel": "pos", "customer_name": "Walk-in", "pos_payment_method": "upi"}
     assert checkout_payload_for_hash(payload) == payload
+
+
+def test_legacy_checkout_hash_omits_optional_register_id():
+    from app.services.pos_tender import checkout_payload_for_hash
+    payload = {"channel": "website", "customer_name": "Buyer", "pos_register_id": None}
+    assert checkout_payload_for_hash(payload) == {"channel": "website", "customer_name": "Buyer"}
+
+
+def test_pos_register_selection_is_part_of_checkout_hash():
+    from app.services.pos_tender import checkout_payload_for_hash
+    payload = {"channel": "pos", "customer_name": "Walk-in", "pos_register_id": 4}
+    assert checkout_payload_for_hash(payload) == payload
