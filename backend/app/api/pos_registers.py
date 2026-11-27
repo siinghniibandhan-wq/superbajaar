@@ -3,7 +3,7 @@
 Each physical counter owns one register and may have only one open shift.
 Cash movements and close snapshots are append-only/auditable records.
 """
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 import psycopg
 from psycopg.types.json import Jsonb
 from fastapi import APIRouter, HTTPException, Request
@@ -126,7 +126,7 @@ def create_register(payload: RegisterCreate, request: Request):
 
 
 @router.get("/registers/{register_id}/shift")
-def current_shift(register_id: int):
+def current_shift(register_id: int, request: Request):
     try:
         with _connect() as conn:
             row = conn.execute(
@@ -137,6 +137,9 @@ def current_shift(register_id: int):
             ).fetchone()
             if row is None:
                 return {"shift": None}
+            actor = _actor(request)
+            if int(row["cashier_user_id"]) != actor and getattr(request.state, "role", "") not in {"manager","admin","super_admin"}:
+                raise HTTPException(status_code=403, detail="Only the assigned cashier or a manager can view this shift")
             totals = _shift_cash_totals(conn, int(row["id"]))
             movements = conn.execute(
                 "SELECT id,movement_type,amount,reason,reference,created_by,created_at FROM pos_cash_movements WHERE shift_id=%s ORDER BY created_at DESC,id DESC",
