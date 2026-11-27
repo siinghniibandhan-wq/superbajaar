@@ -73,3 +73,19 @@ ON CONFLICT (role_id,module_id,permission_id) DO UPDATE SET allowed=true;
 
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS pos_register_shift_id bigint REFERENCES public.pos_register_shifts(id) ON DELETE RESTRICT;
 CREATE INDEX IF NOT EXISTS idx_orders_pos_register_shift ON public.orders(pos_register_shift_id) WHERE pos_register_shift_id IS NOT NULL;
+
+-- Operational cash records are append-only; corrections use compensating entries.
+CREATE OR REPLACE FUNCTION public.reject_pos_cash_history_mutation()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION 'POS cash and audit history is immutable; create a correcting entry instead';
+END;
+$$;
+DROP TRIGGER IF EXISTS trg_pos_cash_movements_immutable ON public.pos_cash_movements;
+CREATE TRIGGER trg_pos_cash_movements_immutable
+BEFORE UPDATE OR DELETE ON public.pos_cash_movements
+FOR EACH ROW EXECUTE FUNCTION public.reject_pos_cash_history_mutation();
+DROP TRIGGER IF EXISTS trg_pos_register_audit_immutable ON public.pos_register_audit;
+CREATE TRIGGER trg_pos_register_audit_immutable
+BEFORE UPDATE OR DELETE ON public.pos_register_audit
+FOR EACH ROW EXECUTE FUNCTION public.reject_pos_cash_history_mutation();
