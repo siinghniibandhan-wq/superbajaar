@@ -14,6 +14,8 @@ export default function POSWorkspace({ onBack }) {
   const [selectedRegisterId, setSelectedRegisterId] = useState("");
   const [activeShift, setActiveShift] = useState(null);
   const [shiftCash, setShiftCash] = useState(null);
+  const [shiftMovements, setShiftMovements] = useState([]);
+  const [shiftHistory, setShiftHistory] = useState([]);
   const [openingFloat, setOpeningFloat] = useState("0.00");
   const [countedCash, setCountedCash] = useState("");
   const [cashMove, setCashMove] = useState({ type: "cash_in", amount: "", reason: "" });
@@ -68,18 +70,18 @@ export default function POSWorkspace({ onBack }) {
   useEffect(() => { load(); }, []);
 
   useEffect(() => {
-    if (!selectedRegisterId) { setActiveShift(null); setShiftCash(null); return; }
+    if (!selectedRegisterId) { setActiveShift(null); setShiftCash(null); setShiftMovements([]); setShiftHistory([]); return; }
     let live = true;
-    apiRequest("/pos/registers/" + selectedRegisterId + "/shift").then(result => {
-      if (live) { setActiveShift(result.shift || null); setShiftCash(result.cash || null); }
+    Promise.all([apiRequest("/pos/registers/" + selectedRegisterId + "/shift"), apiRequest("/pos/registers/" + selectedRegisterId + "/shifts?limit=20")]).then(([result, history]) => {
+      if (live) { setActiveShift(result.shift || null); setShiftCash(result.cash || null); setShiftMovements(result.movements || []); setShiftHistory(history.items || []); }
     }).catch(e => { if (live) setError(e.message || "Unable to load register shift."); });
     return () => { live = false; };
   }, [selectedRegisterId]);
 
   async function refreshShift() {
     if (!selectedRegisterId) return;
-    const result = await apiRequest("/pos/registers/" + selectedRegisterId + "/shift");
-    setActiveShift(result.shift || null); setShiftCash(result.cash || null);
+    const [result, history] = await Promise.all([apiRequest("/pos/registers/" + selectedRegisterId + "/shift"), apiRequest("/pos/registers/" + selectedRegisterId + "/shifts?limit=20")]);
+    setActiveShift(result.shift || null); setShiftCash(result.cash || null); setShiftMovements(result.movements || []); setShiftHistory(history.items || []);
   }
 
   async function openShift(event) {
@@ -129,7 +131,7 @@ export default function POSWorkspace({ onBack }) {
     event.preventDefault(); if (!activeShift) return; setRegisterBusy(true); setError("");
     try {
       const closed = await apiRequest("/pos/shifts/" + activeShift.id + "/close", { method: "POST", body: JSON.stringify({ counted_cash: Number(countedCash), closing_note: "Cashier drawer count" }) });
-      setActiveShift(null); setShiftCash(null); setCountedCash("");
+      setActiveShift(null); setShiftCash(null); setShiftMovements([]); setCountedCash("");
       setNotice("Shift closed. Expected " + money(closed.expected_cash) + ", counted " + money(closed.counted_cash) + ", variance " + money(closed.cash_variance) + ".");
       await load();
     } catch (e) { setError(e.message || "Unable to close cashier shift."); }
@@ -220,7 +222,8 @@ export default function POSWorkspace({ onBack }) {
         {activeShift ? <div className="sb-pos-shift-meta"><strong>{activeShift.register_code} · {activeShift.register_name}</strong><span>Cashier ID: {activeShift.cashier_user_id} · Opened {new Date(activeShift.opened_at).toLocaleString("en-IN")}</span><span>Opening float: {money(activeShift.opening_float)}</span></div> : <form className="sb-pos-inline-form" onSubmit={openShift}><label>Opening cash float (₹)<input type="number" min="0" step="0.01" required value={openingFloat} onChange={e => setOpeningFloat(e.target.value)} /></label><button className="sb-primary" type="submit" disabled={!selectedRegisterId || registerBusy}>{registerBusy ? "Please wait…" : "Open cashier shift"}</button></form>}
       </div>
       {!registers.length && <form className="sb-pos-register-create" onSubmit={createRegister}><strong>Create first counter register</strong><label>Store location<select required value={locationId} onChange={e => setLocationId(e.target.value)}><option value="">Choose store</option>{locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</select></label><label>Register code<input required minLength="2" maxLength="40" value={registerDraft.code} onChange={e => setRegisterDraft(v => ({ ...v, code: e.target.value }))} placeholder="COUNTER-01" /></label><label>Counter name<input required minLength="2" maxLength="120" value={registerDraft.name} onChange={e => setRegisterDraft(v => ({ ...v, name: e.target.value }))} /></label><button className="sb-primary" type="submit" disabled={!locationId || registerBusy}>Create register</button></form>}
-      {activeShift && <div className="sb-pos-cash-controls"><div className="sb-pos-cash-metrics"><span>Cash sales<strong>{money(shiftCash?.cash_sales)}</strong></span><span>Cash refunds<strong>{money(shiftCash?.cash_refunds)}</strong></span><span>Cash in<strong>{money(shiftCash?.cash_in)}</strong></span><span>Cash out<strong>{money(shiftCash?.cash_out)}</strong></span></div><form className="sb-pos-inline-form" onSubmit={addCashMovement}><label>Drawer action<select value={cashMove.type} onChange={e => setCashMove(v => ({ ...v, type: e.target.value }))}><option value="cash_in">Cash in</option><option value="cash_out">Cash out</option></select></label><label>Amount (₹)<input type="number" min="0.01" step="0.01" required value={cashMove.amount} onChange={e => setCashMove(v => ({ ...v, amount: e.target.value }))} /></label><label>Reason<input required minLength="3" value={cashMove.reason} onChange={e => setCashMove(v => ({ ...v, reason: e.target.value }))} placeholder="Petty cash / float top-up" /></label><button type="submit" disabled={registerBusy}>Record movement</button></form><form className="sb-pos-inline-form sb-pos-close-form" onSubmit={closeShift}><label>Counted drawer cash (₹)<input type="number" min="0" step="0.01" required value={countedCash} onChange={e => setCountedCash(e.target.value)} placeholder="Enter physical cash count" /></label><button type="submit" disabled={registerBusy || countedCash === ""}>Close shift & reconcile</button></form></div>}
+      {activeShift && <div className="sb-pos-cash-controls"><div className="sb-pos-cash-metrics"><span>Cash sales<strong>{money(shiftCash?.cash_sales)}</strong></span><span>Cash refunds<strong>{money(shiftCash?.cash_refunds)}</strong></span><span>Cash in<strong>{money(shiftCash?.cash_in)}</strong></span><span>Cash out<strong>{money(shiftCash?.cash_out)}</strong></span></div><form className="sb-pos-inline-form" onSubmit={addCashMovement}><label>Drawer action<select value={cashMove.type} onChange={e => setCashMove(v => ({ ...v, type: e.target.value }))}><option value="cash_in">Cash in</option><option value="cash_out">Cash out</option></select></label><label>Amount (₹)<input type="number" min="0.01" step="0.01" required value={cashMove.amount} onChange={e => setCashMove(v => ({ ...v, amount: e.target.value }))} /></label><label>Reason<input required minLength="3" value={cashMove.reason} onChange={e => setCashMove(v => ({ ...v, reason: e.target.value }))} placeholder="Petty cash / float top-up" /></label><button type="submit" disabled={registerBusy}>Record movement</button></form>{shiftMovements.length > 0 && <div className="sb-pos-movements"><strong>Drawer movement history</strong>{shiftMovements.map(item => <div key={item.id}><span>{item.movement_type.replace("_", " ").toUpperCase()} · {item.reason}</span><b>{money(item.amount)}</b></div>)}</div>}<form className="sb-pos-inline-form sb-pos-close-form" onSubmit={closeShift}><label>Counted drawer cash (₹)<input type="number" min="0" step="0.01" required value={countedCash} onChange={e => setCountedCash(e.target.value)} placeholder="Enter physical cash count" /></label><button type="submit" disabled={registerBusy || countedCash === ""}>Close shift & reconcile</button></form></div>}
+      {shiftHistory.length > 0 && <div className="sb-pos-shift-history"><strong>Recent shift history</strong><div className="sb-table-wrap"><table><thead><tr><th>Shift</th><th>Cashier</th><th>Status</th><th>Expected</th><th>Counted</th><th>Variance</th></tr></thead><tbody>{shiftHistory.map(s => <tr key={s.id}><td>#{s.id}<br/><small>{new Date(s.opened_at).toLocaleString("en-IN")}</small></td><td>{s.cashier_user_id}</td><td>{s.status}</td><td>{money(s.expected_cash)}</td><td>{money(s.counted_cash)}</td><td>{s.cash_variance == null ? "—" : money(s.cash_variance)}</td></tr>)}</tbody></table></div></div>}
       {registers.length > 0 && <details className="sb-pos-register-create"><summary>Manager: add another counter</summary><form onSubmit={createRegister}><label>Store location<select required value={locationId} onChange={e => setLocationId(e.target.value)}><option value="">Choose store</option>{locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</select></label><label>Register code<input required value={registerDraft.code} onChange={e => setRegisterDraft(v => ({ ...v, code: e.target.value }))} /></label><label>Counter name<input required value={registerDraft.name} onChange={e => setRegisterDraft(v => ({ ...v, name: e.target.value }))} /></label><button type="submit" disabled={!locationId || registerBusy}>Create register</button></form></details>}
     </div>
     {posSummary && <div className="sb-report-grid" aria-label="POS overview">
@@ -247,7 +250,7 @@ export default function POSWorkspace({ onBack }) {
         <div className="sb-pos-total"><span>Subtotal</span><strong>{money(total)}</strong></div>
         <form className="sb-form" onSubmit={checkout}>
           <h3>Customer & tender intent</h3>
-          <label>Stock location<select required value={locationId} onChange={e => setLocationId(e.target.value)}><option value="">Choose stock location</option>{locations.map(location => <option key={location.id} value={location.id}>{location.name} · {location.location_type || "location"}</option>)}</select></label>
+          <label>Stock location<select required disabled={Boolean(selectedRegisterId)} value={locationId} onChange={e => setLocationId(e.target.value)}><option value="">Choose stock location</option>{locations.map(location => <option key={location.id} value={location.id}>{location.name} · {location.location_type || "location"}</option>)}</select></label>
           <label>Customer name<input required minLength="1" maxLength="200" value={customer.name} onChange={e => setCustomer(v => ({ ...v, name: e.target.value }))} /></label>
           <label>Phone (optional)<input maxLength="20" value={customer.phone} onChange={e => setCustomer(v => ({ ...v, phone: e.target.value }))} /></label>
           <label>Delivery PIN (optional)<input inputMode="numeric" pattern="[0-9]{6}" maxLength="6" value={customer.pin} onChange={e => setCustomer(v => ({ ...v, pin: e.target.value }))} /></label>
