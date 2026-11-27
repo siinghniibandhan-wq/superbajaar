@@ -2,7 +2,7 @@ import { useState } from "react";
 
 const FAQ = [
   ["When do I get my Super Coins?", "Coins are credited after your order is delivered and confirmed, not when you place it."],
-  ["How long do coins last?", "Each credit expires 365 days after it is earned. Older coins are used first, so they never get stuck behind newer ones."],
+  ["How long do coins last?", "They don't. Super Coins never expire. Older coins are used first."],
   ["Why do some products earn more coins?", "The store can set a higher rate on selected products or categories. When a product earns a special rate, you'll see the exact coins on its card and page."],
   ["Can I use coins at checkout?", "Not yet. One Super Coin is meant to equal ₹1, but checkout redemption will switch on only after balance and accounting controls are in place. Keep collecting in the meantime."],
   ["Where can I see my balance?", "Open My Account and choose Loyalty Card & Coins. Verify an order with your email and order reference to see your card, balance, and history."],
@@ -23,7 +23,7 @@ export default function LoyaltyProgrammePage({ rate = 1, onShop, onAccount }) {
       <div className="sb-loy-facts">
         <div><strong>{perHundred || "—"}</strong><span>coin per ₹100 spent</span></div>
         <div><strong>₹1</strong><span>intended value of 1 coin</span></div>
-        <div><strong>365</strong><span>days before a coin expires</span></div>
+        <div><strong>Never</strong><span>expiry on your coins</span></div>
         <div><strong>After</strong><span>delivery is confirmed</span></div>
       </div>
 
@@ -56,7 +56,7 @@ export default function LoyaltyProgrammePage({ rate = 1, onShop, onAccount }) {
       <h2>Good to know</h2>
       <ul className="sb-loy-list">
         <li>Coins are credited only after delivery is confirmed.</li>
-        <li>Each credit expires 365 days after it is earned, and the oldest coins are used first.</li>
+        <li>Super Coins never expire, and the oldest coins are used first.</li>
         <li>Special product and category rates are shown on the product itself.</li>
         <li>Checkout redemption isn't enabled yet.</li>
       </ul>
