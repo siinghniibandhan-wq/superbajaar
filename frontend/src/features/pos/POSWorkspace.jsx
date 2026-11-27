@@ -24,6 +24,7 @@ export default function POSWorkspace({ onBack }) {
   const [canManageRegisters, setCanManageRegisters] = useState(false);
   const [cart, setCart] = useState([]);
   const [locationId, setLocationId] = useState("");
+  const [registerLocationId, setRegisterLocationId] = useState("");
   const [customer, setCustomer] = useState({ name: "Walk-in Customer", phone: "", pin: "" });
   const [method, setMethod] = useState("upi");
   const [loading, setLoading] = useState(true);
@@ -58,13 +59,16 @@ export default function POSWorkspace({ onBack }) {
         apiRequest("/auth/me"),
       ]);
       setVariants(result.items || []);
-      setLocations((locationResult.items || []).filter(location => location.is_active !== false));
+      const activeLocations = (locationResult.items || []).filter(location => location.is_active !== false);
+      setLocations(activeLocations);
+      if (!registerLocationId && activeLocations.length) setRegisterLocationId(String(activeLocations[0].id));
       const nextRegisters = registerResult.items || [];
       setRegisters(nextRegisters);
       setCanManageRegisters(["manager", "admin", "super_admin"].includes(meResult.user?.role));
       if (!selectedRegisterId && nextRegisters.length) {
         setSelectedRegisterId(String(nextRegisters[0].id));
         setLocationId(String(nextRegisters[0].location_id));
+        setRegisterLocationId(String(nextRegisters[0].location_id));
       }
       await refreshAnalytics();
     } catch (e) { setError(e.message || "Unable to load active catalogue variants."); }
@@ -99,9 +103,9 @@ export default function POSWorkspace({ onBack }) {
   async function createRegister(event) {
     event.preventDefault(); setRegisterBusy(true); setError("");
     try {
-      const created = await apiRequest("/pos/registers", { method: "POST", body: JSON.stringify({ location_id: Number(locationId), register_code: registerDraft.code, name: registerDraft.name }) });
+      const created = await apiRequest("/pos/registers", { method: "POST", body: JSON.stringify({ location_id: Number(registerLocationId), register_code: registerDraft.code, name: registerDraft.name }) });
       setRegisterDraft({ code: "", name: "" });
-      const next = await apiRequest("/pos/registers"); setRegisters(next.items || []); setSelectedRegisterId(String(created.id));
+      const next = await apiRequest("/pos/registers"); setRegisters(next.items || []); setSelectedRegisterId(String(created.id)); setLocationId(String(registerLocationId));
       setNotice("Register created. Open a cashier shift to start selling.");
     } catch (e) { setError(e.message || "Unable to create register."); }
     finally { setRegisterBusy(false); }
@@ -221,10 +225,10 @@ export default function POSWorkspace({ onBack }) {
     <div className="sb-data-card sb-pos-register-panel">
       <div className="sb-data-heading"><h2>Counter & cashier shift</h2><span className={activeShift ? "sb-pos-status is-open" : "sb-pos-status"}>{activeShift ? "SHIFT OPEN" : "REGISTER CLOSED"}</span></div>
       <div className="sb-pos-register-grid">
-        <label>Store counter<select value={selectedRegisterId} onChange={e => { const r = registers.find(x => String(x.id) === e.target.value); setSelectedRegisterId(e.target.value); if (r) setLocationId(String(r.location_id)); }}><option value="">Select register</option>{registers.map(r => <option key={r.id} value={r.id}>{r.location_name} · {r.register_code} — {r.name}</option>)}</select></label>
+        <label>Store counter<select value={selectedRegisterId} onChange={e => { const r = registers.find(x => String(x.id) === e.target.value); setSelectedRegisterId(e.target.value); if (r) { setLocationId(String(r.location_id)); setRegisterLocationId(String(r.location_id)); } }}><option value="">Select register</option>{registers.map(r => <option key={r.id} value={r.id}>{r.location_name} · {r.register_code} — {r.name}</option>)}</select></label>
         {activeShift ? <div className="sb-pos-shift-meta"><strong>{activeShift.register_code} · {activeShift.register_name}</strong><span>Cashier ID: {activeShift.cashier_user_id} · Opened {new Date(activeShift.opened_at).toLocaleString("en-IN")}</span><span>Opening float: {money(activeShift.opening_float)}</span></div> : <form className="sb-pos-inline-form" onSubmit={openShift}><label>Opening cash float (₹)<input type="number" min="0" step="0.01" required value={openingFloat} onChange={e => setOpeningFloat(e.target.value)} /></label><button className="sb-primary" type="submit" disabled={!selectedRegisterId || registerBusy}>{registerBusy ? "Please wait…" : "Open cashier shift"}</button></form>}
       </div>
-      {!registers.length && canManageRegisters && <form className="sb-pos-register-create" onSubmit={createRegister}><strong>Create first counter register</strong><label>Store location<select required value={locationId} onChange={e => setLocationId(e.target.value)}><option value="">Choose store</option>{locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</select></label><label>Register code<input required minLength="2" maxLength="40" value={registerDraft.code} onChange={e => setRegisterDraft(v => ({ ...v, code: e.target.value }))} placeholder="COUNTER-01" /></label><label>Counter name<input required minLength="2" maxLength="120" value={registerDraft.name} onChange={e => setRegisterDraft(v => ({ ...v, name: e.target.value }))} /></label><button className="sb-primary" type="submit" disabled={!locationId || registerBusy}>Create register</button></form>}
+      {!registers.length && canManageRegisters && <form className="sb-pos-register-create" onSubmit={createRegister}><strong>Create first counter register</strong><label>Store location<select required value={registerLocationId} onChange={e => setRegisterLocationId(e.target.value)}><option value="">Choose store</option>{locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</select></label><label>Register code<input required minLength="2" maxLength="40" value={registerDraft.code} onChange={e => setRegisterDraft(v => ({ ...v, code: e.target.value }))} placeholder="COUNTER-01" /></label><label>Counter name<input required minLength="2" maxLength="120" value={registerDraft.name} onChange={e => setRegisterDraft(v => ({ ...v, name: e.target.value }))} /></label><button className="sb-primary" type="submit" disabled={!registerLocationId || registerBusy}>Create register</button></form>}
       {activeShift && <div className="sb-pos-cash-controls"><div className="sb-pos-cash-metrics"><span>Cash sales<strong>{money(shiftCash?.cash_sales)}</strong></span><span>Cash refunds<strong>{money(shiftCash?.cash_refunds)}</strong></span><span>Cash in<strong>{money(shiftCash?.cash_in)}</strong></span><span>Cash out<strong>{money(shiftCash?.cash_out)}</strong></span></div><form className="sb-pos-inline-form" onSubmit={addCashMovement}><label>Drawer action<select value={cashMove.type} onChange={e => setCashMove(v => ({ ...v, type: e.target.value }))}><option value="cash_in">Cash in</option><option value="cash_out">Cash out</option></select></label><label>Amount (₹)<input type="number" min="0.01" step="0.01" required value={cashMove.amount} onChange={e => setCashMove(v => ({ ...v, amount: e.target.value }))} /></label><label>Reason<input required minLength="3" value={cashMove.reason} onChange={e => setCashMove(v => ({ ...v, reason: e.target.value }))} placeholder="Petty cash / float top-up" /></label><button type="submit" disabled={registerBusy}>Record movement</button></form>{shiftMovements.length > 0 && <div className="sb-pos-movements"><strong>Drawer movement history</strong>{shiftMovements.map(item => <div key={item.id}><span>{item.movement_type.replace("_", " ").toUpperCase()} · {item.reason}</span><b>{money(item.amount)}</b></div>)}</div>}<form className="sb-pos-inline-form sb-pos-close-form" onSubmit={closeShift}><label>Counted drawer cash (₹)<input type="number" min="0" step="0.01" required value={countedCash} onChange={e => setCountedCash(e.target.value)} placeholder="Enter physical cash count" /></label><button type="submit" disabled={registerBusy || countedCash === ""}>Close shift & reconcile</button></form></div>}
       {shiftHistory.length > 0 && <div className="sb-pos-shift-history"><strong>Recent shift history</strong><div className="sb-table-wrap"><table><thead><tr><th>Shift</th><th>Cashier</th><th>Status</th><th>Expected</th><th>Counted</th><th>Variance</th></tr></thead><tbody>{shiftHistory.map(s => <tr key={s.id}><td>#{s.id}<br/><small>{new Date(s.opened_at).toLocaleString("en-IN")}</small></td><td>{s.cashier_user_id}</td><td>{s.status}</td><td>{money(s.expected_cash)}</td><td>{money(s.counted_cash)}</td><td>{s.cash_variance == null ? "—" : money(s.cash_variance)}</td></tr>)}</tbody></table></div></div>}
       {!registers.length && !canManageRegisters && <p className="sb-muted">No counter is configured for this store yet. Ask a manager to create the first POS register.</p>}
