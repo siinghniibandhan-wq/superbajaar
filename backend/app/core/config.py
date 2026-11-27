@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     cors_allowed_origins: str = "http://localhost:5173"
     # Reuse the existing legacy secret during migration if JWT_SECRET_KEY is not set.
     # Do not hardcode a production secret in source control.
+    customer_session_ttl_hours: int = Field(default=168, ge=1, le=720)
     jwt_secret_key: str = Field(
         default="",
         validation_alias=AliasChoices("JWT_SECRET_KEY", "SB_SECRET_KEY"),
