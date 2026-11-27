@@ -1,11 +1,31 @@
 import hashlib
 import ipaddress
+import re
 
 import psycopg
 from psycopg.rows import dict_row
 from fastapi import HTTPException
 
 from app.core.config import settings
+
+
+_AMPLIFY_ORIGIN = re.compile(r"^https://(?:[a-zA-Z0-9-]+[.])*d334sr8jkx3zux[.]amplifyapp[.]com$")
+
+
+def browser_origin_allowed(origin: str, configured_origins: str) -> bool:
+    candidate = origin.strip().rstrip("/")
+    allowed = {value.strip().rstrip("/") for value in configured_origins.split(",") if value.strip()}
+    return candidate in allowed or bool(_AMPLIFY_ORIGIN.fullmatch(candidate))
+
+
+def enforce_csrf_origin(request) -> None:
+    if request.method.upper() not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return
+    origin = request.headers.get("origin")
+    # API authentication is Authorization-header based, not ambient cookie based.
+    # When browsers send Origin, enforce the same explicit trust boundary as CORS.
+    if origin and not browser_origin_allowed(origin, settings.cors_allowed_origins):
+        raise HTTPException(status_code=403, detail="Untrusted request origin")
 
 
 _AUTH_LIMITS = {
