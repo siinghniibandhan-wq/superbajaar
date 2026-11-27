@@ -24,3 +24,27 @@
 .sb-pos .sb-muted { color:#77838d; font-size:11px; line-height:1.65; }
 @media(max-width:1100px) { .sb-pos .sb-pos-layout { grid-template-columns:minmax(0,1fr); } }
 @media(max-width:540px) { .sb-pos .sb-pos-products { grid-template-columns:minmax(0,1fr); } .sb-pos .sb-pos-cart-line { grid-template-columns:minmax(0,1fr) 68px; } .sb-pos .sb-pos-cart-line > strong { grid-column:1/-1; text-align:right; } .sb-pos .sb-pos-layout > .sb-data-card { padding:14px; border-radius:18px; } }
+
+/* Register-first POS operations */
+.sb-pos .sb-pos-register-panel { margin:18px 0; padding:clamp(16px,2vw,24px); border:1px solid #e8e1f5; border-radius:22px; background:linear-gradient(135deg,#fff 0%,#faf7ff 100%); box-shadow:0 12px 30px rgba(53,17,111,.07); }
+.sb-pos .sb-pos-status { padding:7px 11px; border-radius:999px; background:#fff1e8; color:#9a4c14; font-size:10px; font-weight:800; letter-spacing:.08em; }
+.sb-pos .sb-pos-status.is-open { background:#e8f8ef; color:#147342; }
+.sb-pos .sb-pos-register-grid { display:grid; grid-template-columns:minmax(220px,.8fr) minmax(240px,1.2fr); gap:16px; align-items:end; }
+.sb-pos .sb-pos-register-grid label,.sb-pos .sb-pos-register-create label,.sb-pos .sb-pos-inline-form label { display:grid; gap:7px; min-width:0; color:#68747f; font-size:12px; font-weight:650; }
+.sb-pos .sb-pos-register-panel input,.sb-pos .sb-pos-register-panel select { box-sizing:border-box; width:100%; min-width:0; padding:11px 12px; border:1px solid #ddd6eb; border-radius:12px; background:#fff; color:#263342; font:inherit; font-size:13px; }
+.sb-pos .sb-pos-shift-meta { display:grid; gap:6px; padding:14px; border:1px solid #e7e1f0; border-radius:14px; background:#fff; color:#334155; }
+.sb-pos .sb-pos-shift-meta span { color:#788391; font-size:12px; }
+.sb-pos .sb-pos-inline-form { display:flex; flex-wrap:wrap; align-items:end; gap:12px; margin-top:14px; }
+.sb-pos .sb-pos-inline-form label { flex:1 1 150px; }
+.sb-pos .sb-pos-inline-form button,.sb-pos .sb-pos-register-create button { min-height:40px; padding:10px 15px; border:0; border-radius:11px; background:#5927a6; color:#fff; font-weight:750; }
+.sb-pos .sb-pos-cash-controls { display:grid; gap:14px; margin-top:16px; padding-top:16px; border-top:1px solid #e9e3f1; }
+.sb-pos .sb-pos-cash-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
+.sb-pos .sb-pos-cash-metrics span { display:grid; gap:6px; padding:12px; border-radius:13px; background:#fff; color:#7a8490; font-size:11px; }
+.sb-pos .sb-pos-cash-metrics strong { color:#263342; font-size:17px; }
+.sb-pos .sb-pos-close-form { padding:12px; border:1px solid #eadff5; border-radius:14px; background:#fff; }
+.sb-pos .sb-pos-close-form button { background:#9b2c53; }
+.sb-pos .sb-pos-register-create { margin-top:16px; padding:13px; border:1px dashed #c9b8df; border-radius:14px; background:rgba(255,255,255,.75); }
+.sb-pos .sb-pos-register-create summary { cursor:pointer; color:#5927a6; font-size:12px; font-weight:750; }
+.sb-pos .sb-pos-register-create form { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-top:12px; }
+.sb-pos .sb-pos-register-create form button { grid-column:1/-1; }
+@media(max-width:760px) { .sb-pos .sb-pos-register-grid { grid-template-columns:minmax(0,1fr); } .sb-pos .sb-pos-cash-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } .sb-pos .sb-pos-register-create form { grid-template-columns:minmax(0,1fr); } }
