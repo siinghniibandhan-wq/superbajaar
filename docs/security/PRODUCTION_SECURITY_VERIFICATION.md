@@ -45,3 +45,8 @@ Migrations `067_distributed_api_rate_limits.sql` and `068_payment_idempotency.sq
 ## Verification boundary
 
 A source-code review or successful CI run is not a live infrastructure certification. Record the SSM command ID, execution time, instance ID, region, command status and redacted output as the evidence for the production audit. Any missing permission, failed check or skipped control must remain open until independently verified.
+
+
+## Bandit medium-severity triage
+
+The latest Bandit report contains 68 medium-severity B608 findings and zero high-severity findings. B608 is raised for SQL text assembled from fragments. The reviewed builders use constant SQL clauses, `%s` parameter placeholders for user-supplied values, fixed projection/column constants, or explicit allowlists for dynamic identifiers (including identity profile columns, QC quantity columns and FIFO/FEFO ordering). User-provided values remain separate psycopg parameters; no user-supplied raw SQL fragment is accepted. The two earlier B310 warnings were reviewed as fixed HTTPS endpoints (Resend and India Post) and annotated with the reason. The medium report remains uploaded as a CI artifact so future changes can be compared; do not globally suppress B608.
