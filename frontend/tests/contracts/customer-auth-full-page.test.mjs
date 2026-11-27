@@ -19,3 +19,11 @@ test("existing login and signup form controls and social sign-in remain availabl
   assert.match(storefront, /customer-auth\/oauth\/github\/start/);
   assert.match(storefront, /referral_code/);
 });
+
+test("Google and GitHub OAuth buttons show their recognizable provider symbols", () => {
+  assert.match(storefront, /import \{[^}]*Github[^}]*\} from "lucide-react"/);
+  assert.match(storefront, /aria-label="Google"/);
+  assert.match(storefront, /aria-label="GitHub"/);
+  assert.match(storefront, /storefront-social-icon/);
+  assert.match(styles, /\.storefront-social-icon/);
+});
