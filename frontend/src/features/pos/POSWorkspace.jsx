@@ -5,6 +5,7 @@ import "./POSWorkspace.css";
 const money = value => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(Number(value || 0));
 
 export default function POSWorkspace({ onBack }) {
+  const [activeView, setActiveView] = useState("checkout");
   const [variants, setVariants] = useState([]);
   const [posSummary, setPosSummary] = useState(null);
   const [recentSales, setRecentSales] = useState([]);
@@ -222,7 +223,8 @@ export default function POSWorkspace({ onBack }) {
     {error && <p className="sb-alert" role="alert">{error}</p>}
     {analyticsError && <p className="sb-alert" role="status">{analyticsError}</p>}
     {notice && <p className="sb-success" role="status">{notice}</p>}
-    <div className="sb-data-card sb-pos-register-panel">
+    <nav className="sb-pos-nav" aria-label="POS modules"><button type="button" className={activeView === "checkout" ? "is-active" : ""} onClick={() => setActiveView("checkout")}>Checkout</button><button type="button" className={activeView === "sales" ? "is-active" : ""} onClick={() => setActiveView("sales")}>Sales history</button><button type="button" className={activeView === "registers" ? "is-active" : ""} onClick={() => setActiveView("registers")}>Registers & cash</button><span>{activeShift ? "Counter active" : "No active shift"}</span></nav>
+    <div className="sb-data-card sb-pos-register-panel" style={{ display: activeView === "registers" ? "block" : "none" }}>
       <div className="sb-data-heading"><h2>Counter & cashier shift</h2><span className={activeShift ? "sb-pos-status is-open" : "sb-pos-status"}>{activeShift ? "SHIFT OPEN" : "REGISTER CLOSED"}</span></div>
       <div className="sb-pos-register-grid">
         <label>Store counter<select value={selectedRegisterId} onChange={e => { const r = registers.find(x => String(x.id) === e.target.value); setSelectedRegisterId(e.target.value); if (r) { setLocationId(String(r.location_id)); setRegisterLocationId(String(r.location_id)); } }}><option value="">Select register</option>{registers.map(r => <option key={r.id} value={r.id}>{r.location_name} · {r.register_code} — {r.name}</option>)}</select></label>
@@ -234,18 +236,18 @@ export default function POSWorkspace({ onBack }) {
       {!registers.length && !canManageRegisters && <p className="sb-muted">No counter is configured for this store yet. Ask a manager to create the first POS register.</p>}
       {registers.length > 0 && canManageRegisters && <details className="sb-pos-register-create"><summary>Manager: add another counter</summary><form onSubmit={createRegister}><label>Store location<select required value={locationId} onChange={e => setLocationId(e.target.value)}><option value="">Choose store</option>{locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</select></label><label>Register code<input required value={registerDraft.code} onChange={e => setRegisterDraft(v => ({ ...v, code: e.target.value }))} /></label><label>Counter name<input required value={registerDraft.name} onChange={e => setRegisterDraft(v => ({ ...v, name: e.target.value }))} /></label><button type="submit" disabled={!locationId || registerBusy}>Create register</button></form></details>}
     </div>
-    {posSummary && <div className="sb-report-grid" aria-label="POS overview">
+    {posSummary && <div className="sb-report-grid" aria-label="POS overview" style={{ display: activeView === "sales" ? "grid" : "none" }}>
       <article className="sb-report-card"><small>POS orders</small><strong>{Number(posSummary.orders?.order_count || 0).toLocaleString("en-IN")}</strong><span>All recorded POS orders</span></article>
       <article className="sb-report-card"><small>Today's sales value</small><strong>{money(posSummary.orders?.today_order_value)}</strong><span>{Number(posSummary.orders?.today_order_count || 0)} orders today</span></article>
       <article className="sb-report-card"><small>Captured payments</small><strong>{money(posSummary.payments?.captured_amount)}</strong><span>{Number(posSummary.payments?.captured_count || 0)} confirmed records</span></article>
       <article className="sb-report-card"><small>Pending payments</small><strong>{money(posSummary.payments?.pending_amount)}</strong><span>{Number(posSummary.payments?.pending_count || 0)} awaiting confirmation</span></article>
     </div>}
-    {receipt && <div className="sb-data-card"><h2>Latest order</h2><p><strong>{receipt.order.order_number}</strong> · {money(receipt.order.total)} · {receipt.order.status}</p><p>Payment record: {receipt.payment ? receipt.payment.payment_reference + " · " + receipt.payment.status : "Not returned — reconcile before retrying."}</p>{receipt.payment?.method === "cod" && receipt.payment.status === "pending" && activeShift && <button type="button" className="sb-primary" onClick={confirmCashTender} disabled={registerBusy}>Confirm cash received</button>}</div>}
-    <div className="sb-data-card">
+    {receipt && <div className="sb-data-card" style={{ display: activeView === "sales" ? "block" : "none" }}><h2>Latest order</h2><p><strong>{receipt.order.order_number}</strong> · {money(receipt.order.total)} · {receipt.order.status}</p><p>Payment record: {receipt.payment ? receipt.payment.payment_reference + " · " + receipt.payment.status : "Not returned — reconcile before retrying."}</p>{receipt.payment?.method === "cod" && receipt.payment.status === "pending" && activeShift && <button type="button" className="sb-primary" onClick={confirmCashTender} disabled={registerBusy}>Confirm cash received</button>}</div>}
+    <div className="sb-data-card" style={{ display: activeView === "sales" ? "block" : "none" }}>
       <div className="sb-data-heading"><h2>Recent POS sales</h2><button type="button" onClick={load} disabled={loading}>Refresh sales</button></div>
       {recentSales.length ? <div className="sb-table-wrap"><table><thead><tr><th>Order</th><th>Customer</th><th>Status</th><th>Total</th><th>Captured</th><th>Payment state</th></tr></thead><tbody>{recentSales.map(sale => <tr key={sale.id}><td>{sale.order_number}</td><td>{sale.customer_name}</td><td>{sale.status}</td><td>{money(sale.total)}</td><td>{money(sale.captured_amount)}</td><td>{sale.payment_statuses || "No payment record"}</td></tr>)}</tbody></table></div> : <p className="sb-empty">No POS sales recorded yet.</p>}
     </div>
-    <div className="sb-pos-layout">
+    <div className="sb-pos-layout" style={{ display: activeView === "checkout" ? "grid" : "none" }}>
       <div className="sb-data-card">
         <div className="sb-data-heading"><h2>Catalogue</h2><button type="button" onClick={load} disabled={loading}>{loading ? "Loading…" : "Refresh"}</button></div>
         <label>Search product or SKU<input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search catalogue…" /></label>
