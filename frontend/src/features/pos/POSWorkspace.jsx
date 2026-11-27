@@ -69,6 +69,7 @@ export default function POSWorkspace({ onBack }) {
   const [showCustomer, setShowCustomer] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
   const [showHeld, setShowHeld] = useState(false);
+  const [pickerId, setPickerId] = useState(null);
   const [held, setHeld] = useState(() => { try { return JSON.parse(window.localStorage.getItem("superbajaar.pos_held") || "[]"); } catch { return []; } });
 
   async function refreshAnalytics() {
@@ -211,6 +212,25 @@ export default function POSWorkspace({ onBack }) {
   }, [activeVariants, searchIndex, search]);
   useEffect(() => { setShown(60); }, [search]);
 
+  // One tile per product; its variants are chosen after tapping the tile.
+  const groups = useMemo(() => {
+    const map = new Map();
+    for (const v of visible) {
+      const key = String(v.product_id);
+      if (!map.has(key)) map.set(key, { productId: v.product_id, title: productTitle(v), image: v.image_url || "", variants: [] });
+      const g = map.get(key);
+      if (!g.image && v.image_url) g.image = v.image_url;
+      g.variants.push(v);
+    }
+    return [...map.values()];
+  }, [visible]);
+  const pickerVariants = useMemo(() => pickerId == null ? [] : activeVariants.filter(v => String(v.product_id) === String(pickerId)), [activeVariants, pickerId]);
+  const pickerTitle = pickerVariants.length ? productTitle(pickerVariants[0]) : "";
+  function openProduct(group) {
+    if (group.variants.length === 1) add(group.variants[0]);
+    else setPickerId(String(group.productId));
+  }
+
   const cartCount = cart.reduce((sum, line) => sum + line.quantity, 0);
   const total = round2(cart.reduce((sum, line) => sum + Number(line.selling_price || 0) * line.quantity, 0));
   const qtyById = useMemo(() => new Map(cart.map(line => [line.id, line.quantity])), [cart]);
@@ -238,7 +258,7 @@ export default function POSWorkspace({ onBack }) {
   useEffect(() => {
     const onKey = event => {
       if (event.key === "F2" && activeView === "checkout") { event.preventDefault(); searchRef.current?.focus(); }
-      if (event.key === "Escape") setShowReceipt(false);
+      if (event.key === "Escape") { setShowReceipt(false); setPickerId(null); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -286,8 +306,8 @@ export default function POSWorkspace({ onBack }) {
     if (!term) return;
     // Barcode scanners "type" the code and press Enter: an exact code (or a single result) goes straight to the sale.
     const exact = visible.find(v => [v.sku, v.barcode].some(x => String(x || "").toLowerCase() === term));
-    const pick = exact || (visible.length === 1 ? visible[0] : null);
-    if (pick) { add(pick); setSearch(""); }
+    if (exact) { add(exact); setSearch(""); return; }
+    if (groups.length === 1) { openProduct(groups[0]); if (groups[0].variants.length === 1) setSearch(""); }
   }
   function closeReceipt() { setShowReceipt(false); window.setTimeout(() => searchRef.current?.focus(), 50); }
 
@@ -407,20 +427,24 @@ export default function POSWorkspace({ onBack }) {
             {search && <button type="button" onClick={() => { setSearch(""); searchRef.current?.focus(); }} aria-label="Clear search">✕</button>}
             <button type="button" className="sb-pos-refresh" onClick={load} disabled={loading}>{loading ? "Loading…" : "Refresh"}</button>
           </div>
-          {!loading && <p className="sb-pos-count">{search.trim() ? visible.length + (visible.length === 1 ? " item" : " items") + " found for “" + search.trim() + "”" : activeVariants.length + " items available"}</p>}
+          {!loading && <p className="sb-pos-count">{search.trim() ? groups.length + (groups.length === 1 ? " product" : " products") + " found for “" + search.trim() + "”" : groups.length + " products available"}</p>}
           {loading ? <p className="sb-empty">Loading items…</p> : <div className="sb-pos-products">
-            {visible.slice(0, shown).map(v => {
-              const label = variantLabel(v); const inCart = qtyById.get(v.id) || 0; const title = productTitle(v);
-              return <button type="button" className={"sb-pos-tile" + (inCart ? " is-in-cart" : "")} key={v.id} onClick={() => add(v)} aria-label={"Add to sale: " + title + (label ? " " + label : "")}>
-                <span className="sb-pos-tile-art">{v.image_url ? <img src={v.image_url} alt="" loading="lazy" onError={e => { e.currentTarget.style.display = "none"; }} /> : null}<i>{title.trim().charAt(0).toUpperCase()}</i>{inCart > 0 && <b className="sb-pos-tile-badge">{inCart}</b>}</span>
-                <strong>{title}</strong>
-                {label && <small>{label}</small>}
-                <span className="sb-pos-tile-price">{money(v.selling_price)}</span>
+            {groups.slice(0, shown).map(g => {
+              const multi = g.variants.length > 1;
+              const inCart = g.variants.reduce((sum, v) => sum + (qtyById.get(v.id) || 0), 0);
+              const prices = g.variants.map(v => Number(v.selling_price || 0));
+              const low = Math.min(...prices); const high = Math.max(...prices);
+              const single = g.variants[0]; const label = multi ? "" : variantLabel(single);
+              return <button type="button" className={"sb-pos-tile" + (inCart ? " is-in-cart" : "")} key={g.productId} onClick={() => openProduct(g)} aria-label={(multi ? "Choose variant: " : "Add to sale: ") + g.title}>
+                <span className="sb-pos-tile-art">{g.image ? <img src={g.image} alt="" loading="lazy" onError={e => { e.currentTarget.style.display = "none"; }} /> : null}<i>{g.title.trim().charAt(0).toUpperCase()}</i>{inCart > 0 && <b className="sb-pos-tile-badge">{inCart}</b>}</span>
+                <strong>{g.title}</strong>
+                {multi ? <small className="sb-pos-tile-variants">{g.variants.length} variants ›</small> : label ? <small>{label}</small> : null}
+                <span className="sb-pos-tile-price">{multi && low !== high ? "From " : ""}{money(low)}</span>
               </button>;
             })}
           </div>}
-          {!loading && visible.length > shown && <button type="button" className="sb-pos-more" onClick={() => setShown(n => n + 60)}>Show more items ({visible.length - shown} left)</button>}
-          {!loading && !visible.length && <p className="sb-empty">{search.trim() ? "Nothing matches “" + search.trim() + "”. Try fewer letters, another spelling, or the SKU." : "No active saleable variants are available. Add or activate a product and its variant in Catalogue."}</p>}
+          {!loading && groups.length > shown && <button type="button" className="sb-pos-more" onClick={() => setShown(n => n + 60)}>Show more products ({groups.length - shown} left)</button>}
+          {!loading && !groups.length && <p className="sb-empty">{search.trim() ? "Nothing matches “" + search.trim() + "”. Try fewer letters, another spelling, or the SKU." : "No active saleable variants are available. Add or activate a product and its variant in Catalogue."}</p>}
         </div>
         <div className={"sb-data-card sb-pos-sale-panel " + (mobileCheckoutTab !== "catalogue" ? "is-mobile-active" : "")}>
           <div className={"sb-pos-cart-panel " + (mobileCheckoutTab === "cart" ? "is-mobile-active" : "")}>
@@ -469,6 +493,20 @@ export default function POSWorkspace({ onBack }) {
       </div>
       {mobileCheckoutTab === "catalogue" && cartCount > 0 && <button type="button" className="sb-pos-cartbar" onClick={() => setMobileCheckoutTab("cart")}><span>{cartCount} {cartCount === 1 ? "item" : "items"}</span><strong>View cart · {money(total)} →</strong></button>}
     </div>
+    {pickerId != null && pickerVariants.length > 0 && <div className="sb-pos-modal" role="dialog" aria-modal="true" aria-label={"Choose variant of " + pickerTitle} onClick={e => { if (e.target === e.currentTarget) setPickerId(null); }}>
+      <div className="sb-pos-picker">
+        <div className="sb-pos-picker-head"><div><h2>{pickerTitle}</h2><p>Tap a variant to add it to the sale</p></div><button type="button" onClick={() => setPickerId(null)} aria-label="Close">✕</button></div>
+        <div className="sb-pos-picker-list">{pickerVariants.map(v => {
+          const qty = qtyById.get(v.id) || 0; const label = variantLabel(v);
+          return <button type="button" key={v.id} className={"sb-pos-picker-row" + (qty ? " is-in-cart" : "")} onClick={() => add(v)}>
+            <span className="sb-pos-picker-info"><b>{label || "Default variant"}</b><small>{v.sku}</small></span>
+            <span className="sb-pos-picker-price">{money(v.selling_price)}</span>
+            <span className="sb-pos-picker-qty">{qty ? "× " + qty : "+ Add"}</span>
+          </button>;
+        })}</div>
+        <button type="button" className="sb-pos-picker-done" onClick={() => setPickerId(null)}>{cartCount ? "Done · " + cartCount + (cartCount === 1 ? " item" : " items") + " in cart" : "Close"}</button>
+      </div>
+    </div>}
     {showReceipt && receipt?.payment && <div className="sb-pos-modal" role="dialog" aria-modal="true" aria-label="Sale receipt" onClick={e => { if (e.target === e.currentTarget) closeReceipt(); }}>
       <div className="sb-pos-receipt">
         <div className="sb-pos-receipt-sheet">
