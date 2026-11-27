@@ -108,7 +108,7 @@ if [ -r "$ENV_FILE" ]; then
     echo "APP_ENV: NOT production (protected API fail-closed guard may be disabled)"
   fi
   for key in DATABASE_URL JWT_SECRET_KEY SB_SECRET_KEY RAZORPAY_KEY_ID RAZORPAY_KEY_SECRET RAZORPAY_WEBHOOK_SECRET AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; do
-    if grep -qE "^\${key}=" "$ENV_FILE"; then echo "$key: present (value redacted)"; else echo "$key: absent"; fi
+    if grep -qE "^${key}=" "$ENV_FILE"; then echo "$key: present (value redacted)"; else echo "$key: absent"; fi
   done
   stat -c 'backend .env permissions: %a owner: %U:%G' "$ENV_FILE"
 else
