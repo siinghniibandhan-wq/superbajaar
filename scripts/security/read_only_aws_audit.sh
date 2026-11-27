@@ -93,6 +93,16 @@ fi
 
 section "Runtime secret hygiene (names/status only)"
 if [ -r "$ENV_FILE" ]; then
+  if grep -qE '^APP_ENV=production    if grep -qE "^${key}=" "$ENV_FILE"; then echo "$key: present (value redacted)"; else echo "$key: absent"; fi
+  done
+  stat -c 'backend .env permissions: %a owner: %U:%G' "$ENV_FILE"
+else
+  echo "backend .env: not readable by audit user"
+fi
+
+section "Completion"
+echo "Read-only audit finished. Review every FAIL/SKIP and retain this output securely."
+ "$ENV_FILE"; then echo "APP_ENV: production"; else echo "APP_ENV: NOT production (protected API fail-closed guard is disabled)"; fi
   for key in DATABASE_URL JWT_SECRET_KEY SB_SECRET_KEY RAZORPAY_KEY_ID RAZORPAY_KEY_SECRET RAZORPAY_WEBHOOK_SECRET AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; do
     if grep -qE "^${key}=" "$ENV_FILE"; then echo "$key: present (value redacted)"; else echo "$key: absent"; fi
   done
