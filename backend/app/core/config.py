@@ -23,6 +23,15 @@ class Settings(BaseSettings):
     razorpay_key_id: str = ""
     razorpay_key_secret: str = ""
     razorpay_webhook_secret: str = ""
+    # Social sign-in. Leave client ids empty to hide/disable a provider.
+    google_oauth_client_id: str = ""
+    google_oauth_client_secret: str = ""
+    github_oauth_client_id: str = ""
+    github_oauth_client_secret: str = ""
+    # Public base URL of this API (e.g. https://api.example.com) used to build the OAuth callback URL.
+    public_api_base_url: str = ""
+    # Storefront origin that receives the signed-in session (e.g. https://www.example.com).
+    frontend_base_url: str = "http://localhost:5173"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

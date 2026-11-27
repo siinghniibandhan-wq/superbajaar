@@ -135,6 +135,8 @@ async def require_active_session(request: Request) -> None:
     path = request.url.path
     prefix = settings.api_prefix.rstrip("/")
     public = {prefix + "/health", prefix + "/auth/login", prefix + "/customer-auth/register", prefix + "/customer-auth/login", prefix + "/portal-invitations/accept"}
+    if request.method == "GET" and path.startswith(prefix + "/customer-auth/oauth/"):
+        return
     if method_is_public_serviceability(request.method, path, prefix):
         return
     # Razorpay authenticates this exact POST route with its raw-body HMAC signature.
