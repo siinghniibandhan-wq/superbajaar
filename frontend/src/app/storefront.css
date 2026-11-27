@@ -2052,3 +2052,8 @@
 .storefront-ticket-files li span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .storefront-ticket-files li button { display:grid; place-items:center; width:26px; height:26px; border:0; border-radius:50%; background:#f3ecfb; color:#4b1d8f; cursor:pointer; }
 .storefront-ticket-file-link { display:inline-flex; align-items:center; gap:6px; margin-top:6px; padding:6px 10px; border:1px solid #e7dced; border-radius:999px; background:#faf6ff; color:#4b1d8f; font:inherit; font-size:12px; cursor:pointer; max-width:100%; overflow-wrap:anywhere; }
+
+/* Legal pages */
+.storefront-legal-table { width: 100%; border-collapse: collapse; margin: 12px 0 18px; font-size: 0.95rem; }
+.storefront-legal-table th, .storefront-legal-table td { border: 1px solid rgba(120,120,140,.35); padding: 9px 11px; text-align: left; vertical-align: top; }
+.storefront-legal-table th { background: rgba(120,120,160,.12); font-weight: 700; }
