@@ -70,3 +70,6 @@ JOIN public.app_permissions p ON
     OR (r.name IN ('manager','admin') AND p.action_key IN ('approve','configure','export'))
 WHERE r.name IN ('staff','manager','admin')
 ON CONFLICT (role_id,module_id,permission_id) DO UPDATE SET allowed=true;
+
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS pos_register_shift_id bigint REFERENCES public.pos_register_shifts(id) ON DELETE RESTRICT;
+CREATE INDEX IF NOT EXISTS idx_orders_pos_register_shift ON public.orders(pos_register_shift_id) WHERE pos_register_shift_id IS NOT NULL;
