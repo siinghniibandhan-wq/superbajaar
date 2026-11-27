@@ -156,10 +156,31 @@ def payment_reconciliation():
 
 
 @router.post("", status_code=201)
-def create_payment(payload: PaymentCreate):
+def create_payment(
+    payload: PaymentCreate,
+    request: Request,
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=16, max_length=120),
+):
+    if not all(ch.isalnum() or ch in "-_." for ch in idempotency_key):
+        raise HTTPException(status_code=422, detail="Idempotency-Key contains unsupported characters")
+    actor_id = getattr(request.state, "user_id", None)
+    if not actor_id:
+        raise HTTPException(status_code=403, detail="An authenticated staff account is required")
+    payload_hash = payment_payload_sha256(payload.model_dump(mode="json"))
+    scoped_key = _payment_idempotency_scope(int(actor_id), idempotency_key)
     try:
         with _connect() as conn:
             with conn.transaction():
+                conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (scoped_key,))
+                prior = conn.execute(
+                    "SELECT idempotency_payload_sha256, id, payment_reference, order_id, method, amount, status, provider_reference, note, created_at, updated_at "
+                    "FROM payments WHERE idempotency_key=%s FOR UPDATE",
+                    (scoped_key,),
+                ).fetchone()
+                if prior:
+                    if prior["idempotency_payload_sha256"] != payload_hash:
+                        raise HTTPException(status_code=409, detail="Idempotency-Key was already used with a different payment payload")
+                    return {key: value for key, value in prior.items() if key != "idempotency_payload_sha256"}
                 order = conn.execute("SELECT id, total, status FROM orders WHERE id=%s FOR UPDATE", (payload.order_id,)).fetchone()
                 if order is None:
                     raise HTTPException(status_code=404, detail="Order not found")
