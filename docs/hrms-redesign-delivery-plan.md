@@ -75,9 +75,24 @@ Employee and department records, organisation chart, attendance punching/registe
 Recruitment, full performance/appraisal, training, asset allocation, travel, document upload/library, formal resignation/exit workflow, central approvals inbox, and dedicated HR analytics are not established as complete standalone workflows by the inspected HR route set. Treat each as a product capability requiring design, API/schema work and tests—not merely a navigation link.
 
 ## Current implementation slice
-- Grouped navigation labels in HRWorkspace.
-- Responsive, card-based navigation CSS with visible group headings and phone-friendly targets.
-- Existing HR APIs and underlying data workflows remain unchanged.
+- Grouped, responsive HR navigation with clear labels and touch-friendly controls.
+- Employee directory search, department/status filters, reset and empty states.
+- Dedicated Employees and Departments views within People Management.
+- Employee profile summary with reporting line, contact details, employment dates, compensation snapshot, edit and salary-history actions.
+- Leave application and review workspace with combined search/status/type filters.
+- Onboarding/offboarding task dashboard with workload counters, overdue tracking, task search/status filters, assignment, start, completion, waiver and reopen actions.
+- Lifecycle templates support descriptions, owner roles, due-date offsets, sequence and required-task flags.
+- Lifecycle task event history is visible from the task list, backed by the existing permission-checked audit endpoint.
+- Reusable lifecycle filter/summary helpers have focused frontend unit tests.
+- Employee date handling now safely accommodates legacy records with a missing joining date.
+- No new backend tables, API contracts or permissions were introduced in this implementation slice.
+
+## Remaining work — do not mark HRMS complete yet
+- Split the monolithic HR workspace into independently testable employee, attendance, leave, payroll and compliance workspaces.
+- Verify and implement secure employee document storage, emergency contacts and employment-history records only after retention, access and audit requirements are agreed.
+- Recruitment, performance, learning, asset management, travel, central approvals and dedicated analytics remain separate capability projects.
+- Add workflow-level tests and complete manual role-matrix, keyboard, phone/tablet/desktop and regression QA.
+- Confirm production migrations and deployment compatibility before any release.
 
 ## Release gates
 - No broken existing employee/manager workflows.
