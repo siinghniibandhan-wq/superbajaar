@@ -257,13 +257,17 @@ def add_cash_movement(shift_id: int, payload: CashMovement, request: Request):
         with _connect() as conn:
             with conn.transaction():
                 shift = conn.execute(
-                    "SELECT id,register_id,cashier_user_id FROM pos_register_shifts WHERE id=%s AND status='open' FOR UPDATE",
+                    "SELECT id,register_id,cashier_user_id,opening_float FROM pos_register_shifts WHERE id=%s AND status='open' FOR UPDATE",
                     (shift_id,),
                 ).fetchone()
                 if shift is None:
                     raise HTTPException(status_code=409, detail="Cash movements require an open shift")
                 if int(shift["cashier_user_id"]) != actor and getattr(request.state, "role", "") not in {"manager","admin","super_admin"}:
                     raise HTTPException(status_code=403, detail="Only the assigned cashier or a manager can record drawer movements")
+                if payload.movement_type == "cash_out":
+                    available = _expected_cash(shift["opening_float"], _shift_cash_totals(conn, shift_id))
+                    if _money(payload.amount) > available:
+                        raise HTTPException(status_code=409, detail="Cash-out amount exceeds the expected drawer balance")
                 row = conn.execute(
                     """INSERT INTO pos_cash_movements(shift_id,movement_type,amount,reason,reference,created_by)
                        VALUES(%s,%s,%s,%s,%s,%s)
@@ -341,6 +345,13 @@ def close_shift(shift_id: int, payload: ShiftClose, request: Request):
                     raise HTTPException(status_code=409, detail="Shift is already closed or does not exist")
                 if int(shift["cashier_user_id"]) != actor and getattr(request.state, "role", "") not in {"manager","admin","super_admin"}:
                     raise HTTPException(status_code=403, detail="Only the assigned cashier or a manager can close this shift")
+                pending_cash = conn.execute(
+                    "SELECT count(*) AS pending_count FROM payments p JOIN orders o ON o.id=p.order_id "
+                    "WHERE o.pos_register_shift_id=%s AND p.method='cod' AND p.status='pending'",
+                    (shift_id,),
+                ).fetchone()["pending_count"]
+                if pending_cash:
+                    raise HTTPException(status_code=409, detail="Confirm or cancel all pending cash tenders before closing this shift")
                 totals = _shift_cash_totals(conn, shift_id)
                 expected = _expected_cash(shift["opening_float"], totals)
                 counted = _money(payload.counted_cash)
