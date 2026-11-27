@@ -12,6 +12,7 @@ from psycopg.rows import dict_row
 from pydantic import BaseModel, Field, field_validator
 
 from app.core.config import settings
+from app.services.pos_tender import order_is_fully_paid
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 razorpay_router = APIRouter(prefix="/razorpay", tags=["payments"])
@@ -279,8 +280,11 @@ async def razorpay_webhook(request: Request):
                     raise HTTPException(status_code=422, detail="Razorpay payment entity is incomplete or unsupported")
 
                 payment = conn.execute(
-                    """SELECT id, order_id, amount, currency, status
-                       FROM payments WHERE provider_order_id=%s FOR UPDATE""",
+                    """SELECT p.id, p.order_id, p.amount, p.currency, p.status,
+                              o.total AS order_total, o.status AS order_status
+                       FROM payments p JOIN orders o ON o.id=p.order_id
+                       WHERE p.provider_order_id=%s
+                       FOR UPDATE OF p, o""",
                     (provider_order_id,),
                 ).fetchone()
                 if payment is None:
@@ -295,19 +299,26 @@ async def razorpay_webhook(request: Request):
                            WHERE id=%s AND status IN ('pending','authorized','failed','cancelled')""",
                         (provider_payment_id, payment["id"]),
                     )
-                    conn.execute(
-                        """UPDATE orders SET status='confirmed', updated_at=now()
-                           WHERE id=%s AND status='placed'""",
+                    captured = conn.execute(
+                        """SELECT COALESCE(sum(amount), 0) AS amount
+                           FROM payments WHERE order_id=%s AND status='captured'""",
                         (payment["order_id"],),
-                    )
-                    conn.execute(
-                        """INSERT INTO order_status_history (order_id, from_status, to_status)
-                           SELECT %s,'placed','confirmed'
-                           WHERE EXISTS (SELECT 1 FROM orders WHERE id=%s AND status='confirmed')
-                             AND NOT EXISTS (SELECT 1 FROM order_status_history
-                                             WHERE order_id=%s AND from_status='placed' AND to_status='confirmed')""",
-                        (payment["order_id"], payment["order_id"], payment["order_id"]),
-                    )
+                    ).fetchone()["amount"]
+                    # Split tenders are settled only after every rupee is captured.
+                    if payment["order_status"] == "placed" and order_is_fully_paid(payment["order_total"], captured):
+                        conn.execute(
+                            """UPDATE orders SET status='confirmed', updated_at=now()
+                               WHERE id=%s AND status='placed'""",
+                            (payment["order_id"],),
+                        )
+                        conn.execute(
+                            """INSERT INTO order_status_history (order_id, from_status, to_status)
+                               SELECT %s,'placed','confirmed'
+                               WHERE EXISTS (SELECT 1 FROM orders WHERE id=%s AND status='confirmed')
+                                 AND NOT EXISTS (SELECT 1 FROM order_status_history
+                                                 WHERE order_id=%s AND from_status='placed' AND to_status='confirmed')""",
+                            (payment["order_id"], payment["order_id"], payment["order_id"]),
+                        )
                 elif event_type == "payment.authorized":
                     conn.execute(
                         """UPDATE payments SET status='authorized', provider_reference=%s, updated_at=now()
