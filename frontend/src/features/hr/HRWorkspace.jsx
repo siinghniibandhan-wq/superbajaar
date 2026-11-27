@@ -9,6 +9,7 @@ import OrganisationChart from "./OrganisationChart.jsx";
 import { formatHRDateTime, toLocalDateTimeInput, todayHRDate } from "./hrDateTime.js";
 import { exportPayslipsCsv } from "./hrPayslipExport.js";
 import { parsePayrollInputs } from "./hrPayrollInput.js";
+import { filterEmployees } from "./hrEmployeeDirectory.js";
 
 const today = todayHRDate;
 const money = v => new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR"}).format(Number(v||0));
@@ -140,7 +141,7 @@ export default function HRWorkspace({onBack,currentUser}) {
     return act(()=>patch(path,{decision,note:note?.trim()||null}),"Request "+decision+".");
   };
   const tabs=[{group:"Command centre",items:[["overview","Overview"]]},...(manager?[{group:"People & organisation",items:[["organisation","Organisation chart"],["people","Employee directory & departments"]]}]:[]),{group:"Workforce operations",items:[["attendance","Attendance & shifts"],["leave","Leave management"],["advanced","Workforce planning"]]},{group:"Payroll & finance",items:[["expenses","Expenses & claims"],["payroll","Payroll processing"],["payslips","Payslips"]]},...(manager?[{group:"Governance & compliance",items:[["statutory","Statutory compliance"]]}]:[])];
-  const filteredEmployees=employees.filter(e=>(!employeeStatusFilter||e.status===employeeStatusFilter)&&(!employeeDepartmentFilter||String(e.department_id||"")===employeeDepartmentFilter)&&[e.employee_code,e.first_name,e.last_name,e.email,e.department_name,e.designation].some(v=>String(v||"").toLowerCase().includes(employeeQuery.trim().toLowerCase())));
+  const filteredEmployees=filterEmployees(employees,{query:employeeQuery,status:employeeStatusFilter,departmentId:employeeDepartmentFilter});
   const open=attendance.find(x=>!x.clock_out_at);
   const visibleAttendance=attendance.filter(x=>(!attendanceEmployeeFilter||String(x.employee_id)===attendanceEmployeeFilter)&&(!attendanceDepartmentFilter||String(x.department_id)===attendanceDepartmentFilter)&&(!attendanceDateFilter||(x.clock_in_at&&new Date(x.clock_in_at).toLocaleDateString("en-CA")===attendanceDateFilter)));
 
