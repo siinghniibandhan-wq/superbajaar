@@ -57,3 +57,4 @@
 060_promote_image_custom_options.sql
 061_homepage_hero_images.sql
 062_support_ticket_categories_attachments.sql
+063_super_coins_no_expiry.sql
