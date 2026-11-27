@@ -91,6 +91,7 @@ class OrderCreate(BaseModel):
     redeem_coins: int = Field(default=0, ge=0, le=10000000)
     checkout_idempotency_key: str | None = Field(default=None, min_length=8, max_length=100)
     pos_payment_method: str | None = None
+    pos_register_id: int | None = Field(default=None, gt=0)
     lines: list[OrderLineCreate] = Field(min_length=1, max_length=100)
 
     @field_validator("channel")
@@ -226,6 +227,10 @@ def create_order(payload: OrderCreate, request: Request):
         raise HTTPException(status_code=422, detail="A checkout_idempotency_key is required when redeeming Super Coins")
     if payload.channel == "pos" and payload.location_id is None:
         raise HTTPException(status_code=422, detail="POS orders require the staff-selected stock location")
+    if payload.channel == "pos" and payload.pos_register_id is None:
+        raise HTTPException(status_code=422, detail="POS orders require an active register selection")
+    if payload.channel != "pos" and payload.pos_register_id is not None:
+        raise HTTPException(status_code=422, detail="A POS register can only be attached to POS orders")
     if payload.channel in {"website", "manual"} and not payload.delivery_pin:
         raise HTTPException(status_code=422, detail="Website and manual orders require a verified six-digit delivery PIN before stock can be reserved")
     if payload.channel in {"website", "manual"} and payload.location_id is not None:
@@ -282,12 +287,25 @@ def create_order(payload: OrderCreate, request: Request):
                 if payload.channel == "website":
                     _enforce_regional_availability(conn, payload.delivery_pin, variant_ids, delivery_type)
                 subtotal = sum((Decimal(str(by_id[line.variant_id]["selling_price"])) * line.quantity for line in payload.lines), Decimal("0"))
+                pos_shift_id = None
+                if payload.channel == "pos":
+                    actor_id = getattr(request.state, "user_id", None)
+                    if not actor_id:
+                        raise HTTPException(status_code=403, detail="POS checkout requires an authenticated cashier account")
+                    active_shift = conn.execute(
+                        "SELECT s.id FROM pos_register_shifts s JOIN pos_registers r ON r.id=s.register_id "
+                        "WHERE s.register_id=%s AND s.cashier_user_id=%s AND s.status='open' AND r.location_id=%s AND r.is_active=TRUE FOR UPDATE OF s",
+                        (payload.pos_register_id, actor_id, payload.location_id),
+                    ).fetchone()
+                    if active_shift is None:
+                        raise HTTPException(status_code=409, detail="Open a cashier shift on this register before creating a POS sale")
+                    pos_shift_id = active_shift["id"]
                 order_number = "SB-" + __import__("uuid").uuid4().hex[:12].upper()
                 order = conn.execute(
-                    "INSERT INTO orders (order_number, channel, customer_name, customer_phone, customer_email, delivery_pin, delivery_type, status, subtotal, total, notes, checkout_idempotency_key, checkout_payload_hash) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s,'placed',%s,%s,%s,%s,%s) "
+                    "INSERT INTO orders (order_number, channel, customer_name, customer_phone, customer_email, delivery_pin, delivery_type, status, subtotal, total, notes, checkout_idempotency_key, checkout_payload_hash, pos_register_shift_id) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,'placed',%s,%s,%s,%s,%s,%s) "
                     "RETURNING id, order_number, channel, customer_name, customer_phone, customer_email, delivery_pin, delivery_type, status, subtotal, total, notes, created_at, updated_at",
-                    (order_number, payload.channel, payload.customer_name, payload.customer_phone, str(payload.customer_email).lower() if payload.customer_email else None, payload.delivery_pin, delivery_type, subtotal, subtotal, payload.notes, payload.checkout_idempotency_key, payload_hash),
+                    (order_number, payload.channel, payload.customer_name, payload.customer_phone, str(payload.customer_email).lower() if payload.customer_email else None, payload.delivery_pin, delivery_type, subtotal, subtotal, payload.notes, payload.checkout_idempotency_key, payload_hash, pos_shift_id),
                 ).fetchone()
                 for line in payload.lines:
                     unit_price = Decimal(str(by_id[line.variant_id]["selling_price"]))
