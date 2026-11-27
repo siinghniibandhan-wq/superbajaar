@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { filterLeaveRequests } from "./hrLeaveRequests.js";
+import { filterLeaveRequests } from "../../src/features/hr/hrLeaveRequests.js";
 const rows=[
 {id:1,employee_code:"SB-01",first_name:"Asha",leave_type:"annual",status:"pending",reason:"Family event"},
 {id:2,employee_code:"SB-02",first_name:"Ravi",leave_type:"sick",status:"approved",reason:"Fever"},
