@@ -103,7 +103,8 @@ def ok(response,status=200):
 
 def test_pos_order_reservation_dispatch_and_cogs_posting(api):
     order=ok(api.post("/api/orders",json={
-        "channel":"pos","customer_name":"POS Test Customer","location_id":api.location_id,\n        "checkout_idempotency_key":"integration-pos-order-key-0001",
+        "channel":"pos","customer_name":"POS Test Customer","location_id":api.location_id,
+        "checkout_idempotency_key":"integration-pos-order-key-0001",
         "lines":[{"variant_id":api.variant_id,"quantity":3}]
     }),201)
     order_id=order["id"]
