@@ -63,3 +63,4 @@
 062_support_ticket_categories_attachments.sql
 063_super_coins_no_expiry.sql
 064_crm_support_case_tags.sql
+065_pos_register_shifts.sql
