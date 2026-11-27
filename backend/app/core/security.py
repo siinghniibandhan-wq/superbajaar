@@ -1,6 +1,5 @@
 import hashlib
 import ipaddress
-import time
 
 import psycopg
 from psycopg.rows import dict_row
@@ -30,7 +29,7 @@ def classify_rate_limit(method: str, path: str) -> tuple[int, int]:
 
 def rate_limit_bucket_key(client_ip: str, method: str, path: str) -> str:
     # Keep the key opaque; never persist raw IP addresses in the limiter table.
-    route = path if (method.upper(), path) in _AUTH_LIMITS else path
+    route = path
     if (method.upper(), path) not in _AUTH_LIMITS and path.startswith("/api/") and path.count("/") > 2:
         parts = path.strip("/").split("/")
         route = "/" + "/".join(parts[:2])
