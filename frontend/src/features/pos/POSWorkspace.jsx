@@ -249,7 +249,7 @@ export default function POSWorkspace({ onBack }) {
       <div className="sb-data-heading"><h2>Recent POS sales</h2><button type="button" onClick={load} disabled={loading}>Refresh sales</button></div>
       {recentSales.length ? <div className="sb-table-wrap"><table><thead><tr><th>Order</th><th>Customer</th><th>Status</th><th>Total</th><th>Captured</th><th>Payment state</th></tr></thead><tbody>{recentSales.map(sale => <tr key={sale.id}><td>{sale.order_number}</td><td>{sale.customer_name}</td><td>{sale.status}</td><td>{money(sale.total)}</td><td>{money(sale.captured_amount)}</td><td>{sale.payment_statuses || "No payment record"}</td></tr>)}</tbody></table></div> : <p className="sb-empty">No POS sales recorded yet.</p>}
     </div>
-    <nav className="sb-pos-mobile-step" aria-label="POS checkout steps">
+    <nav className="sb-pos-mobile-step" aria-label="POS checkout steps" style={{ display: activeView === "checkout" ? undefined : "none" }}>
       <button type="button" className={mobileCheckoutTab === "catalogue" ? "is-active" : ""} aria-current={mobileCheckoutTab === "catalogue" ? "step" : undefined} onClick={() => setMobileCheckoutTab("catalogue")}>Catalogue</button>
       <button type="button" className={mobileCheckoutTab === "cart" ? "is-active" : ""} aria-current={mobileCheckoutTab === "cart" ? "step" : undefined} onClick={() => setMobileCheckoutTab("cart")}>Cart ({cart.reduce((sum, line) => sum + line.quantity, 0)})</button>
       <button type="button" className={mobileCheckoutTab === "pay" ? "is-active" : ""} aria-current={mobileCheckoutTab === "pay" ? "step" : undefined} onClick={() => setMobileCheckoutTab("pay")}>Pay</button>
