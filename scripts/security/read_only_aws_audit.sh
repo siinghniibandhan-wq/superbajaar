@@ -4,9 +4,10 @@ set +e
 export AWS_PAGER=""
 ROOT="/opt/superbajaar/source"
 ENV_FILE="$ROOT/backend/.env"
+REGION=""
 
 section() { printf '\n===== %s =====\n' "$1"; }
-run() { printf '\n$ %s\n' "$*"; "$@" 2>&1; }
+run() { printf '\n$'; printf ' %q' "$@"; printf '\n'; "$@" 2>&1; }
 
 section "Host and operating system"
 run uname -a
@@ -16,11 +17,13 @@ run systemctl is-active superbajaar-backend.service
 run systemctl is-enabled superbajaar-backend.service
 run systemctl show superbajaar-backend.service -p User -p Group -p WorkingDirectory -p ExecStart -p NoNewPrivileges -p PrivateTmp -p ProtectSystem -p ProtectHome
 
-section "Network listeners"
-if command -v ss >/dev/null 2>&1; then ss -lntup 2>&1 | sed -E 's/users:\(\(.*\)\)/users:(redacted)/'; fi
+section "Network listeners and nginx"
+if command -v ss >/dev/null 2>&1; then ss -lntup 2>&1 | sed -E 's/users:\(\(.*\)\)/users:(redacted)/'; else echo "SKIP: ss unavailable"; fi
 if command -v nginx >/dev/null 2>&1; then
   nginx -t 2>&1
   nginx -T 2>&1 | grep -Ei 'listen |server_name|ssl_protocols|ssl_ciphers|add_header|client_max_body_size|proxy_pass|limit_req|limit_conn' | sed -E 's/(ssl_certificate_key|proxy_set_header Authorization)[^;]*/\1 [redacted]/I'
+else
+  echo "SKIP: nginx unavailable"
 fi
 
 section "PostgreSQL role and access posture (no password/hash data)"
@@ -32,8 +35,13 @@ else
   echo "SKIP: postgres local inspection tools unavailable"
 fi
 
-section "Instance metadata and attached IAM role"
-TOKEN=$(curl -fsS -X PUT -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' http://169.254.169.254/latest/api/token 2>/dev/null)
+section "EC2 metadata and attached IAM role"
+TOKEN=""
+ROLE=""
+INSTANCE_ID=""
+if command -v curl >/dev/null 2>&1; then
+  TOKEN=$(curl -fsS -X PUT -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' http://169.254.169.254/latest/api/token 2>/dev/null)
+fi
 if [ -n "$TOKEN" ]; then
   echo "IMDSv2 token request: PASS"
   ROLE=$(curl -fsS -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/iam/security-credentials/ 2>/dev/null | head -1)
@@ -45,6 +53,7 @@ if [ -n "$TOKEN" ]; then
 else
   echo "IMDSv2 token request: FAIL or metadata endpoint unavailable"
 fi
+
 if command -v aws >/dev/null 2>&1 && [ -n "$ROLE" ]; then
   ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>/dev/null)
   run aws iam list-attached-role-policies --role-name "$ROLE" --query 'AttachedPolicies[].{Name:PolicyName,Arn:PolicyArn}' --output table
@@ -55,17 +64,18 @@ if command -v aws >/dev/null 2>&1 && [ -n "$ROLE" ]; then
     fi
   done
   INLINE_NAMES=$(aws iam list-role-policies --role-name "$ROLE" --query 'PolicyNames[]' --output text 2>/dev/null)
-  echo "Inline IAM policies: ${INLINE_NAMES:-none}"
+  echo "Inline IAM policy names: ${INLINE_NAMES:-none}"
   for POLICY_NAME in $INLINE_NAMES; do
     run aws iam get-role-policy --role-name "$ROLE" --policy-name "$POLICY_NAME" --query 'PolicyDocument' --output json
   done
-  if [ -n "$ACCOUNT_ID" ]; then
+  if [ -n "$ACCOUNT_ID" ] && [ "$ACCOUNT_ID" != "None" ]; then
     run aws s3control get-public-access-block --account-id "$ACCOUNT_ID"
   fi
-  if [ -n "$INSTANCE_ID" ]; then
+  if [ -n "$INSTANCE_ID" ] && [ -n "$REGION" ]; then
     SG_IDS=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --region "$REGION" --query 'Reservations[].Instances[].SecurityGroups[].GroupId' --output text 2>/dev/null)
     run aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --region "$REGION" --query 'Reservations[].Instances[].{State:State.Name,MetadataOptions:MetadataOptions,SecurityGroups:SecurityGroups[].GroupId}' --output json
     if [ -n "$SG_IDS" ]; then
+      # shellcheck disable=SC2086
       run aws ec2 describe-security-groups --group-ids $SG_IDS --region "$REGION" --query 'SecurityGroups[].{GroupId:GroupId,GroupName:GroupName,Ingress:IpPermissions,Egress:IpPermissionsEgress}' --output json
     fi
   fi
@@ -79,7 +89,6 @@ if [ -r "$ENV_FILE" ]; then
   BUCKET=$(grep -E '^MEDIA_BUCKET=' "$ENV_FILE" | tail -1 | cut -d= -f2- | tr -d '"\047\r')
 fi
 if command -v aws >/dev/null 2>&1 && [ -n "$BUCKET" ]; then
-  echo "Media bucket name: $BUCKET"
   run aws s3api get-public-access-block --bucket "$BUCKET" --region "${REGION:-ap-south-1}"
   run aws s3api get-bucket-policy-status --bucket "$BUCKET" --region "${REGION:-ap-south-1}"
   run aws s3api get-bucket-policy --bucket "$BUCKET" --region "${REGION:-ap-south-1}"
@@ -88,23 +97,18 @@ if command -v aws >/dev/null 2>&1 && [ -n "$BUCKET" ]; then
   run aws s3api get-bucket-versioning --bucket "$BUCKET" --region "${REGION:-ap-south-1}"
   run aws s3api get-bucket-lifecycle-configuration --bucket "$BUCKET" --region "${REGION:-ap-south-1}"
 else
-  echo "SKIP: MEDIA_BUCKET not configured or AWS CLI unavailable"
+  echo "SKIP: MEDIA_BUCKET not configured/readable or AWS CLI unavailable"
 fi
 
 section "Runtime secret hygiene (names/status only)"
 if [ -r "$ENV_FILE" ]; then
-  if grep -qE '^APP_ENV=production    if grep -qE "^${key}=" "$ENV_FILE"; then echo "$key: present (value redacted)"; else echo "$key: absent"; fi
-  done
-  stat -c 'backend .env permissions: %a owner: %U:%G' "$ENV_FILE"
-else
-  echo "backend .env: not readable by audit user"
-fi
-
-section "Completion"
-echo "Read-only audit finished. Review every FAIL/SKIP and retain this output securely."
- "$ENV_FILE"; then echo "APP_ENV: production"; else echo "APP_ENV: NOT production (protected API fail-closed guard is disabled)"; fi
+  if grep -qE '^APP_ENV=production([[:space:]]|$)' "$ENV_FILE"; then
+    echo "APP_ENV: production"
+  else
+    echo "APP_ENV: NOT production (protected API fail-closed guard may be disabled)"
+  fi
   for key in DATABASE_URL JWT_SECRET_KEY SB_SECRET_KEY RAZORPAY_KEY_ID RAZORPAY_KEY_SECRET RAZORPAY_WEBHOOK_SECRET AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; do
-    if grep -qE "^${key}=" "$ENV_FILE"; then echo "$key: present (value redacted)"; else echo "$key: absent"; fi
+    if grep -qE "^\${key}=" "$ENV_FILE"; then echo "$key: present (value redacted)"; else echo "$key: absent"; fi
   done
   stat -c 'backend .env permissions: %a owner: %U:%G' "$ENV_FILE"
 else
