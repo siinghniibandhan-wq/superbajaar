@@ -1,4 +1,4 @@
-from app.core.security import classify_rate_limit, rate_limit_bucket_key
+from app.core.security import browser_origin_allowed, classify_rate_limit, rate_limit_bucket_key
 
 
 def test_authentication_routes_receive_stricter_rate_limits():
@@ -28,3 +28,11 @@ def test_login_and_otp_use_separate_distributed_buckets():
     login = rate_limit_bucket_key("203.0.113.10", "POST", "/api/customer-auth/login")
     otp = rate_limit_bucket_key("203.0.113.10", "POST", "/api/customer-auth/identity-verification/otp/request")
     assert login != otp
+
+
+
+def test_browser_origin_policy_accepts_configured_and_owned_amplify_origins():
+    assert browser_origin_allowed("https://shop.example.com", "https://shop.example.com")
+    assert browser_origin_allowed("https://main.d334sr8jkx3zux.amplifyapp.com", "https://shop.example.com")
+    assert not browser_origin_allowed("https://evil.example", "https://shop.example.com")
+    assert not browser_origin_allowed("null", "https://shop.example.com")
