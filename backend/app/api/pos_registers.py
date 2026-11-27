@@ -101,6 +101,8 @@ def list_registers(location_id: int | None = None):
 @router.post("/registers", status_code=201)
 def create_register(payload: RegisterCreate, request: Request):
     actor = _actor(request)
+    if getattr(request.state, "role", "") not in {"manager", "admin", "super_admin"}:
+        raise HTTPException(status_code=403, detail="Register setup is restricted to managers")
     try:
         with _connect() as conn:
             row = conn.execute(
@@ -142,6 +144,14 @@ def current_shift(register_id: int):
         return {"shift": row, "cash": totals, "movements": movements}
     except psycopg.Error as exc:
         raise HTTPException(status_code=503, detail="Shift details are unavailable") from exc
+
+
+def _expected_cash(opening_float, totals):
+    return _money(
+        Decimal(str(opening_float)) + Decimal(str(totals["cash_sales"]))
+        - Decimal(str(totals["cash_refunds"])) + Decimal(str(totals["cash_in"]))
+        - Decimal(str(totals["cash_out"]))
+    )
 
 
 def _shift_cash_totals(conn, shift_id: int):
@@ -247,11 +257,7 @@ def close_shift(shift_id: int, payload: ShiftClose, request: Request):
                 if int(shift["cashier_user_id"]) != actor and getattr(request.state, "role", "") not in {"manager","admin","super_admin"}:
                     raise HTTPException(status_code=403, detail="Only the assigned cashier or a manager can close this shift")
                 totals = _shift_cash_totals(conn, shift_id)
-                expected = _money(
-                    Decimal(str(shift["opening_float"])) + Decimal(str(totals["cash_sales"]))
-                    - Decimal(str(totals["cash_refunds"])) + Decimal(str(totals["cash_in"]))
-                    - Decimal(str(totals["cash_out"]))
-                )
+                expected = _expected_cash(shift["opening_float"], totals)
                 counted = _money(payload.counted_cash)
                 variance = _money(counted - expected)
                 row = conn.execute(
