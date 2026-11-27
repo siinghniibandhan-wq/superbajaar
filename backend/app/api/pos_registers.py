@@ -11,6 +11,7 @@ from psycopg.rows import dict_row
 from pydantic import BaseModel, Field, field_validator
 
 from app.core.config import settings
+from app.services.pos_tender import order_is_fully_paid
 
 router = APIRouter(prefix="/pos", tags=["pos-registers"])
 
@@ -320,6 +321,27 @@ def confirm_cash_payment(shift_id: int, payment_id: int, request: Request):
                     "UPDATE payments SET status='captured',note='Physical cash received and confirmed by POS cashier',updated_at=now() WHERE id=%s AND status='pending' RETURNING id,payment_reference,method,amount,status,updated_at",
                     (payment_id,),
                 ).fetchone()
+                captured = conn.execute(
+                    "SELECT COALESCE(sum(amount), 0) AS amount FROM payments WHERE order_id=%s AND status='captured'",
+                    (payment["order_id"],),
+                ).fetchone()["amount"]
+                order_total = conn.execute(
+                    "SELECT total FROM orders WHERE id=%s",
+                    (payment["order_id"],),
+                ).fetchone()["total"]
+                if payment["order_status"] == "placed" and order_is_fully_paid(order_total, captured):
+                    conn.execute(
+                        "UPDATE orders SET status='confirmed',updated_at=now() WHERE id=%s AND status='placed'",
+                        (payment["order_id"],),
+                    )
+                    conn.execute(
+                        """INSERT INTO order_status_history(order_id,from_status,to_status)
+                           SELECT %s,'placed','confirmed'
+                           WHERE EXISTS (SELECT 1 FROM orders WHERE id=%s AND status='confirmed')
+                             AND NOT EXISTS (SELECT 1 FROM order_status_history
+                                             WHERE order_id=%s AND from_status='placed' AND to_status='confirmed')""",
+                        (payment["order_id"],payment["order_id"],payment["order_id"]),
+                    )
                 conn.execute(
                     "INSERT INTO pos_register_audit(register_id,shift_id,event_type,actor_user_id,event_data) VALUES(%s,%s,'cash_tender_confirmed',%s,%s)",
                     (shift["register_id"],shift_id,actor,Jsonb({"payment_id":payment_id,"order_number":payment["order_number"],"amount":str(payment["amount"])})),
