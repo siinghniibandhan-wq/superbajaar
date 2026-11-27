@@ -1,0 +1,52 @@
+# Production security verification
+
+## Scope
+
+The automated CI security workflow covers Python dependency advisories, Bandit static analysis, npm dependency advisories and Gitleaks history scanning. Frontend staff/customer bearer tokens are now moved from persistent localStorage to tab-scoped sessionStorage (existing tokens migrate once and are removed from localStorage). This reduces persistence after the browser tab session ends; it does not make tokens inaccessible to same-origin JavaScript or remove the need for frontend XSS controls. State-changing API requests with an Origin header are checked against configured/owned origins, and OAuth state uses an HttpOnly, Secure, SameSite=Lax nonce cookie. It does not prove the security posture of the live EC2 host, PostgreSQL instance, S3 bucket, instance profile, security groups or TLS endpoint.
+
+## Frontend hosting headers
+
+The repository now includes root `customHttp.yml` using the Amplify monorepo `appRoot: frontend` format. It applies CSP, HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy and Permissions-Policy to the frontend. Amplify requires a redeploy before these headers take effect. Verify the live response headers and browser console after deployment; adjust the CSP only for confirmed required external origins.
+
+## Read-only AWS host audit
+
+The repository includes `scripts/security/read_only_aws_audit.sh`. It checks the running backend service, host listeners, Nginx TLS/security directives, PostgreSQL role attributes and grants, EC2 IMDSv2 and attached IAM policies, and S3 public-access/encryption/versioning/lifecycle controls.
+
+Run it only through an authorized SSM Run Command session on the production EC2 instance:
+
+```bash
+sudo bash /opt/superbajaar/source/scripts/security/read_only_aws_audit.sh
+```
+
+If the deployed checkout does not yet contain this branch, first transfer the script through an approved deployment process; do not pull or deploy this security branch directly to production just to run the audit.
+
+The script:
+- Does not change AWS resources, database grants, service configuration or application files.
+- Does not print environment variable values, database credentials, JWT secrets, Razorpay secrets or AWS credentials.
+- May report `SKIP` when the EC2 instance profile lacks read permissions for IAM/S3/EC2 metadata APIs. A skip is not a pass.
+- Prints host, role and bucket identifiers; keep the output private and redact identifiers before sharing externally.
+
+## Required manual verification
+
+An authorized AWS administrator must verify:
+1. EC2 security group ingress is limited to required ports; PostgreSQL 5432 is not internet-accessible.
+2. EC2 instance profile has least-privilege access only to the required S3 bucket prefixes, SSM and required operational APIs.
+3. S3 Block Public Access is enabled at account and bucket level; bucket policy does not grant public access; default encryption is enabled; versioning and lifecycle/backup retention meet recovery requirements.
+4. IMDSv2 is required and hop limit is appropriate.
+5. EBS volumes and snapshots are encrypted; backups are encrypted and restore-tested.
+6. Nginx terminates TLS with modern protocols, forwards the original client IP safely, applies request/body/time limits, and does not expose the backend listener.
+7. PostgreSQL application role is not superuser, cannot create roles/databases, owns only required objects and has no unnecessary PUBLIC grants.
+8. CloudTrail, GuardDuty and relevant alerting are enabled and monitored.
+
+## Database migration gate
+
+Migrations `067_distributed_api_rate_limits.sql` and `068_payment_idempotency.sql` are additive and are listed in `backend/schema_required.txt`. They must be applied through the existing schema automation after backup and staging verification. Set `APP_ENV=production` in the production environment; without it, the development/test compatibility path does not enforce the production database fail-closed guard. The application must not be deployed before both required migrations are confirmed applied. Manual payment creation must send an actor-scoped `Idempotency-Key`; the Payments workspace keeps the same key across retries and resets it when the payment payload changes.
+
+## Verification boundary
+
+A source-code review or successful CI run is not a live infrastructure certification. Record the SSM command ID, execution time, instance ID, region, command status and redacted output as the evidence for the production audit. Any missing permission, failed check or skipped control must remain open until independently verified.
+
+
+## Bandit medium-severity triage
+
+The latest Bandit report contains 68 medium-severity B608 findings and zero high-severity findings. B608 is raised for SQL text assembled from fragments. The reviewed builders use constant SQL clauses, `%s` parameter placeholders for user-supplied values, fixed projection/column constants, or explicit allowlists for dynamic identifiers (including identity profile columns, QC quantity columns and FIFO/FEFO ordering). User-provided values remain separate psycopg parameters; no user-supplied raw SQL fragment is accepted. The two earlier B310 warnings were reviewed as fixed HTTPS endpoints (Resend and India Post) and annotated with the reason. The medium report remains uploaded as a CI artifact so future changes can be compared; do not globally suppress B608.

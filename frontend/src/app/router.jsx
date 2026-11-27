@@ -18,7 +18,7 @@ import ProductReviewsAdmin from "../features/catalogue/ProductReviewsAdmin.jsx";
 import AccountingWorkspace from "../features/accounting/AccountingWorkspace.jsx";
 import HRWorkspace from "../features/hr/HRWorkspace.jsx";
 import ModuleDataOverview from "../features/shared/ModuleDataOverview.jsx";
-import { apiRequest, healthApi } from "../services/api.js";
+import { apiRequest, healthApi, readSessionToken, clearSessionToken } from "../services/api.js";
 import LoginScreen from "./LoginScreen.jsx";
 import Storefront from "./Storefront.jsx";
 import { filterNavigationGroups } from "./moduleAccess.js";
@@ -118,10 +118,10 @@ function AppShell() {
   useEffect(() => {
     let active = true;
     let token = "";
-    try { token = window.localStorage.getItem("superbajaar.access_token") || ""; } catch {}
+    try { token = readSessionToken("superbajaar.access_token"); } catch {}
     if (!token) { setAuthChecked(true); return () => { active = false; }; }
     apiRequest("/auth/me").then(result => { if (active) setUser(result.user); }).catch(() => {
-      try { window.localStorage.removeItem("superbajaar.access_token"); } catch {}
+      try { clearSessionToken("superbajaar.access_token"); } catch {}
       if (active) setUser(null);
     }).finally(() => { if (active) setAuthChecked(true); });
     return () => { active = false; };
@@ -152,7 +152,7 @@ function AppShell() {
   const openById = id => { const found = visibleItems.find(item => item.id === id); if (found) setSelected(found); };
   const signOut = async () => {
     try { await apiRequest("/auth/logout", { method: "POST" }); } catch {}
-    try { window.localStorage.removeItem("superbajaar.access_token"); } catch {}
+    clearSessionToken("superbajaar.access_token");
     setUser(null);
     setSelected(null);
   };

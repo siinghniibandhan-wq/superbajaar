@@ -65,3 +65,5 @@
 064_crm_support_case_tags.sql
 065_customer_oauth_identities.sql
 066_pos_register_shifts.sql
+067_distributed_api_rate_limits.sql
+068_payment_idempotency.sql

@@ -11,8 +11,29 @@ function normalizeApiBase(value) {
 const API_BASE_URL = normalizeApiBase(configuredBase);
 export { API_BASE_URL };
 
+export function readSessionToken(key) {
+  try {
+    const token = window.sessionStorage.getItem(key) || window.localStorage.getItem(key) || "";
+    if (token) window.sessionStorage.setItem(key, token);
+    window.localStorage.removeItem(key);
+    return token;
+  } catch {
+    return "";
+  }
+}
+
+export function storeSessionToken(key, token) {
+  try { window.sessionStorage.setItem(key, token); } catch {}
+  try { window.localStorage.removeItem(key); } catch {}
+}
+
+export function clearSessionToken(key) {
+  try { window.sessionStorage.removeItem(key); } catch {}
+  try { window.localStorage.removeItem(key); } catch {}
+}
+
 function readStoredToken() {
-  try { return window.localStorage.getItem("superbajaar.access_token") || ""; } catch { return ""; }
+  return readSessionToken("superbajaar.access_token");
 }
 
 function normalizeRequestPath(path) {

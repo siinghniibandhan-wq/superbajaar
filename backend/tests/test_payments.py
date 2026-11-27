@@ -330,6 +330,7 @@ def test_razorpay_order_creation_creates_provider_order_and_local_attempt(monkey
     assert provider_client.url == "https://api.razorpay.com/v1/orders"
     assert provider_client.auth == ("rzp_test_key", "test-razorpay-secret")
     assert provider_client.payload["amount"] == 1234
+    assert any("pg_advisory_lock" in query for query, _ in db.statements)
     assert any("INSERT INTO payments" in query for query, _ in db.statements)
 
 

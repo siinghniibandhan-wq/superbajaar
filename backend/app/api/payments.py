@@ -7,7 +7,7 @@ import json
 import httpx
 
 import psycopg
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Header, HTTPException, Query, Request, Response
 from psycopg.rows import dict_row
 from pydantic import BaseModel, Field, field_validator
 
@@ -18,6 +18,20 @@ router = APIRouter(prefix="/payments", tags=["payments"])
 razorpay_router = APIRouter(prefix="/razorpay", tags=["payments"])
 PAYMENT_METHODS = {"upi", "card", "netbanking", "cod", "wallet", "bank_transfer", "other"}
 PAYMENT_STATUSES = {"pending", "authorized", "captured", "failed", "cancelled", "refunded"}
+
+
+def payment_payload_sha256(payload: dict) -> str:
+    """Canonical hash used to reject key reuse with a different payment payload."""
+    normalized = {
+        key: (format(value, "f") if isinstance(value, Decimal) else value)
+        for key, value in payload.items()
+    }
+    encoded = json.dumps(normalized, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _payment_idempotency_scope(actor_id: int, key: str) -> str:
+    return hashlib.sha256(f"payment:{actor_id}:{key}".encode("utf-8")).hexdigest()
 
 
 def _connect():
@@ -142,10 +156,31 @@ def payment_reconciliation():
 
 
 @router.post("", status_code=201)
-def create_payment(payload: PaymentCreate):
+def create_payment(
+    payload: PaymentCreate,
+    request: Request,
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=16, max_length=120),
+):
+    if not all(ch.isalnum() or ch in "-_." for ch in idempotency_key):
+        raise HTTPException(status_code=422, detail="Idempotency-Key contains unsupported characters")
+    actor_id = getattr(request.state, "user_id", None)
+    if not actor_id:
+        raise HTTPException(status_code=403, detail="An authenticated staff account is required")
+    payload_hash = payment_payload_sha256(payload.model_dump(mode="json"))
+    scoped_key = _payment_idempotency_scope(int(actor_id), idempotency_key)
     try:
         with _connect() as conn:
             with conn.transaction():
+                conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (scoped_key,))
+                prior = conn.execute(
+                    "SELECT idempotency_payload_sha256, id, payment_reference, order_id, method, amount, status, provider_reference, note, created_at, updated_at "
+                    "FROM payments WHERE idempotency_key=%s FOR UPDATE",
+                    (scoped_key,),
+                ).fetchone()
+                if prior:
+                    if prior["idempotency_payload_sha256"] != payload_hash:
+                        raise HTTPException(status_code=409, detail="Idempotency-Key was already used with a different payment payload")
+                    return {key: value for key, value in prior.items() if key != "idempotency_payload_sha256"}
                 order = conn.execute("SELECT id, total, status FROM orders WHERE id=%s FOR UPDATE", (payload.order_id,)).fetchone()
                 if order is None:
                     raise HTTPException(status_code=404, detail="Order not found")
@@ -160,9 +195,9 @@ def create_payment(payload: PaymentCreate):
                     raise HTTPException(status_code=409, detail="Payment amount exceeds the remaining order balance")
                 reference = "PAY-" + uuid.uuid4().hex[:12].upper()
                 row = conn.execute(
-                    "INSERT INTO payments (payment_reference, order_id, method, amount, status, provider_reference, note) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id, payment_reference, order_id, method, amount, status, provider_reference, note, created_at, updated_at",
-                    (reference, payload.order_id, payload.method, payload.amount, payload.status, payload.provider_reference, payload.note),
+                    "INSERT INTO payments (payment_reference, order_id, method, amount, status, provider_reference, note, idempotency_key, idempotency_payload_sha256) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id, payment_reference, order_id, method, amount, status, provider_reference, note, created_at, updated_at",
+                    (reference, payload.order_id, payload.method, payload.amount, payload.status, payload.provider_reference, payload.note, scoped_key, payload_hash),
                 ).fetchone()
         return row
     except HTTPException:

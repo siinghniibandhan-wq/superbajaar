@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { apiRequest } from "../services/api.js";
+import { apiRequest, storeSessionToken } from "../services/api.js";
 
 function normalizeLoginResponse(response) {
   // Support the canonical FastAPI response and common API gateway wrappers.
@@ -29,7 +29,7 @@ export default function LoginScreen({ onSignedIn }) {
       if (!user || typeof user !== "object") {
         throw new Error("Login API returned an access token but no user profile. Check the configured authentication API.");
       }
-      try { window.localStorage.setItem("superbajaar.access_token", token); } catch {}
+      storeSessionToken("superbajaar.access_token", token);
       onSignedIn(user);
     } catch (reason) {
       setError(reason.message || "Unable to sign in.");

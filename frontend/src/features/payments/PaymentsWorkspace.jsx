@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiRequest } from "../../services/api.js";
 import "./PaymentsWorkspace.css";
 
@@ -25,6 +25,7 @@ export default function PaymentsWorkspace({ onBack }) {
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const idempotencyKeyRef = useRef(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -63,13 +64,16 @@ export default function PaymentsWorkspace({ onBack }) {
       return;
     }
     try {
+      if (!idempotencyKeyRef.current) idempotencyKeyRef.current = crypto.randomUUID();
       await apiRequest("/payments", {
         method: "POST",
+        headers: { "Idempotency-Key": idempotencyKeyRef.current },
         body: JSON.stringify({
           order_id: Number(orderId), method: payMethod, amount: Number(amount),
           status: "pending", provider_reference: providerRef.trim() || null
         })
       });
+      idempotencyKeyRef.current = null;
       setOrderId("");
       setAmount("");
       setProviderRef("");
@@ -153,6 +157,7 @@ export default function PaymentsWorkspace({ onBack }) {
         <div className="sb-payment-fields">
           <label>Order <span aria-hidden="true">*</span>
             <select required value={orderId} onChange={event => {
+              idempotencyKeyRef.current = null;
               setOrderId(event.target.value);
               const order = orders.find(item => String(item.id) === event.target.value);
               if (order) setAmount(String(order.total));
@@ -162,20 +167,20 @@ export default function PaymentsWorkspace({ onBack }) {
             </select>
           </label>
           <label>Payment method <span aria-hidden="true">*</span>
-            <select value={payMethod} onChange={event => setPayMethod(event.target.value)}>
+            <select value={payMethod} onChange={event => { idempotencyKeyRef.current = null; setPayMethod(event.target.value); }}>
               {methods.map(item => <option key={item} value={item}>{label(item)}</option>)}
             </select>
           </label>
           <label>Amount (₹) <span aria-hidden="true">*</span>
-            <input type="number" min="0.01" step="0.01" required value={amount} onChange={event => setAmount(event.target.value)} placeholder="Enter amount" />
+            <input type="number" min="0.01" step="0.01" required value={amount} onChange={event => { idempotencyKeyRef.current = null; setAmount(event.target.value); }} placeholder="Enter amount" />
           </label>
           <label>Provider reference <small>(Optional)</small>
-            <input maxLength="200" value={providerRef} onChange={event => setProviderRef(event.target.value)} placeholder="Transaction / gateway reference" />
+            <input maxLength="200" value={providerRef} onChange={event => { idempotencyKeyRef.current = null; setProviderRef(event.target.value); }} placeholder="Transaction / gateway reference" />
           </label>
         </div>
         <div className="sb-payment-form-actions">
           <button className="sb-primary" type="submit" disabled={saving}>{saving ? "Saving…" : "＋ Create pending record"}</button>
-          <button className="sb-payment-clear" type="button" onClick={() => { setOrderId(""); setPayMethod("upi"); setAmount(""); setProviderRef(""); setError(""); setNotice(""); }}>Clear</button>
+          <button className="sb-payment-clear" type="button" onClick={() => { idempotencyKeyRef.current = null; setOrderId(""); setPayMethod("upi"); setAmount(""); setProviderRef(""); setError(""); setNotice(""); }}>Clear</button>
         </div>
       </form>
 

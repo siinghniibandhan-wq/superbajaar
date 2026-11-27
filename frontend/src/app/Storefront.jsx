@@ -11,7 +11,7 @@ import CategoryHeroSlider from "./CategoryHeroSlider.jsx";
 import { useEffect, useMemo, useState } from "react";
 import { Heart, ShoppingBag, Search, Sparkles, Flame, Clock3, ChevronLeft, ChevronRight, UserRound, MapPin, X, Coins, CreditCard, CalendarClock, Star, Paperclip, FileText, Github } from "lucide-react";
 import { Users, HeartPulse, Package, ShoppingCart, Leaf, Shirt, Droplets, Headphones, Home, PawPrint, Gift, Car, Trophy, Pill, ShieldCheck } from "lucide-react";
-import { apiRequest, API_BASE_URL } from "../services/api.js";
+import { apiRequest, API_BASE_URL, readSessionToken, storeSessionToken, clearSessionToken } from "../services/api.js";
 import GoogleAnalytics, { getAnalyticsConsent, setAnalyticsConsent, trackAnalyticsEvent } from "./GoogleAnalytics.jsx";
 import IdentityClaimsPanel from "./IdentityClaimsPanel.jsx";
 import ProductReviews from "./ProductReviews.jsx";
@@ -119,7 +119,7 @@ export default function Storefront() {
   const [search, setSearch] = useState(() => window.location.pathname.replace(/\/+$/, "") === "/search" ? (new URLSearchParams(window.location.search).get("q") || "") : "");
   const [suggestOpen, setSuggestOpen] = useState(false);
   const [cart, setCart] = useState(() => { try { return JSON.parse(window.localStorage.getItem("sb-cart") || "[]"); } catch { return []; } });
-  const [customerToken, setCustomerToken] = useState(() => { try { return window.localStorage.getItem("sb-customer.access_token") || ""; } catch { return ""; } });
+  const [customerToken, setCustomerToken] = useState(() => { try { return readSessionToken("sb-customer.access_token"); } catch { return ""; } });
   const [customerAuth, setCustomerAuth] = useState(null);
   const [savedAddresses, setSavedAddresses] = useState([]);
   const [selectedAddressId, setSelectedAddressId] = useState("");
@@ -145,7 +145,7 @@ export default function Storefront() {
     const token = params.get("token");
     const failure = params.get("error");
     if (token) {
-      try { window.localStorage.setItem("sb-customer.access_token", token); } catch {}
+      try { storeSessionToken("sb-customer.access_token", token); } catch {}
       setCustomerToken(token);
       window.history.replaceState({}, "", "/account");
       setRoutePath("/account");
@@ -267,7 +267,7 @@ export default function Storefront() {
     }).catch(() => {
       if (!active) return;
       setCustomerAuth(null); setCustomerToken("");
-      try { window.localStorage.removeItem("sb-customer.access_token"); } catch {}
+      try { clearSessionToken("sb-customer.access_token"); } catch {}
     });
     return () => { active = false; };
   }, [customerToken]);
@@ -321,7 +321,7 @@ export default function Storefront() {
   useEffect(() => {
     let active = true;
     let token = "";
-    try { token = window.localStorage.getItem("superbajaar.access_token") || ""; } catch {}
+    try { token = readSessionToken("superbajaar.access_token"); } catch {}
     if (!token) { setCanOpenAdmin(false); return () => { active = false; }; }
     apiRequest("/auth/me").then(result => {
       if (!active) return;
@@ -566,7 +566,7 @@ export default function Storefront() {
     try {
       const result = await apiRequest(isRegister ? "/customer-auth/register" : "/customer-auth/login", { method: "POST", skipAuth: true, body: JSON.stringify(payload) });
       if (!result?.access_token || !result?.customer) throw new Error("Customer authentication response was incomplete.");
-      try { window.localStorage.setItem("sb-customer.access_token", result.access_token); } catch {}
+      try { storeSessionToken("sb-customer.access_token", result.access_token); } catch {}
       setCustomerToken(result.access_token); setCustomerAuth(result.customer);
       setCustomer(old => ({ ...old, name: result.customer.full_name || old.name, email: result.customer.email || old.email, phone: result.customer.phone || old.phone }));
       window.history.pushState({}, "", returnTo); setRoutePath(returnTo); setCategoryId(""); setSearch("");
@@ -577,7 +577,7 @@ export default function Storefront() {
 
   const signOutCustomer = async () => {
     try { if (customerToken) await customerRequest("/customer-auth/logout", { method: "POST" }); } catch {}
-    try { window.localStorage.removeItem("sb-customer.access_token"); } catch {}
+    clearSessionToken("sb-customer.access_token");
     setCustomerToken(""); setCustomerAuth(null); setReferralData(null);
     setAccountOpen(false); setNotice("You have signed out.");
     if (["/account", "/checkout"].includes(window.location.pathname.replace(/\/+$/, "") || "/")) {

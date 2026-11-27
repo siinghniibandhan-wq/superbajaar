@@ -14,6 +14,15 @@ def test_orders_requires_database_configuration(monkeypatch):
     assert response.json()["detail"] == "Orders database is not configured"
 
 
+def test_order_requires_idempotency_key_before_database_access():
+    response = client.post("/api/orders", json={
+        "channel": "website", "customer_name": "Test customer",
+        "lines": [{"variant_id": 1, "quantity": 1}],
+    })
+    assert response.status_code == 422
+    assert "checkout_idempotency_key" in str(response.json())
+
+
 def test_order_rejects_invalid_channel_before_database_access():
     response = client.post("/api/orders", json={
         "channel": "unknown", "customer_name": "Test customer",

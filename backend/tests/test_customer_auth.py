@@ -135,3 +135,11 @@ def test_authenticated_customer_identity_rejects_conflicting_profile_and_login_l
         assert "conflict" in exc.detail
     else:
         raise AssertionError("Conflicting identity links must be rejected")
+
+
+def test_customer_session_default_lifetime_is_seven_days_and_configurable():
+    from app.api import customer_auth
+    from app.core.config import settings
+
+    assert customer_auth.TOKEN_TTL_HOURS == settings.customer_session_ttl_hours
+    assert settings.customer_session_ttl_hours == 168

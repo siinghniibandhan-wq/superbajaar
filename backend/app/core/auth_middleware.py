@@ -3,12 +3,15 @@
 FastAPI dependencies run after request parsing/validation, allowing malformed
 requests to return 422 while valid protected requests still require a session.
 """
+import asyncio
+
 from fastapi import HTTPException, Request
 import psycopg
 from psycopg.rows import dict_row
 
 from app.api.auth import _decode
 from app.core.config import settings
+from app.core.security import enforce_csrf_origin, enforce_distributed_rate_limit
 
 
 def method_is_public_serviceability(method: str, path: str, prefix: str) -> bool:
@@ -134,6 +137,10 @@ async def require_active_session(request: Request) -> None:
     """Authenticate a valid request and enforce role-based write access."""
     path = request.url.path
     prefix = settings.api_prefix.rstrip("/")
+    if path.startswith(prefix + "/") and path != prefix + "/health" and request.method != "OPTIONS":
+        enforce_csrf_origin(request)
+        if settings.app_env.lower() in {"production", "prod"}:
+            await asyncio.to_thread(enforce_distributed_rate_limit, request)
     public = {prefix + "/health", prefix + "/auth/login", prefix + "/customer-auth/register", prefix + "/customer-auth/login", prefix + "/portal-invitations/accept"}
     if request.method == "GET" and path.startswith(prefix + "/customer-auth/oauth/"):
         return
@@ -158,14 +165,21 @@ async def require_active_session(request: Request) -> None:
     if request.method == "OPTIONS" or not path.startswith(prefix + "/") or path in public:
         return
 
-    # When DB configuration is absent, let each database-backed handler return
-    # its explicit 503 response. With a configured database, auth remains required.
-    if not settings.database_url:
-        return
-
     if _is_public_catalogue_read(request.method, path, prefix):
         request.state.public_catalogue = True
         return
+
+    # Never silently disable authentication when production DB configuration is
+    # missing. Public routes above remain available; protected routes fail closed.
+    if not settings.database_url:
+        if settings.app_env.lower() not in {"production", "prod"}:
+            # Local/test environments intentionally permit route validation without
+            # a database. Production must explicitly set APP_ENV=production.
+            return
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication storage is not configured; protected API access is disabled",
+        )
 
     authorization = request.headers.get("authorization", "")
     if not authorization.lower().startswith("bearer "):

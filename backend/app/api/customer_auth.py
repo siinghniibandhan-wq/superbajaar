@@ -12,7 +12,7 @@ from app.core.config import settings
 from app.services.identity import IdentityService
 
 router = APIRouter(prefix="/customer-auth", tags=["customer authentication"])
-TOKEN_TTL_HOURS = 24 * 30
+TOKEN_TTL_HOURS = settings.customer_session_ttl_hours
 
 
 def _connect():

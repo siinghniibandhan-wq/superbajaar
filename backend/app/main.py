@@ -42,6 +42,41 @@ from app.services.loyalty_redemption import expire_due_coins
 logger = logging.getLogger(__name__)
 
 
+class SecurityHeadersMiddleware:
+    """Add conservative browser security headers to every HTTP response."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_security_headers(message):
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                existing = {key.lower() for key, _ in headers}
+                if scope.get("path") in {"/docs", "/redoc", "/docs/oauth2-redirect"}:
+                    csp = b"default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'"
+                else:
+                    csp = b"default-src 'none'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'"
+                security_headers = [
+                    (b"x-content-type-options", b"nosniff"),
+                    (b"x-frame-options", b"DENY"),
+                    (b"referrer-policy", b"strict-origin-when-cross-origin"),
+                    (b"permissions-policy", b"camera=(), microphone=(), geolocation=()"),
+                    (b"content-security-policy", csp),
+                ]
+                headers.extend((key, value) for key, value in security_headers if key not in existing)
+                if settings.app_env.lower() == "production" and b"strict-transport-security" not in existing:
+                    headers.append((b"strict-transport-security", b"max-age=31536000; includeSubDomains"))
+                message = {**message, "headers": headers}
+            await send(message)
+
+        await self.app(scope, receive, send_with_security_headers)
+
+
 def _run_scheduled_loyalty_expiry() -> None:
     """Run expiry once across all API workers, with an accounting-safe transaction."""
     if not settings.database_url:
@@ -84,6 +119,7 @@ async def lifespan(_app):
 from app.core.auth_middleware import require_active_session
 
 app = FastAPI(title=settings.app_name, dependencies=[Depends(require_active_session)], lifespan=lifespan)
+app.add_middleware(SecurityHeadersMiddleware)
 
 allowed_origins = [origin.strip() for origin in settings.cors_allowed_origins.split(",") if origin.strip()]
 app.add_middleware(
