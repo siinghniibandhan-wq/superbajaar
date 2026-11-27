@@ -4,6 +4,10 @@
 
 The automated CI security workflow covers Python dependency advisories, Bandit static analysis, npm dependency advisories and Gitleaks history scanning. Frontend staff/customer bearer tokens are now moved from persistent localStorage to tab-scoped sessionStorage (existing tokens migrate once and are removed from localStorage). This reduces persistence after the browser tab session ends; it does not make tokens inaccessible to same-origin JavaScript or remove the need for frontend XSS controls. State-changing API requests with an Origin header are checked against configured/owned origins, and OAuth state uses an HttpOnly, Secure, SameSite=Lax nonce cookie. It does not prove the security posture of the live EC2 host, PostgreSQL instance, S3 bucket, instance profile, security groups or TLS endpoint.
 
+## Frontend hosting headers
+
+The API middleware protects API responses and Swagger. The storefront/admin HTML is served separately by Amplify Hosting, so API CSP does not protect the SPA document. Configure and verify CSP, HSTS, X-Content-Type-Options, Referrer-Policy and Permissions-Policy in Amplify custom response headers before production certification. Build-time headers must permit only the actual required origins (including Razorpay Checkout and any explicitly configured fonts/analytics); validate with browser console and CSP reports before enforcing a stricter policy.
+
 ## Read-only AWS host audit
 
 The repository includes `scripts/security/read_only_aws_audit.sh`. It checks the running backend service, host listeners, Nginx TLS/security directives, PostgreSQL role attributes and grants, EC2 IMDSv2 and attached IAM policies, and S3 public-access/encryption/versioning/lifecycle controls.
