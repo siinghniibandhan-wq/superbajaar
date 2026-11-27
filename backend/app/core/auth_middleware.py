@@ -3,6 +3,8 @@
 FastAPI dependencies run after request parsing/validation, allowing malformed
 requests to return 422 while valid protected requests still require a session.
 """
+import asyncio
+
 from fastapi import HTTPException, Request
 import psycopg
 from psycopg.rows import dict_row
