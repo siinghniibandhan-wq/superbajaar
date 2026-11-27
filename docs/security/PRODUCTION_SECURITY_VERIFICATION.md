@@ -6,7 +6,7 @@ The automated CI security workflow covers Python dependency advisories, Bandit s
 
 ## Frontend hosting headers
 
-The API middleware protects API responses and Swagger. The storefront/admin HTML is served separately by Amplify Hosting, so API CSP does not protect the SPA document. Configure and verify CSP, HSTS, X-Content-Type-Options, Referrer-Policy and Permissions-Policy in Amplify custom response headers before production certification. Build-time headers must permit only the actual required origins (including Razorpay Checkout and any explicitly configured fonts/analytics); validate with browser console and CSP reports before enforcing a stricter policy.
+The repository now includes root `customHttp.yml` using the Amplify monorepo `appRoot: frontend` format. It applies CSP, HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy and Permissions-Policy to the frontend. Amplify requires a redeploy before these headers take effect. Verify the live response headers and browser console after deployment; adjust the CSP only for confirmed required external origins.
 
 ## Read-only AWS host audit
 
