@@ -10,9 +10,9 @@ from psycopg.rows import dict_row
 from pydantic import BaseModel, EmailStr, Field
 
 from app.core.config import settings
-from app.services.loyalty_accounting import post_debit_adjustment, post_earning_accrual
+from app.services.loyalty_accounting import mapping_readiness, post_debit_adjustment, post_earning_accrual
 from app.services.loyalty_redemption import (
-    adjust_account, available_balance, available_lots, expire_due_coins, quote_redemption,
+    COIN_VALIDITY_DAYS, adjust_account, available_balance, available_lots, expire_due_coins, quote_redemption,
 )
 
 router = APIRouter(prefix="/loyalty", tags=["loyalty"])
@@ -88,7 +88,7 @@ def get_rules():
                 "SELECT coins_per_100 FROM loyalty_rules WHERE scope_type='default' AND scope_id IS NULL AND is_active=TRUE"
             ).fetchone()
         default_rate = str(default_rule["coins_per_100"]) if default_rule else "0"
-        return {"items": rows, "default_coins_per_100": default_rate, "expiry_days": 365, "redemption_order": "FIFO"}
+        return {"items": rows, "default_coins_per_100": default_rate, "coins_expire": False, "expiry_days": None, "redemption_order": "FIFO"}
     except psycopg.Error as exc:
         raise HTTPException(status_code=503, detail="Could not load loyalty rules") from exc
 
@@ -106,6 +106,21 @@ def get_admin_rules(request: Request):
         return {"items": rows}
     except psycopg.Error as exc:
         raise HTTPException(status_code=503, detail="Could not load loyalty rules") from exc
+
+
+@router.get("/admin/readiness")
+def loyalty_readiness(request: Request):
+    """Shows which Finance account mappings Super Coins still needs.
+
+    Without the core mappings, marking an order delivered fails and checkout
+    redemption stays switched off, so Finance should approve them before launch.
+    """
+    _admin(request)
+    try:
+        with _connection() as conn:
+            return mapping_readiness(conn)
+    except psycopg.Error as exc:
+        raise HTTPException(status_code=503, detail="Could not check Super Coins readiness") from exc
 
 
 @router.get("/customer/account")
@@ -277,6 +292,13 @@ def earn_coins(payload: EarnCoins, request: Request):
         raise HTTPException(status_code=422, detail="delivered_at must include a timezone")
     try:
         with _connection() as conn:
+            automatic = conn.execute(
+                "SELECT 1 FROM loyalty_transactions WHERE transaction_type='earn' AND order_reference=%s "
+                "AND idempotency_key LIKE %s LIMIT 1",
+                (payload.order_reference.strip(), "earn:order:%"),
+            ).fetchone()
+            if automatic:
+                return {"credited": False, "duplicate": True, "message": "Coins for this order were already credited automatically when it was delivered"}
             account = _account(conn, str(payload.customer_email))
             rule = conn.execute(
                 "SELECT coins_per_100 FROM loyalty_rules WHERE scope_type='default' AND scope_id IS NULL AND is_active=TRUE"
@@ -291,7 +313,7 @@ def earn_coins(payload: EarnCoins, request: Request):
                 "VALUES (%s,'earn',%s,%s,%s,%s,%s) ON CONFLICT (idempotency_key) DO NOTHING "
                 "RETURNING id, coins, expires_at, created_at",
                 (account["id"], coins, payload.order_reference.strip(), payload.description or "Delivered order reward",
-                 payload.delivered_at.astimezone(timezone.utc) + timedelta(days=365),
+                 payload.delivered_at.astimezone(timezone.utc) + timedelta(days=COIN_VALIDITY_DAYS),
                  key),
             ).fetchone()
             if row is None:

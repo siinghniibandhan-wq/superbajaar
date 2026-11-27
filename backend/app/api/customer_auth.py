@@ -401,7 +401,8 @@ def register(payload: CustomerRegister):
                     value=phone,
                     source="customer_registration",
                 )
-                # Track the referral only; no reward is issued until reward rules are confirmed.
+                # Track the referral here. The 100-coin reward for both customers is issued in
+                # orders.update_order_status when the referred customer's first order is delivered.
                 if referrer:
                     referral = conn.execute(
                         "INSERT INTO customer_referrals (referrer_customer_id,referred_customer_id,referral_code) "

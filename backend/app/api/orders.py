@@ -13,7 +13,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.core.config import settings
 from app.services.order_inventory import ensure_order_can_be_cancelled, order_has_reservation, release_order_stock, reserve_order_stock
-from app.services.loyalty_redemption import redeem_for_order, restore_order_redemption
+from app.services.loyalty_redemption import COIN_VALIDITY_DAYS, redeem_for_order, restore_order_redemption
 from app.services.loyalty_accounting import post_earning_accrual
 from app.services.pos_tender import checkout_payload_for_hash, validate_pos_tender
 from app.services.serviceability import blocked_product_ids, eligible_locations, lookup_pin
@@ -434,8 +434,8 @@ def update_order_status(order_id: int, payload: OrderStatusUpdate, request: Requ
                         if coins > 0:
                             earned = conn.execute(
                                 "INSERT INTO loyalty_transactions (account_id, transaction_type, coins, order_reference, description, expires_at, idempotency_key) "
-                                "VALUES (%s,'earn',%s,%s,%s,now() + interval '365 days',%s) ON CONFLICT (idempotency_key) DO NOTHING RETURNING id",
-                                (account["id"], coins, current["order_number"], "Delivered order reward", f"earn:order:{order_id}:line:{line['line_id']}"),
+                                "VALUES (%s,'earn',%s,%s,%s,now() + make_interval(days => %s),%s) ON CONFLICT (idempotency_key) DO NOTHING RETURNING id",
+                                (account["id"], coins, current["order_number"], "Delivered order reward", COIN_VALIDITY_DAYS, f"earn:order:{order_id}:line:{line['line_id']}"),
                             ).fetchone()
                             if earned:
                                 post_earning_accrual(conn, int(earned["id"]))
@@ -475,9 +475,9 @@ def update_order_status(order_id: int, payload: OrderStatusUpdate, request: Requ
                                 earned = conn.execute(
                                     "INSERT INTO loyalty_transactions "
                                     "(account_id, transaction_type, coins, order_reference, description, expires_at, idempotency_key) "
-                                    "VALUES (%s,'earn',100,%s,%s,now() + interval '365 days',%s) "
+                                    "VALUES (%s,'earn',100,%s,%s,now() + make_interval(days => %s),%s) "
                                     "ON CONFLICT (idempotency_key) DO NOTHING RETURNING id",
-                                    (referral_account["id"], current["order_number"], description, reward_key),
+                                    (referral_account["id"], current["order_number"], description, COIN_VALIDITY_DAYS, reward_key),
                                 ).fetchone()
                                 if earned:
                                     post_earning_accrual(conn, int(earned["id"]))
