@@ -40,7 +40,7 @@ An authorized AWS administrator must verify:
 
 ## Database migration gate
 
-Migrations `067_distributed_api_rate_limits.sql` and `068_payment_idempotency.sql` are additive and are listed in `backend/schema_required.txt`. They must be applied through the existing schema automation after backup and staging verification. The application must not be deployed before both required migrations are confirmed applied. Manual payment creation must send an actor-scoped `Idempotency-Key`; the Payments workspace keeps the same key across retries and resets it when the payment payload changes.
+Migrations `067_distributed_api_rate_limits.sql` and `068_payment_idempotency.sql` are additive and are listed in `backend/schema_required.txt`. They must be applied through the existing schema automation after backup and staging verification. Set `APP_ENV=production` in the production environment; without it, the development/test compatibility path does not enforce the production database fail-closed guard. The application must not be deployed before both required migrations are confirmed applied. Manual payment creation must send an actor-scoped `Idempotency-Key`; the Payments workspace keeps the same key across retries and resets it when the payment payload changes.
 
 ## Verification boundary
 
