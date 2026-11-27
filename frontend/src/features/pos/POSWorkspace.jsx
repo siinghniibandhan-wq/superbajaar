@@ -6,6 +6,7 @@ const money = value => new Intl.NumberFormat("en-IN", { style: "currency", curre
 
 export default function POSWorkspace({ onBack }) {
   const [activeView, setActiveView] = useState("checkout");
+  const [mobileCheckoutTab, setMobileCheckoutTab] = useState("catalogue");
   const [variants, setVariants] = useState([]);
   const [posSummary, setPosSummary] = useState(null);
   const [recentSales, setRecentSales] = useState([]);
@@ -177,6 +178,7 @@ export default function POSWorkspace({ onBack }) {
       return [...old, { ...variant, quantity: 1 }];
     });
     setNotice("");
+    setMobileCheckoutTab("cart");
   }
   function setQuantity(id, value) {
     const quantity = Number(value);
@@ -247,18 +249,27 @@ export default function POSWorkspace({ onBack }) {
       <div className="sb-data-heading"><h2>Recent POS sales</h2><button type="button" onClick={load} disabled={loading}>Refresh sales</button></div>
       {recentSales.length ? <div className="sb-table-wrap"><table><thead><tr><th>Order</th><th>Customer</th><th>Status</th><th>Total</th><th>Captured</th><th>Payment state</th></tr></thead><tbody>{recentSales.map(sale => <tr key={sale.id}><td>{sale.order_number}</td><td>{sale.customer_name}</td><td>{sale.status}</td><td>{money(sale.total)}</td><td>{money(sale.captured_amount)}</td><td>{sale.payment_statuses || "No payment record"}</td></tr>)}</tbody></table></div> : <p className="sb-empty">No POS sales recorded yet.</p>}
     </div>
+    <nav className="sb-pos-mobile-step" aria-label="POS checkout steps" style={{ display: activeView === "checkout" ? undefined : "none" }}>
+      <button type="button" className={mobileCheckoutTab === "catalogue" ? "is-active" : ""} aria-current={mobileCheckoutTab === "catalogue" ? "step" : undefined} onClick={() => setMobileCheckoutTab("catalogue")}>Catalogue</button>
+      <button type="button" className={mobileCheckoutTab === "cart" ? "is-active" : ""} aria-current={mobileCheckoutTab === "cart" ? "step" : undefined} onClick={() => setMobileCheckoutTab("cart")}>Cart ({cart.reduce((sum, line) => sum + line.quantity, 0)})</button>
+      <button type="button" className={mobileCheckoutTab === "pay" ? "is-active" : ""} aria-current={mobileCheckoutTab === "pay" ? "step" : undefined} onClick={() => setMobileCheckoutTab("pay")}>Pay</button>
+    </nav>
     <div className="sb-pos-layout" style={{ display: activeView === "checkout" ? "grid" : "none" }}>
-      <div className="sb-data-card">
+      <div className={"sb-data-card sb-pos-catalogue-panel " + (mobileCheckoutTab === "catalogue" ? "is-mobile-active" : "")}>
         <div className="sb-data-heading"><h2>Catalogue</h2><button type="button" onClick={load} disabled={loading}>{loading ? "Loading…" : "Refresh"}</button></div>
         <label>Search product or SKU<input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search catalogue…" /></label>
         {loading ? <p className="sb-empty">Loading variants…</p> : <div className="sb-pos-products">{groupedVisible.map(group => <article className="sb-pos-product" key={group.productId}><strong>{group.productName}</strong>{group.variants.length > 1 ? <label>Variant<select aria-label={"Variant for " + group.productName} value={String(group.selected.id)} onChange={e => setSelectedVariantByProduct(old => ({ ...old, [String(group.productId)]: e.target.value }))}>{group.variants.map(v => <option key={v.id} value={v.id}>{variantLabel(v)}</option>)}</select></label> : <small>{variantLabel(group.selected)}</small>}<span>{money(group.selected.selling_price)}</span><button type="button" className="sb-primary" onClick={() => add(group.selected)}>Add to sale</button></article>)}</div>}
         {!loading && !visible.length && <p className="sb-empty">No active saleable variants are available. Add or activate a product and its variant in Catalogue.</p>}
       </div>
-      <div className="sb-data-card">
+      <div className={"sb-data-card sb-pos-sale-panel " + (mobileCheckoutTab !== "catalogue" ? "is-mobile-active" : "")}>
+        <div className={"sb-pos-cart-panel " + (mobileCheckoutTab === "cart" ? "is-mobile-active" : "")}>
         <h2>Current sale ({cart.reduce((sum, line) => sum + line.quantity, 0)} items)</h2>
         {!cart.length ? <p className="sb-empty">Choose a catalogue item to start a sale.</p> : <div className="sb-pos-cart">{cart.map(line => <div className="sb-pos-cart-line" key={line.id}><div><strong>{line.product_name || line.name || line.sku}</strong><small>{line.sku} · {money(line.selling_price)} each</small></div><label>Qty<input type="number" min="0" max="100000" step="1" value={line.quantity} onChange={e => setQuantity(line.id, e.target.value)} /></label><strong>{money(Number(line.selling_price || 0) * line.quantity)}</strong></div>)}</div>}
         <div className="sb-pos-total"><span>Subtotal</span><strong>{money(total)}</strong></div>
-        <form className="sb-form" onSubmit={checkout}>
+        <button className="sb-pos-mobile-next" type="button" onClick={() => setMobileCheckoutTab("pay")}>Continue to payment</button>
+        </div>
+        <form className={"sb-form sb-pos-payment-panel " + (mobileCheckoutTab === "pay" ? "is-mobile-active" : "")} onSubmit={checkout}>
+          <button className="sb-pos-mobile-back" type="button" onClick={() => setMobileCheckoutTab("cart")}>← Back to cart</button>
           <h3>Customer & tender intent</h3>
           <label>Stock location<select required disabled={Boolean(selectedRegisterId)} value={locationId} onChange={e => setLocationId(e.target.value)}><option value="">Choose stock location</option>{locations.map(location => <option key={location.id} value={location.id}>{location.name} · {location.location_type || "location"}</option>)}</select></label>
           <label>Customer name<input required minLength="1" maxLength="200" value={customer.name} onChange={e => setCustomer(v => ({ ...v, name: e.target.value }))} /></label>
