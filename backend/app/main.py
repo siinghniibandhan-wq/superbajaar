@@ -57,12 +57,16 @@ class SecurityHeadersMiddleware:
             if message["type"] == "http.response.start":
                 headers = list(message.get("headers", []))
                 existing = {key.lower() for key, _ in headers}
+                if scope.get("path") in {"/docs", "/redoc"}:
+                    csp = b"default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'"
+                else:
+                    csp = b"default-src 'none'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'"
                 security_headers = [
                     (b"x-content-type-options", b"nosniff"),
                     (b"x-frame-options", b"DENY"),
                     (b"referrer-policy", b"strict-origin-when-cross-origin"),
                     (b"permissions-policy", b"camera=(), microphone=(), geolocation=()"),
-                    (b"content-security-policy", b"default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'"),
+                    (b"content-security-policy", csp),
                 ]
                 headers.extend((key, value) for key, value in security_headers if key not in existing)
                 if settings.app_env.lower() == "production" and b"strict-transport-security" not in existing:
