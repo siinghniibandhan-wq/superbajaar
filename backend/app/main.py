@@ -57,7 +57,7 @@ class SecurityHeadersMiddleware:
             if message["type"] == "http.response.start":
                 headers = list(message.get("headers", []))
                 existing = {key.lower() for key, _ in headers}
-                if scope.get("path") in {"/docs", "/redoc"}:
+                if scope.get("path") in {"/docs", "/redoc", "/docs/oauth2-redirect"}:
                     csp = b"default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'"
                 else:
                     csp = b"default-src 'none'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'"
