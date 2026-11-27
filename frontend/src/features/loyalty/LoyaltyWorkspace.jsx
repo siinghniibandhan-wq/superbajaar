@@ -19,6 +19,7 @@ export default function LoyaltyWorkspace({ onBack }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [sourceErrors, setSourceErrors] = useState({});
+  const [readiness, setReadiness] = useState(null);
   const [rule, setRule] = useState({ scope_type: "default", scope_id: "", coins_per_100: "1", is_active: true });
   const [adjustment, setAdjustment] = useState({ customer_email: "", direction: "credit", coins: "", reason: "" });
 
@@ -28,11 +29,13 @@ export default function LoyaltyWorkspace({ onBack }) {
       apiRequest("/loyalty/admin/accounts?limit=200"),
       apiRequest("/loyalty/admin/rules"),
       apiRequest("/loyalty/admin/partner-enquiries?limit=100"),
+      apiRequest("/loyalty/admin/readiness"),
     ]);
     const failures = {};
     if (results[0].status === "fulfilled") setAccounts(items(results[0].value)); else failures.accounts = results[0].reason?.message || "Unable to load loyalty accounts";
     if (results[1].status === "fulfilled") setRules(items(results[1].value)); else failures.rules = results[1].reason?.message || "Unable to load earning rules";
     if (results[2].status === "fulfilled") setEnquiries(items(results[2].value)); else failures.enquiries = results[2].reason?.message || "Unable to load partner enquiries";
+    setReadiness(results[3].status === "fulfilled" ? results[3].value : null);
     setSourceErrors(failures);
     if (Object.keys(failures).length) setError("Some loyalty data sources could not be loaded. Review the affected section below.");
     setLoading(false);
@@ -105,6 +108,7 @@ export default function LoyaltyWorkspace({ onBack }) {
     <button className="sb-back" onClick={onBack} type="button">← All workspaces</button>
     <div className="sb-loyalty-heading"><div><p className="sb-eyebrow">CUSTOMERS · RETENTION & REWARDS</p><h1>Loyalty & Super Coins</h1><p>Manage member balances, earning rules, ledger activity and partner enquiries.</p></div><button type="button" onClick={load} disabled={loading}>↻ Refresh</button></div>
     <nav className="sb-loyalty-tabs" aria-label="Loyalty sections">{sections.map(([key, label]) => <button type="button" key={key} className={tab === key ? "active" : ""} onClick={() => setTab(key)}>{label}</button>)}</nav>
+    {readiness && !readiness.ready && <p className="sb-alert" role="alert">Finance setup needed: Super Coins accounting is not fully mapped, so marking orders delivered and redeeming coins at checkout will fail. Approve these mappings in Accounting: {readiness.missing_required.map(item => item.event_type + " / " + item.line_role).join("; ")}.</p>}
     {error && <p className="sb-alert" role="alert">{error}</p>}
     {notice && <p className="sb-loyalty-notice" role="status">{notice}</p>}
     {loading && <p className="sb-empty">Loading loyalty programme…</p>}
@@ -116,7 +120,7 @@ export default function LoyaltyWorkspace({ onBack }) {
         <article><small>Partner enquiries</small><strong>{enquiries.length}</strong><span>{enquiries.filter(row => row.status === "new").length} new enquiries</span></article>
       </div>
       <div className="sb-loyalty-overview-grid">
-        <article className="sb-data-card"><h2>Programme controls</h2><p>Coins are earned under the configured rules, redeemed oldest-first, and expire after their earning lot's expiry date.</p><ul><li>Coin value: ₹1 per Super Coin</li><li>Redemption allocation: FIFO</li><li>Default expiry: 365 days</li><li>Accounting: requires approved Finance mappings</li></ul><button type="button" onClick={() => setTab("rules")}>Manage earning rules →</button></article>
+        <article className="sb-data-card"><h2>Programme controls</h2><p>Coins are earned under the configured rules, redeemed oldest-first, and do not expire.</p><ul><li>Coin value: ₹1 per Super Coin</li><li>Redemption allocation: FIFO</li><li>Expiry: none (coins never expire)</li><li>Accounting: requires approved Finance mappings</li></ul><button type="button" onClick={() => setTab("rules")}>Manage earning rules →</button></article>
         <article className="sb-data-card"><h2>Expiry processing</h2><p>Process due lots through the existing transactional expiry service. The service posts the associated accounting entries.</p><button type="button" className="sb-loyalty-danger" disabled={busy} onClick={expire}>Process due coin expiry</button></article>
       </div>
       {(sourceErrors.accounts || sourceErrors.rules || sourceErrors.enquiries) && <div className="sb-data-card"><h2>Data source status</h2>{Object.entries(sourceErrors).map(([key, message]) => <p key={key}><strong>{title(key)}:</strong> {message}</p>)}</div>}
