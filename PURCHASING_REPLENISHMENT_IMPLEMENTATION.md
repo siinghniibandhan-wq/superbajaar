@@ -152,10 +152,7 @@ POST /purchasing/replenishment/{variant_id}/clear-alert
 ## Next Steps for Implementation
 
 ### Required Actions
-1. **Run Database Migration:**
-   ```bash
-   psql -d your_database -f backend/schema/048_purchasing_replenishment.sql
-   ```
+1. **Verify migration state:** Check whether migration 048 is recorded in the target database's migration ledger. If it is not applied, follow [Database migrations](docs/DATABASE_MIGRATIONS.md); do not run an ad-hoc `psql -f` command. Production application requires a verified backup and explicit approval.
 
 2. **Populate Reorder Points:**
    - Navigate to Catalogue or Product Management
@@ -214,5 +211,6 @@ For issues or questions, refer to:
 
 ---
 
-**Implementation Date:** November 22, 2026
-**Status:** Complete and Ready for Deployment
+**Implementation Date:** November 22, 2026  
+**Documentation reviewed:** November 27, 2026
+**Repository code status:** Implemented in source. **Production status:** Not verified by this document; confirm migration 048, backend deployment and end-to-end behaviour independently.
