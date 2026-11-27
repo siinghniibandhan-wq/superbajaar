@@ -46,3 +46,14 @@ def test_pos_register_selection_is_part_of_checkout_hash():
     from app.services.pos_tender import checkout_payload_for_hash
     payload = {"channel": "pos", "customer_name": "Walk-in", "pos_register_id": 4}
     assert checkout_payload_for_hash(payload) == payload
+
+
+from decimal import Decimal
+
+
+def test_split_tender_does_not_settle_until_full_order_total_is_captured():
+    from app.services.pos_tender import order_is_fully_paid
+
+    assert not order_is_fully_paid(Decimal("100.00"), Decimal("40.00"))
+    assert order_is_fully_paid(Decimal("100.00"), Decimal("100.00"))
+    assert not order_is_fully_paid(Decimal("100.00"), Decimal("110.00"))
