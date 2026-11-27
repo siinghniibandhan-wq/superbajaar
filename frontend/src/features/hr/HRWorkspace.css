@@ -231,3 +231,134 @@
 .hr-variable-pay{margin:18px 0;padding:16px;border:1px solid var(--border,#dfe5ea);border-radius:14px;background:var(--surface-subtle,#f8fafc)}.hr-variable-pay>p{font-size:13px;color:var(--muted,#667085)}.hr-variable-pay h3{margin:0 0 6px}.hr-variable-pay output{display:block;padding:10px 12px;border:1px solid var(--border,#dae2e9);border-radius:10px;background:var(--surface,#fff);font-weight:650}
 
 .hr-print-payslip{display:none}@media print{@page{size:A4;margin:14mm}body *{visibility:hidden!important}.hr-print-payslip,.hr-print-payslip *{visibility:visible!important}.hr-print-payslip{display:block!important;position:absolute;inset:0;width:100%;padding:20px;background:#fff;color:#111;font:12px/1.5 Arial,sans-serif}.hr-print-payslip h1{font-size:24px;margin:0}.hr-print-payslip header{border-bottom:2px solid #222;padding-bottom:10px;margin-bottom:18px}.hr-print-payslip h2{font-size:18px}.hr-print-payslip h3{font-size:14px;margin:18px 0 6px}.hr-print-payslip table{width:100%;border-collapse:collapse;margin-bottom:10px}.hr-print-payslip th,.hr-print-payslip td{padding:7px;border-bottom:1px solid #ddd;text-align:left}.hr-print-payslip th:last-child,.hr-print-payslip td:last-child{text-align:right}.hr-print-payslip footer{margin-top:24px;border-top:1px solid #ddd;padding-top:8px}}
+
+
+/* HRMS usability foundation: grouped, scannable navigation across screen sizes. */
+.hr-workspace .hr-nav{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  align-items:start;
+  gap:12px;
+  max-width:100%;
+  padding:0;
+  overflow:visible;
+  border:0;
+  background:transparent;
+}
+.hr-workspace .hr-nav-group{
+  display:flex;
+  flex-direction:column;
+  align-items:stretch;
+  gap:9px;
+  min-width:0;
+  padding:13px;
+  border:1px solid var(--border,#dfe5ea);
+  border-radius:13px;
+  background:var(--surface,#fff);
+}
+.hr-workspace .hr-nav-group>span{
+  display:block;
+  min-width:0;
+  padding:0 2px;
+  color:var(--muted,#667085);
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.09em;
+  line-height:1.4;
+  text-transform:uppercase;
+}
+.hr-workspace .hr-nav-group .hr-tabs{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(125px,1fr));
+  gap:6px;
+  width:100%;
+  overflow:visible;
+  white-space:normal;
+  border:0;
+}
+.hr-workspace .hr-nav-group .hr-tabs button,
+.hr-workspace .hr-nav-group .hr-tabs button:not(.active){
+  display:flex;
+  align-items:center;
+  justify-content:flex-start;
+  width:100%;
+  min-width:0;
+  min-height:40px;
+  padding:9px 10px;
+  border:1px solid transparent;
+  border-radius:9px;
+  background:var(--surface-subtle,#f7f8fa);
+  color:var(--text,#303943);
+  font-size:12px;
+  font-weight:650;
+  line-height:1.35;
+  text-align:left;
+  text-overflow:initial;
+  white-space:normal;
+  overflow-wrap:anywhere;
+  box-shadow:none;
+}
+.hr-workspace .hr-nav-group .hr-tabs button:hover{
+  border-color:var(--border,#dfe5ea);
+  background:var(--surface,#fff);
+  color:var(--text,#303943);
+}
+.hr-workspace .hr-nav-group .hr-tabs button.active{
+  border-color:#a9c7df;
+  background:#edf5fb;
+  color:#245a83;
+  box-shadow:inset 3px 0 #397eae;
+}
+.hr-workspace .hr-nav-group .hr-tabs button:focus-visible{
+  outline:3px solid #79a9ce;
+  outline-offset:2px;
+}
+.hr-workspace .hr-toolbar{
+  position:relative;
+  align-items:center;
+}
+.hr-workspace .hr-toolbar label{
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+  color:var(--muted,#667085);
+  font-size:12px;
+  font-weight:700;
+}
+.hr-workspace .hr-toolbar input{
+  min-width:165px;
+  min-height:42px;
+}
+.hr-workspace .hr-panel,
+.hr-workspace .hr-table-wrap,
+.hr-workspace .hr-form{
+  max-width:100%;
+}
+.hr-workspace .hr-table-wrap{
+  overscroll-behavior-inline:contain;
+  -webkit-overflow-scrolling:touch;
+}
+.hr-workspace .hr-panel p{
+  line-height:1.55;
+}
+@media(max-width:900px){
+  .hr-workspace .hr-nav{grid-template-columns:1fr}
+  .hr-workspace .hr-nav-group .hr-tabs{grid-template-columns:repeat(auto-fit,minmax(145px,1fr))}
+}
+@media(max-width:640px){
+  .hr-workspace .hr-nav{gap:9px}
+  .hr-workspace .hr-nav-group{padding:11px;gap:8px}
+  .hr-workspace .hr-nav-group .hr-tabs{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+  .hr-workspace .hr-nav-group .hr-tabs button,
+  .hr-workspace .hr-nav-group .hr-tabs button:not(.active){
+    min-height:42px;
+    padding:8px;
+    font-size:11px;
+  }
+  .hr-workspace .hr-toolbar{align-items:stretch}
+  .hr-workspace .hr-toolbar label{width:100%}
+  .hr-workspace .hr-toolbar input{width:100%}
+}
+@media(max-width:360px){
+  .hr-workspace .hr-nav-group .hr-tabs{grid-template-columns:1fr}
+}
