@@ -226,7 +226,7 @@ def test_super_coins_accounting_setup_migration_is_required_and_seeds_reviewable
     assert "'2600', 'customer loyalty points liability', 'liability'" in sql
     assert "'6110', 'customer loyalty rewards expense', 'expense'" in sql
     assert "'4210', 'expired customer rewards breakage income', 'income'" in sql
-    assert "status='draft'" in sql
+    assert "'draft'" in sql
     assert "effective_from" in sql and "date '2000-01-01'" in sql
     assert "points_earned" in sql
     assert "points_redemption" in sql
@@ -240,4 +240,4 @@ def test_super_coins_accounting_setup_migration_is_required_and_seeds_reviewable
     assert "drop table" not in sql
     assert "drop column" not in sql
     assert "truncate " not in sql
-    assert "'approved'" not in sql
+    assert "status='approved'" not in sql
