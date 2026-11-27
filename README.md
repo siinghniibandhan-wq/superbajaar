@@ -404,3 +404,9 @@ Use precise status labels:
 - **Production-ready:** security, data integrity, monitoring, backup/recovery and operational acceptance have been verified.
 
 Do not use these labels interchangeably.
+
+## CRM Enhancements
+# Internal Notes (Supported via visibility='internal' in messages)
+# Agent Assignment (Updating `assigned_to` to refer to `app_users`)
+# Tagging System
+# Bulk Actions
