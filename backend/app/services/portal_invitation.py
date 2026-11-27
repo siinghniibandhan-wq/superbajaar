@@ -56,7 +56,7 @@ def send_resend_email(
         method="POST",
     )
     try:
-        with urlopen(request, timeout=10) as response:
+        with urlopen(request, timeout=10) as response:  # nosec B310 - fixed HTTPS Resend endpoint; URL is not user-controlled.
             result = json.loads(response.read().decode("utf-8"))
         message_id = result.get("id") if isinstance(result, dict) else None
         return message_id if isinstance(message_id, str) and message_id else None
