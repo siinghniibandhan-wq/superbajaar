@@ -90,7 +90,7 @@ def list_registers(location_id: int | None = None):
                           s.id AS open_shift_id,s.cashier_user_id,s.opened_at,s.opening_float
                    FROM pos_registers r JOIN stock_locations l ON l.id=r.location_id
                    LEFT JOIN pos_register_shifts s ON s.register_id=r.id AND s.status='open'
-                   WHERE (%s IS NULL OR r.location_id=%s) AND r.is_active=TRUE
+                   WHERE (%s::bigint IS NULL OR r.location_id=%s) AND r.is_active=TRUE
                    ORDER BY l.name,r.register_code""",
                 (location_id, location_id),
             ).fetchall()
