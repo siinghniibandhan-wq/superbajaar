@@ -2136,3 +2136,37 @@
   .storefront-auth-shell .storefront-checkout-page-heading h1{font-size:32px}
   .storefront-auth-shell .storefront-checkout-form{gap:15px}
 }
+
+
+/* OAuth provider buttons: recognizable brand mark with centered label */
+.storefront-auth-shell .storefront-social-button{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:12px;
+  width:100%;
+  min-height:48px;
+  padding:12px 18px;
+  color:#30243c;
+  font-size:14px;
+  font-weight:650;
+  text-align:center;
+  text-decoration:none;
+  transition:background .18s,border-color .18s,box-shadow .18s,transform .18s;
+}
+.storefront-auth-shell .storefront-social-button:hover{
+  background:#faf8fd;
+  border-color:#cfc3dc;
+  box-shadow:0 3px 12px rgba(50,16,82,.07);
+}
+.storefront-auth-shell .storefront-social-button:focus-visible{
+  outline:3px solid rgba(113,50,173,.22);
+  outline-offset:2px;
+}
+.storefront-auth-shell .storefront-social-icon{
+  display:block;
+  flex:0 0 21px;
+  width:21px;
+  height:21px;
+}
+.storefront-auth-shell .storefront-social-icon-github{color:#24292f}
