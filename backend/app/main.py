@@ -63,9 +63,10 @@ class SecurityHeadersMiddleware:
                     (b"referrer-policy", b"strict-origin-when-cross-origin"),
                     (b"permissions-policy", b"camera=(), microphone=(), geolocation=()"),
                     (b"content-security-policy", b"default-src 'none'; frame-ancestors 'none'"),
-                    (b"strict-transport-security", b"max-age=31536000; includeSubDomains"),
                 ]
                 headers.extend((key, value) for key, value in security_headers if key not in existing)
+                if settings.app_env.lower() == "production" and b"strict-transport-security" not in existing:
+                    headers.append((b"strict-transport-security", b"max-age=31536000; includeSubDomains"))
                 message = {**message, "headers": headers}
             await send(message)
 
