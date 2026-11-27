@@ -22,6 +22,7 @@ def test_order_rejects_coin_redemption_for_non_website_channels(monkeypatch):
     monkeypatch.setattr(orders.settings, "database_url", "")
     response = client.post("/api/orders", json={
         "channel": "manual",
+        "checkout_idempotency_key": "loyalty-manual-order-key-0001",
         "customer_name": "Test Customer",
         "delivery_pin": "560001",
         "redeem_coins": 10,
