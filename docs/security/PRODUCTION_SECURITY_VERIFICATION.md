@@ -2,7 +2,7 @@
 
 ## Scope
 
-The automated CI security workflow covers Python dependency advisories, Bandit static analysis, npm dependency advisories and Gitleaks history scanning. It does not prove the security posture of the live EC2 host, PostgreSQL instance, S3 bucket, instance profile, security groups or TLS endpoint.
+The automated CI security workflow covers Python dependency advisories, Bandit static analysis, npm dependency advisories and Gitleaks history scanning. Frontend staff/customer bearer tokens are now moved from persistent localStorage to tab-scoped sessionStorage (existing tokens migrate once and are removed from localStorage). This reduces persistence after the browser tab session ends; it does not make tokens inaccessible to same-origin JavaScript or remove the need for frontend XSS controls. State-changing API requests with an Origin header are checked against configured/owned origins, and OAuth state uses an HttpOnly, Secure, SameSite=Lax nonce cookie. It does not prove the security posture of the live EC2 host, PostgreSQL instance, S3 bucket, instance profile, security groups or TLS endpoint.
 
 ## Read-only AWS host audit
 
@@ -36,7 +36,7 @@ An authorized AWS administrator must verify:
 
 ## Database migration gate
 
-Migrations `067_distributed_api_rate_limits.sql` and `068_payment_idempotency.sql` are additive and are listed in `backend/schema_required.txt`. They must be applied through the existing schema automation after backup and staging verification. The application must not be deployed before both required migrations are confirmed applied.
+Migrations `067_distributed_api_rate_limits.sql` and `068_payment_idempotency.sql` are additive and are listed in `backend/schema_required.txt`. They must be applied through the existing schema automation after backup and staging verification. The application must not be deployed before both required migrations are confirmed applied. Manual payment creation must send an actor-scoped `Idempotency-Key`; the Payments workspace keeps the same key across retries and resets it when the payment payload changes.
 
 ## Verification boundary
 
