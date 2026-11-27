@@ -25,6 +25,7 @@ import { filterNavigationGroups } from "./moduleAccess.js";
 import PortalWorkspace, { PortalActivation } from "../features/portals/PortalWorkspace.jsx";
 import PortalAccessWorkspace from "../features/portals/PortalAccessWorkspace.jsx";
 import IdentityWorkspace from "../features/identity/IdentityWorkspace.jsx";
+import "./sidebar-toggle.css";
 
 const groups = [
   { title: "Commerce", items: [
@@ -100,6 +101,8 @@ const workspaceRoutes = {
 
 function AppShell() {
   const [selected, setSelected] = useState(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => { try { return window.localStorage.getItem("superbajaar.sidebar_collapsed") === "1"; } catch { return false; } });
+  const toggleSidebar = () => setSidebarCollapsed(old => { const next = !old; try { window.localStorage.setItem("superbajaar.sidebar_collapsed", next ? "1" : "0"); } catch {} return next; });
   const [apiStatus, setApiStatus] = useState("checking");
   const [user, setUser] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -143,7 +146,7 @@ function AppShell() {
   const visibleGroups = filterNavigationGroups(groups, permissions || {});
   const visibleItems = visibleGroups.flatMap(group => group.items);
   const visibleIds = new Set(visibleItems.map(item => item.id));
-  const open = item => { if (visibleIds.has(item.id)) setSelected(item); };
+  const open = item => { if (visibleIds.has(item.id)) { setSelected(item); if (item.id === "pos") setSidebarCollapsed(true); } };
   const back = () => setSelected(null);
   const activeModule = selected?.id;
   const openById = id => { const found = visibleItems.find(item => item.id === id); if (found) setSelected(found); };
@@ -168,10 +171,10 @@ function AppShell() {
   </main>;
   return <main className="sb-shell">
     <header className="sb-header">
-      <div className="sb-brand"><a className="sb-brand-logo-link" href="/" aria-label="Go to Super Bajaar home"><img className="sb-mark" src="/superbajaar.svg" alt="" /></a><button className="sb-brand-home" type="button" onClick={back} aria-label="Back to workspaces"><span><strong>Super Bajaar</strong><small>Commerce & ERP</small></span></button></div>
+      <div className="sb-brand"><button className="sb-menu-toggle" type="button" onClick={toggleSidebar} aria-expanded={!sidebarCollapsed} aria-label={sidebarCollapsed ? "Show menu" : "Hide menu"} title={sidebarCollapsed ? "Show menu" : "Hide menu"}>☰</button><a className="sb-brand-logo-link" href="/" aria-label="Go to Super Bajaar home"><img className="sb-mark" src="/superbajaar.svg" alt="" /></a><button className="sb-brand-home" type="button" onClick={back} aria-label="Back to workspaces"><span><strong>Super Bajaar</strong><small>Commerce & ERP</small></span></button></div>
       <div className="sb-header-actions">{["super_admin","admin"].includes(user.role) && <><button className="sb-signout" type="button" onClick={() => setSelected({ id: "portalAccess", label: "Portals & Access" })}>Portals & Access</button><button className="sb-signout" type="button" onClick={() => setSelected({ id: "identity", label: "Identity Register" })}>Identity Register</button></>}<span className={`sb-status sb-status-${apiStatus}`} role="status"><i />{statusText[apiStatus]}</span><span className="sb-user-label">{user.full_name || user.email}</span><button className="sb-signout" type="button" onClick={signOut}>Sign out</button></div>
     </header>
-    <div className="sb-app-layout">
+    <div className={"sb-app-layout" + (sidebarCollapsed ? " is-sidebar-collapsed" : "")}>
       <aside className="sb-sidebar" aria-label="Module navigation">
         <button className={`sb-nav-home ${!selected ? "is-active" : ""}`} type="button" onClick={back}>⌂ <span>All workspaces</span></button>
         {visibleGroups.map(group => <div className="sb-nav-group" key={group.title}><p>{group.title}</p>{group.items.map(item => <button key={item.id} type="button" className={`sb-nav-item ${activeModule === item.id ? "is-active" : ""}`} onClick={() => open(item)}><span>{item.label}</span></button>)}</div>)}

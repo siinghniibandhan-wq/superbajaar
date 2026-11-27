@@ -1,0 +1,6 @@
+/* Collapsible left menu: the ☰ button in the header hides or shows it. */
+.sb-menu-toggle{display:inline-grid;place-items:center;flex:0 0 auto;width:38px;height:38px;margin-right:6px;border:1px solid var(--mb-border,#e1e5ea);border-radius:10px;background:#fff;color:#4c5773;font-size:19px;line-height:1;cursor:pointer}
+.sb-menu-toggle:hover{background:#f3eefb;color:#5927a6}
+.sb-app-layout.is-sidebar-collapsed{grid-template-columns:minmax(0,1fr)}
+.sb-app-layout.is-sidebar-collapsed>.sb-sidebar{display:none}
+.sb-app-layout.is-sidebar-collapsed>.sb-main-content{max-width:none}
