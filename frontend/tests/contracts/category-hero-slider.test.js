@@ -17,5 +17,5 @@ test("admin Catalogue has a Category banners tab", () => {
   const workspace = read("features/catalogue/CatalogueWorkspace.jsx");
   assert.match(workspace, /<CategoryHeroPanel categories=\{categories\}/);
   const panel = read("features/catalogue/CategoryHeroPanel.jsx");
-  for (const part of ["/hero-images\\"", "\"/upload\"", "/reorder", "method: \"DELETE\""]) assert.ok(panel.includes(part), part);
+  for (const part of ["/hero-images", "/upload", "/reorder", 'method: "DELETE"']) assert.ok(panel.includes(part), part);
 });
