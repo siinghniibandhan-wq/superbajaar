@@ -34,6 +34,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_pos_one_open_shift_per_register
     ON public.pos_register_shifts(register_id) WHERE status='open';
 CREATE INDEX IF NOT EXISTS idx_pos_shifts_cashier_opened
     ON public.pos_register_shifts(cashier_user_id, opened_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pos_one_open_shift_per_cashier
+    ON public.pos_register_shifts(cashier_user_id) WHERE status='open';
 
 CREATE TABLE IF NOT EXISTS public.pos_cash_movements (
     id bigserial PRIMARY KEY,
@@ -53,7 +55,7 @@ CREATE TABLE IF NOT EXISTS public.pos_register_audit (
     register_id bigint REFERENCES public.pos_registers(id) ON DELETE RESTRICT,
     shift_id bigint REFERENCES public.pos_register_shifts(id) ON DELETE RESTRICT,
     event_type text NOT NULL,
-    actor_user_id bigint REFERENCES public.app_users(id) ON DELETE SET NULL,
+    actor_user_id bigint REFERENCES public.app_users(id) ON DELETE RESTRICT,
     event_data jsonb NOT NULL DEFAULT '{}'::jsonb,
     created_at timestamptz NOT NULL DEFAULT now()
 );
