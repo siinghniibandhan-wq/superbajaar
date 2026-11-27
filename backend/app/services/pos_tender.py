@@ -25,3 +25,11 @@ def checkout_payload_for_hash(payload):
     if normalized.get("pos_register_id") is None:
         normalized.pop("pos_register_id", None)
     return normalized
+
+
+from decimal import Decimal
+
+
+def order_is_fully_paid(order_total, captured_total):
+    """Only settle an order when captured tenders exactly cover its payable total."""
+    return Decimal(str(captured_total)) == Decimal(str(order_total))
