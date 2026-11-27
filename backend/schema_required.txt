@@ -27,12 +27,14 @@
 026_inventory_event_approvals.sql
 027_inventory_approval_immutability.sql
 028_super_coins_checkout_redemption.sql
+029_hr_statutory_history_guards.sql
 030_super_coins_loyalty_permissions.sql
 031_warehouse_fulfilment_operations.sql
 032_fulfilment_returns_and_split_dispatch.sql
 033_razorpay_webhook_inbox.sql
 034_hr_scheduling_leave_lifecycle.sql
 035_inventory_facility_internal_locations.sql
+036_configurable_rbac.sql
 037_hr_salary_revision_history.sql
 038_hr_variable_payroll_earnings.sql
 039_hr_multi_establishment_payroll_accruals.sql
@@ -42,7 +44,9 @@
 043_unified_identity_foundation.sql
 044_identity_loyalty_referral_links.sql
 045_identity_claim_cancellation_event.sql
+046_identity_otp_verification.sql
 047_inventory_facility_profiles.sql
+048_purchasing_replenishment.sql
 049_customer_saved_addresses.sql
 050_variant_price_history.sql
 051_product_reviews.sql
@@ -58,3 +62,4 @@
 061_homepage_hero_images.sql
 062_support_ticket_categories_attachments.sql
 063_super_coins_no_expiry.sql
+064_crm_support_case_tags.sql
