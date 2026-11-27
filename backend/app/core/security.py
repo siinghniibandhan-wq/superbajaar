@@ -3,6 +3,7 @@ import ipaddress
 import time
 
 import psycopg
+from psycopg.rows import dict_row
 from fastapi import HTTPException
 
 from app.core.config import settings
@@ -59,7 +60,7 @@ def enforce_distributed_rate_limit(request) -> None:
     limit, window_seconds = classify_rate_limit(request.method, request.url.path)
     key = rate_limit_bucket_key(_trusted_client_ip(request), request.method, request.url.path)
     try:
-        with psycopg.connect(settings.database_url, connect_timeout=2) as conn:
+        with psycopg.connect(settings.database_url, connect_timeout=2, row_factory=dict_row) as conn:
             row = conn.execute(
                 """
                 INSERT INTO api_rate_limit_buckets(bucket_key, window_started_at, request_count, updated_at)
