@@ -58,6 +58,8 @@ class _FakePaymentConnection:
             return _FakeResult(self.payment)
         if "FROM payments WHERE provider_order_id" in normalized_query:
             return _FakeResult(self.payment)
+        if "FROM payments WHERE order_id" in normalized_query and "provider_order_id IS NOT NULL" in normalized_query:
+            return _FakeResult(self.payment)
         if "FROM payments WHERE order_id" in normalized_query:
             return _FakeResult({"amount": Decimal("12.34")})
         if "FROM orders WHERE id=%s FOR UPDATE" in normalized_query:
