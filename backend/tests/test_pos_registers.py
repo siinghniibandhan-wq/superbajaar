@@ -58,5 +58,5 @@ def test_close_shift_expected_cash_uses_float_sales_refunds_and_drawer_movements
     cash_refunds = Decimal("20")
     cash_in = Decimal("100")
     cash_out = Decimal("30")
-    expected = opening_float + cash_sales - cash_refunds + cash_in - cash_out
-    assert expected == Decimal("1550")
+    totals = {"cash_sales": cash_sales, "cash_refunds": cash_refunds, "cash_in": cash_in, "cash_out": cash_out}
+    assert pos_registers._expected_cash(opening_float, totals) == Decimal("1550.00")
