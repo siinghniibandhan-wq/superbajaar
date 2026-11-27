@@ -180,6 +180,10 @@ class BulkCaseUpdate(BaseModel):
     def require_update_field(self):
         if not ({"status", "priority", "assigned_to"} & self.model_fields_set):
             raise ValueError("Provide at least one field to update")
+        if "status" in self.model_fields_set and self.status is None:
+            raise ValueError("Status cannot be null")
+        if "priority" in self.model_fields_set and self.priority is None:
+            raise ValueError("Priority cannot be null")
         return self
 
 
@@ -471,7 +475,7 @@ def create_support_tag(payload: SupportTagIn, request: Request):
         with _connect() as conn:
             row = conn.execute(
                 "INSERT INTO tags(name,color) VALUES(%s,%s) "
-                "ON CONFLICT (name) DO NOTHING "
+                "ON CONFLICT DO NOTHING "
                 "RETURNING id,name,color,created_at",
                 (payload.name, payload.color.lower()),
             ).fetchone()
