@@ -10,6 +10,7 @@ This README describes the code currently committed on `main`. It is an engineeri
 
 - [Production governance and readiness](docs/PRODUCTION_GOVERNANCE_AND_READINESS.md) — current owner decisions, IAM/self-approval risk, migration 045, deployment rollback, backup posture and open checks.
 - [Documentation index](docs/README.md) — canonical document catalogue and precedence rules.
+- [Current implementation status and known gaps](docs/CURRENT_IMPLEMENTATION_STATUS.md) — code-reviewed module capabilities, verified workflow limitations and production-verification boundaries.
 - [Environments and CI/CD](docs/ENVIRONMENTS_AND_CICD.md) — local, CI and production contexts; commit triggers; frontend/backend/database release separation.
 - [Database migration operations](docs/DATABASE_MIGRATIONS.md) — migration runner, backup gate, numbering and production controls.
 - [Production deployment runbook](docs/operations/PRODUCTION_DEPLOYMENT.md) — AWS-native EC2 backend deployment lane, rollback and Amplify release boundaries.
@@ -57,6 +58,8 @@ The current frontend source contains workspaces for:
 The backend registers API routers for health, catalogue, inventory, inventory locations, orders, payments and Razorpay webhooks, delivery, fulfilment, customers, purchasing, purchasing lifecycle, HR, staff authentication, customer authentication, loyalty, accounting, organisation policies, pricing, POS and reports.
 
 A directory, screen, API router or migration existing in Git does **not** prove that its business workflow is complete. Readiness must be established with API, database, permission and end-to-end evidence. In particular, test cross-module flows rather than marking a module complete from its UI alone.
+
+For the current code-reviewed limitations—including POS register controls, payment refunds/settlements, carrier integrations, identity OTP channels and statutory HR filing—see the [current implementation status and known gaps](docs/CURRENT_IMPLEMENTATION_STATUS.md). These are repository-code findings, not confirmation of live production state.
 
 ### HR & Payroll implementation notes
 
