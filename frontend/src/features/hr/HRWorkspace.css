@@ -362,3 +362,48 @@
 @media(max-width:360px){
   .hr-workspace .hr-nav-group .hr-tabs{grid-template-columns:1fr}
 }
+
+
+/* Employee directory: search first, narrow by department/status, understand result count. */
+.hr-workspace .hr-directory-heading{
+  display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;
+}
+.hr-workspace .hr-directory-heading h2{margin:0}
+.hr-workspace .hr-directory-heading p{margin:5px 0 0;color:var(--muted,#667085);font-size:12px;line-height:1.5}
+.hr-workspace .hr-directory-count{
+  padding:6px 10px;border:1px solid var(--border,#dfe5ea);border-radius:999px;
+  color:var(--muted,#667085);font-size:11px;font-weight:750;white-space:nowrap;
+}
+.hr-workspace .hr-directory-filters{
+  display:grid;grid-template-columns:minmax(220px,2fr) minmax(150px,1fr) minmax(140px,1fr) auto;
+  align-items:end;gap:10px;padding:13px;border:1px solid var(--border,#dfe5ea);
+  border-radius:12px;background:var(--surface-subtle,#f8fafc);
+}
+.hr-workspace .hr-directory-filters>label{
+  display:flex;flex-direction:column;gap:6px;min-width:0;color:var(--muted,#667085);
+  font-size:11px;font-weight:750;
+}
+.hr-workspace .hr-directory-filters input,.hr-workspace .hr-directory-filters select{
+  width:100%;min-width:0;min-height:41px;padding:9px 11px;border:1px solid var(--border,#dfe5ea);
+  border-radius:9px;background:var(--surface,#fff);color:inherit;font:inherit;font-size:12px;
+}
+.hr-workspace .hr-directory-filters .hr-search{max-width:none}
+.hr-workspace .hr-directory-filters .hr-filter-reset{
+  min-height:41px;padding:8px 12px;border:1px solid var(--border,#dfe5ea);
+  border-radius:9px;background:var(--surface,#fff);color:var(--text,#344054);
+  font-size:11px;font-weight:700;white-space:nowrap;
+}
+.hr-workspace .hr-directory-filters .hr-filter-reset:disabled{opacity:.45}
+.hr-workspace .hr-empty-state{
+  margin:0;padding:22px;text-align:center;color:var(--muted,#667085);
+  font-size:13px;line-height:1.5;
+}
+@media(max-width:760px){
+  .hr-workspace .hr-directory-filters{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .hr-workspace .hr-directory-filters .hr-search{grid-column:1/-1}
+  .hr-workspace .hr-directory-filters .hr-filter-reset{width:100%}
+}
+@media(max-width:420px){
+  .hr-workspace .hr-directory-filters{grid-template-columns:1fr}
+  .hr-workspace .hr-directory-filters .hr-search{grid-column:auto}
+}
