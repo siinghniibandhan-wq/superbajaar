@@ -89,10 +89,17 @@ class OrderCreate(BaseModel):
     delivery_type: str | None = Field(default=None, pattern=r"^(standard|express)$")
     notes: str | None = Field(default=None, max_length=2000)
     redeem_coins: int = Field(default=0, ge=0, le=10000000)
-    checkout_idempotency_key: str | None = Field(default=None, min_length=8, max_length=100)
+    checkout_idempotency_key: str = Field(min_length=16, max_length=100)
     pos_payment_method: str | None = None
     pos_register_id: int | None = Field(default=None, gt=0)
     lines: list[OrderLineCreate] = Field(min_length=1, max_length=100)
+
+    @field_validator("checkout_idempotency_key")
+    @classmethod
+    def valid_checkout_idempotency_key(cls, value):
+        if not re.fullmatch(r"[A-Za-z0-9._:-]{16,100}", value or ""):
+            raise ValueError("A valid checkout_idempotency_key is required for every order")
+        return value
 
     @field_validator("channel")
     @classmethod
