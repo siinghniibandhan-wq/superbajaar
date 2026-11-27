@@ -259,6 +259,7 @@ def test_pos_order_reservation_dispatch_and_cogs_posting(api):
     assert quarantined["status"]=="posted" and Decimal(str(quarantined["total_cost"]))==Decimal("10.00")
     blocked_order=api.post("/api/orders",json={
         "channel":"pos","customer_name":"Quarantine reservation must fail",
+        "checkout_idempotency_key":"integration-quarantine-order-key-01",
         "location_id":holding["id"],"lines":[{"variant_id":api.variant_id,"quantity":1}],
     })
     assert blocked_order.status_code==409
