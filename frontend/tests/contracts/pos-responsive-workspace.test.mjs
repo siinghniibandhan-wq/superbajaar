@@ -9,7 +9,7 @@ test("POS checkout exposes mobile Catalogue, Cart and Pay steps", () => {
   assert.match(workspace, /mobileCheckoutTab/);
   assert.match(workspace, /aria-label="POS checkout steps"/);
   assert.match(workspace, />Catalogue</);
-  assert.match(workspace, />Cart</);
+  assert.match(workspace, />Cart \(/);
   assert.match(workspace, />Pay</);
 });
 
@@ -27,4 +27,11 @@ test("POS responsive layout preserves desktop split view and prevents narrow-scr
   assert.match(styles, /@media\s*\(max-width:\s*760px\)/);
   assert.match(styles, /min-width:\s*0/);
   assert.match(styles, /overflow-wrap:\s*anywhere/);
+});
+
+test("responsive presentation retains the existing register, shift and checkout API flows", () => {
+  assert.match(workspace, /apiRequest\("\/orders"/);
+  assert.match(workspace, /\/registers\/" \+ selectedRegisterId \+ "\/open/);
+  assert.match(workspace, /confirm-cash/);
+  assert.match(workspace, /checkout_idempotency_key/);
 });
