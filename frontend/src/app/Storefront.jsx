@@ -577,7 +577,7 @@ export default function Storefront() {
 
   const signOutCustomer = async () => {
     try { if (customerToken) await customerRequest("/customer-auth/logout", { method: "POST" }); } catch {}
-    try { window.localStorage.removeItem("sb-customer.access_token"); } catch {}
+    clearSessionToken("sb-customer.access_token");
     setCustomerToken(""); setCustomerAuth(null); setReferralData(null);
     setAccountOpen(false); setNotice("You have signed out.");
     if (["/account", "/checkout"].includes(window.location.pathname.replace(/\/+$/, "") || "/")) {
