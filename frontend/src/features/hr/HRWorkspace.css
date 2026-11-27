@@ -407,3 +407,41 @@
   .hr-workspace .hr-directory-filters{grid-template-columns:1fr}
   .hr-workspace .hr-directory-filters .hr-search{grid-column:auto}
 }
+
+
+/* Leave requests: labelled application form, compact filters and readable state. */
+.hr-workspace .hr-leave-form{
+  margin:14px 0 18px;padding:16px;border:1px solid var(--border,#dfe5ea);
+  border-radius:12px;background:var(--surface-subtle,#f8fafc);
+}
+.hr-workspace .hr-leave-form>label{
+  display:flex;flex-direction:column;gap:6px;min-width:0;
+  color:var(--muted,#667085);font-size:12px;font-weight:700;
+}
+.hr-workspace .hr-leave-form input,
+.hr-workspace .hr-leave-form select,
+.hr-workspace .hr-leave-form textarea{
+  width:100%;min-width:0;min-height:42px;padding:9px 11px;
+  border:1px solid var(--border,#dfe5ea);border-radius:9px;
+  background:var(--surface,#fff);color:var(--text,#303943);font:inherit;font-size:13px;
+}
+.hr-workspace .hr-leave-form textarea{min-height:78px;resize:vertical}
+.hr-workspace .hr-leave-form input:focus-visible,
+.hr-workspace .hr-leave-form select:focus-visible,
+.hr-workspace .hr-leave-form textarea:focus-visible{
+  outline:3px solid #79a9ce;outline-offset:2px;
+}
+.hr-workspace .hr-leave-filters{margin:12px 0}
+.hr-workspace .hr-status{
+  display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;
+  background:#eef1f4;color:#344054;font-size:11px;font-weight:750;
+  text-transform:capitalize;white-space:nowrap;
+}
+.hr-workspace .hr-status-pending{background:#fff4d6;color:#805b00}
+.hr-workspace .hr-status-approved{background:#e7f5ec;color:#17663a}
+.hr-workspace .hr-status-rejected{background:#fdecec;color:#9b2929}
+.hr-workspace .hr-status-cancelled{background:#eef1f4;color:#596579}
+@media(max-width:640px){
+  .hr-workspace .hr-leave-form{padding:12px}
+  .hr-workspace .hr-leave-form .hr-span-all{grid-column:1/-1}
+}
