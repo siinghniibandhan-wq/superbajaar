@@ -1,8 +1,33 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiRequest } from "../../services/api.js";
+import { buildSearchIndex } from "../../app/searchEngine.js";
+import { isImageUrl, imageOptionLabel } from "../catalogue/imageOptions.js";
 import "./POSWorkspace.css";
 
 const money = value => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(Number(value || 0));
+const round2 = value => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+const HELD_KEY = "superbajaar.pos_held";
+const WALK_IN = { name: "Walk-in Customer", phone: "", pin: "" };
+
+// The tender types the backend already accepts. "cod" is how the system stores cash.
+const PAYMENT_METHODS = [
+  { id: "cod", label: "Cash", mark: "₹" },
+  { id: "upi", label: "UPI", mark: "◎" },
+  { id: "card", label: "Card", mark: "▭" },
+  { id: "netbanking", label: "Net banking", mark: "⌂" },
+  { id: "wallet", label: "Wallet", mark: "◈" },
+  { id: "bank_transfer", label: "Bank transfer", mark: "⇄" },
+];
+const methodLabel = id => PAYMENT_METHODS.find(m => m.id === id)?.label || id;
+
+// Readable variant text. Picture-type values show their name, never a long link.
+const cleanValue = value => {
+  const text = Array.isArray(value) ? value.join(", ") : String(value ?? "");
+  if (isImageUrl(text)) { const label = imageOptionLabel(text); return /^[0-9a-f]{8,}$/i.test(label) ? "" : label; }
+  return text;
+};
+const variantLabel = v => Object.values(v.attributes || {}).map(cleanValue).filter(Boolean).join(" / ");
+const productTitle = v => v.product_name || v.name || v.sku || ("Product " + v.product_id);
 
 export default function POSWorkspace({ onBack }) {
   const [activeView, setActiveView] = useState("checkout");
@@ -28,7 +53,7 @@ export default function POSWorkspace({ onBack }) {
   const [locationId, setLocationId] = useState("");
   const [registerLocationId, setRegisterLocationId] = useState("");
   const [customer, setCustomer] = useState({ name: "Walk-in Customer", phone: "", pin: "" });
-  const [method, setMethod] = useState("upi");
+  const [method, setMethod] = useState("cod");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -37,6 +62,14 @@ export default function POSWorkspace({ onBack }) {
   const [search, setSearch] = useState("");
   const [selectedVariantByProduct, setSelectedVariantByProduct] = useState({});
   const checkoutAttempt = useRef(null);
+  const searchRef = useRef(null);
+  const [shown, setShown] = useState(60);
+  const [tendered, setTendered] = useState("");
+  const [reference, setReference] = useState("");
+  const [showCustomer, setShowCustomer] = useState(false);
+  const [showReceipt, setShowReceipt] = useState(false);
+  const [showHeld, setShowHeld] = useState(false);
+  const [held, setHeld] = useState(() => { try { return JSON.parse(window.localStorage.getItem("superbajaar.pos_held") || "[]"); } catch { return []; } });
 
   async function refreshAnalytics() {
     const analytics = await Promise.allSettled([
@@ -147,52 +180,130 @@ export default function POSWorkspace({ onBack }) {
     finally { setRegisterBusy(false); }
   }
 
+  const activeVariants = useMemo(() => variants.filter(v => v.is_active !== false), [variants]);
+  const searchIndex = useMemo(() => {
+    const products = new Map();
+    for (const v of activeVariants) if (!products.has(v.product_id)) products.set(v.product_id, { id: v.product_id, name: productTitle(v) });
+    return buildSearchIndex({ products: [...products.values()], variants: activeVariants });
+  }, [activeVariants]);
+
+  // Search now reacts to every letter typed. It understands spellings like "atta"/"aata",
+  // product names, SKUs, barcodes and variant words such as "5 kg".
   const visible = useMemo(() => {
     const term = search.trim().toLowerCase();
-    return variants.filter(v => v.is_active !== false && (!term || [v.sku, v.barcode, v.product_name, v.name, v.brand].some(x => String(x || "").toLowerCase().includes(term))));
-  }, [variants]);
-  const groupedVisible = useMemo(() => {
-    const groups = new Map();
-    for (const variant of visible) {
-      const key = String(variant.product_id);
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(variant);
+    if (!term) return activeVariants;
+    const tokens = term.split(/\s+/).filter(Boolean);
+    const scores = searchIndex.scores(term);
+    const rows = [];
+    for (const v of activeVariants) {
+      const codes = [v.sku, v.barcode].map(x => String(x || "").toLowerCase());
+      const exact = codes.some(x => x === term);
+      const codeHit = codes.some(x => x && x.includes(term));
+      const nameHit = tokens.every(t => (productTitle(v) + " " + variantLabel(v)).toLowerCase().includes(t));
+      const score = scores.get(Number(v.product_id)) || 0;
+      if (!exact && !codeHit && !nameHit && !score) continue;
+      const label = variantLabel(v).toLowerCase();
+      const labelBoost = tokens.filter(t => label.includes(t)).length;
+      rows.push({ v, rank: (exact ? 1e6 : 0) + (codeHit ? 1e4 : 0) + (nameHit ? 500 : 0) + score * 10 + labelBoost });
     }
-    return [...groups.values()].map(items => ({
-      productId: items[0].product_id,
-      productName: items[0].product_name || items[0].name || ("Product " + items[0].product_id),
-      variants: items,
-      selected: items.find(v => String(v.id) === String(selectedVariantByProduct[String(items[0].product_id)])) || items[0],
-    }));
-  }, [visible, selectedVariantByProduct]);
-  const variantLabel = v => {
-    const attrs = Object.entries(v.attributes || {}).map(([key, value]) => (Array.isArray(value) ? value.join(", ") : String(value)));
-    return attrs.length ? attrs.join(" / ") : "Default variant";
-  };
-  const total = cart.reduce((sum, line) => sum + Number(line.selling_price || 0) * line.quantity, 0);
+    rows.sort((a, b) => b.rank - a.rank);
+    return rows.map(r => r.v);
+  }, [activeVariants, searchIndex, search]);
+  useEffect(() => { setShown(60); }, [search]);
+
+  const cartCount = cart.reduce((sum, line) => sum + line.quantity, 0);
+  const total = round2(cart.reduce((sum, line) => sum + Number(line.selling_price || 0) * line.quantity, 0));
+  const qtyById = useMemo(() => new Map(cart.map(line => [line.id, line.quantity])), [cart]);
+  const selectedRegister = registers.find(r => String(r.id) === String(selectedRegisterId));
+  const locationName = locations.find(l => String(l.id) === String(locationId))?.name || selectedRegister?.location_name || "";
+
+  const tenderedNumber = method === "cod" && tendered !== "" ? Number(tendered) : null;
+  const changeDue = tenderedNumber != null && tenderedNumber >= total ? round2(tenderedNumber - total) : null;
+  const shortBy = tenderedNumber != null && tenderedNumber < total ? round2(total - tenderedNumber) : null;
+  const quickCash = useMemo(() => {
+    if (method !== "cod" || total <= 0) return [];
+    const up = step => Math.ceil(total / step) * step;
+    return [...new Set([up(10), up(50), up(100), up(500), 500, 1000, 2000].filter(x => x > total))].sort((a, b) => a - b).slice(0, 4);
+  }, [method, total]);
+
+  const blocker = !cart.length ? "Tap an item on the left to start a sale."
+    : !selectedRegisterId ? "Choose a counter to sell from."
+    : !activeShift ? "Open the cashier shift above to take payment."
+    : !locationId ? "Choose a stock location."
+    : shortBy != null ? "Cash received is " + money(shortBy) + " short."
+    : "";
+  const chargeLabel = saving ? "Processing…" : method === "cod" ? "Receive cash · " + money(total) : "Charge " + money(total) + " · " + methodLabel(method);
+
+  useEffect(() => { try { window.localStorage.setItem(HELD_KEY, JSON.stringify(held)); } catch {} }, [held]);
+  useEffect(() => {
+    const onKey = event => {
+      if (event.key === "F2" && activeView === "checkout") { event.preventDefault(); searchRef.current?.focus(); }
+      if (event.key === "Escape") setShowReceipt(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [activeView]);
+
+  function selectRegister(value) {
+    const r = registers.find(x => String(x.id) === value);
+    setSelectedRegisterId(value);
+    if (r) { setLocationId(String(r.location_id)); setRegisterLocationId(String(r.location_id)); }
+  }
 
   function add(variant) {
     setCart(old => {
       const existing = old.find(line => line.id === variant.id);
-      if (existing) return old.map(line => line.id === variant.id ? { ...line, quantity: line.quantity + 1 } : line);
+      if (existing) return old.map(line => line.id === variant.id ? { ...line, quantity: Math.min(100000, line.quantity + 1) } : line);
       return [...old, { ...variant, quantity: 1 }];
     });
-    setNotice("");
-    setMobileCheckoutTab("cart");
+    setNotice(""); setError("");
   }
   function setQuantity(id, value) {
     const quantity = Number(value);
-    setCart(old => quantity <= 0 ? old.filter(line => line.id !== id) : old.map(line => line.id === id ? { ...line, quantity: Math.min(100000, Math.floor(quantity)) } : line));
+    setCart(old => !Number.isFinite(quantity) || quantity <= 0 ? old.filter(line => line.id !== id) : old.map(line => line.id === id ? { ...line, quantity: Math.min(100000, Math.floor(quantity)) } : line));
   }
+  const bump = (id, delta) => setCart(old => old.map(line => line.id === id ? { ...line, quantity: Math.max(0, Math.min(100000, line.quantity + delta)) } : line).filter(line => line.quantity > 0));
+  const removeLine = id => setCart(old => old.filter(line => line.id !== id));
+
+  function resetSale() {
+    setCart([]); setCustomer({ ...WALK_IN }); setTendered(""); setReference(""); setShowCustomer(false);
+    checkoutAttempt.current = null;
+  }
+  function holdSale() {
+    if (!cart.length) return;
+    setHeld(old => [...old, { id: Date.now(), at: new Date().toISOString(), cart, customer, total }]);
+    resetSale(); setNotice("Sale put on hold. Recall it from “Held” whenever you're ready.");
+  }
+  function recallSale(entry) {
+    if (cart.length) { setError("Hold or clear the current sale before recalling a held one."); return; }
+    setCart(entry.cart); setCustomer(entry.customer || { ...WALK_IN });
+    setHeld(old => old.filter(x => x.id !== entry.id)); setShowHeld(false); setError("");
+  }
+  function onSearchKey(event) {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    const term = search.trim().toLowerCase();
+    if (!term) return;
+    // Barcode scanners "type" the code and press Enter: an exact code (or a single result) goes straight to the sale.
+    const exact = visible.find(v => [v.sku, v.barcode].some(x => String(x || "").toLowerCase() === term));
+    const pick = exact || (visible.length === 1 ? visible[0] : null);
+    if (pick) { add(pick); setSearch(""); }
+  }
+  function closeReceipt() { setShowReceipt(false); window.setTimeout(() => searchRef.current?.focus(), 50); }
 
   async function checkout(event) {
-    event.preventDefault();
+    event?.preventDefault?.();
     if (!cart.length) { setError("Add at least one item before checkout."); return; }
+    const customerName = customer.name.trim() || WALK_IN.name;
+    const pin = customer.pin.trim();
+    if (pin && !/^[0-9]{6}$/.test(pin)) { setError("Delivery PIN must be exactly 6 digits."); setShowCustomer(true); return; }
+    if (shortBy != null) { setError("Cash received is less than the total."); return; }
     setSaving(true); setError(""); setNotice(""); setReceipt(null);
+    const note = "Created at POS" + (reference.trim() ? " · Ref: " + reference.trim().slice(0, 100) : "");
     const checkoutPayload = {
-      channel: "pos", customer_name: customer.name.trim(), customer_phone: customer.phone.trim() || null,
-      delivery_pin: customer.pin.trim() || null, location_id: Number(locationId), pos_register_id: Number(selectedRegisterId), pos_payment_method: method,
-      notes: "Created at POS", lines: cart.map(line => ({ variant_id: line.id, quantity: line.quantity })),
+      channel: "pos", customer_name: customerName, customer_phone: customer.phone.trim() || null,
+      delivery_pin: pin || null, location_id: Number(locationId), pos_register_id: Number(selectedRegisterId), pos_payment_method: method,
+      notes: note, lines: cart.map(line => ({ variant_id: line.id, quantity: line.quantity })),
     };
     const signature = JSON.stringify(checkoutPayload);
     if (!checkoutAttempt.current || checkoutAttempt.current.signature !== signature) {
@@ -204,13 +315,17 @@ export default function POSWorkspace({ onBack }) {
         body: JSON.stringify({ ...checkoutPayload, checkout_idempotency_key: checkoutAttempt.current.key }),
       });
       const payment = order.payment || null;
-      setReceipt({ order, payment });
+      const sale = {
+        order, payment, method, at: new Date().toISOString(), counter: activeShift?.register_code || "",
+        customer: { name: customerName, phone: customer.phone.trim() },
+        tendered: tenderedNumber,
+        lines: cart.map(line => ({ id: line.id, name: productTitle(line), label: variantLabel(line), sku: line.sku, quantity: line.quantity, price: Number(line.selling_price || 0) })),
+      };
+      setReceipt(sale);
       if (!payment) {
         setError("Order " + order.order_number + " was returned without its tender record. Do not create another order; reconcile this sale before retrying.");
       } else {
-        setNotice("POS order and pending tender were created atomically. Cash has not been confirmed and electronic payment has not been provider-verified.");
-        setCart([]);
-        checkoutAttempt.current = null;
+        resetSale(); setShowReceipt(true);
       }
       void refreshAnalytics();
     } catch (e) {
@@ -218,14 +333,20 @@ export default function POSWorkspace({ onBack }) {
     } finally { setSaving(false); }
   }
 
+  const receiptTotal = receipt ? Number(receipt.order?.total ?? 0) : 0;
+  const receiptChange = receipt?.tendered != null && receipt.tendered >= receiptTotal ? round2(receipt.tendered - receiptTotal) : null;
+  const cashPending = receipt?.payment?.method === "cod" && receipt.payment.status === "pending";
+
   return <section className="sb-workspace sb-pos">
     <button className="sb-back" type="button" onClick={onBack}>← All workspaces</button>
-    <p className="sb-eyebrow">OPERATIONS · STORES</p><h1>POS & Stores</h1>
-    <p>Retail checkout, independent counters, cashier shifts and auditable cash-drawer controls.</p>
+    <div className="sb-pos-head">
+      <div><p className="sb-eyebrow">OPERATIONS · STORES</p><h1>POS & Stores</h1></div>
+      <nav className="sb-pos-nav" aria-label="POS modules"><button type="button" className={activeView === "checkout" ? "is-active" : ""} onClick={() => setActiveView("checkout")}>Checkout</button><button type="button" className={activeView === "sales" ? "is-active" : ""} onClick={() => setActiveView("sales")}>Sales history</button><button type="button" className={activeView === "registers" ? "is-active" : ""} onClick={() => setActiveView("registers")}>Registers & cash</button><span>{activeShift ? "Counter active" : "No active shift"}</span></nav>
+    </div>
+    {activeView !== "checkout" && <p className="sb-pos-sub">Retail checkout, independent counters, cashier shifts and auditable cash-drawer controls.</p>}
     {error && <p className="sb-alert" role="alert">{error}</p>}
     {analyticsError && <p className="sb-alert" role="status">{analyticsError}</p>}
     {notice && <p className="sb-success" role="status">{notice}</p>}
-    <nav className="sb-pos-nav" aria-label="POS modules"><button type="button" className={activeView === "checkout" ? "is-active" : ""} onClick={() => setActiveView("checkout")}>Checkout</button><button type="button" className={activeView === "sales" ? "is-active" : ""} onClick={() => setActiveView("sales")}>Sales history</button><button type="button" className={activeView === "registers" ? "is-active" : ""} onClick={() => setActiveView("registers")}>Registers & cash</button><span>{activeShift ? "Counter active" : "No active shift"}</span></nav>
     <div className="sb-data-card sb-pos-register-panel" style={{ display: activeView === "registers" ? "block" : "none" }}>
       <div className="sb-data-heading"><h2>Counter & cashier shift</h2><span className={activeShift ? "sb-pos-status is-open" : "sb-pos-status"}>{activeShift ? "SHIFT OPEN" : "REGISTER CLOSED"}</span></div>
       <div className="sb-pos-register-grid">
@@ -249,38 +370,122 @@ export default function POSWorkspace({ onBack }) {
       <div className="sb-data-heading"><h2>Recent POS sales</h2><button type="button" onClick={load} disabled={loading}>Refresh sales</button></div>
       {recentSales.length ? <div className="sb-table-wrap"><table><thead><tr><th>Order</th><th>Customer</th><th>Status</th><th>Total</th><th>Captured</th><th>Payment state</th></tr></thead><tbody>{recentSales.map(sale => <tr key={sale.id}><td>{sale.order_number}</td><td>{sale.customer_name}</td><td>{sale.status}</td><td>{money(sale.total)}</td><td>{money(sale.captured_amount)}</td><td>{sale.payment_statuses || "No payment record"}</td></tr>)}</tbody></table></div> : <p className="sb-empty">No POS sales recorded yet.</p>}
     </div>
-    <nav className="sb-pos-mobile-step" aria-label="POS checkout steps" style={{ display: activeView === "checkout" ? undefined : "none" }}>
-      <button type="button" className={mobileCheckoutTab === "catalogue" ? "is-active" : ""} aria-current={mobileCheckoutTab === "catalogue" ? "step" : undefined} onClick={() => setMobileCheckoutTab("catalogue")}>Catalogue</button>
-      <button type="button" className={mobileCheckoutTab === "cart" ? "is-active" : ""} aria-current={mobileCheckoutTab === "cart" ? "step" : undefined} onClick={() => setMobileCheckoutTab("cart")}>Cart ({cart.reduce((sum, line) => sum + line.quantity, 0)})</button>
-      <button type="button" className={mobileCheckoutTab === "pay" ? "is-active" : ""} aria-current={mobileCheckoutTab === "pay" ? "step" : undefined} onClick={() => setMobileCheckoutTab("pay")}>Pay</button>
-    </nav>
-    <div className="sb-pos-layout" style={{ display: activeView === "checkout" ? "grid" : "none" }}>
-      <div className={"sb-data-card sb-pos-catalogue-panel " + (mobileCheckoutTab === "catalogue" ? "is-mobile-active" : "")}>
-        <div className="sb-data-heading"><h2>Catalogue</h2><button type="button" onClick={load} disabled={loading}>{loading ? "Loading…" : "Refresh"}</button></div>
-        <label>Search product or SKU<input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search catalogue…" /></label>
-        {loading ? <p className="sb-empty">Loading variants…</p> : <div className="sb-pos-products">{groupedVisible.map(group => <article className="sb-pos-product" key={group.productId}><strong>{group.productName}</strong>{group.variants.length > 1 ? <label>Variant<select aria-label={"Variant for " + group.productName} value={String(group.selected.id)} onChange={e => setSelectedVariantByProduct(old => ({ ...old, [String(group.productId)]: e.target.value }))}>{group.variants.map(v => <option key={v.id} value={v.id}>{variantLabel(v)}</option>)}</select></label> : <small>{variantLabel(group.selected)}</small>}<span>{money(group.selected.selling_price)}</span><button type="button" className="sb-primary" onClick={() => add(group.selected)}>Add to sale</button></article>)}</div>}
-        {!loading && !visible.length && <p className="sb-empty">No active saleable variants are available. Add or activate a product and its variant in Catalogue.</p>}
-      </div>
-      <div className={"sb-data-card sb-pos-sale-panel " + (mobileCheckoutTab !== "catalogue" ? "is-mobile-active" : "")}>
-        <div className={"sb-pos-cart-panel " + (mobileCheckoutTab === "cart" ? "is-mobile-active" : "")}>
-        <h2>Current sale ({cart.reduce((sum, line) => sum + line.quantity, 0)} items)</h2>
-        {!cart.length ? <p className="sb-empty">Choose a catalogue item to start a sale.</p> : <div className="sb-pos-cart">{cart.map(line => <div className="sb-pos-cart-line" key={line.id}><div><strong>{line.product_name || line.name || line.sku}</strong><small>{line.sku} · {money(line.selling_price)} each</small></div><label>Qty<input type="number" min="0" max="100000" step="1" value={line.quantity} onChange={e => setQuantity(line.id, e.target.value)} /></label><strong>{money(Number(line.selling_price || 0) * line.quantity)}</strong></div>)}</div>}
-        <div className="sb-pos-total"><span>Subtotal</span><strong>{money(total)}</strong></div>
-        <button className="sb-pos-mobile-next" type="button" onClick={() => setMobileCheckoutTab("pay")}>Continue to payment</button>
+    <div className="sb-pos-terminal" style={{ display: activeView === "checkout" ? "block" : "none" }}>
+      <div className={"sb-pos-statusbar" + (activeShift ? " is-open" : "")}>
+        <label className="sb-pos-counter">Counter
+          <select value={selectedRegisterId} onChange={e => selectRegister(e.target.value)} aria-label="Counter">
+            <option value="">{registers.length ? "Select counter" : "No counter yet"}</option>
+            {registers.map(r => <option key={r.id} value={r.id}>{r.register_code} — {r.name}</option>)}
+          </select>
+        </label>
+        {activeShift ? <>
+          <span className="sb-pos-live"><i />Shift open</span>
+          <span className="sb-pos-meta">{locationName && <>Stock: <b>{locationName}</b> · </>}Since {new Date(activeShift.opened_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })} · Float {money(activeShift.opening_float)}</span>
+          <button type="button" className="sb-pos-link" onClick={() => setActiveView("registers")}>Cash drawer & close shift</button>
+        </> : selectedRegisterId ? <form className="sb-pos-openshift" onSubmit={openShift}>
+          <span className="sb-pos-live is-off"><i />Shift closed</span>
+          <label>Opening cash (₹)<input type="number" min="0" step="0.01" required value={openingFloat} onChange={e => setOpeningFloat(e.target.value)} /></label>
+          <button type="submit" disabled={registerBusy}>{registerBusy ? "Please wait…" : "Open shift & start selling"}</button>
+        </form> : <span className="sb-pos-meta">{registers.length ? "Choose a counter to begin." : "No counter is set up for this store yet."} {!registers.length && <button type="button" className="sb-pos-link" onClick={() => setActiveView("registers")}>Set up a counter</button>}</span>}
+        <div className="sb-pos-held">
+          <button type="button" onClick={() => setShowHeld(v => !v)} aria-expanded={showHeld}>Held ({held.length})</button>
+          {showHeld && <div className="sb-pos-held-list">
+            {!held.length ? <p>No sales on hold.</p> : held.map(entry => <div key={entry.id}><span><b>{entry.customer?.name || WALK_IN.name}</b><small>{entry.cart.reduce((s, l) => s + l.quantity, 0)} items · {money(entry.total)} · {new Date(entry.at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</small></span><button type="button" onClick={() => recallSale(entry)}>Recall</button><button type="button" className="is-danger" onClick={() => setHeld(old => old.filter(x => x.id !== entry.id))} aria-label="Delete held sale">✕</button></div>)}
+          </div>}
         </div>
-        <form className={"sb-form sb-pos-payment-panel " + (mobileCheckoutTab === "pay" ? "is-mobile-active" : "")} onSubmit={checkout}>
-          <button className="sb-pos-mobile-back" type="button" onClick={() => setMobileCheckoutTab("cart")}>← Back to cart</button>
-          <h3>Customer & tender intent</h3>
-          <label>Stock location<select required disabled={Boolean(selectedRegisterId)} value={locationId} onChange={e => setLocationId(e.target.value)}><option value="">Choose stock location</option>{locations.map(location => <option key={location.id} value={location.id}>{location.name} · {location.location_type || "location"}</option>)}</select></label>
-          <label>Customer name<input required minLength="1" maxLength="200" value={customer.name} onChange={e => setCustomer(v => ({ ...v, name: e.target.value }))} /></label>
-          <label>Phone (optional)<input maxLength="20" value={customer.phone} onChange={e => setCustomer(v => ({ ...v, phone: e.target.value }))} /></label>
-          <label>Delivery PIN (optional)<input inputMode="numeric" pattern="[0-9]{6}" maxLength="6" value={customer.pin} onChange={e => setCustomer(v => ({ ...v, pin: e.target.value }))} /></label>
-          <label>Payment method<select value={method} onChange={e => setMethod(e.target.value)}><option value="upi">UPI</option><option value="card">Card</option><option value="netbanking">Net banking</option><option value="cod">Cash (pending confirmation)</option><option value="wallet">Wallet</option><option value="bank_transfer">Bank transfer</option></select></label>
-          <p className="sb-muted">This sale is attached to the open counter shift. Electronic tenders remain pending until provider verification; cash confirmation remains controlled by the payment workflow.</p>
-          <button className="sb-primary" type="submit" disabled={saving || !cart.length || !locationId || !selectedRegisterId || !activeShift}>{saving ? "Creating sale…" : "Complete POS sale"}</button>
-          {!locations.length && !loading && <small>No active stock locations are available. Create or activate a store or warehouse in Inventory before checkout.</small>}
-        </form>
       </div>
+      <nav className="sb-pos-mobile-step" aria-label="POS checkout steps">
+        <button type="button" className={mobileCheckoutTab === "catalogue" ? "is-active" : ""} aria-current={mobileCheckoutTab === "catalogue" ? "step" : undefined} onClick={() => setMobileCheckoutTab("catalogue")}>Items</button>
+        <button type="button" className={mobileCheckoutTab === "cart" ? "is-active" : ""} aria-current={mobileCheckoutTab === "cart" ? "step" : undefined} onClick={() => setMobileCheckoutTab("cart")}>Cart ({cartCount})</button>
+        <button type="button" className={mobileCheckoutTab === "pay" ? "is-active" : ""} aria-current={mobileCheckoutTab === "pay" ? "step" : undefined} onClick={() => setMobileCheckoutTab("pay")}>Pay</button>
+      </nav>
+      <div className="sb-pos-layout">
+        <div className={"sb-data-card sb-pos-catalogue-panel " + (mobileCheckoutTab === "catalogue" ? "is-mobile-active" : "")}>
+          <div className="sb-pos-searchbar">
+            <span aria-hidden="true">⌕</span>
+            <input ref={searchRef} type="search" value={search} onChange={e => setSearch(e.target.value)} onKeyDown={onSearchKey} placeholder="Search item, SKU or scan barcode…  (F2)" aria-label="Search product or SKU" autoComplete="off" enterKeyHint="search" />
+            {search && <button type="button" onClick={() => { setSearch(""); searchRef.current?.focus(); }} aria-label="Clear search">✕</button>}
+            <button type="button" className="sb-pos-refresh" onClick={load} disabled={loading}>{loading ? "Loading…" : "Refresh"}</button>
+          </div>
+          {!loading && <p className="sb-pos-count">{search.trim() ? visible.length + (visible.length === 1 ? " item" : " items") + " found for “" + search.trim() + "”" : activeVariants.length + " items available"}</p>}
+          {loading ? <p className="sb-empty">Loading items…</p> : <div className="sb-pos-products">
+            {visible.slice(0, shown).map(v => {
+              const label = variantLabel(v); const inCart = qtyById.get(v.id) || 0; const title = productTitle(v);
+              return <button type="button" className={"sb-pos-tile" + (inCart ? " is-in-cart" : "")} key={v.id} onClick={() => add(v)} aria-label={"Add to sale: " + title + (label ? " " + label : "")}>
+                <span className="sb-pos-tile-art">{v.image_url ? <img src={v.image_url} alt="" loading="lazy" onError={e => { e.currentTarget.style.display = "none"; }} /> : null}<i>{title.trim().charAt(0).toUpperCase()}</i>{inCart > 0 && <b className="sb-pos-tile-badge">{inCart}</b>}</span>
+                <strong>{title}</strong>
+                {label && <small>{label}</small>}
+                <span className="sb-pos-tile-price">{money(v.selling_price)}</span>
+              </button>;
+            })}
+          </div>}
+          {!loading && visible.length > shown && <button type="button" className="sb-pos-more" onClick={() => setShown(n => n + 60)}>Show more items ({visible.length - shown} left)</button>}
+          {!loading && !visible.length && <p className="sb-empty">{search.trim() ? "Nothing matches “" + search.trim() + "”. Try fewer letters, another spelling, or the SKU." : "No active saleable variants are available. Add or activate a product and its variant in Catalogue."}</p>}
+        </div>
+        <div className={"sb-data-card sb-pos-sale-panel " + (mobileCheckoutTab !== "catalogue" ? "is-mobile-active" : "")}>
+          <div className={"sb-pos-cart-panel " + (mobileCheckoutTab === "cart" ? "is-mobile-active" : "")}>
+            <div className="sb-pos-cart-head"><h2>Current sale <small>{cartCount} {cartCount === 1 ? "item" : "items"}</small></h2>
+              <span><button type="button" onClick={holdSale} disabled={!cart.length}>Hold</button><button type="button" className="is-danger" onClick={resetSale} disabled={!cart.length}>Clear</button></span></div>
+            {!cart.length ? <p className="sb-empty sb-pos-empty">Cart is empty.<br />Tap an item to add it, or scan a barcode.</p> : <div className="sb-pos-cart">{cart.map(line => <div className="sb-pos-cart-line" key={line.id}>
+              <div className="sb-pos-line-info"><strong>{productTitle(line)}</strong><small>{[variantLabel(line), money(line.selling_price) + " each"].filter(Boolean).join(" · ")}</small></div>
+              <div className="sb-pos-stepper"><button type="button" onClick={() => bump(line.id, -1)} aria-label={"Decrease " + productTitle(line)}>−</button><input type="number" min="0" max="100000" step="1" inputMode="numeric" value={line.quantity} onChange={e => setQuantity(line.id, e.target.value)} aria-label={"Quantity for " + productTitle(line)} /><button type="button" onClick={() => bump(line.id, 1)} aria-label={"Increase " + productTitle(line)}>+</button></div>
+              <strong className="sb-pos-line-total">{money(Number(line.selling_price || 0) * line.quantity)}</strong>
+              <button type="button" className="sb-pos-remove" onClick={() => removeLine(line.id)} aria-label={"Remove " + productTitle(line)}>✕</button>
+            </div>)}</div>}
+            <div className="sb-pos-total"><span>Subtotal</span><strong>{money(total)}</strong></div>
+            <button className="sb-pos-mobile-next" type="button" onClick={() => setMobileCheckoutTab("pay")}>Continue to payment</button>
+          </div>
+          <form className={"sb-pos-payment-panel " + (mobileCheckoutTab === "pay" ? "is-mobile-active" : "")} onSubmit={checkout} noValidate>
+            <button className="sb-pos-mobile-back" type="button" onClick={() => setMobileCheckoutTab("cart")}>← Back to cart</button>
+            <div className="sb-pos-customer">
+              <button type="button" className="sb-pos-customer-row" onClick={() => setShowCustomer(v => !v)} aria-expanded={showCustomer}><span>Customer</span><b>{customer.name.trim() || WALK_IN.name}{customer.phone ? " · " + customer.phone : ""}</b><em>{showCustomer ? "Done" : "Edit"}</em></button>
+              {showCustomer && <div className="sb-pos-customer-edit">
+                <label>Customer name<input maxLength="200" value={customer.name} onChange={e => setCustomer(v => ({ ...v, name: e.target.value }))} /></label>
+                <label>Phone (optional)<input type="tel" maxLength="20" value={customer.phone} onChange={e => setCustomer(v => ({ ...v, phone: e.target.value }))} /></label>
+                <label>Delivery PIN (optional)<input inputMode="numeric" maxLength="6" value={customer.pin} onChange={e => setCustomer(v => ({ ...v, pin: e.target.value.replace(/\D/g, "") }))} /></label>
+                {!selectedRegisterId && <label>Stock location<select value={locationId} onChange={e => setLocationId(e.target.value)}><option value="">Choose stock location</option>{locations.map(location => <option key={location.id} value={location.id}>{location.name} · {location.location_type || "location"}</option>)}</select></label>}
+              </div>}
+            </div>
+            <div className="sb-pos-methods" role="radiogroup" aria-label="Payment method">
+              {PAYMENT_METHODS.map(m => <button type="button" role="radio" aria-checked={method === m.id} key={m.id} className={method === m.id ? "is-selected" : ""} onClick={() => { setMethod(m.id); setTendered(""); }}><i aria-hidden="true">{m.mark}</i>{m.label}</button>)}
+            </div>
+            <div className="sb-pos-tender">
+              {method === "cod" ? <>
+                <label>Cash received (₹)<input type="number" min="0" step="0.01" inputMode="decimal" value={tendered} onChange={e => setTendered(e.target.value)} placeholder={total ? "Leave empty if exact" : "0.00"} /></label>
+                {quickCash.length > 0 || total > 0 ? <div className="sb-pos-quick"><button type="button" onClick={() => setTendered(total.toFixed(2))} disabled={!total}>Exact</button>{quickCash.map(x => <button type="button" key={x} onClick={() => setTendered(String(x))}>{money(x)}</button>)}</div> : null}
+                <div className={"sb-pos-change" + (shortBy != null ? " is-short" : "")}><span>{shortBy != null ? "Still to collect" : "Change to return"}</span><strong>{money(shortBy != null ? shortBy : (changeDue ?? 0))}</strong></div>
+                <p className="sb-muted">Cash is saved as pending and counted into this shift once you tap “Confirm cash received” on the receipt.</p>
+              </> : <>
+                <div className="sb-pos-due"><span>Amount to collect via {methodLabel(method)}</span><strong>{money(total)}</strong></div>
+                <label>{method === "card" ? "Card terminal / approval reference (optional)" : "Payment reference (optional)"}<input maxLength="100" value={reference} onChange={e => setReference(e.target.value)} placeholder={method === "card" ? "Last 4 digits or approval code" : method === "upi" ? "UPI transaction ID" : "Reference number"} /></label>
+                <p className="sb-muted">{method === "card" ? "Customer taps, inserts or swipes their card on the machine." : method === "upi" ? "Customer scans the store UPI QR and pays." : "Collect the payment as per the method chosen."} The sale stays pending until the payment is verified.</p>
+              </>}
+            </div>
+            <button className="sb-pos-charge" type="submit" disabled={saving || Boolean(blocker)}>{chargeLabel}</button>
+            {blocker && <p className="sb-pos-blocker" role="status">{blocker}</p>}
+            {!locations.length && !loading && <small className="sb-muted">No active stock locations are available. Create or activate a store or warehouse in Inventory before checkout.</small>}
+          </form>
+        </div>
+      </div>
+      {mobileCheckoutTab === "catalogue" && cartCount > 0 && <button type="button" className="sb-pos-cartbar" onClick={() => setMobileCheckoutTab("cart")}><span>{cartCount} {cartCount === 1 ? "item" : "items"}</span><strong>View cart · {money(total)} →</strong></button>}
     </div>
+    {showReceipt && receipt?.payment && <div className="sb-pos-modal" role="dialog" aria-modal="true" aria-label="Sale receipt" onClick={e => { if (e.target === e.currentTarget) closeReceipt(); }}>
+      <div className="sb-pos-receipt">
+        <div className="sb-pos-receipt-sheet">
+          <div className="sb-pos-receipt-top"><span className="sb-pos-tick" aria-hidden="true">✓</span><h2>Sale recorded</h2><p>{receipt.order.order_number}</p></div>
+          <p className="sb-pos-receipt-meta">Super Bajaar{receipt.counter ? " · " + receipt.counter : ""}<br />{new Date(receipt.at).toLocaleString("en-IN")}<br />Customer: {receipt.customer.name}{receipt.customer.phone ? " · " + receipt.customer.phone : ""}</p>
+          <table><tbody>{receipt.lines.map(l => <tr key={l.id}><td>{l.name}{l.label ? <small>{l.label}</small> : null}<small>{l.quantity} × {money(l.price)}</small></td><td>{money(l.price * l.quantity)}</td></tr>)}</tbody></table>
+          <div className="sb-pos-receipt-total"><span>Total</span><strong>{money(receiptTotal)}</strong></div>
+          <p className="sb-pos-receipt-pay">{methodLabel(receipt.method)} · {cashPending ? "cash awaiting confirmation" : receipt.payment.status}{receipt.payment.payment_reference ? " · " + receipt.payment.payment_reference : ""}</p>
+          {receipt.tendered != null && <p className="sb-pos-receipt-pay">Cash received {money(receipt.tendered)}{receiptChange != null ? " · Change " + money(receiptChange) : ""}</p>}
+          <p className="sb-pos-receipt-thanks">Thank you for shopping at Super Bajaar!</p>
+        </div>
+        <div className="sb-pos-receipt-actions">
+          {cashPending && activeShift && <button type="button" className="sb-pos-charge" onClick={confirmCashTender} disabled={registerBusy}>{registerBusy ? "Please wait…" : "Confirm cash received"}</button>}
+          <button type="button" onClick={() => window.print()}>Print receipt</button>
+          <button type="button" className="is-primary" onClick={closeReceipt}>New sale</button>
+        </div>
+      </div>
+    </div>}
   </section>;
 }
