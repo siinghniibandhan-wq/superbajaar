@@ -380,3 +380,51 @@ def test_customer_session_can_reach_attachment_routes_but_not_other_staff_paths(
     # Staff attachment download must stay closed to customer sessions.
     staff = client.get("/api/customers/support-cases/1/attachments/1/download", headers=headers)
     assert staff.status_code == 403
+
+
+def test_crm_support_tag_payload_trims_name_and_validates_color():
+    import pytest
+    from pydantic import ValidationError
+    from app.api.customers import SupportTagIn
+
+    tag = SupportTagIn(name="  Escalated  ", color="#AABBCC")
+    assert tag.name == "Escalated"
+    assert tag.color == "#AABBCC"
+
+    with pytest.raises(ValidationError):
+        SupportTagIn(name="Escalated", color="red")
+
+
+def test_crm_support_tag_rejects_blank_name():
+    import pytest
+    from pydantic import ValidationError
+    from app.api.customers import SupportTagIn
+
+    with pytest.raises(ValidationError):
+        SupportTagIn(name="   ")
+
+
+def test_crm_bulk_case_update_requires_a_change():
+    import pytest
+    from pydantic import ValidationError
+    from app.api.customers import BulkCaseUpdate
+
+    with pytest.raises(ValidationError):
+        BulkCaseUpdate(case_ids=[1, 2])
+
+
+def test_crm_bulk_case_update_validates_unique_ids_and_fields():
+    import pytest
+    from pydantic import ValidationError
+    from app.api.customers import BulkCaseUpdate
+
+    payload = BulkCaseUpdate(case_ids=[1, 2], status="in_progress", assigned_to=None)
+    assert payload.case_ids == [1, 2]
+    assert payload.status == "in_progress"
+    assert payload.assigned_to is None
+
+    with pytest.raises(ValidationError):
+        BulkCaseUpdate(case_ids=[1, 1], status="open")
+
+    with pytest.raises(ValidationError):
+        BulkCaseUpdate(case_ids=[1], status="unknown")
