@@ -235,6 +235,7 @@ export default function HRWorkspace({onBack,currentUser}) {
           {!salaryRevisions.length&&<tr><td colSpan={5}>No salary history available.</td></tr>}
         </tbody></table></div>
       </section>}
+        </section>}
        </>}
     </div>}
     {tab==="attendance"&&<div className="hr-panel">
