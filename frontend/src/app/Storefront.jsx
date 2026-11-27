@@ -11,7 +11,7 @@ import CategoryHeroSlider from "./CategoryHeroSlider.jsx";
 import { useEffect, useMemo, useState } from "react";
 import { Heart, ShoppingBag, Search, Sparkles, Flame, Clock3, ChevronLeft, ChevronRight, UserRound, MapPin, X, Coins, CreditCard, CalendarClock, Star, Paperclip, FileText } from "lucide-react";
 import { Users, HeartPulse, Package, ShoppingCart, Leaf, Shirt, Droplets, Headphones, Home, PawPrint, Gift, Car, Trophy, Pill, ShieldCheck } from "lucide-react";
-import { apiRequest } from "../services/api.js";
+import { apiRequest, API_BASE_URL } from "../services/api.js";
 import GoogleAnalytics, { getAnalyticsConsent, setAnalyticsConsent, trackAnalyticsEvent } from "./GoogleAnalytics.jsx";
 import IdentityClaimsPanel from "./IdentityClaimsPanel.jsx";
 import ProductReviews from "./ProductReviews.jsx";
@@ -129,6 +129,33 @@ export default function Storefront() {
   const [customerAuthMode, setCustomerAuthMode] = useState(() => window.location.pathname === "/customer/register" ? "register" : "login");
   const [customerAuthDraft, setCustomerAuthDraft] = useState(() => ({ full_name: "", email: "", phone: "", password: "", referral_code: new URLSearchParams(window.location.search).get("ref") || "" }));
   const [customerAuthBusy, setCustomerAuthBusy] = useState(false);
+  const [oauthProviders, setOauthProviders] = useState([]);
+  useEffect(() => {
+    let active = true;
+    apiRequest("/customer-auth/oauth/providers", { skipAuth: true })
+      .then(result => { if (active) setOauthProviders(result?.providers || []); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
+  // Returning from Google/GitHub: the API redirects here with the session token (or an error) in the URL fragment.
+  useEffect(() => {
+    const path = window.location.pathname.replace(/\/+$/, "");
+    if (path !== "/customer/oauth-complete" && !(path === "/customer/login" && window.location.hash.includes("error="))) return;
+    const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const token = params.get("token");
+    const failure = params.get("error");
+    if (token) {
+      try { window.localStorage.setItem("sb-customer.access_token", token); } catch {}
+      setCustomerToken(token);
+      window.history.replaceState({}, "", "/account");
+      setRoutePath("/account");
+    } else {
+      window.history.replaceState({}, "", "/customer/login");
+      setRoutePath("/customer/login");
+      setCustomerAuthMode("login");
+      setError(failure || "Could not sign in. Please try again.");
+    }
+  }, []);
   const [referralData, setReferralData] = useState(null);
   const [referralBusy, setReferralBusy] = useState(false);
   const [wishlist, setWishlist] = useState(() => { try { return JSON.parse(window.localStorage.getItem("sb-wishlist") || "[]").map(Number).filter(Number.isFinite); } catch { return []; } });
@@ -1196,6 +1223,11 @@ export default function Storefront() {
         <label>Password<input required type="password" minLength={customerAuthMode === "register" ? 10 : 1} maxLength="1024" autoComplete={customerAuthMode === "register" ? "new-password" : "current-password"} value={customerAuthDraft.password} onChange={e=>setCustomerAuthDraft(old=>({...old,password:e.target.value}))}/>{customerAuthMode === "register" && <small>Use at least 10 characters.</small>}</label>
         {customerAuthMode === "register" && <label>Referral code (optional)<input maxLength="24" autoComplete="off" value={customerAuthDraft.referral_code} onChange={e=>setCustomerAuthDraft(old=>({...old,referral_code:e.target.value.toUpperCase()}))} placeholder="Enter a friend's code"/></label>}
         <button type="submit" className="storefront-primary" disabled={customerAuthBusy}>{customerAuthBusy ? "Please wait…" : customerAuthMode === "register" ? "Create account" : "Sign in and continue"}</button>
+        {oauthProviders.length > 0 && <div className="storefront-social-login">
+          <p className="storefront-social-divider"><span>or continue with</span></p>
+          {oauthProviders.includes("google") && <a className="storefront-social-button" href={API_BASE_URL + "/customer-auth/oauth/google/start"}>Continue with Google</a>}
+          {oauthProviders.includes("github") && <a className="storefront-social-button" href={API_BASE_URL + "/customer-auth/oauth/github/start"}>Continue with GitHub</a>}
+        </div>}
         <p className="storefront-account-note">{customerAuthMode === "register" ? "Already registered? " : "New to Super Bajaar? "}<button type="button" className="storefront-inline-link" onClick={()=>{setCustomerAuthMode(customerAuthMode==="register"?"login":"register");setError("");}}>{customerAuthMode === "register" ? "Sign in" : "Create an account"}</button></p>
       </form>
     </section>}
