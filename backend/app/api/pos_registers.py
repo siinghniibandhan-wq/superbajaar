@@ -298,7 +298,7 @@ def confirm_cash_payment(shift_id: int, payment_id: int, request: Request):
                 if int(shift["cashier_user_id"]) != actor and getattr(request.state, "role", "") not in {"manager","admin","super_admin"}:
                     raise HTTPException(status_code=403, detail="Only the assigned cashier or a manager can confirm this cash tender")
                 payment = conn.execute(
-                    """SELECT p.id,p.payment_reference,p.method,p.amount,p.status,o.id AS order_id,o.order_number
+                    """SELECT p.id,p.payment_reference,p.method,p.amount,p.status,o.id AS order_id,o.order_number,o.status AS order_status
                        FROM payments p JOIN orders o ON o.id=p.order_id
                        WHERE p.id=%s AND o.channel='pos' AND o.pos_register_shift_id=%s
                        FOR UPDATE OF p,o""",
@@ -306,6 +306,8 @@ def confirm_cash_payment(shift_id: int, payment_id: int, request: Request):
                 ).fetchone()
                 if payment is None:
                     raise HTTPException(status_code=404, detail="Cash tender does not belong to this register shift")
+                if payment["order_status"] == "cancelled":
+                    raise HTTPException(status_code=409, detail="A cancelled POS order cannot receive a cash confirmation")
                 if payment["method"] != "cod":
                     raise HTTPException(status_code=422, detail="Only physical cash tenders can be confirmed here")
                 if payment["status"] != "pending":
