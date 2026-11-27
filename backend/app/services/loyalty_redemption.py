@@ -7,6 +7,12 @@ from fastapi import HTTPException
 
 
 COIN_VALUE_IN_RUPEES = Decimal("1")
+# Super Coins do not expire. The ledger requires an expiry timestamp on every
+# earned lot, so "never" is stored as 100 years. Every credit path uses this.
+COIN_VALIDITY_DAYS = 36500
+# Razorpay cannot open a payment for less than Rs 1, so coins may never cover
+# the whole order: at least this much is always paid online.
+MIN_PAYABLE_AFTER_COINS = Decimal("1")
 
 
 def _account(conn, email: str, *, lock: bool = False):
@@ -80,7 +86,7 @@ def loyalty_liability_account(conn, event_date=None) -> int:
 def quote_redemption(conn, email: str, payable_amount: Decimal) -> dict:
     account = _account(conn, email)
     available = available_balance(conn, int(account["id"])) if account else 0
-    payable_coins = max(0, int(Decimal(payable_amount).to_integral_value(rounding=ROUND_FLOOR)))
+    payable_coins = max(0, int((Decimal(payable_amount) - MIN_PAYABLE_AFTER_COINS).to_integral_value(rounding=ROUND_FLOOR)))
     enabled = False
     reason = None
     if available and payable_coins:
@@ -99,8 +105,8 @@ def redeem_for_order(conn, *, customer_email: str, order_id: int, order_referenc
     """Debit earned lots FIFO; caller owns the transaction and order insert."""
     if requested_coins <= 0:
         return {"coins": 0, "discount_amount": Decimal("0.00"), "account_id": None}
-    if Decimal(requested_coins) > Decimal(payable_amount):
-        raise HTTPException(422, "Requested Super Coins exceed the payable order amount")
+    if Decimal(requested_coins) > Decimal(payable_amount) - MIN_PAYABLE_AFTER_COINS:
+        raise HTTPException(422, "Super Coins cannot cover the whole order; at least Rs 1 must be paid online")
     loyalty_liability_account(conn)
     account = _account(conn, customer_email, lock=True)
     if account is None:
@@ -180,8 +186,8 @@ def adjust_account(conn, *, customer_email: str, direction: str, coins: int, rea
         return {"adjusted": False, "duplicate": True, "transaction_id": prior["id"]}
     if direction == "credit":
         row = conn.execute(
-            "INSERT INTO loyalty_transactions (account_id,transaction_type,coins,description,expires_at,idempotency_key) VALUES (%s,'earn',%s,%s,now()+interval '365 days',%s) RETURNING id",
-            (account["id"], coins, "Administrative credit: " + reason.strip(), key),
+            "INSERT INTO loyalty_transactions (account_id,transaction_type,coins,description,expires_at,idempotency_key) VALUES (%s,'earn',%s,%s,now()+make_interval(days => %s),%s) RETURNING id",
+            (account["id"], coins, "Administrative credit: " + reason.strip(), COIN_VALIDITY_DAYS, key),
         ).fetchone()
         from app.services.loyalty_accounting import post_earning_accrual
         post_earning_accrual(conn, int(row["id"]))

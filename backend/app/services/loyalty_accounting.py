@@ -204,3 +204,33 @@ def post_debit_adjustment(conn, transaction_id: int) -> int:
         ],
         (None, "system:loyalty"),
     )
+
+
+# (event_type, line_role, account type, needed before launch?)
+REQUIRED_MAPPINGS = (
+    ("points_earned", "loyalty_reward_expense", "expense", True),
+    ("points_earned", "loyalty_points_liability", "liability", True),
+    ("points_redemption", "loyalty_points_liability", "liability", True),
+    ("points_redeemed_admin", "loyalty_points_liability", "liability", False),
+    ("points_redeemed_admin", "loyalty_reward_expense", "expense", False),
+    ("points_adjusted", "loyalty_points_liability", "liability", False),
+    ("points_adjusted", "loyalty_adjustment_offset", "expense", False),
+    ("points_expired", "loyalty_points_liability", "liability", False),
+    ("points_expired", "loyalty_breakage_income", "income", False),
+)
+
+
+def mapping_readiness(conn, event_date=None) -> dict:
+    """Report missing Finance mappings without posting anything."""
+    from datetime import date
+
+    day = event_date or date.today()
+    blocking, optional = [], []
+    for event_type, line_role, account_type, needed in REQUIRED_MAPPINGS:
+        try:
+            _approved_account(conn, event_type=event_type, line_role=line_role,
+                              expected_type=account_type, event_date=day)
+        except HTTPException:
+            (blocking if needed else optional).append(
+                {"event_type": event_type, "line_role": line_role, "account_type": account_type})
+    return {"ready": not blocking, "missing_required": blocking, "missing_optional": optional}
