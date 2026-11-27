@@ -125,6 +125,41 @@ def create_register(payload: RegisterCreate, request: Request):
         raise HTTPException(status_code=503, detail="Register could not be saved") from exc
 
 
+
+@router.get("/registers/{register_id}/shifts")
+def shift_history(register_id: int, request: Request, limit: int = 50):
+    actor = _actor(request)
+    if limit < 1 or limit > 200:
+        raise HTTPException(status_code=422, detail="Limit must be between 1 and 200")
+    try:
+        with _connect() as conn:
+            register = conn.execute("SELECT id FROM pos_registers WHERE id=%s", (register_id,)).fetchone()
+            if register is None:
+                raise HTTPException(status_code=404, detail="Register not found")
+            role = getattr(request.state, "role", "")
+            if role not in {"manager","admin","super_admin"}:
+                rows = conn.execute(
+                    """SELECT id,register_id,cashier_user_id,opened_by,opening_float,opened_at,status,
+                              expected_cash,counted_cash,cash_variance,closing_note,closed_by,closed_at
+                       FROM pos_register_shifts WHERE register_id=%s AND cashier_user_id=%s
+                       ORDER BY opened_at DESC LIMIT %s""",
+                    (register_id,actor,limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """SELECT id,register_id,cashier_user_id,opened_by,opening_float,opened_at,status,
+                              expected_cash,counted_cash,cash_variance,closing_note,closed_by,closed_at
+                       FROM pos_register_shifts WHERE register_id=%s
+                       ORDER BY opened_at DESC LIMIT %s""",
+                    (register_id,limit),
+                ).fetchall()
+        return {"items": rows}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise HTTPException(status_code=503, detail="Shift history is unavailable") from exc
+
+
 @router.get("/registers/{register_id}/shift")
 def current_shift(register_id: int, request: Request):
     try:
