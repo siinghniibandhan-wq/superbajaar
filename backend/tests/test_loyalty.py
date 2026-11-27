@@ -212,3 +212,32 @@ def test_customer_loyalty_endpoint_does_not_expose_unlinked_legacy_cards(monkeyp
     assert result["account"] is None
     assert result["available_coins"] == 0
     assert "Legacy cards" in result["message"]
+
+
+def test_super_coins_accounting_setup_migration_is_required_and_seeds_reviewable_mappings():
+    root = Path(__file__).resolve().parents[1]
+    required = (root / "schema_required.txt").read_text()
+    migration = root / "schema" / "069_super_coins_accounting_setup.sql"
+
+    assert "069_super_coins_accounting_setup.sql" in required
+    assert migration.exists()
+    sql = migration.read_text().lower()
+
+    assert "'2600', 'customer loyalty points liability', 'liability'" in sql
+    assert "'6110', 'customer loyalty rewards expense', 'expense'" in sql
+    assert "'4210', 'expired customer rewards breakage income', 'income'" in sql
+    assert "status='draft'" in sql
+    assert "effective_from" in sql and "date '2000-01-01'" in sql
+    assert "points_earned" in sql
+    assert "points_redemption" in sql
+    assert "points_redeemed_admin" in sql
+    assert "points_adjusted" in sql
+    assert "points_expired" in sql
+    assert "loyalty_reward_expense" in sql
+    assert "loyalty_points_liability" in sql
+    assert "loyalty_adjustment_offset" in sql
+    assert "loyalty_breakage_income" in sql
+    assert "drop table" not in sql
+    assert "drop column" not in sql
+    assert "truncate " not in sql
+    assert "'approved'" not in sql
