@@ -56,9 +56,7 @@
 
 ### Immediate Deployment Steps
 - [ ] **Run database migration:**
-  ```bash
-  psql -d your_database -f backend/schema/048_purchasing_replenishment.sql
-  ```
+  Use the governed migration procedure in [Database migrations](docs/DATABASE_MIGRATIONS.md). Do not apply the SQL file directly with an ad-hoc `psql -f` command. Production application requires a verified backup and separate approval.
 
 - [ ] **Populate reorder points for products:**
   - Navigate to Catalogue/Product Management
@@ -148,7 +146,7 @@ The implementation is considered successful when:
 - All code follows existing patterns in the codebase
 - React component uses existing CSS styling conventions
 - API endpoints follow existing FastAPI patterns
-- Database migration follows Redmi numbering scheme (048)
+- Database migration uses the repository's numbered migration scheme (048)
 - No breaking changes to existing functionality
 - Fully backward compatible
 
@@ -166,6 +164,6 @@ After basic implementation is working, consider:
 
 ---
 
-**Status:** ✅ Implementation Complete
-**Last Updated:** November 22, 2026
-**Ready for:** Database migration and testing
+**Code status:** Implemented in the repository (migration 048, backend service/API and Purchasing workspace integration).
+**Production status:** Not established by this checklist. Confirm migration 048 in the production migration ledger and run the feature verification steps before marking it production-verified.
+**Last reviewed:** 27 November 2026
