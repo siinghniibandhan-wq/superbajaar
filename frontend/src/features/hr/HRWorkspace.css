@@ -475,3 +475,25 @@
   .hr-workspace .hr-people-switch{width:100%}
   .hr-workspace .hr-people-switch button{flex:1;justify-content:center}
 }
+
+
+.hr-workspace .hr-employee-profile{
+  margin:18px 0;padding:16px;border:1px solid var(--border,#dfe5ea);
+  border-radius:12px;background:var(--surface-subtle,#f8fafc);
+}
+.hr-workspace .hr-employee-profile-grid{
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:14px 0;
+}
+.hr-workspace .hr-employee-profile-grid>div{
+  display:flex;flex-direction:column;gap:5px;min-width:0;padding:11px;
+  border:1px solid var(--border,#e3e8ee);border-radius:9px;background:var(--surface,#fff);
+}
+.hr-workspace .hr-employee-profile-grid span{
+  color:var(--muted,#667085);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.035em;
+}
+.hr-workspace .hr-employee-profile-grid strong{
+  overflow-wrap:anywhere;color:var(--text,#303943);font-size:13px;font-weight:650;text-transform:capitalize;
+}
+.hr-workspace .hr-employee-profile-actions{display:flex;flex-wrap:wrap;gap:8px}
+@media(max-width:760px){.hr-workspace .hr-employee-profile-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:440px){.hr-workspace .hr-employee-profile-grid{grid-template-columns:1fr}}
