@@ -152,7 +152,7 @@ function AppShell() {
   const openById = id => { const found = visibleItems.find(item => item.id === id); if (found) setSelected(found); };
   const signOut = async () => {
     try { await apiRequest("/auth/logout", { method: "POST" }); } catch {}
-    try { window.localStorage.removeItem("superbajaar.access_token"); } catch {}
+    clearSessionToken("superbajaar.access_token");
     setUser(null);
     setSelected(null);
   };
