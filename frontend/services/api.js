@@ -9,6 +9,7 @@ function normalizeApiBase(value) {
 }
 
 const API_BASE_URL = normalizeApiBase(configuredBase);
+export { API_BASE_URL };
 
 function readStoredToken() {
   try { return window.localStorage.getItem("superbajaar.access_token") || ""; } catch { return ""; }
