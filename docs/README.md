@@ -1,7 +1,7 @@
 # Super Bajaar engineering documentation
 
 **Documentation owner:** Engineering  
-**Last reviewed:** 14 November 2026  
+**Last reviewed:** 27 November 2026  
 **Status:** Canonical documentation index
 
 This directory contains current engineering references, operational runbooks, historical audit/design records, implementation plans and supporting configuration. Source code and workflow YAML define implemented behaviour; live infrastructure and deployment state require timestamped evidence.
@@ -11,6 +11,7 @@ This directory contains current engineering references, operational runbooks, hi
 | Need | Canonical reference |
 |---|---|
 | Project overview, setup and repository map | [Repository README](../README.md) |
+| Current module capabilities and verified gaps | [Current implementation status](CURRENT_IMPLEMENTATION_STATUS.md) |
 | Current production decisions, IAM approval model, self-approval, migration 045, backup evidence and open actions | [Production governance and readiness](PRODUCTION_GOVERNANCE_AND_READINESS.md) |
 | Environment tiers, CI/CD triggers and release types | [Environments and CI/CD](ENVIRONMENTS_AND_CICD.md) |
 | PostgreSQL migration policy, runner modes and production commands | [Database migrations](DATABASE_MIGRATIONS.md) |
