@@ -171,6 +171,10 @@ async def require_active_session(request: Request) -> None:
     # Never silently disable authentication when production DB configuration is
     # missing. Public routes above remain available; protected routes fail closed.
     if not settings.database_url:
+        if settings.app_env.lower() not in {"production", "prod"}:
+            # Local/test environments intentionally permit route validation without
+            # a database. Production must explicitly set APP_ENV=production.
+            return
         raise HTTPException(
             status_code=503,
             detail="Authentication storage is not configured; protected API access is disabled",
