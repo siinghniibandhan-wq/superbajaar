@@ -1,0 +1,88 @@
+# Super Bajaar HRMS redesign and delivery plan
+
+## Product objective
+Deliver a complete, usable HRMS inside Super Bajaar. Super Bajaar remains the source of truth for employee identity, permissions, payroll, accounting and operational data. Prefer extending existing capabilities over duplicating them.
+
+## UX acceptance principles
+- Plain-language labels; group navigation by the employee lifecycle and daily work.
+- Separate workspaces for employee records, attendance, leave, payroll, compliance and people development.
+- Every screen has a clear page title, short explanation, primary action, useful filters, empty/loading/error states and a visible way back.
+- Keep common actions reachable without forcing users through nested tabs.
+- Responsive layouts: no clipped controls; tables scroll within their own container; touch targets remain comfortable on phones.
+- Consistent forms with labels, examples, validation, confirmation for destructive actions and clear success/error feedback.
+- Role-based navigation and server-side authorization; hiding a menu is not security.
+- Accessible keyboard focus, semantic headings, readable contrast and status text that does not rely on colour alone.
+
+## Existing capabilities to preserve and refactor
+Employee and department records, organisation chart, attendance punching/register/corrections/audit, attendance policies and work locations, shifts and assignments, holiday calendars, leave applications/policies/balances/accruals/ledger, expense claims, payroll runs and approval/payment, salary revision approvals, variable earnings, payslips, statutory policies/profiles/remittances, establishment-based accounting accruals, employee self-service and onboarding/offboarding checklist templates/tasks.
+
+## Target information architecture
+1. HR Command Centre: overview, workforce metrics, pending actions and alerts.
+2. Organisation: establishments, departments, designations and reporting structure.
+3. Recruitment: requisitions, vacancies, candidates, interviews and offers.
+4. Onboarding: joining tasks, document verification, induction and probation.
+5. Employee Management: searchable directory, profile, employment history and documents.
+6. Attendance & Workforce: register, shifts, rosters, locations, corrections and audit.
+7. Leave Management: requests, policies, calendars, balances and ledger.
+8. Payroll & Compensation: salary structures/revisions, payroll runs, earnings, deductions and payslips.
+9. Benefits & Expenses: claims, reimbursements, allowances, advances and approvals.
+10. Employee Self-Service: profile, attendance, leave, documents, payslips and requests.
+11. Performance: goals, review cycles, appraisals and feedback.
+12. Learning & Development: training, enrolments, skills and certifications.
+13. Assets & Equipment: asset register, assignment, return and maintenance.
+14. Travel: requests, approval and expense settlement.
+15. Separation & Exit: resignation, notice, clearance and final settlement.
+16. Documents & Policies: document library, acknowledgements and expiry tracking.
+17. Compliance: establishment records, statutory policies and remittance reconciliation.
+18. Reports & Analytics: workforce, attendance, leave, payroll and recruitment reporting.
+19. Approvals: central inbox, history and delegation, backed by existing approval APIs.
+20. HR Settings: role/permission, workflow and policy configuration.
+
+## Delivery phases and definition of done
+
+### Phase 1 — Usability foundation
+- Replace cramped, horizontally scrolling HR tabs with grouped, labelled, responsive navigation.
+- Clarify names and descriptions without changing API contracts.
+- Validate desktop, tablet and phone layouts, keyboard navigation and existing manager/employee access.
+- Run frontend unit/contract tests and production build.
+
+### Phase 2 — Core HR workspaces
+- Extract employee directory/profile and organisation management from the large workspace.
+- Separate attendance, leave and workforce planning into independent pages.
+- Preserve all existing endpoints, forms, filters, approvals, audit history and exports.
+- Add component and workflow tests.
+
+### Phase 3 — Payroll and compliance
+- Separate payroll, salary history, variable earnings, payslips, expenses and statutory administration.
+- Preserve full-month payroll rules, approval controls, establishment-specific accruals and accounting mappings.
+- Make statutory reconciliation limitations explicit; do not imply CSV export is portal filing.
+
+### Phase 4 — Employee lifecycle
+- Build recruitment and candidate pipeline.
+- Expand onboarding/offboarding checklist engine into joining, probation and exit workflows.
+- Add document handling only with appropriate access, audit and retention controls.
+
+### Phase 5 — People development and operations
+- Implement performance, training, assets and travel only after data model and workflow requirements are verified.
+- Avoid creating placeholder screens that look operational but have no working API.
+
+### Phase 6 — Administration, reports and hardening
+- Consolidate approvals and reporting where backend support exists.
+- Add missing APIs and migrations only after schema review and backward-compatibility checks.
+- Complete role-matrix, accessibility, responsive, security and regression testing.
+
+## Known gaps to verify/build
+Recruitment, full performance/appraisal, training, asset allocation, travel, document upload/library, formal resignation/exit workflow, central approvals inbox, and dedicated HR analytics are not established as complete standalone workflows by the inspected HR route set. Treat each as a product capability requiring design, API/schema work and tests—not merely a navigation link.
+
+## Current implementation slice
+- Grouped navigation labels in HRWorkspace.
+- Responsive, card-based navigation CSS with visible group headings and phone-friendly targets.
+- Existing HR APIs and underlying data workflows remain unchanged.
+
+## Release gates
+- No broken existing employee/manager workflows.
+- No permission escalation or client-only security.
+- No destructive schema changes.
+- Tests pass and production build succeeds.
+- Manual QA at narrow phone, tablet and desktop widths.
+- Each delivered module has real data/actions, loading/empty/error states and accessible navigation.
