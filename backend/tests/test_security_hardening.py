@@ -18,10 +18,17 @@ def request(method="GET", path="/api/orders"):
 
 def test_protected_route_fails_closed_when_database_is_not_configured(monkeypatch):
     monkeypatch.setattr(auth_middleware.settings, "database_url", "")
+    monkeypatch.setattr(auth_middleware.settings, "app_env", "production")
     with pytest.raises(HTTPException) as exc:
         asyncio.run(auth_middleware.require_active_session(request()))
     assert exc.value.status_code == 503
     assert "authentication storage" in exc.value.detail.lower()
+
+
+def test_development_environment_keeps_validation_routes_available_without_database(monkeypatch):
+    monkeypatch.setattr(auth_middleware.settings, "database_url", "")
+    monkeypatch.setattr(auth_middleware.settings, "app_env", "development")
+    asyncio.run(auth_middleware.require_active_session(request("POST", "/api/orders")))
 
 
 def test_public_health_route_remains_available_without_database(monkeypatch):
