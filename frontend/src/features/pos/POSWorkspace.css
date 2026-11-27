@@ -48,3 +48,11 @@
 .sb-pos .sb-pos-register-create form { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-top:12px; }
 .sb-pos .sb-pos-register-create form button { grid-column:1/-1; }
 @media(max-width:760px) { .sb-pos .sb-pos-register-grid { grid-template-columns:minmax(0,1fr); } .sb-pos .sb-pos-cash-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } .sb-pos .sb-pos-register-create form { grid-template-columns:minmax(0,1fr); } }
+
+.sb-pos .sb-pos-movements,.sb-pos .sb-pos-shift-history { display:grid; gap:8px; padding:12px; border:1px solid #ece6f4; border-radius:14px; background:#fff; }
+.sb-pos .sb-pos-movements > strong,.sb-pos .sb-pos-shift-history > strong { color:#384354; font-size:12px; }
+.sb-pos .sb-pos-movements > div { display:flex; justify-content:space-between; gap:12px; padding:7px 0; border-bottom:1px solid #f0edf4; font-size:11px; color:#6f7884; }
+.sb-pos .sb-pos-movements b { color:#303b49; }
+.sb-pos .sb-pos-shift-history { margin-top:14px; }
+.sb-pos .sb-pos-shift-history table { min-width:620px; }
+.sb-pos .sb-pos-shift-history small { color:#89929d; font-size:10px; }
