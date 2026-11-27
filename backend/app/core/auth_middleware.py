@@ -158,14 +158,17 @@ async def require_active_session(request: Request) -> None:
     if request.method == "OPTIONS" or not path.startswith(prefix + "/") or path in public:
         return
 
-    # When DB configuration is absent, let each database-backed handler return
-    # its explicit 503 response. With a configured database, auth remains required.
-    if not settings.database_url:
-        return
-
     if _is_public_catalogue_read(request.method, path, prefix):
         request.state.public_catalogue = True
         return
+
+    # Never silently disable authentication when production DB configuration is
+    # missing. Public routes above remain available; protected routes fail closed.
+    if not settings.database_url:
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication storage is not configured; protected API access is disabled",
+        )
 
     authorization = request.headers.get("authorization", "")
     if not authorization.lower().startswith("bearer "):
