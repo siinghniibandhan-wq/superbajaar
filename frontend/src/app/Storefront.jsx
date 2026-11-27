@@ -1175,7 +1175,7 @@ export default function Storefront() {
     </section>;
   }
 
-  return <main className="storefront">
+  return <main className={"storefront" + (isCustomerAuthPage ? " storefront-auth-shell" : "")}>
     <GoogleAnalytics pagePath={routePath} />
     <div className="storefront-promo"><span aria-hidden="true">✦</span> Everyday essentials, made easier to shop <span>· Check delivery availability by PIN</span></div>
     <header className="storefront-header">
