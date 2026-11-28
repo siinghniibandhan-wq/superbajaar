@@ -1135,6 +1135,46 @@ def create_record(domain:str,payload:RecordInput,request:Request):
     except HTTPException: raise
     except psycopg.Error as exc: raise _db_error(exc) from exc
 
+@router.get("/analytics/enterprise")
+def enterprise_workflow_analytics(
+    request:Request,
+    from_date:date=Query(...),
+    to_date:date=Query(...),
+):
+    """Computed operational KPIs for the seven non-recruitment HR domains."""
+    _manager(request)
+    if to_date < from_date:
+        raise HTTPException(422,"Report end date cannot precede its start date")
+    try:
+        with _hr_connection() as conn:
+            rows=conn.execute(
+                "SELECT domain,payload->>'record_type' AS record_type,status,count(*)::int AS records,"
+                "count(*) FILTER (WHERE due_date<CURRENT_DATE AND status NOT IN "
+                "('archived','rejected','expired','completed','cancelled','withdrawn','written_off','reimbursed'))::int AS overdue,"
+                "count(*) FILTER (WHERE due_date BETWEEN CURRENT_DATE AND CURRENT_DATE+INTERVAL '30 days' "
+                "AND status NOT IN ('archived','rejected','expired','completed','cancelled','withdrawn','written_off','reimbursed'))::int AS due_soon "
+                "FROM hr_enterprise_records WHERE domain IN "
+                "('documents','performance','learning','assets','travel','exit') "
+                "AND created_at::date BETWEEN %s AND %s "
+                "GROUP BY domain,payload->>'record_type',status ORDER BY domain,record_type,status",
+                (from_date,to_date),
+            ).fetchall()
+        summary={}
+        for row in rows:
+            domain=row["domain"]
+            bucket=summary.setdefault(domain,{"records":0,"overdue":0,"due_soon":0,"by_type":{},"by_status":{}})
+            count=int(row["records"] or 0)
+            bucket["records"]+=count
+            bucket["overdue"]+=int(row["overdue"] or 0)
+            bucket["due_soon"]+=int(row["due_soon"] or 0)
+            record_type=row["record_type"] or "other"
+            bucket["by_type"][record_type]=bucket["by_type"].get(record_type,0)+count
+            bucket["by_status"][row["status"]]=bucket["by_status"].get(row["status"],0)+count
+        return {"from_date":from_date,"to_date":to_date,"domains":summary}
+    except HTTPException: raise
+    except psycopg.Error as exc: raise _db_error(exc) from exc
+
+
 @router.get("/{domain}/{record_id}")
 def get_record(domain:str,record_id:int,request:Request):
     if domain not in DOMAINS: raise HTTPException(404,"Unknown HR domain")
