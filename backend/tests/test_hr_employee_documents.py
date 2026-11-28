@@ -52,6 +52,7 @@ def test_employee_document_upload_rejects_unsupported_document_type():
 def test_employee_document_download_checks_owner_and_encryption(monkeypatch):
     fake=FakeS3()
     monkeypatch.setattr(docs,"_storage",lambda:("private-bucket",fake))
+    monkeypatch.setattr(docs,"scan_employee_document",lambda content:"clean")
     result=docs.upload_employee_document(
         employee_id=42,uploader_id=7,document_type="contract",
         file_name="contract.pdf",content_type="application/pdf",content=b"%PDF-1.7"
