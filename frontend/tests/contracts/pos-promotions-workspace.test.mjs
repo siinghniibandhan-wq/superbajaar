@@ -15,7 +15,7 @@ test("POS applies a server-quoted coupon and sends it for transactional checkout
 test("held POS carts preserve coupon state and checkout receipts show discount snapshots", () => {
   assert.ok(pos.includes("couponCode, couponApplied"));
   assert.ok(pos.includes("setCouponApplied(entry.couponApplied || null)"));
-  assert.ok(pos.includes("receipt.order.discount_total"));
+  assert.ok(pos.includes("receipt.order.discount_total"));\n  assert.ok(pos.includes("/payments/"+refundPayment.id+"/manual-refunds"));\n  assert.ok(pos.includes("Record refund"));\n  assert.ok(pos.includes("Refund ledger"));
 });
 
 test("pricing workspace can create and deactivate promotion rules through admin APIs", () => {
