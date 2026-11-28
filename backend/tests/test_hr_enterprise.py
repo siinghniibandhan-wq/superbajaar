@@ -703,3 +703,16 @@ def test_performance_cycle_activation_requires_complete_weighted_goals():
     _ensure_goal_weight_limit("100","0")
     with pytest.raises(HTTPException):
         _ensure_goal_weight_limit("100","1")
+
+def test_analytics_report_validates_schedule_and_filters():
+    result=_validate("analytics","report",{
+        "report_type":"enterprise","frequency":"monthly",
+        "filters":{"domain":"assets","department_id":"4","status":"requested"}
+    })
+    assert result["frequency"]=="monthly"
+    assert result["filters"]["department_id"]==4
+    assert result["delivery_channel"]=="workspace_snapshot"
+    with pytest.raises(HTTPException):
+        _validate("analytics","report",{
+            "report_type":"enterprise","frequency":"yearly","filters":{}
+        })
