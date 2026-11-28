@@ -38,7 +38,7 @@ const managerOnlyTypes={
 };
 const blank={};
 
-export default function HREnterpriseWorkflows({manager,employees=[]}) {
+export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCreated}) {
  const [domain,setDomain]=useState("recruitment"),[items,setItems]=useState([]),[recordType,setRecordType]=useState("job_opening");
  const [title,setTitle]=useState(""),[employeeId,setEmployeeId]=useState(""),[fields,setFields]=useState(blank),[documentFile,setDocumentFile]=useState(null);
  const [busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("");
@@ -126,7 +126,7 @@ export default function HREnterpriseWorkflows({manager,employees=[]}) {
        acceptance_reference:hireForm.acceptance_reference||null,employee
      })});
      setNotice("Candidate hired as "+result.employee_code+". Onboarding tasks created: "+(result.onboarding_tasks_created||0)+".");
-     setHireOffer(null);setHireAccepted(false);await load();
+     setHireOffer(null);setHireAccepted(false);await load();await onEmployeeCreated?.();
    }catch(e){setError(e.message||"Unable to convert candidate into an employee.");}
    finally{setBusy(false);}
  }
