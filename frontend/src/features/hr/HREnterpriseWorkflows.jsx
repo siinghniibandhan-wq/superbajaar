@@ -143,6 +143,7 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
        form.append("file",documentFile);
        form.append("document_type",fields.document_type||"identity");
        if(fields.expiry_date)form.append("expiry_date",fields.expiry_date);
+       if(fields.retention_until)form.append("retention_until",fields.retention_until);
        if(manager&&employeeId)form.append("employee_id",employeeId);
        await apiRequest("/hr/enterprise/documents/upload",{method:"POST",body:form});
        setDocumentFile(null);
