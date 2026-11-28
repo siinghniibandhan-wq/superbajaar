@@ -9,9 +9,9 @@ from decimal import Decimal, InvalidOperation
 import json
 
 import psycopg
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel, Field, field_validator
-from app.api.hr import _actor, _manager, _employee, _hr_connection, _db_error
+from app.api.hr import _actor, _manager, _employee, _hr_connection, _db_error\nfrom app.services.hr_employee_documents import (\n    EmployeeDocumentConfigurationError, EmployeeDocumentError,\n    upload_employee_document, employee_document_download_url,\n)
 
 router = APIRouter(prefix="/hr/enterprise", tags=["hr-enterprise"])
 
@@ -115,6 +115,68 @@ def _visible_employee(conn,request,employee_id):
     own=_employee(conn,_actor(request))
     if employee_id is not None and int(own["id"])!=int(employee_id):
         raise HTTPException(403,"Employees may access only their own HR records")
+
+
+@router.post("/documents/upload",status_code=201)
+async def upload_document(
+    request:Request,
+    file:UploadFile=File(...),
+    document_type:str=Form(...),
+    employee_id:int|None=Form(default=None),
+):
+    actor=_actor(request)
+    manager=_role(request) in MANAGER_ROLES
+    try:
+        with _hr_connection() as conn:
+            if not manager:
+                own=_employee(conn,actor)
+                if employee_id is not None and employee_id!=own["id"]:
+                    raise HTTPException(403,"Employees may upload documents only to their own profile")
+                employee_id=own["id"]
+            if employee_id is None or not conn.execute("SELECT id FROM hr_employees WHERE id=%s",(employee_id,)).fetchone():
+                raise HTTPException(404,"Employee not found")
+        content=await file.read(10*1024*1024+1)
+        stored=upload_employee_document(employee_id=employee_id,uploader_id=actor,
+            document_type=document_type,file_name=file.filename or "document",
+            content_type=file.content_type or "",content=content)
+        payload={**stored,"record_type":"employee_document"}
+        with _hr_connection() as conn:
+            with conn.transaction():
+                row=conn.execute(
+                  "INSERT INTO hr_enterprise_records(domain,employee_id,title,status,payload,created_by_user_id,updated_by_user_id) "
+                  "VALUES('documents',%s,%s,'uploaded',%s::jsonb,%s,%s) RETURNING *",
+                  (employee_id,stored["file_name"],json.dumps(payload),actor,actor)
+                ).fetchone()
+                conn.execute("INSERT INTO hr_enterprise_events(record_id,event_type,to_status,after_state,actor_user_id) "
+                  "VALUES(%s,'document_uploaded','uploaded',%s::jsonb,%s)",
+                  (row["id"],json.dumps(dict(row),default=str),actor))
+        return row
+    except HTTPException: raise
+    except EmployeeDocumentConfigurationError as exc: raise HTTPException(503,str(exc)) from exc
+    except EmployeeDocumentError as exc: raise HTTPException(422,str(exc)) from exc
+    except psycopg.Error as exc: raise _db_error(exc) from exc
+    finally:
+        await file.close()
+
+@router.post("/documents/{record_id}/download")
+def download_document(record_id:int,request:Request):
+    actor=_actor(request)
+    try:
+        with _hr_connection() as conn:
+            row=conn.execute("SELECT * FROM hr_enterprise_records WHERE id=%s AND domain='documents'",(record_id,)).fetchone()
+            if not row: raise HTTPException(404,"Employee document not found")
+            if _role(request) not in MANAGER_ROLES:
+                own=_employee(conn,actor)
+                if own["id"]!=row["employee_id"]: raise HTTPException(403,"Employees may download only their own documents")
+            if row["status"] not in {"uploaded","under_review","verified"}:
+                raise HTTPException(409,"This document is not available for download")
+            url=employee_document_download_url(employee_id=row["employee_id"],object_key=row["payload"]["object_key"])
+            conn.execute("INSERT INTO hr_enterprise_events(record_id,event_type,actor_user_id) VALUES(%s,'download_link_issued',%s)",(record_id,actor))
+        return {"url":url,"expires_in_seconds":300}
+    except HTTPException: raise
+    except EmployeeDocumentConfigurationError as exc: raise HTTPException(503,str(exc)) from exc
+    except EmployeeDocumentError as exc: raise HTTPException(422,str(exc)) from exc
+    except psycopg.Error as exc: raise _db_error(exc) from exc
 
 @router.get("/{domain}")
 def list_records(domain:str,request:Request,status:str|None=None,employee_id:int|None=None,record_type:str|None=None,limit:int=Query(100,ge=1,le=500)):
