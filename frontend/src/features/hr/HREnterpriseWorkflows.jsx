@@ -50,6 +50,7 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
  const [eventRecord,setEventRecord]=useState(null),[recordEvents,setRecordEvents]=useState([]),[eventsBusy,setEventsBusy]=useState(false);
  const [recordSearch,setRecordSearch]=useState(""),[statusFilter,setStatusFilter]=useState("");
  const [hireOffer,setHireOffer]=useState(null),[hireAccepted,setHireAccepted]=useState(false);
+ const [emailCandidate,setEmailCandidate]=useState(null),[emailForm,setEmailForm]=useState({subject:"",message:""});
  const [expiringItems,setExpiringItems]=useState([]),[expiringLoading,setExpiringLoading]=useState(false),[expiringError,setExpiringError]=useState("");
  const [hireForm,setHireForm]=useState({employee_code:"",first_name:"",last_name:"",email:"",phone:"",department_id:"",designation:"",employment_type:"full_time",status:"active",joining_date:new Date().toISOString().slice(0,10),reports_to_employee_id:"",basic_salary:"0",hra:"0",special_allowance:"0",other_allowance:"0",acceptance_reference:""});
  const current=domains.find(x=>x.id===domain);
@@ -169,6 +170,16 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
    const link=document.createElement("a");link.href=url;link.download="hr-workforce-"+analyticsMonth+".csv";
    document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
  }
+ async function sendCandidateEmail(e){
+  e.preventDefault();if(!emailCandidate)return;
+  setBusy(true);setError("");setNotice("");
+  try{
+   const result=await apiRequest("/hr/enterprise/recruitment/"+emailCandidate.id+"/email",{method:"POST",body:JSON.stringify(emailForm)});
+   setNotice("Email delivered to "+result.recipient+". The sent message was added to the candidate communication history.");
+   setEmailCandidate(null);setEmailForm({subject:"",message:""});await load();
+  }catch(e){setError(e.message||"Unable to send candidate email.");}
+  finally{setBusy(false);}
+ }
  async function submitHire(e){
    e.preventDefault();if(!hireOffer)return;
    if(!hireAccepted){setError("Confirm that the candidate accepted this offer.");return;}
@@ -214,6 +225,11 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
      <article><span>Open offers</span><strong>{recruitmentView.offers.filter(x=>x.status==="offered").length}</strong><small>Awaiting acceptance or decision</small></article>
      <article><span>Hires completed</span><strong>{recruitmentView.hired}</strong><small>Converted into employee profiles</small></article>
     </div>
+    <div className="hr-directory-heading"><h3>Candidate directory</h3><span className="hr-directory-count">{recruitmentView.candidates.length} candidates</span></div>
+    <div className="hr-table-wrap"><table><thead><tr><th>Candidate</th><th>Email</th><th>Source</th><th>Action</th></tr></thead><tbody>
+     {recruitmentView.candidates.map(candidate=><tr key={candidate.id}><td>{[candidate.payload?.first_name,candidate.payload?.last_name].filter(Boolean).join(" ")||candidate.title}</td><td>{candidate.payload?.email||"—"}</td><td>{candidate.payload?.source||"—"}</td><td>{candidate.payload?.email&&<button type="button" disabled={busy} onClick={()=>{setEmailCandidate(candidate);setEmailForm({subject:"",message:""});}}>Email candidate</button>}</td></tr>)}
+     {!recruitmentView.candidates.length&&<tr><td colSpan="4">No candidate profiles yet.</td></tr>}
+    </tbody></table></div>
     <div className="hr-directory-heading"><h3>Application pipeline</h3><span className="hr-directory-count">{recruitmentView.applications.length} applications</span></div>
     <div className="hr-table-wrap"><table><thead><tr><th>Candidate</th><th>Position</th><th>Stage</th><th>Last updated</th></tr></thead><tbody>
      {recruitmentView.applications.map(app=>{const candidate=recruitmentView.candidateById[app.payload?.candidate_id];const job=recruitmentView.jobById[app.payload?.job_id];return <tr key={app.id}><td><strong>{candidate?[candidate.payload?.first_name,candidate.payload?.last_name].filter(Boolean).join(" "):"Candidate record #"+app.payload?.candidate_id}</strong><small>{candidate?.payload?.email||"Candidate details unavailable"}</small></td><td>{job?.title||"Job #"+app.payload?.job_id}</td><td>{app.status.replaceAll("_"," ")}</td><td>{app.updated_at?new Date(app.updated_at).toLocaleDateString():"—"}</td></tr>;})}
@@ -247,6 +263,14 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
     {type[2].map(([key,label,inputType])=><label key={key}>{label}{inputType==="select"?<select required value={fields[key]||"identity"} onChange={e=>update(key,e.target.value)}><option value="identity">Identity</option><option value="address">Address</option><option value="qualification">Qualification</option><option value="employment">Employment</option><option value="contract">Contract</option><option value="policy_acknowledgement">Policy acknowledgement</option><option value="other">Other</option></select>:inputType==="record_select"?<select required value={fields[key]||""} onChange={e=>update(key,e.target.value)}><option value="">Select a record</option>{selectableRecords(key).map(x=><option key={x.id} value={x.id}>{x.title} · #{x.id}</option>)}</select>:inputType==="textarea"?<textarea rows="2" value={fields[key]||""} onChange={e=>update(key,e.target.value)}/>:<input type={inputType||"text"} required={!optionalFields.has(key)} value={fields[key]||""} onChange={e=>update(key,e.target.value)}/>}</label>)}\n    {domain==="documents"&&<label>Document file<input type="file" accept="application/pdf,image/jpeg,image/png" required onChange={e=>setDocumentFile(e.target.files?.[0]||null)}/><small>Private encrypted storage · PDF/JPEG/PNG · maximum 10 MB</small></label>}
     <button disabled={busy}>Create {type[1].toLowerCase()}</button>
    </form>
+   {emailCandidate&&manager&&<section className="hr-panel" aria-label="Send candidate email">
+    <div className="hr-directory-heading"><div><h3>Email candidate · {[emailCandidate.payload?.first_name,emailCandidate.payload?.last_name].filter(Boolean).join(" ")}</h3><p>To: {emailCandidate.payload?.email}</p></div><button type="button" className="hr-secondary" onClick={()=>setEmailCandidate(null)}>Cancel</button></div>
+    <form className="hr-form hr-grid" onSubmit={sendCandidateEmail}>
+     <label>Subject<input required maxLength="200" value={emailForm.subject} onChange={e=>setEmailForm({...emailForm,subject:e.target.value})}/></label>
+     <label className="hr-full">Message<textarea required rows="5" maxLength="10000" value={emailForm.message} onChange={e=>setEmailForm({...emailForm,message:e.target.value})}/></label>
+     <button disabled={busy}>Send email</button>
+    </form>
+   </section>}
    {hireOffer&&manager&&<section className="hr-panel"><div className="hr-directory-heading"><div><h3>Convert accepted offer to employee</h3><p>This creates the employee identity, opening salary profile and any configured onboarding checklist tasks.</p></div><button type="button" className="hr-secondary" onClick={()=>setHireOffer(null)}>Cancel</button></div>
     <form className="hr-form hr-grid" onSubmit={submitHire}>
      <label>Employee code<input required value={hireForm.employee_code} onChange={e=>setHireForm({...hireForm,employee_code:e.target.value})}/></label>
