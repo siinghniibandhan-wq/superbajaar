@@ -113,21 +113,29 @@ def _apply_order_gst(conn, order_id: int, *, delivery_pin: str | None, discount_
     supply_type = "intra_state" if destination_state_code == origin_state_code else "inter_state"
     lines = conn.execute(
         """SELECT ol.id,ol.quantity,ol.line_total,p.id AS product_id,p.category_id,
-                  p.tax_code,p.tax_rate,p.name,v.attributes,
+                  p.tax_code,p.tax_rate,p.name,v.attributes,COALESCE(pa.attributes,'{}'::jsonb) AS product_attributes,
                   rule.id AS gst_rule_id,rule.hsn_code AS rule_hsn_code,rule.gst_rate AS rule_gst_rate
            FROM order_lines ol
            JOIN product_variants v ON v.id=ol.variant_id
            JOIN products p ON p.id=v.product_id
            LEFT JOIN LATERAL (
+               SELECT jsonb_object_agg(a.code,pav.value #>> '{}') AS attributes
+               FROM product_attribute_values pav JOIN product_attributes a ON a.id=pav.attribute_id
+               WHERE pav.product_id=p.id AND a.is_variant_attribute=FALSE
+           ) pa ON TRUE
+           LEFT JOIN LATERAL (
                WITH RECURSIVE category_hierarchy(id,depth) AS (
                    SELECT p.category_id,0 WHERE p.category_id IS NOT NULL
+                   UNION
+                   SELECT pc.category_id,0 FROM product_category_assignments pc WHERE pc.product_id=p.id
                    UNION ALL
                    SELECT c.parent_id,ch.depth+1 FROM categories c
                    JOIN category_hierarchy ch ON ch.id=c.id WHERE c.parent_id IS NOT NULL
                )
                SELECT h.id,h.hsn_code,h.gst_rate FROM hsn_rules h
                LEFT JOIN category_hierarchy ch ON ch.id=h.category_id
-               WHERE h.is_active=TRUE AND (h.category_id IS NULL OR ch.id IS NOT NULL) AND v.attributes @> h.conditions
+               WHERE h.is_active=TRUE AND (h.category_id IS NULL OR ch.id IS NOT NULL)
+                 AND (COALESCE(pa.attributes,'{}'::jsonb) || v.attributes) @> h.conditions
                ORDER BY COALESCE(ch.depth,999) ASC,jsonb_object_length(h.conditions) DESC,h.updated_at DESC,h.id DESC
                LIMIT 1
            ) rule ON TRUE
