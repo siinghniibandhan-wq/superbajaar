@@ -97,8 +97,8 @@ def api(monkeypatch):
     with psycopg.connect(TEST_DB) as conn:
         conn.execute("""
             UPDATE pos_register_shifts s SET
-                expected_cash=s.opening_float+COALESCE((SELECT sum(amount) FROM pos_cash_movements WHERE shift_id=s.id AND movement_type='cash_in'),0)-COALESCE((SELECT sum(amount) FROM pos_cash_movements WHERE shift_id=s.id AND movement_type='cash_out'),0)+COALESCE((SELECT sum(p.amount) FROM payments p JOIN orders o ON o.id=p.order_id WHERE o.pos_register_shift_id=s.id AND p.method='cod' AND p.status IN ('captured','refunded')),0),
-                counted_cash=s.opening_float+COALESCE((SELECT sum(amount) FROM pos_cash_movements WHERE shift_id=s.id AND movement_type='cash_in'),0)-COALESCE((SELECT sum(amount) FROM pos_cash_movements WHERE shift_id=s.id AND movement_type='cash_out'),0)+COALESCE((SELECT sum(p.amount) FROM payments p JOIN orders o ON o.id=p.order_id WHERE o.pos_register_shift_id=s.id AND p.method='cod' AND p.status IN ('captured','refunded')),0),
+                expected_cash=s.opening_float+COALESCE((SELECT sum(amount) FROM pos_cash_movements WHERE shift_id=s.id AND movement_type='cash_in'),0)-COALESCE((SELECT sum(amount) FROM pos_cash_movements WHERE shift_id=s.id AND movement_type='cash_out'),0),
+                counted_cash=s.opening_float+COALESCE((SELECT sum(amount) FROM pos_cash_movements WHERE shift_id=s.id AND movement_type='cash_in'),0)-COALESCE((SELECT sum(amount) FROM pos_cash_movements WHERE shift_id=s.id AND movement_type='cash_out'),0),
                 cash_variance=0,status='closed',closed_by=%s,closed_at=now()
             WHERE s.cashier_user_id=%s AND s.status='open'
         """, (user_id,user_id))
@@ -323,6 +323,7 @@ def test_pos_order_reservation_dispatch_and_cogs_posting(api):
     }))
     assert posted["status"]=="posted" and Decimal(str(posted["total_cost"]))==Decimal("10.00")
 
+    ok(api.post(f"/api/pos/shifts/{shift['id']}/close",json={"counted_cash":"100.00"}))
     holding=ok(api.post("/api/inventory/locations",json={
         "name":"Return Quarantine "+api.suffix,"location_type":"warehouse",
         "establishment_id":api.establishment_id,"is_fulfillable":False,
