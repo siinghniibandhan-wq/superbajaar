@@ -117,3 +117,24 @@ The feature branch now contains an additive enterprise workflow foundation for r
 Employee document files use the private document bucket, server-side AES256 encryption, employee-scoped object keys, PDF/JPEG/PNG signature checks, a 10 MB upload limit, SHA-256 metadata and short-lived access-checked download links. The document metadata endpoint cannot be used to inject arbitrary object keys; uploads must pass through the private storage service.
 
 This is not yet a completion claim for the eight domains. Remaining end-to-end work includes dedicated domain screens and field validation, recruitment interview/offer/hiring integrations, document malware scanning/retention/expiry policies, performance cycle and calibration workflows, course catalogue/progress/certification, asset procurement/stock and custody reconciliation, travel booking/advance/claim settlement integrations, full-and-final exit calculations and clearance gates, and computed analytics/report exports. The new migration must be applied in a controlled environment; CI, DB integration, browser QA, S3 configuration/permissions, retention and security review are release gates.
+
+
+## Latest enterprise workflow integration progress
+
+The enterprise workflow slice has advanced beyond generic record entry:
+
+- Recruitment offer conversion now creates the HR employee, opening salary version and permanent employee identity in the same database transaction, links an optional staff login, and generates tasks from the active global onboarding template when configured. Offer/application/candidate records and their audit events are updated together.
+- Employee document upload enters a pending HR-review state. Managers move it through review and verification; employees can download only verified files. Expiry dates are persisted in the shared due-date column.
+- Performance supports employee self-review records with bounded ratings, in addition to manager review cycles, reviews, goals and feedback.
+- Learning enrollment requires a published/enrolled course; certificates require a completed enrollment and a passing assessment. Certificate validity is stored as a due date.
+- Asset allocation is linked to an employee profile. Assignment synchronizes the asset master state; employees can acknowledge custody; return, maintenance and write-off synchronize the master asset and append audit events.
+- Travel claims require completed travel and a receipt reference, create a linked record in the existing HR expense workflow, and cannot be marked reimbursed until that expense has been approved and paid through payroll.
+- Exit completion is gated on department clearances and a completed full-and-final settlement record. Completion updates the employee's termination status and exit date and disables the linked staff login using the existing HR identity convention.
+- The analytics page consumes the existing permission-checked HR overview aggregation. It deliberately displays unavailable attendance measures as unavailable instead of inferring absence or lateness.
+- Migration 072 adds unique candidate-email, asset-tag, candidate/job application, and document-object-key indexes plus a due-date lookup index.
+
+Latest validated branch head at this update: `8459f54f49660b138b028bbcca68c53ca2d41218`. Backend identity tests passed (657 passed, 62 skipped, 1 warning); frontend tests and production build passed; Python dependency/SAST, frontend dependency audit and secret scanning passed.
+
+## Still not production-complete
+
+The eight domains still need malware scanning and retention/expiry automation for documents; candidate communication and offer letter signing; configurable performance templates, weighting and calibration; richer learning evidence/provider integrations; procurement, warranty and physical stock reconciliation for assets; travel policy/booking/finance integrations; statutory notice, leave/loan deductions and accounting-backed final settlement; and enterprise analytics filters, exports and scheduled delivery. PostgreSQL migrations 070–072 have not been applied to production. Live database integration, S3/IAM configuration, malware-scanner integration, manual responsive browser QA and release/deployment checks remain release gates.
