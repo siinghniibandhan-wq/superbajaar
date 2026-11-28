@@ -10,7 +10,7 @@ import uuid
 import psycopg
 from fastapi import APIRouter, HTTPException, Query, Request
 from psycopg.rows import dict_row
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 from app.core.config import settings
 from app.services.order_inventory import ensure_order_can_be_cancelled, order_has_reservation, release_order_stock, reserve_order_stock
