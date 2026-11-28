@@ -74,6 +74,9 @@ export default function POSWorkspace({ onBack }) {
   const [locationId, setLocationId] = useState("");
   const [registerLocationId, setRegisterLocationId] = useState("");
   const [customer, setCustomer] = useState({ name: "Walk-in Customer", phone: "", pin: "" });
+  const [couponCode, setCouponCode] = useState("");
+  const [couponApplied, setCouponApplied] = useState(null);
+  const [couponBusy, setCouponBusy] = useState(false);
   const [method, setMethod] = useState("cod");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -282,7 +285,10 @@ export default function POSWorkspace({ onBack }) {
   }
 
   const cartCount = cart.reduce((sum, line) => sum + line.quantity, 0);
-  const total = round2(cart.reduce((sum, line) => sum + Number(line.selling_price || 0) * line.quantity, 0));
+  const subtotal = round2(cart.reduce((sum, line) => sum + Number(line.selling_price || 0) * line.quantity, 0));
+  const validCouponQuote = couponApplied && couponApplied.subtotal === subtotal && couponApplied.code === couponCode.trim().toUpperCase();
+  const couponDiscount = validCouponQuote ? Number(couponApplied.discount_amount || 0) : 0;
+  const total = round2(subtotal - couponDiscount);
   const qtyById = useMemo(() => new Map(cart.map(line => [line.id, line.quantity])), [cart]);
   const selectedRegister = registers.find(r => String(r.id) === String(selectedRegisterId));
   const locationName = locations.find(l => String(l.id) === String(locationId))?.name || selectedRegister?.location_name || "";
@@ -297,6 +303,7 @@ export default function POSWorkspace({ onBack }) {
   }, [method, total]);
 
   const blocker = !cart.length ? "Tap an item on the left to start a sale."
+    : couponCode.trim() && !validCouponQuote ? "Apply or reapply the coupon against the current cart subtotal."
     : !selectedRegisterId ? "Choose a counter to sell from."
     : !activeShift ? "Open the cashier shift above to take payment."
     : !locationId ? "Choose a stock location."
@@ -337,16 +344,17 @@ export default function POSWorkspace({ onBack }) {
 
   function resetSale() {
     setCart([]); setCustomer({ ...WALK_IN }); setTendered(""); setReference(""); setShowCustomer(false);
+    setCouponCode(""); setCouponApplied(null);
     checkoutAttempt.current = null;
   }
   function holdSale() {
     if (!cart.length) return;
-    setHeld(old => [...old, { id: Date.now(), at: new Date().toISOString(), cart, customer, total }]);
+    setHeld(old => [...old, { id: Date.now(), at: new Date().toISOString(), cart, customer, subtotal, total, couponCode, couponApplied }]);
     resetSale(); setNotice("Sale put on hold. Recall it from “Held” whenever you're ready.");
   }
   function recallSale(entry) {
     if (cart.length) { setError("Hold or clear the current sale before recalling a held one."); return; }
-    setCart(entry.cart); setCustomer(entry.customer || { ...WALK_IN });
+    setCart(entry.cart); setCustomer(entry.customer || { ...WALK_IN }); setCouponCode(entry.couponCode || ""); setCouponApplied(entry.couponApplied || null);
     setHeld(old => old.filter(x => x.id !== entry.id)); setShowHeld(false); setError("");
   }
   function onSearchKey(event) {
@@ -361,6 +369,19 @@ export default function POSWorkspace({ onBack }) {
   }
   function closeReceipt() { setShowReceipt(false); window.setTimeout(() => searchRef.current?.focus(), 50); }
 
+  async function applyCoupon() {
+    const code = couponCode.trim().toUpperCase();
+    if (!code) { setCouponApplied(null); setError("Enter a coupon code first."); return; }
+    if (!cart.length) { setError("Add items before applying a coupon."); return; }
+    setCouponBusy(true); setError("");
+    try {
+      const quote = await apiRequest("/orders/promotions/quote?code=" + encodeURIComponent(code) + "&subtotal=" + encodeURIComponent(subtotal.toFixed(2)));
+      setCouponCode(code); setCouponApplied({ code, subtotal, discount_amount: Number(quote.discount_amount) });
+      setNotice(code + " applied. You save " + money(quote.discount_amount) + ".");
+    } catch (e) { setCouponApplied(null); setError(e.message || "Coupon could not be applied."); }
+    finally { setCouponBusy(false); }
+  }
+
   async function checkout(event) {
     event?.preventDefault?.();
     if (!cart.length) { setError("Add at least one item before checkout."); return; }
@@ -373,6 +394,7 @@ export default function POSWorkspace({ onBack }) {
     const checkoutPayload = {
       channel: "pos", customer_name: customerName, customer_phone: customer.phone.trim() || null,
       delivery_pin: pin || null, location_id: Number(locationId), pos_register_id: Number(selectedRegisterId), pos_payment_method: method,
+      coupon_code: couponCode.trim() || null,
       notes: note, lines: cart.map(line => ({ variant_id: line.id, quantity: line.quantity })),
     };
     const signature = JSON.stringify(checkoutPayload);
@@ -550,7 +572,15 @@ export default function POSWorkspace({ onBack }) {
               <strong className="sb-pos-line-total">{money(Number(line.selling_price || 0) * line.quantity)}</strong>
               <button type="button" className="sb-pos-remove" onClick={() => removeLine(line.id)} aria-label={"Remove " + productTitle(line)}>✕</button>
             </div>)}</div>}
-            <div className="sb-pos-total"><span>Subtotal</span><strong>{money(total)}</strong></div>
+            <div className="sb-pos-total"><span>Subtotal</span><strong>{money(subtotal)}</strong></div>
+            <div className="sb-pos-coupon" aria-label="Coupon discount">
+              <label>Coupon code<input value={couponCode} maxLength={40} onChange={e => { setCouponCode(e.target.value.toUpperCase()); setCouponApplied(null); }} placeholder="Enter coupon" /></label>
+              <button type="button" onClick={applyCoupon} disabled={couponBusy || !couponCode.trim() || !cart.length}>{couponBusy ? "Checking…" : "Apply"}</button>
+              {validCouponQuote && <button type="button" onClick={() => { setCouponCode(""); setCouponApplied(null); setNotice("Coupon removed."); }} aria-label="Remove coupon">Remove</button>}
+            </div>
+            {couponCode.trim() && !validCouponQuote && <small className="sb-muted">Reapply the coupon if cart items or quantities change.</small>}
+            {validCouponQuote && <div className="sb-pos-total sb-pos-discount"><span>Coupon · {couponCode}</span><strong>−{money(couponDiscount)}</strong></div>}
+            <div className="sb-pos-total"><span>Total due</span><strong>{money(total)}</strong></div>
             <button className="sb-pos-mobile-next" type="button" onClick={() => setMobileCheckoutTab("pay")}>Continue to payment</button>
           </div>
           <form className={"sb-pos-payment-panel " + (mobileCheckoutTab === "pay" ? "is-mobile-active" : "")} onSubmit={checkout} noValidate>
@@ -608,6 +638,7 @@ export default function POSWorkspace({ onBack }) {
           <p className="sb-pos-receipt-meta">Super Bajaar{receipt.counter ? " · " + receipt.counter : ""}<br />{new Date(receipt.at).toLocaleString("en-IN")}<br />Customer: {receipt.customer.name}{receipt.customer.phone ? " · " + receipt.customer.phone : ""}</p>
           <table><tbody>{receipt.lines.map(l => <tr key={l.id}><td>{l.name}{l.label ? <small>{l.label}</small> : null}<small>{l.quantity} × {money(l.price)}</small>{l.tax?.hsn_code ? <small>HSN {l.tax.hsn_code} · GST {l.tax.gst_rate}%</small> : null}</td><td>{money(l.price * l.quantity)}</td></tr>)}</tbody></table>
           {Number(receipt.order.tax_total || 0) > 0 && <div className="sb-pos-receipt-tax"><span>GST included in total</span><strong>{money(receipt.order.tax_total)}</strong></div>}
+          {Number(receipt.order.discount_total || 0) > 0 && <div className="sb-pos-receipt-tax"><span>Discount{receipt.order.promotion_code ? " · " + receipt.order.promotion_code : ""}</span><strong>−{money(receipt.order.discount_total)}</strong></div>}
           <div className="sb-pos-receipt-total"><span>Total</span><strong>{money(receiptTotal)}</strong></div>
           <p className="sb-pos-receipt-pay">{methodLabel(receipt.method)} · {cashPending ? "cash awaiting confirmation" : receipt.payment.status}{receipt.payment.payment_reference ? " · " + receipt.payment.payment_reference : ""}</p>
           {receipt.tendered != null && <p className="sb-pos-receipt-pay">Cash received {money(receipt.tendered)}{receiptChange != null ? " · Change " + money(receiptChange) : ""}</p>}
