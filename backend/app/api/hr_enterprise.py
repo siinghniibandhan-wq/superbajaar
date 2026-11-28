@@ -33,7 +33,7 @@ STATUSES = {
  "analytics":{"saved","scheduled","archived"}
 }
 TRANSITIONS = {
- "recruitment":{"draft":{"open","archived"},"open":{"screening","archived"},"screening":{"shortlisted","rejected","withdrawn"},"shortlisted":{"interview","rejected","withdrawn"},"interview":{"offered","rejected","withdrawn"},"offered":{"hired","rejected","withdrawn"}},
+ "recruitment":{"draft":{"open","archived"},"open":{"screening","archived"},"screening":{"shortlisted","rejected","withdrawn"},"shortlisted":{"interview","rejected","withdrawn"},"interview":{"offered","rejected","withdrawn"},"offered":{"rejected","withdrawn"}},
  "documents":{"pending":{"uploaded","archived"},"uploaded":{"under_review","rejected"},"under_review":{"verified","rejected","expired"},"verified":{"expired","archived"},"rejected":{"uploaded","archived"},"expired":{"uploaded","archived"}},
  "performance":{"draft":{"active","cancelled"},"active":{"self_review","cancelled"},"self_review":{"manager_review"},"manager_review":{"calibration","acknowledged"},"calibration":{"acknowledged"},"acknowledged":{"closed"}},
  "learning":{"planned":{"enrolled","cancelled"},"enrolled":{"in_progress","cancelled"},"in_progress":{"completed","failed"},"failed":{"enrolled"}},
@@ -430,6 +430,8 @@ def hire_recruitment_candidate(offer_id:int,payload:RecruitmentHireInput,request
                 if candidate_email!=payload.employee.email.strip().lower():
                     raise HTTPException(422,"Employee email must match the accepted candidate's email")
                 employee=payload.employee
+                if employee.status not in {"active","probation"}:
+                    raise HTTPException(422,"A newly hired employee must start as active or probationary")
                 row=conn.execute(
                     "INSERT INTO hr_employees(user_id,employee_code,first_name,last_name,email,phone,department_id,"
                     "designation,reports_to_employee_id,employment_type,status,joining_date,exit_date,basic_salary,"
