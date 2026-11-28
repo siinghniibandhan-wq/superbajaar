@@ -70,6 +70,7 @@ def _employee_transition_allowed(domain, from_status, to_status):
 
 def _initial_status(domain, record_type):
     typed = {
+        ("recruitment", "application"): "screening",
         ("recruitment", "interview"): "interview",
         ("recruitment", "interview_feedback"): "completed",
         ("recruitment", "communication"): "completed",
@@ -675,6 +676,12 @@ def hire_recruitment_candidate(offer_id:int,payload:RecruitmentHireInput,request
                 if not offer: raise HTTPException(404,"Recruitment offer not found")
                 if offer["status"]!="offered": raise HTTPException(409,"Only an active offer can be converted into an employee")
                 offer_data=dict(offer["payload"])
+                try:
+                    offer_expiry=date.fromisoformat(str(offer_data.get("expires_on","")))
+                except ValueError:
+                    raise HTTPException(409,"The offer has no valid expiry date and cannot be accepted")
+                if offer_expiry<date.today():
+                    raise HTTPException(409,"This offer has expired and cannot be converted into an employee")
                 if int(offer_data.get("application_id") or 0)!=payload.application_id:
                     raise HTTPException(422,"Application does not match the selected offer")
                 application=conn.execute(
