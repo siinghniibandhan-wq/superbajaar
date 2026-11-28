@@ -3,7 +3,7 @@
 No statutory rates, eligibility thresholds or jurisdiction rules are embedded.
 An approved effective-dated policy is required before automatic calculation.
 """
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from fastapi import HTTPException
 CENT=Decimal("0.01")
 def money(value): return Decimal(str(value)).quantize(CENT,rounding=ROUND_HALF_UP)
@@ -24,6 +24,19 @@ def validate_exit_policy(config):
                 if field not in rule: raise HTTPException(422,f"Enabled {key} policy requires {field}")
             if key=="notice_pay" and rule["treatment"] not in {"earning","deduction"}:
                 raise HTTPException(422,"Notice pay treatment must be earning or deduction")
+            if key=="gratuity":
+                fields=("minimum_service_years","days_per_service_year","divisor")
+            elif key=="leave_encashment":
+                fields=("divisor",)
+            else:
+                fields=()
+            for field in fields:
+                try: value=Decimal(str(rule[field]))
+                except (InvalidOperation,TypeError,KeyError) as exc: raise HTTPException(422,f"Enabled {key} policy requires numeric {field}") from exc
+                if value<0 or (field=="divisor" and value<=0):
+                    raise HTTPException(422,f"Exit policy {key}.{field} is outside its allowed range")
+            if key=="gratuity" and rule.get("maximum_amount") is not None and Decimal(str(rule["maximum_amount"]))<0:
+                raise HTTPException(422,"Gratuity maximum_amount cannot be negative")
     rounding=config.get("service_year_rounding","completed")
     if rounding not in {"completed","round_up_after_half","fractional"}:
         raise HTTPException(422,"service_year_rounding must be completed, round_up_after_half or fractional")
