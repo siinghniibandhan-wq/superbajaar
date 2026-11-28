@@ -156,6 +156,7 @@ class RecordUpdate(BaseModel):
 class TransitionInput(BaseModel):
     status: str
     note: str | None = Field(default=None,max_length=2000)
+    expected_version: int | None = Field(default=None,ge=1)
 
 def _role(request):
     return getattr(request.state,"role","")
@@ -404,6 +405,8 @@ def transition_record(domain:str,record_id:int,payload:TransitionInput,request:R
             with conn.transaction():
                 old=conn.execute("SELECT * FROM hr_enterprise_records WHERE id=%s AND domain=%s FOR UPDATE",(record_id,domain)).fetchone()
                 if not old: raise HTTPException(404,"HR record not found")
+                if payload.expected_version is not None and old["version"]!=payload.expected_version:
+                    raise HTTPException(409,"Record changed since it was loaded; refresh before changing its workflow")
                 if not manager:
                     own=_employee(conn,actor)
                     if old["employee_id"] is None or int(old["employee_id"])!=int(own["id"]):
