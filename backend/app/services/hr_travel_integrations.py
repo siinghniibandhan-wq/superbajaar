@@ -112,13 +112,18 @@ def create_provider_payout(*,record_id:int,beneficiary_reference:str,amount:Deci
         result=response.json()
     except (httpx.HTTPError,ValueError) as exc:
         raise HTTPException(502,"Configured travel payout provider did not confirm the disbursement") from exc
+    if not isinstance(result,dict):
+        raise HTTPException(502,"Travel payout provider returned an invalid payout response")
     payout_reference=str(result.get("payout_reference") or result.get("id") or "").strip()
     status=str(result.get("status") or "").strip().lower()
     if not payout_reference:
         raise HTTPException(502,"Travel payout provider response did not contain a payout reference")
     if status not in {"paid","success","succeeded"}:
         raise HTTPException(409,f"Travel payout provider has not confirmed payment (reference {payout_reference}, status {status or 'unknown'}); retry with the same advance after provider confirmation")
-    paid_amount=Decimal(str(result.get("paid_amount",amount)))
-    if paid_amount!=amount:
+    try:
+        paid_amount=Decimal(str(result.get("paid_amount",amount)))
+    except Exception as exc:
+        raise HTTPException(502,"Travel payout provider returned an invalid paid amount") from exc
+    if not paid_amount.is_finite() or paid_amount!=amount:
         raise HTTPException(409,"Travel payout provider paid amount does not match the approved advance")
     return {"provider":provider,"payout_reference":payout_reference,"payout_status":"paid"}
