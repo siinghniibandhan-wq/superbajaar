@@ -783,6 +783,23 @@ def test_travel_booking_requires_stable_idempotency_reference():
     })
     assert result["client_reference"]=="hr-trip-2026-0001"
     assert result["booking_details"]=={}
+    assert result["booked_cost"]=="1000"
+
+    with pytest.raises(HTTPException):
+        _validate("travel","booking",{
+            "travel_record_id":5,"booked_cost":"1000","client_reference":"hr-trip-2026-0002",
+            "booking_details":"not-json"
+        })
+    with pytest.raises(HTTPException):
+        _validate("travel","booking",{
+            "travel_record_id":5,"booked_cost":"1000","client_reference":"hr-trip-2026-0003",
+            "booking_details":"[]"
+        })
+    with pytest.raises(HTTPException):
+        _validate("travel","booking",{
+            "travel_record_id":5,"booked_cost":"0","client_reference":"hr-trip-2026-0004",
+            "booking_details":"{}"
+        })
 
 
 def test_travel_provider_fails_closed_without_secrets(monkeypatch):
