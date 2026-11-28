@@ -329,7 +329,8 @@ export default function POSWorkspace({ onBack }) {
   const shortBy = !splitTender && tenderedNumber != null && tenderedNumber < total ? round2(total - tenderedNumber) : null;
   const splitCash = splitCashAmount === "" ? null : Number(splitCashAmount);
   const splitOnline = splitCash == null ? null : round2(total - splitCash);
-  const splitIsTwoTenders = splitTender && splitCash != null && splitCash > 0 && splitCash < total && splitOnline > 0;\n  const checkoutMethod = splitTender ? (splitCash === total ? "cod" : splitOnlineMethod) : method;
+  const splitIsTwoTenders = splitTender && splitCash != null && splitCash > 0 && splitCash < total && splitOnline > 0;
+  const checkoutMethod = splitTender ? (splitCash === total ? "cod" : splitOnlineMethod) : method;
   const splitTenders = splitIsTwoTenders ? [{method:"cod",amount:splitCash},{method:splitOnlineMethod,amount:splitOnline}] : null;
   const quickCash = useMemo(() => {
     if (method !== "cod" || total <= 0) return [];
@@ -430,7 +431,8 @@ export default function POSWorkspace({ onBack }) {
     const checkoutPayload = {
       channel: "pos", customer_name: customerName, customer_phone: customer.phone.trim() || null,
       delivery_pin: pin || null, location_id: Number(locationId), pos_register_id: Number(selectedRegisterId),
-      pos_payment_method: splitTender ? (splitCash === total ? "cod" : splitCash === 0 ? splitOnlineMethod : null) : method,\n      pos_tenders: splitIsTwoTenders ? splitTenders : null,
+      pos_payment_method: splitTender ? (splitCash === total ? "cod" : splitCash === 0 ? splitOnlineMethod : null) : method,
+      pos_tenders: splitIsTwoTenders ? splitTenders : null,
       coupon_code: couponCode.trim() || null,
       notes: note, lines: cart.map(line => ({ variant_id: line.id, quantity: line.quantity })),
     };
