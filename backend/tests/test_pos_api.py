@@ -115,7 +115,7 @@ def test_pos_sales_supports_date_register_cashier_tender_and_search_filters(monk
     )
     count_query, count_params = conn.queries[1]
     assert "LEFT JOIN pos_register_shifts" in count_query
-    assert count_params == params[:-2]
+    assert tuple(count_params) == params[:-2]
 
 
 def test_pos_sales_rejects_inverted_date_range():
