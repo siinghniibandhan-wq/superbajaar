@@ -520,6 +520,15 @@ def test_split_pos_tenders_capture_cash_without_premature_stock_consumption(api)
     assert Decimal(str(cash["amount"]))==Decimal("40.00")
     assert Decimal(str(online["amount"]))==Decimal("60.00")
     ok(api.post(f"/api/pos/shifts/{shift['id']}/payments/{cash['id']}/confirm-cash",json={}))
+    replay=ok(api.post("/api/orders",json={
+        "channel":"pos","customer_name":"Split Tender Customer","location_id":api.location_id,
+        "pos_register_id":register["id"],"checkout_idempotency_key":"split-tender-"+api.suffix,
+        "pos_tenders":[{"method":"cod","amount":"40.00"},{"method":"upi","amount":"60.00"}],
+        "lines":[{"variant_id":api.variant_id,"quantity":1}],
+    }),201)
+    assert replay["idempotent_replay"] is True and len(replay["payments"])==2
+    assert next(p for p in replay["payments"] if p["method"]=="cod")["status"]=="captured"
+
     with psycopg.connect(TEST_DB) as conn:
         statuses=conn.execute("SELECT method,status,amount FROM payments WHERE order_id=%s ORDER BY id",(order["id"],)).fetchall()
         assert statuses==[("cod","captured",Decimal("40.00")),("upi","pending",Decimal("60.00"))]
