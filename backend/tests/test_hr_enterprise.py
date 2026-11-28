@@ -586,3 +586,26 @@ def test_recruitment_record_types_have_distinct_transition_permissions():
     assert _allowed_record_transitions("recruitment","communication","completed") == set()
     assert _allowed_record_transitions("recruitment","job_opening","open") != TRANSITIONS["recruitment"]["open"]
 
+
+@pytest.mark.parametrize(("domain","record_type","status","expected"), [
+    ("documents","employee_document","pending",{"under_review","archived"}),
+    ("documents","employee_document","verified",{"expired","archived"}),
+    ("performance","review_cycle","self_review",{"manager_review"}),
+    ("performance","review_template","draft",{"active","cancelled"}),
+    ("learning","course","planned",{"enrolled","cancelled"}),
+    ("learning","certificate","completed",{"expired","archived"}),
+    ("assets","allocation","requested",{"approved","rejected"}),
+    ("assets","asset","available",{"assigned","maintenance","written_off"}),
+    ("travel","request","submitted",{"approved","rejected"}),
+    ("travel","booking","booked",set()),
+    ("exit","case","handover",{"clearance"}),
+    ("exit","settlement","settlement_review",{"completed"}),
+])
+def test_non_recruitment_workflow_transitions_are_record_specific(domain,record_type,status,expected):
+    assert _allowed_record_transitions(domain,record_type,status)==expected
+
+
+def test_non_recruitment_records_cannot_use_another_record_types_transitions():
+    assert _allowed_record_transitions("learning","certificate","completed") != TRANSITIONS["learning"].get("completed",set())
+    assert _allowed_record_transitions("travel","booking","booked")==set()
+    assert _allowed_record_transitions("assets","asset","available") != _allowed_record_transitions("assets","allocation","requested")
