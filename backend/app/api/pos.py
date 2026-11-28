@@ -36,6 +36,10 @@ def pos_summary():
                           COALESCE(sum(total) FILTER (WHERE (created_at AT TIME ZONE 'Asia/Kolkata')::date = (now() AT TIME ZONE 'Asia/Kolkata')::date AND status <> 'cancelled'), 0) AS today_order_value
                    FROM orders WHERE channel='pos'"""
             ).fetchone()
+            refunds = conn.execute(
+                "SELECT id,payment_id,amount,status,provider,provider_refund_id,idempotency_key,note,created_at FROM payment_refunds WHERE order_id=%s ORDER BY created_at,id",
+                (order_id,),
+            ).fetchall()
             payments = conn.execute(
                 """SELECT count(*) AS payment_count,
                           count(*) FILTER (WHERE p.status='captured') AS captured_count,
@@ -96,6 +100,7 @@ def list_pos_sales(
                            COALESCE(l.line_count, 0) AS line_count,
                            COALESCE(p.captured_amount, 0) AS captured_amount,
                            COALESCE(p.pending_amount, 0) AS pending_amount,
+                           COALESCE(p.refunded_amount, 0) AS refunded_amount,
                            COALESCE(p.payment_statuses, '') AS payment_statuses
                     FROM orders o
                     LEFT JOIN pos_register_shifts s ON s.id=o.pos_register_shift_id
@@ -107,6 +112,7 @@ def list_pos_sales(
                       SELECT order_id,
                              sum(amount) FILTER (WHERE p.status='captured') AS captured_amount,
                              sum(amount) FILTER (WHERE p.status IN ('pending','authorized')) AS pending_amount,
+                             (SELECT COALESCE(sum(r.amount),0) FROM payment_refunds r WHERE r.order_id=p.order_id AND r.status='processed') AS refunded_amount,
                              string_agg(DISTINCT p.status, ', ') AS payment_statuses
                       FROM payments p GROUP BY order_id
                     ) p ON p.order_id=o.id
@@ -130,7 +136,7 @@ def get_pos_sale(order_id: int):
         with _connect() as conn:
             order = conn.execute(
                 """SELECT o.id, o.order_number, o.customer_name, o.customer_phone, o.status,
-                          o.subtotal, o.total, o.notes, o.created_at, o.updated_at,
+                          o.subtotal, o.total, o.discount_total, o.promotion_code, o.tax_total, o.place_of_supply_state, o.notes, o.created_at, o.updated_at,
                           s.id AS shift_id, s.register_id, r.register_code, r.name AS register_name,
                           s.cashier_user_id
                    FROM orders o
@@ -143,7 +149,8 @@ def get_pos_sale(order_id: int):
                 raise HTTPException(status_code=404, detail="POS sale not found")
             lines = conn.execute(
                 """SELECT l.id, l.variant_id, v.sku, p.name AS product_name,
-                          l.quantity, l.unit_price, l.line_total
+                          l.quantity, l.unit_price, l.line_total, l.hsn_code, l.gst_rule_id, l.gst_rate, l.taxable_value,
+                          l.cgst_amount, l.sgst_amount, l.igst_amount, l.tax_total
                    FROM order_lines l JOIN product_variants v ON v.id=l.variant_id
                    JOIN products p ON p.id=v.product_id
                    WHERE l.order_id=%s ORDER BY l.id""",
@@ -154,7 +161,7 @@ def get_pos_sale(order_id: int):
                    FROM payments WHERE order_id=%s ORDER BY created_at""",
                 (order_id,),
             ).fetchall()
-        return {**order, "lines": lines, "payments": payments, "source": "postgresql"}
+        return {**order, "lines": lines, "payments": payments, "refunds": refunds, "source": "postgresql"}
     except HTTPException:
         raise
     except psycopg.Error as exc:
