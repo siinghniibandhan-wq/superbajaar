@@ -25,7 +25,7 @@ const blank={};
 
 export default function HREnterpriseWorkflows({manager,employees=[]}) {
  const [domain,setDomain]=useState("recruitment"),[items,setItems]=useState([]),[recordType,setRecordType]=useState("job_opening");
- const [title,setTitle]=useState(""),[employeeId,setEmployeeId]=useState(""),[fields,setFields]=useState(blank);
+ const [title,setTitle]=useState(""),[employeeId,setEmployeeId]=useState(""),[fields,setFields]=useState(blank),[documentFile,setDocumentFile]=useState(null);
  const [busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("");
  const current=domains.find(x=>x.id===domain);
  const type=current.types.find(x=>x[0]===recordType)||current.types[0];
@@ -35,7 +35,7 @@ export default function HREnterpriseWorkflows({manager,employees=[]}) {
    catch(e){setError(e.message||"Unable to load HR records.");}
    finally{setBusy(false);}
  },[domain]);
- useEffect(()=>{setRecordType(domains.find(x=>x.id===domain).types[0][0]);setFields({});setTitle("");},[domain]);
+ useEffect(()=>{setRecordType(domains.find(x=>x.id===domain).types[0][0]);setFields({});setTitle("");setDocumentFile(null);},[domain]);
  useEffect(()=>{load();},[load]);
  const update=(key,value)=>setFields(old=>({...old,[key]:value}));
  async function create(e){
@@ -64,17 +64,17 @@ export default function HREnterpriseWorkflows({manager,employees=[]}) {
    <h3>{current.label}</h3>
    <form className="hr-form hr-grid" onSubmit={create}>
     <label>Record type<select value={recordType} onChange={e=>{setRecordType(e.target.value);setFields({});}}>{current.types.map(x=><option key={x[0]} value={x[0]}>{x[1]}</option>)}</select></label>
-    <label>Title<input required maxLength="200" value={title} onChange={e=>setTitle(e.target.value)}/></label>
+    {domain!=="documents"&&<label>Title<input required maxLength="200" value={title} onChange={e=>setTitle(e.target.value)}/></label>}
     {manager&&<label>Employee (optional)<select value={employeeId} onChange={e=>setEmployeeId(e.target.value)}><option value="">Not employee-linked</option>{employees.map(x=><option key={x.id} value={x.id}>{employeeNames[x.id]}</option>)}</select></label>}
-    {type[2].map(([key,label,inputType])=><label key={key}>{label}{inputType==="textarea"?<textarea rows="2" value={fields[key]||""} onChange={e=>update(key,e.target.value)}/>:<input type={inputType||"text"} required value={fields[key]||""} onChange={e=>update(key,e.target.value)}/>}</label>)}
+    {type[2].map(([key,label,inputType])=><label key={key}>{label}{inputType==="select"?<select required value={fields[key]||"identity"} onChange={e=>update(key,e.target.value)}><option value="identity">Identity</option><option value="address">Address</option><option value="qualification">Qualification</option><option value="employment">Employment</option><option value="contract">Contract</option><option value="policy_acknowledgement">Policy acknowledgement</option><option value="other">Other</option></select>:inputType==="textarea"?<textarea rows="2" value={fields[key]||""} onChange={e=>update(key,e.target.value)}/>:<input type={inputType||"text"} required value={fields[key]||""} onChange={e=>update(key,e.target.value)}/>}</label>)}\n    {domain==="documents"&&<label>Document file<input type="file" accept="application/pdf,image/jpeg,image/png" required onChange={e=>setDocumentFile(e.target.files?.[0]||null)}/><small>Private encrypted storage · PDF/JPEG/PNG · maximum 10 MB</small></label>}
     <button disabled={busy}>Create {type[1].toLowerCase()}</button>
    </form>
    <div className="hr-directory-heading"><h3>Records</h3><span className="hr-directory-count">{items.length} shown</span></div>
    <div className="hr-table-wrap"><table><thead><tr><th>Record</th><th>Employee</th><th>Status</th><th>Updated</th><th>Workflow actions</th></tr></thead><tbody>
-    {items.map(item=><tr key={item.id}><td><strong>{item.title}</strong><small>#{item.id} · {item.payload?.record_type||"Record"}</small></td><td>{employeeNames[item.employee_id]||"—"}</td><td>{item.status}</td><td>{item.updated_at?new Date(item.updated_at).toLocaleString():"—"}</td><td>{(manager?(transitions[domain]?.[item.status]||[]):[]).map(next=><button type="button" key={next} disabled={busy} onClick={()=>transition(item,next)}>{next.replaceAll("_"," ")}</button>)}</td></tr>)}
+    {items.map(item=><tr key={item.id}><td><strong>{item.title}</strong><small>#{item.id} · {item.payload?.record_type||"Record"}</small></td><td>{employeeNames[item.employee_id]||"—"}</td><td>{item.status}</td><td>{item.updated_at?new Date(item.updated_at).toLocaleString():"—"}</td><td>{domain==="documents"&&["uploaded","under_review","verified"].includes(item.status)&&<button type="button" disabled={busy} onClick={async()=>{try{const result=await apiRequest("/hr/enterprise/documents/"+item.id+"/download",{method:"POST",body:"{}"});window.open(result.url,"_blank","noopener,noreferrer");}catch(e){setError(e.message||"Unable to download document.");}}}>Secure download</button>}{(manager?(transitions[domain]?.[item.status]||[]):[]).map(next=><button type="button" key={next} disabled={busy} onClick={()=>transition(item,next)}>{next.replaceAll("_"," ")}</button>)}</td></tr>)}
     {!items.length&&<tr><td colSpan="5">{busy?"Loading…":"No records in this domain yet."}</td></tr>}
    </tbody></table></div>
-   {domain==="documents"&&<p className="sb-alert">Secure document upload, malware scanning, retention and download are not enabled by this metadata form. Do not enter a public URL or sensitive document content here.</p>}
+   {domain==="documents"&&<p className="hr-enterprise-note">Files are stored in the configured private S3 bucket with server-side encryption and short-lived, access-checked download links. Configure bucket access and retention policy before production use.</p>}
   </div>
  </section>;
 }
