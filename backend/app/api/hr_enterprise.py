@@ -38,6 +38,7 @@ TRANSITIONS = {
  "exit":{"initiated":{"notice_period","withdrawn"},"notice_period":{"handover","withdrawn"},"handover":{"clearance"},"clearance":{"settlement_review"},"settlement_review":{"completed"}},
  "analytics":{"saved":{"scheduled","archived"},"scheduled":{"saved","archived"}}
 }
+MANAGER_ONLY_TYPES = {"recruitment":{"job_opening","candidate","application"},"assets":{"asset","allocation"},"analytics":{"report"}}
 REQUIRED = {
  "recruitment":{"job_opening":["department","employment_type","location"],"candidate":["email"],"application":["candidate_id","job_id"]},
  "documents":{"employee_document":["document_type","file_name","object_key","content_type","sha256"]},
@@ -138,6 +139,10 @@ def list_records(domain:str,request:Request,status:str|None=None,employee_id:int
 
 @router.post("/{domain}",status_code=201)
 def create_record(domain:str,payload:RecordInput,request:Request):
+    if domain not in DOMAINS: raise HTTPException(404,"Unknown HR domain")
+    if record_type := payload.record_type:
+        if record_type in MANAGER_ONLY_TYPES.get(domain,set()) and _role(request) not in MANAGER_ROLES:
+            raise HTTPException(403,"This HR record type requires HR manager permission")
     actor=_manager(request) if domain in {"recruitment","analytics"} or _role(request) in MANAGER_ROLES else _actor(request)
     try:
         with _hr_connection() as conn:
