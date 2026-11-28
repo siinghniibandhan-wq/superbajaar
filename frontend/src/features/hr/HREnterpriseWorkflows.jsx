@@ -21,6 +21,12 @@ const transitions={
  exit:{initiated:["notice_period","withdrawn"],notice_period:["handover","withdrawn"],handover:["clearance"],clearance:["settlement_review"],settlement_review:["completed"]},
  analytics:{saved:["scheduled","archived"],scheduled:["saved","archived"]}
 };
+const employeeTransitions={
+ travel:{draft:["submitted","cancelled"]},
+ performance:{active:["self_review"]},
+ learning:{enrolled:["in_progress"],in_progress:["completed"]},
+ exit:{initiated:["withdrawn"]}
+};
 const blank={};
 
 export default function HREnterpriseWorkflows({manager,employees=[]}) {
@@ -84,7 +90,7 @@ export default function HREnterpriseWorkflows({manager,employees=[]}) {
    </form>
    <div className="hr-directory-heading"><h3>Records</h3><span className="hr-directory-count">{items.length} shown</span></div>
    <div className="hr-table-wrap"><table><thead><tr><th>Record</th><th>Employee</th><th>Status</th><th>Updated</th><th>Workflow actions</th></tr></thead><tbody>
-    {items.map(item=><tr key={item.id}><td><strong>{item.title}</strong><small>#{item.id} · {item.payload?.record_type||"Record"}</small></td><td>{employeeNames[item.employee_id]||"—"}</td><td>{item.status}</td><td>{item.updated_at?new Date(item.updated_at).toLocaleString():"—"}</td><td>{domain==="documents"&&["uploaded","under_review","verified"].includes(item.status)&&<button type="button" disabled={busy} onClick={async()=>{try{const result=await apiRequest("/hr/enterprise/documents/"+item.id+"/download",{method:"POST",body:"{}"});window.open(result.url,"_blank","noopener,noreferrer");}catch(e){setError(e.message||"Unable to download document.");}}}>Secure download</button>}{(manager?(transitions[domain]?.[item.status]||[]):[]).map(next=><button type="button" key={next} disabled={busy} onClick={()=>transition(item,next)}>{next.replaceAll("_"," ")}</button>)}</td></tr>)}
+    {items.map(item=><tr key={item.id}><td><strong>{item.title}</strong><small>#{item.id} · {item.payload?.record_type||"Record"}</small></td><td>{employeeNames[item.employee_id]||"—"}</td><td>{item.status}</td><td>{item.updated_at?new Date(item.updated_at).toLocaleString():"—"}</td><td>{domain==="documents"&&["uploaded","under_review","verified"].includes(item.status)&&<button type="button" disabled={busy} onClick={async()=>{try{const result=await apiRequest("/hr/enterprise/documents/"+item.id+"/download",{method:"POST",body:"{}"});window.open(result.url,"_blank","noopener,noreferrer");}catch(e){setError(e.message||"Unable to download document.");}}}>Secure download</button>}{(manager?(transitions[domain]?.[item.status]||[]):(employeeTransitions[domain]?.[item.status]||[])).map(next=><button type="button" key={next} disabled={busy} onClick={()=>transition(item,next)}>{next.replaceAll("_"," ")}</button>)}</td></tr>)}
     {!items.length&&<tr><td colSpan="5">{busy?"Loading…":"No records in this domain yet."}</td></tr>}
    </tbody></table></div>
    {domain==="documents"&&<p className="hr-enterprise-note">Files are stored in the configured private S3 bucket with server-side encryption and short-lived, access-checked download links. Configure bucket access and retention policy before production use.</p>}
