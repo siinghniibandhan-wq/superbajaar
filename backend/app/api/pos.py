@@ -1,6 +1,7 @@
 """POS reporting/read APIs backed by the existing order and payment ledger."""
 import psycopg
 from datetime import date
+from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query
 from psycopg.rows import dict_row
 
@@ -50,15 +51,15 @@ def pos_summary():
 
 @router.get("/sales")
 def list_pos_sales(
-    status: str | None = Query(default=None, max_length=40),
-    date_from: date | None = Query(default=None),
-    date_to: date | None = Query(default=None),
-    register_id: int | None = Query(default=None, gt=0),
-    cashier_user_id: int | None = Query(default=None, gt=0),
-    payment_method: str | None = Query(default=None, pattern=r"^(upi|card|netbanking|cod|wallet|bank_transfer|other)$"),
-    search: str | None = Query(default=None, max_length=200),
-    limit: int = Query(default=50, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
+    status: Annotated[str | None, Query(max_length=40)] = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    register_id: Annotated[int | None, Query(gt=0)] = None,
+    cashier_user_id: Annotated[int | None, Query(gt=0)] = None,
+    payment_method: Annotated[str | None, Query(pattern=r"^(upi|card|netbanking|cod|wallet|bank_transfer|other)$")] = None,
+    search: Annotated[str | None, Query(max_length=200)] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ):
     if date_from and date_to and date_from > date_to:
         raise HTTPException(status_code=422, detail="date_from cannot be after date_to")
