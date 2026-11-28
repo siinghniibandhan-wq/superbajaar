@@ -311,3 +311,43 @@ def test_recruitment_interview_feedback_and_communication_logs():
             "interview_id":12, "interviewer_employee_id":4,
             "rating":"8", "decision":"pass", "feedback":"Out of range"
         })
+
+
+
+def test_archive_event_records_the_record_id_and_complete_state(monkeypatch):
+    import app.api.hr_enterprise as api
+    from contextlib import contextmanager
+
+    old = {"id": 23, "domain": "assets", "status": "available", "version": 1}
+    updated = {"id": 23, "domain": "assets", "status": "archived", "version": 2}
+    calls = []
+
+    class FakeTransaction:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+
+    class FakeConnection:
+        def transaction(self): return FakeTransaction()
+        def execute(self, sql, params=()):
+            calls.append((sql, params))
+            if sql.startswith("SELECT * FROM hr_enterprise_records"):
+                return type("Result", (), {"fetchone": lambda self: old})()
+            if sql.startswith("UPDATE hr_enterprise_records"):
+                return type("Result", (), {"fetchone": lambda self: updated})()
+            return type("Result", (), {"fetchone": lambda self: None})()
+
+    @contextmanager
+    def fake_connection():
+        yield FakeConnection()
+
+    monkeypatch.setattr(api, "_manager", lambda _request: 7)
+    monkeypatch.setattr(api, "_hr_connection", fake_connection)
+    result = api.archive_record("assets", 23, object())
+    event_sql, event_params = calls[-1]
+    assert result == updated
+    assert "VALUES(%s,'archived',%s,'archived',%s::jsonb,%s::jsonb,%s)" in event_sql
+    assert event_params[0] == 23
+    assert event_params[1] == "available"
+    assert event_params[2] == '{"id": 23, "domain": "assets", "status": "available", "version": 1}'
+    assert event_params[3] == '{"id": 23, "domain": "assets", "status": "archived", "version": 2}'
+    assert event_params[4] == 7
