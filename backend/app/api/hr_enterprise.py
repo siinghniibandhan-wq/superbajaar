@@ -43,7 +43,7 @@ TRANSITIONS = {
  "analytics":{"saved":{"scheduled","archived"},"scheduled":{"saved","archived"}}
 }
 MANAGER_ONLY_TYPES = {
- "recruitment":{"job_opening","candidate","application","interview","offer"},
+ "recruitment":{"job_opening","candidate","application","interview","interview_feedback","offer","communication"},
  "assets":{"asset","allocation","maintenance"},
  "performance":{"review_template","review_cycle","review","calibration"},
  "learning":{"course","assessment","certificate"},
@@ -67,6 +67,8 @@ def _employee_transition_allowed(domain, from_status, to_status):
 def _initial_status(domain, record_type):
     typed = {
         ("recruitment", "interview"): "interview",
+        ("recruitment", "interview_feedback"): "completed",
+        ("recruitment", "communication"): "completed",
         ("recruitment", "offer"): "offered",
         ("documents", "employee_document"): "pending",
         ("performance", "feedback"): "acknowledged",
@@ -100,7 +102,9 @@ REQUIRED = {
   "candidate":["email"],
   "application":["candidate_id","job_id"],
   "interview":["application_id","scheduled_at","interviewer_employee_id","interview_type"],
-  "offer":["application_id","offered_salary","currency","expires_on"]
+  "interview_feedback":["interview_id","interviewer_employee_id","rating","decision","feedback"],
+  "offer":["application_id","offered_salary","currency","expires_on"],
+  "communication":["candidate_id","channel","direction","subject","message","occurred_at"]
  },
  "documents":{"employee_document":["document_type","file_name","object_key","content_type","sha256"]},
  "performance":{
@@ -187,6 +191,8 @@ def _validate_references(conn, domain, record_type, data):
             "job_id": ("recruitment","job_opening"),
         },
         ("recruitment","interview"): {"application_id": ("recruitment","application")},
+        ("recruitment","interview_feedback"): {"interview_id": ("recruitment","interview")},
+        ("recruitment","communication"): {"candidate_id": ("recruitment","candidate")},
         ("recruitment","offer"): {"application_id": ("recruitment","application")},
         ("performance","review"): {"template_id": ("performance","review_template"),"cycle_id": ("performance","review_cycle")},
         ("performance","self_review"): {"cycle_id": ("performance","review_cycle")},
@@ -373,6 +379,16 @@ def _validate(domain, record_type, payload):
             date.fromisoformat(str(data["scheduled_at"])[:10])
         except (ValueError,TypeError): raise HTTPException(422,"Interview IDs and scheduled date are invalid")
         if application_id<=0 or interviewer_id<=0: raise HTTPException(422,"Interview application and interviewer IDs must be positive")
+    if domain=="recruitment" and record_type=="interview_feedback":
+        try: rating=Decimal(str(data["rating"])); interviewer_id=int(data["interviewer_employee_id"])
+        except (InvalidOperation,ValueError,TypeError): raise HTTPException(422,"Interview rating and interviewer ID are invalid")
+        if rating<1 or rating>5 or interviewer_id<=0: raise HTTPException(422,"Interview rating must be 1–5 and interviewer ID positive")
+        if data["decision"] not in {"pass","hold","reject"}: raise HTTPException(422,"Interview decision must be pass, hold or reject")
+        data["rating"]=str(rating);data["interviewer_employee_id"]=interviewer_id
+    if domain=="recruitment" and record_type=="communication":
+        if data["channel"] not in {"email","phone","sms","in_person","other"}: raise HTTPException(422,"Communication channel is invalid")
+        if data["direction"] not in {"inbound","outbound"}: raise HTTPException(422,"Communication direction is invalid")
+        if len(str(data["message"]).strip())<2: raise HTTPException(422,"Communication message is required")
     if domain=="recruitment" and record_type=="offer":
         try: salary=Decimal(str(data["offered_salary"])); expiry=date.fromisoformat(str(data["expires_on"])); application_id=int(data["application_id"])
         except (ValueError,InvalidOperation,TypeError): raise HTTPException(422,"Offer application, salary or expiry date is invalid")
