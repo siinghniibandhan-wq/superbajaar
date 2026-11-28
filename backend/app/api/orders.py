@@ -446,6 +446,13 @@ def create_order(payload: OrderCreate, request: Request):
                 )
                 order["tax_total"] = tax_total
                 order["place_of_supply_state"] = place_of_supply_state
+                order["tax_lines"] = conn.execute(
+                    """SELECT ol.id,ol.hsn_code,ol.gst_rate,ol.taxable_value,ol.cgst_rate,
+                              ol.sgst_rate,ol.igst_rate,ol.cgst_amount,ol.sgst_amount,
+                              ol.igst_amount,ol.tax_total
+                       FROM order_lines ol WHERE ol.order_id=%s ORDER BY ol.id""",
+                    (order["id"],),
+                ).fetchall()
                 payment = None
                 if payload.pos_payment_method:
                     payment_reference = "PAY-" + uuid.uuid4().hex[:12].upper()
