@@ -63,7 +63,7 @@ def upload_employee_document(*,employee_id:int,uploader_id:int,document_type:str
  return {"object_key":key,"file_name":safe_name,"content_type":content_type,"file_size_bytes":len(content),"sha256":digest,"document_type":document_type,"malware_scan_status":scan_status}
 
 def delete_employee_document(*,employee_id:int,object_key:str)->None:
- if employee_id<=0 or not re.fullmatch(r"hr-employee-documents/\\d+/[0-9a-f]{32}\\.(pdf|jpg|png)",object_key or "") or not object_key.startswith(f"hr-employee-documents/{employee_id}/"):
+ if employee_id<=0 or not re.fullmatch(r"hr-employee-documents/\d+/[0-9a-f]{32}\.(pdf|jpg|png)",object_key or "") or not object_key.startswith(f"hr-employee-documents/{employee_id}/"):
   raise EmployeeDocumentError("Document is outside this employee's private storage area")
  bucket,client=_storage()
  head=client.head_object(Bucket=bucket,Key=object_key)
