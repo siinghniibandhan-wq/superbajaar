@@ -634,3 +634,37 @@ def test_learning_assessment_attempt_limit_blocks_exhausted_or_invalid_limits():
         _ensure_assessment_attempt_limit(0,0)
     with pytest.raises(HTTPException):
         _ensure_assessment_attempt_limit(0,21)
+
+@pytest.mark.parametrize("record_type,expected", [
+    ("procurement","requested"),
+    ("stock_receipt","received"),
+    ("asset_loss","investigating"),
+])
+def test_asset_supply_chain_records_have_initial_lifecycle_states(record_type,expected):
+    assert _initial_status("assets",record_type)==expected
+
+
+def test_asset_procurement_requires_valid_line_items_and_positive_total():
+    result=_validate("assets","procurement",{
+        "vendor":"Vendor A","requested_by":"Facilities","estimated_total":"2500",
+        "items":[{"description":"Laptop","quantity":"2","unit_cost":"1250"}]
+    })
+    assert result["estimated_total"]=="2500"
+    with pytest.raises(HTTPException):
+        _validate("assets","procurement",{
+            "vendor":"Vendor A","requested_by":"Facilities","estimated_total":"0",
+            "items":[{"description":"Laptop","quantity":"2","unit_cost":"0"}]
+        })
+
+
+def test_asset_stock_reconciliation_requires_reason_for_variance():
+    result=_validate("assets","stock_reconciliation",{
+        "location":"Warehouse A","counted_at":"2026-11-28",
+        "expected_count":"10","physical_count":"8","variance_reason":"Two units not located"
+    })
+    assert result["variance"]==-2
+    with pytest.raises(HTTPException):
+        _validate("assets","stock_reconciliation",{
+            "location":"Warehouse A","counted_at":"2026-11-28",
+            "expected_count":"10","physical_count":"8","variance_reason":"No"
+        })
