@@ -101,3 +101,19 @@ npm run test:e2e
 ```
 
 The current Playwright config starts a local production preview. Run the suite against staging only with a dedicated staging Playwright config that disables the local webServer and sets `baseURL` to the staging host. Cover manager and employee roles, all seven domain tabs, mobile width (390px), tablet width (768px), desktop width (1440px), upload/scanning failure, booking provider failure/retry, advance voucher idempotency, exit policy approval, leave/loan calculations, report exports and retention legal holds. Capture screenshots and traces for failures. This branch does not have access to the target staging host or seeded test identities, so live staging browser QA remains an environment execution gate.
+
+
+## Employee loan accounting configuration
+
+Employee loans are created as drafts, approved by a different manager, and only become active when the approved principal is disbursed. Disbursement posts a balanced payment voucher: debit employee-loan receivable and credit the configured bank/cash account. Repayments post a receipt voucher: debit bank/cash and credit employee-loan receivable.
+
+- `SB_EMPLOYEE_LOAN_RECEIVABLE_ACCOUNT_CODE`: defaults to `1150` (Employee loans receivable, added by migration 079).
+- `SB_EMPLOYEE_LOAN_BANK_ACCOUNT_CODE`: defaults to `1010`; set this to the actual funding bank or cash ledger account.
+- Apply `079_hr_employee_loan_accounting.sql` after migrations 070–078 before enabling the loan disbursement action.
+
+Travel booking and payout require provider credentials and endpoints:
+- `SB_TRAVEL_BOOKING_API_URL`, `SB_TRAVEL_BOOKING_API_TOKEN`, `SB_TRAVEL_BOOKING_PROVIDER`.
+- `SB_TRAVEL_PAYOUT_API_URL`, `SB_TRAVEL_PAYOUT_API_TOKEN`, `SB_TRAVEL_PAYOUT_PROVIDER`.
+- `SB_TRAVEL_ADVANCE_ACCOUNT_CODE` and `SB_TRAVEL_BANK_ACCOUNT_CODE` for the accounting voucher.
+
+Do not enable live disbursement in production until the provider has been tested with a controlled low-value transaction and the bank/ledger account mappings have been confirmed by Finance.
