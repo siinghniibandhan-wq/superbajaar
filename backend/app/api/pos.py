@@ -44,7 +44,14 @@ def pos_summary():
                           COALESCE(sum(amount) FILTER (WHERE p.status IN ('pending','authorized')), 0) AS pending_amount
                    FROM payments p JOIN orders o ON o.id=p.order_id WHERE o.channel='pos'"""
             ).fetchone()
-        return {"source": "postgresql", "orders": orders, "payments": payments}
+            refunds = conn.execute(
+                """SELECT count(*) FILTER (WHERE r.status='processed') AS processed_count,
+                          COALESCE(sum(r.amount) FILTER (WHERE r.status='processed'),0) AS processed_amount,
+                          count(*) FILTER (WHERE r.status='pending') AS pending_count,
+                          COALESCE(sum(r.amount) FILTER (WHERE r.status='pending'),0) AS pending_amount
+                   FROM payment_refunds r JOIN orders o ON o.id=r.order_id WHERE o.channel='pos'"""
+            ).fetchone()
+        return {"source": "postgresql", "orders": orders, "payments": payments, "refunds": refunds}
     except psycopg.Error as exc:
         raise _db_error(exc) from exc
 
