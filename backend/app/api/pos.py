@@ -164,6 +164,10 @@ def get_pos_sale(order_id: int):
                 "SELECT id,payment_id,amount,status,provider,provider_refund_id,idempotency_key,note,created_at FROM payment_refunds WHERE order_id=%s ORDER BY created_at,id",
                 (order_id,),
             ).fetchall()
+            refunds = conn.execute(
+                "SELECT id,payment_id,amount,status,provider,provider_refund_id,idempotency_key,note,created_at FROM payment_refunds WHERE order_id=%s ORDER BY created_at,id",
+                (order_id,),
+            ).fetchall()
         return {**order, "lines": lines, "payments": payments, "refunds": refunds, "source": "postgresql"}
     except HTTPException:
         raise
