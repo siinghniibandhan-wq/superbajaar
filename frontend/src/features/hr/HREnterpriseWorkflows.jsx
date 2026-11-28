@@ -42,6 +42,8 @@ export default function HREnterpriseWorkflows({manager,employees=[]}) {
  const [domain,setDomain]=useState("recruitment"),[items,setItems]=useState([]),[recordType,setRecordType]=useState("job_opening");
  const [title,setTitle]=useState(""),[employeeId,setEmployeeId]=useState(""),[fields,setFields]=useState(blank),[documentFile,setDocumentFile]=useState(null);
  const [busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("");
+ const [analyticsMonth,setAnalyticsMonth]=useState(()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");});
+ const [analyticsData,setAnalyticsData]=useState(null),[analyticsError,setAnalyticsError]=useState(""),[analyticsLoading,setAnalyticsLoading]=useState(false);
  const current=domains.find(x=>x.id===domain);
  const availableTypes=current.types.filter(x=>manager||!managerOnlyTypes[domain]?.includes(x[0]));
  const type=availableTypes.find(x=>x[0]===recordType)||availableTypes[0]||current.types[0];
@@ -53,6 +55,15 @@ export default function HREnterpriseWorkflows({manager,employees=[]}) {
  },[domain]);
  useEffect(()=>{const selected=domains.find(x=>x.id===domain);const first=selected.types.find(x=>manager||!managerOnlyTypes[domain]?.includes(x[0]));setRecordType(first?.[0]||selected.types[0][0]);setFields({});setTitle("");setDocumentFile(null);},[domain,manager]);
  useEffect(()=>{load();},[load]);
+ useEffect(()=>{
+   if(domain!=="analytics"||!manager)return;
+   let active=true;setAnalyticsLoading(true);setAnalyticsError("");
+   apiRequest("/hr/overview?month="+analyticsMonth)
+     .then(result=>{if(active)setAnalyticsData(result);})
+     .catch(e=>{if(active)setAnalyticsError(e.message||"Unable to load HR analytics.");})
+     .finally(()=>{if(active)setAnalyticsLoading(false);});
+   return()=>{active=false;};
+ },[domain,manager,analyticsMonth]);
  const update=(key,value)=>setFields(old=>({...old,[key]:value}));
  async function create(e){
    e.preventDefault();setBusy(true);setError("");setNotice("");
@@ -91,6 +102,21 @@ export default function HREnterpriseWorkflows({manager,employees=[]}) {
    <nav className="hr-advanced-nav" aria-label="HR enterprise domains">{domains.filter(x=>manager||!["recruitment","analytics"].includes(x.id)).map(x=><button type="button" key={x.id} className={domain===x.id?"active":""} aria-pressed={domain===x.id} onClick={()=>setDomain(x.id)}>{x.label}</button>)}</nav>
    {error&&<p className="sb-alert" role="alert">{error}</p>}{notice&&<p className="sb-success" role="status">{notice}</p>}
    <h3>{current.label}</h3>
+   {domain==="analytics"&&manager&&<section className="hr-panel" aria-label="Computed workforce analytics">
+    <div className="hr-directory-heading"><div><h3>Workforce analytics</h3><p>Live metrics from the existing HR, attendance, leave and approved payroll records.</p></div><label>Reporting month<input type="month" value={analyticsMonth} onChange={e=>setAnalyticsMonth(e.target.value)}/></label></div>
+    {analyticsError&&<p role="alert" className="sb-alert">{analyticsError}</p>}
+    {analyticsLoading&&<p role="status">Loading workforce metrics…</p>}
+    {analyticsData&&<><div className="hr-overview">
+     <article><span>Total workforce</span><strong>{analyticsData.workforce?.total??0}</strong><small>Active {analyticsData.workforce?.active??0} · Inactive {analyticsData.workforce?.inactive??0}</small></article>
+     <article><span>Joiners</span><strong>{analyticsData.workforce?.joiners??0}</strong><small>During selected month</small></article>
+     <article><span>Exits</span><strong>{analyticsData.workforce?.exits??0}</strong><small>During selected month</small></article>
+     <article><span>Present employees</span><strong>{analyticsData.attendance?.present??"—"}</strong><small>Absent {analyticsData.attendance?.absent??"Not available"}</small></article>
+     <article><span>Attendance rate</span><strong>{analyticsData.attendance?.rate==null?"—":analyticsData.attendance.rate+"%"}</strong><small>{analyticsData.attendance?.reason||"Based on published shifts"}</small></article>
+     <article><span>Approved payroll gross</span><strong>{new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR",maximumFractionDigits:0}).format(Number(analyticsData.payroll?.gross||0))}</strong><small>Net {new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR",maximumFractionDigits:0}).format(Number(analyticsData.payroll?.net||0))}</small></article>
+    </div>
+    <div className="hr-table-wrap"><table><thead><tr><th>Department</th><th>Headcount</th></tr></thead><tbody>{(analyticsData.workforce?.departments||[]).map(d=><tr key={d.id}><td>{d.name}</td><td>{d.headcount}</td></tr>)}{!analyticsData.workforce?.departments?.length&&<tr><td colSpan="2">No active departments.</td></tr>}</tbody></table></div>
+    <p className="hr-enterprise-note">Metrics are calculated from recorded data. Attendance absence and rate are unavailable when there is no published shift schedule; late-arrival and attendance trend metrics are not currently calculated.</p></>}
+   </section>}
    <form className="hr-form hr-grid" onSubmit={create}>
     <label>Record type<select value={recordType} onChange={e=>{setRecordType(e.target.value);setFields({});}}>{availableTypes.map(x=><option key={x[0]} value={x[0]}>{x[1]}</option>)}</select></label>
     {domain!=="documents"&&<label>Title<input required maxLength="200" value={title} onChange={e=>setTitle(e.target.value)}/></label>}
