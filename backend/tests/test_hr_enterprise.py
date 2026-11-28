@@ -2,7 +2,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.hr_enterprise import (
-    DOMAINS, EMPLOYEE_TRANSITIONS, REQUIRED, STATUSES, TRANSITIONS,
+    DOMAINS, REQUIRED, STATUSES, TRANSITIONS,
     _employee_transition_allowed, _initial_status, _validate,
 )
 
@@ -133,3 +133,25 @@ def test_learning_assessment_scores_are_bounded():
         _validate("learning", "assessment", {
             "enrollment_id": 4, "score": "105", "pass_score": "70"
         })
+
+
+
+def test_invalid_exit_and_asset_dates_return_validation_errors():
+    with pytest.raises(HTTPException) as exit_error:
+        _validate("exit", "case", {"reason":"Personal reasons","last_working_date":"not-a-date"})
+    assert exit_error.value.status_code == 422
+    with pytest.raises(HTTPException) as asset_error:
+        _validate("assets", "asset_request", {
+            "asset_type":"Laptop", "purpose":"New starter equipment", "needed_by":"not-a-date"
+        })
+    assert asset_error.value.status_code == 422
+
+
+def test_new_record_types_are_registered_for_each_domain():
+    assert "interview" in REQUIRED["recruitment"]
+    assert "offer" in REQUIRED["recruitment"]
+    assert "review_cycle" in REQUIRED["performance"]
+    assert "assessment" in REQUIRED["learning"]
+    assert "asset_request" in REQUIRED["assets"]
+    assert "booking" in REQUIRED["travel"]
+    assert "settlement" in REQUIRED["exit"]
