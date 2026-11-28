@@ -25,6 +25,7 @@ def create_provider_booking(*,travel:dict,booking:dict,record_id:int)->dict:
         "end_date":travel.get("end_date"),
         "traveller_reference":str(travel.get("employee_id") or ""),
         "quoted_amount":str(booking.get("booked_cost")),
+        "maximum_allowed_amount":str(booking.get("maximum_allowed_amount") or booking.get("booked_cost")),
         "currency":str(booking.get("currency") or travel.get("currency") or "INR").upper(),
         "booking_details":booking.get("booking_details") or {},
     }
