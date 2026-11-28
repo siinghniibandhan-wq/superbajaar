@@ -807,3 +807,37 @@ def test_travel_provider_fails_closed_without_secrets(monkeypatch):
         monkeypatch.delenv(key,raising=False)
     with pytest.raises(TravelIntegrationConfigurationError):
         create_provider_booking(travel={"destination":"Patna"},booking={"booked_cost":"1000","client_reference":"hr-trip-2026-0001"},record_id=99)
+
+
+def test_travel_booking_provider_must_confirm_and_stay_within_policy(monkeypatch):
+    import app.services.hr_travel_integrations as travel
+    class FakeResponse:
+        def raise_for_status(self): pass
+        def json(self): return {"booking_reference":"BOOK-12345","status":"pending","confirmed_amount":"100"}
+    monkeypatch.setenv("SB_TRAVEL_BOOKING_API_URL","https://provider.example.test")
+    monkeypatch.setenv("SB_TRAVEL_BOOKING_API_TOKEN","test-token")
+    monkeypatch.setenv("SB_TRAVEL_BOOKING_PROVIDER","test-provider")
+    monkeypatch.setattr(travel.httpx,"post",lambda *args,**kwargs:FakeResponse())
+    with pytest.raises(HTTPException,match="has not confirmed"):
+        travel.create_provider_booking(
+            travel={"destination":"Delhi","employee_id":7},
+            booking={"client_reference":"HR-TRAVEL-123","booked_cost":"100","maximum_allowed_amount":"500"},
+            record_id=9,
+        )
+
+
+def test_travel_booking_provider_rejects_confirmed_amount_above_policy(monkeypatch):
+    import app.services.hr_travel_integrations as travel
+    class FakeResponse:
+        def raise_for_status(self): pass
+        def json(self): return {"booking_reference":"BOOK-12345","status":"confirmed","confirmed_amount":"600"}
+    monkeypatch.setenv("SB_TRAVEL_BOOKING_API_URL","https://provider.example.test")
+    monkeypatch.setenv("SB_TRAVEL_BOOKING_API_TOKEN","test-token")
+    monkeypatch.setenv("SB_TRAVEL_BOOKING_PROVIDER","test-provider")
+    monkeypatch.setattr(travel.httpx,"post",lambda *args,**kwargs:FakeResponse())
+    with pytest.raises(HTTPException,match="policy ceiling"):
+        travel.create_provider_booking(
+            travel={"destination":"Delhi","employee_id":7},
+            booking={"client_reference":"HR-TRAVEL-123","booked_cost":"100","maximum_allowed_amount":"500"},
+            record_id=9,
+        )
