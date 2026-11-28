@@ -194,7 +194,7 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
    {error&&<p className="sb-alert" role="alert">{error}</p>}{notice&&<p className="sb-success" role="status">{notice}</p>}
    <h3>{current.label}</h3>
    {domain==="documents"&&manager&&<section className="hr-panel" aria-label="Document and asset expiry queue">
-    <div className="hr-directory-heading"><div><h3>Expiring records</h3><p>Documents, learning certificates and asset warranties due within 30 days or already expired.</p></div><span className="hr-directory-count">{expiringItems.length} due</span></div>
+    <div className="hr-directory-heading"><div><h3>Expiring records</h3><p>Offers, employee documents, learning certificates and asset warranties due within 30 days or already expired.</p></div><span className="hr-directory-count">{expiringItems.length} due</span></div>
     {expiringError&&<p role="alert" className="sb-alert">{expiringError}</p>}
     {expiringLoading?<p role="status">Loading expiry queue…</p>:<div className="hr-table-wrap"><table><thead><tr><th>Record</th><th>Employee</th><th>Due date</th><th>Status</th></tr></thead><tbody>{expiringItems.map(x=><tr key={x.id}><td>{x.title}<small>{x.domain} · #{x.id}</small></td><td>{x.employee_code?x.employee_code+" — "+x.first_name+" "+(x.last_name||""):"—"}</td><td>{x.due_date}</td><td>{x.status}</td></tr>)}{!expiringItems.length&&<tr><td colSpan="4">No expiring records in this window.</td></tr>}</tbody></table></div>}
    </section>}
