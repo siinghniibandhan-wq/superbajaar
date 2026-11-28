@@ -17,6 +17,7 @@ from app.services.loyalty_redemption import COIN_VALIDITY_DAYS, redeem_for_order
 from app.services.loyalty_accounting import post_earning_accrual
 from app.services.pos_tender import checkout_payload_for_hash, validate_pos_tender
 from app.services.serviceability import blocked_product_ids, eligible_locations, lookup_pin
+from app.services.indian_gst import calculate_indian_gst_inclusive
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 ORDER_STATUSES = {"draft", "placed", "confirmed", "processing", "ready_for_dispatch", "dispatched", "delivered", "cancelled"}
@@ -73,6 +74,98 @@ def _enforce_regional_availability(conn, delivery_pin: str, variant_ids: list[in
         if not eligible_locations(conn, delivery_pin, True, info):
             raise HTTPException(status_code=422, detail="Express delivery is not available in your area yet. Please choose standard delivery.")
 
+
+
+
+GST_STATE_CODES = {
+    "JAMMU AND KASHMIR":"01","HIMACHAL PRADESH":"02","PUNJAB":"03","CHANDIGARH":"04",
+    "UTTARAKHAND":"05","HARYANA":"06","DELHI":"07","RAJASTHAN":"08","UTTAR PRADESH":"09",
+    "BIHAR":"10","SIKKIM":"11","ARUNACHAL PRADESH":"12","NAGALAND":"13","MANIPUR":"14",
+    "MIZORAM":"15","TRIPURA":"16","MEGHALAYA":"17","ASSAM":"18","WEST BENGAL":"19",
+    "JHARKHAND":"20","ODISHA":"21","CHHATTISGARH":"22","MADHYA PRADESH":"23","GUJARAT":"24",
+    "DAMAN AND DIU":"25","DADRA AND NAGAR HAVELI AND DAMAN AND DIU":"26","MAHARASHTRA":"27",
+    "ANDHRA PRADESH":"37","KARNATAKA":"29","GOA":"30","LAKSHADWEEP":"31","KERALA":"32",
+    "TAMIL NADU":"33","PUDUCHERRY":"34","ANDAMAN AND NICOBAR ISLANDS":"35","TELANGANA":"36",
+    "LADAKH":"38","OTHER TERRITORY":"97"
+}
+
+
+def _apply_order_gst(conn, order_id: int, *, delivery_pin: str | None, discount_total: Decimal):
+    """Persist GST-inclusive tax snapshots; prices remain the customer-payable gross prices."""
+    gstin = str(settings.company_gstin or "").strip().upper()
+    if not gstin:
+        return Decimal("0.00"), None
+    if len(gstin) != 15 or not gstin[:2].isdigit() or not gstin.isalnum():
+        raise HTTPException(status_code=503, detail="COMPANY_GSTIN must be a valid 15-character GST registration")
+    origin_state_code = gstin[:2]
+    destination_state_code = origin_state_code
+    destination_state = None
+    if delivery_pin:
+        pin_info = lookup_pin(conn, delivery_pin)
+        if not pin_info or not pin_info.get("state"):
+            raise HTTPException(status_code=422, detail="Unable to determine destination state for GST; verify the delivery PIN")
+        destination_state = str(pin_info["state"]).strip()
+        destination_state_code = GST_STATE_CODES.get(destination_state.upper(), "")
+        if not destination_state_code:
+            raise HTTPException(status_code=422, detail="Destination state is not mapped for GST; contact support")
+    supply_type = "intra_state" if destination_state_code == origin_state_code else "inter_state"
+    lines = conn.execute(
+        """SELECT ol.id,ol.quantity,ol.line_total,p.id AS product_id,p.category_id,
+                  p.tax_code,p.tax_rate,p.name,
+                  rule.hsn_code AS rule_hsn_code,rule.gst_rate AS rule_gst_rate
+           FROM order_lines ol
+           JOIN product_variants v ON v.id=ol.variant_id
+           JOIN products p ON p.id=v.product_id
+           LEFT JOIN LATERAL (
+               SELECT h.hsn_code,h.gst_rate FROM hsn_rules h
+               WHERE h.is_active=TRUE AND h.category_id=p.category_id AND h.conditions='{}'::jsonb
+               ORDER BY h.updated_at DESC,h.id DESC LIMIT 1
+           ) rule ON TRUE
+           WHERE ol.order_id=%s ORDER BY ol.id FOR UPDATE OF ol""",
+        (order_id,),
+    ).fetchall()
+    gross_total = sum((Decimal(str(line["line_total"])) for line in lines), Decimal("0.00"))
+    remaining_discount = Decimal(str(discount_total or 0)).quantize(Decimal("0.01"))
+    tax_total = Decimal("0.00")
+    for index, line in enumerate(lines):
+        gross = Decimal(str(line["line_total"]))
+        if index == len(lines) - 1:
+            line_discount = remaining_discount
+        elif gross_total > 0:
+            line_discount = (Decimal(str(discount_total or 0)) * gross / gross_total).quantize(Decimal("0.01"))
+        else:
+            line_discount = Decimal("0.00")
+        line_discount = min(max(line_discount, Decimal("0.00")), gross)
+        remaining_discount -= line_discount
+        discounted_gross = gross - line_discount
+        hsn_code = line["tax_code"] or line["rule_hsn_code"]
+        rate_value = line["tax_rate"] if line["tax_rate"] is not None else line["rule_gst_rate"]
+        if rate_value is None or not hsn_code:
+            raise HTTPException(status_code=422, detail=f"GST/HSN mapping is missing for {line['name']}; configure its product tax code or category HSN rule")
+        try:
+            tax = calculate_indian_gst_inclusive(
+                gross_value=discounted_gross, gst_rate=rate_value,
+                supply_type=supply_type, hsn_code=str(hsn_code),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=f"Invalid GST/HSN mapping for {line['name']}: {exc}") from exc
+        conn.execute(
+            """UPDATE order_lines SET hsn_code=%s,gst_rate=%s,taxable_value=%s,
+                      cgst_rate=%s,sgst_rate=%s,igst_rate=%s,cgst_amount=%s,
+                      sgst_amount=%s,igst_amount=%s,tax_total=%s
+               WHERE id=%s""",
+            (tax["hsn_code"],tax["gst_rate"],tax["taxable_value"],
+             tax["cgst_rate"],tax["sgst_rate"],tax["igst_rate"],
+             tax["cgst_amount"],tax["sgst_amount"],tax["igst_amount"],
+             tax["total_tax"],line["id"]),
+        )
+        tax_total += tax["total_tax"]
+    tax_total = tax_total.quantize(Decimal("0.01"))
+    conn.execute(
+        "UPDATE orders SET tax_total=%s,place_of_supply_state=%s WHERE id=%s",
+        (tax_total,destination_state or origin_state_code,order_id),
+    )
+    return tax_total, destination_state or origin_state_code
 
 class OrderLineCreate(BaseModel):
     variant_id: int = Field(gt=0)
@@ -347,6 +440,10 @@ def create_order(payload: OrderCreate, request: Request):
                     )
                 except ValueError as exc:
                     raise HTTPException(status_code=409, detail=str(exc)) from exc
+                tax_total, place_of_supply_state = _apply_order_gst(
+                    conn, int(order["id"]), delivery_pin=payload.delivery_pin,
+                    discount_total=loyalty_discount,
+                )
                 payment = None
                 if payload.pos_payment_method:
                     payment_reference = "PAY-" + uuid.uuid4().hex[:12].upper()
