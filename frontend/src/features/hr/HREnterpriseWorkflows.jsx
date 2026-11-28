@@ -8,7 +8,7 @@ const domains=[
  {id:"learning",label:"Learning & development",types:[["course","Course",[["provider","Provider"],["course_type","Course type"],["description","Description","textarea"],["duration_hours","Duration (hours)","number"],["max_attempts","Maximum assessment attempts (default 3)","number"]]],["enrollment","Course enrollment",[["course_id","Course record ID","record_select"],["completion_due","Completion due","date"]]],["progress","Learning progress evidence",[["enrollment_id","Enrollment record ID","record_select"],["progress_percent","Progress (%)","number"],["evidence_reference","Evidence / completion reference"]]],["assessment","Course assessment",[["enrollment_id","Enrollment record ID","record_select"],["score","Score (0–100)","number"],["pass_score","Pass score (0–100)","number"]]],["certificate","Certificate",[["enrollment_id","Enrollment record ID","record_select"],["certificate_number","Certificate number"],["valid_until","Valid until","date"]]]]},
  {id:"assets",label:"Assets",types:[["asset","Asset register item",[["asset_type","Asset type"],["asset_tag","Asset tag"],["serial_number","Serial number"],["purchase_value","Purchase value","number"],["condition","Condition"],["vendor","Vendor"],["purchase_date","Purchase date","date"],["warranty_expiry","Warranty expiry","date"],["purchase_order_reference","Purchase order reference"],["location","Asset location"],["depreciation_method","Depreciation method (straight_line/reducing_balance)"],["useful_life_months","Useful life (months)","number"],["salvage_value","Salvage value","number"],["depreciation_as_of","Depreciation as of","date"],["annual_depreciation_rate","Annual reducing-balance rate (%)","number"]]],["asset_request","Asset request",[["asset_type","Requested asset type"],["purpose","Business need","textarea"],["needed_by","Needed by","date"]]],["allocation","Asset allocation",[["asset_id","Asset record ID","record_select"],["employee_id","Employee ID","number"],["condition_out","Condition at issue"]]],["maintenance","Maintenance record",[["asset_id","Asset record ID","record_select"],["maintenance_type","Maintenance type"],["reported_at","Reported date","date"],["description","Issue / work description","textarea"]]],["procurement","Asset procurement",[["vendor","Vendor"],["requested_by","Requested by"],["items","Items JSON (description, quantity, unit_cost)","textarea"],["estimated_total","Estimated total","number"]]],["stock_receipt","Stock receipt",[["procurement_id","Approved procurement","record_select"],["received_at","Received date","date"],["items","Received items JSON (description, quantity)","textarea"],["received_by","Received by"]]],["stock_reconciliation","Physical stock reconciliation",[["location","Location"],["counted_at","Counted date","date"],["expected_count","Expected count","number"],["physical_count","Physical count","number"],["variance_reason","Variance explanation","textarea"]]],["asset_loss","Asset loss investigation",[["asset_id","Asset record ID","record_select"],["reported_at","Reported date","date"],["description","Investigation details","textarea"],["investigation_reference","Investigation reference"]]]]},
  {id:"travel",label:"Travel & claims",types:[["travel_policy","Travel policy",[["name","Policy name"],["employment_type","Applicable employment type (or all)"],["job_grade","Applicable job grade (or all)"],["max_trip_cost","Maximum trip cost","number"],["per_diem_limit","Per-day allowance limit","number"],["currency","Currency (e.g. INR)"]]],["request","Travel request",[["destination","Destination"],["purpose","Purpose","textarea"],["start_date","Start date","date"],["end_date","End date","date"],["estimated_cost","Estimated cost","number"],["estimated_per_diem","Estimated per diem total","number"],["policy_id","Travel policy","record_select"]]],["booking","Travel booking",[["travel_record_id","Travel request record ID","record_select"],["booked_cost","Quoted booking cost","number"],["client_reference","Unique booking retry reference"],["currency","Currency (INR)"],["booking_details","Provider booking details (JSON)","textarea"]]],["advance","Travel advance",[["travel_record_id","Travel request record ID","record_select"],["requested_amount","Requested amount","number"],["currency","Currency (INR)"]]],["claim","Travel claim",[["travel_record_id","Travel request record ID","record_select"],["actual_cost","Actual cost","number"],["receipt_reference","Receipt reference"]]]]},
- {id:"exit",label:"Resignation & exit",types:[["case","Exit case",[["reason","Reason","textarea"],["last_working_date","Last working date","date"],["notice_days","Notice days","number"],["handover_owner","Handover owner"]]],["clearance","Department clearance",[["exit_record_id","Exit case record ID","record_select"],["department","Department"],["owner_employee_id","Clearance owner employee ID","number"]]],["settlement","Full-and-final settlement",[["exit_record_id","Exit case record ID","record_select"],["gross_due","Gross due","number"],["deductions","Deductions","number"],["net_due","Net due","number"],["payable_on","Payable date","date"],["auto_calculate","Calculate automatically from approved jurisdiction policy","checkbox"],["statutory_policy_id","Approved exit statutory policy ID","number"],["additional_earnings","Additional final salary / arrears / bonus earnings (JSON)","textarea"],["earnings_breakdown","Earnings breakdown (JSON)","textarea"],["deductions_breakdown","Deductions breakdown (JSON)","textarea"]]]]},
+ {id:"exit",label:"Resignation & exit",types:[["case","Exit case",[["reason","Reason","textarea"],["last_working_date","Last working date","date"],["notice_days","Notice days","number"],["handover_owner","Handover owner"]]],["clearance","Department clearance",[["exit_record_id","Exit case record ID","record_select"],["department","Department"],["owner_employee_id","Clearance owner employee ID","number"]]],["settlement","Full-and-final settlement",[["exit_record_id","Exit case record ID","record_select"],["gross_due","Gross due","number"],["deductions","Deductions","number"],["net_due","Net due","number"],["payable_on","Payable date","date"],["auto_calculate","Calculate automatically from approved jurisdiction policy","checkbox"],["statutory_policy_id","Approved exit statutory policy","exit_policy_select"],["additional_earnings","Additional final salary / arrears / bonus earnings (JSON)","textarea"],["earnings_breakdown","Earnings breakdown (JSON)","textarea"],["deductions_breakdown","Deductions breakdown (JSON)","textarea"]]]]},
  {id:"analytics",label:"HR analytics",types:[["report","Saved report",[["report_type","Report type (enterprise/workforce)"],["frequency","Frequency (weekly/monthly)"],["filters","Filters (JSON)","textarea"],["description","Description","textarea"]]]]}
 ];
 const transitions={
@@ -78,7 +78,7 @@ const managerOnlyTypes={
  exit:["clearance","settlement"],
  analytics:["report"]
 };
-const optionalFields=new Set(["last_name","phone","source","resume_reference","description","serial_number","purchase_value","condition","completion_due","due_date","expiry_date","handover_owner","weight","department_id","reports_to_employee_id","acceptance_reference","evidence_reference","vendor","purchase_date","warranty_expiry","purchase_order_reference","location","max_attempts","retention_until","depreciation_method","useful_life_months","salvage_value","depreciation_as_of","annual_depreciation_rate","job_grade","variance_reason","earnings_breakdown","deductions_breakdown","auto_calculate","statutory_policy_id","additional_earnings","currency","booking_details"]);
+const optionalFields=new Set(["last_name","phone","source","resume_reference","description","serial_number","purchase_value","condition","completion_due","due_date","expiry_date","handover_owner","weight","department_id","reports_to_employee_id","acceptance_reference","evidence_reference","vendor","purchase_date","warranty_expiry","purchase_order_reference","location","max_attempts","retention_until","depreciation_method","useful_life_months","salvage_value","depreciation_as_of","annual_depreciation_rate","job_grade","variance_reason","earnings_breakdown","deductions_breakdown","auto_calculate","additional_earnings","currency","booking_details"]);
 const referenceTypeByField={policy_id:"travel_policy",candidate_id:"candidate",job_id:"job_opening",application_id:"application",interview_id:"interview",cycle_id:"review_cycle",template_id:"review_template",review_id:"review",course_id:"course",enrollment_id:"enrollment",asset_id:"asset",travel_record_id:"request",exit_record_id:"case"};
 const blank={};
 
@@ -97,6 +97,15 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
  const [emailCandidate,setEmailCandidate]=useState(null),[emailForm,setEmailForm]=useState({subject:"",message:""});
  const [expiringItems,setExpiringItems]=useState([]),[expiringLoading,setExpiringLoading]=useState(false),[expiringError,setExpiringError]=useState("");
  const [expiryNotifications,setExpiryNotifications]=useState([]);
+ const [exitEstablishments,setExitEstablishments]=useState([]);
+ const [exitPolicies,setExitPolicies]=useState([]);
+ const [exitPolicyForm,setExitPolicyForm]=useState({
+  establishment_id:"",version_label:"Exit settlement policy v1",jurisdiction_code:"IN",
+  effective_from:new Date().toISOString().slice(0,10),effective_to:"",
+  policy_config:JSON.stringify({daily_wage_basis:"basic",working_days_divisor:"26",service_year_rounding:"completed",
+   gratuity:{enabled:false},leave_encashment:{enabled:false},notice_pay:{enabled:false},statutory_deductions:[]},null,2),
+  source_references:JSON.stringify([{title:"Applicable company / statutory policy source",url:""}],null,2)
+ });
  const [hireForm,setHireForm]=useState({employee_code:"",first_name:"",last_name:"",email:"",phone:"",department_id:"",designation:"",job_grade:"ungraded",employment_type:"full_time",status:"active",joining_date:new Date().toISOString().slice(0,10),reports_to_employee_id:"",basic_salary:"0",hra:"0",special_allowance:"0",other_allowance:"0",acceptance_reference:""});
  const current=domains.find(x=>x.id===domain);
  const availableTypes=current.types.filter(x=>manager||!managerOnlyTypes[domain]?.includes(x[0]));
@@ -114,6 +123,21 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
    apiRequest("/hr/enterprise/notifications?unread_only=true")
      .then(result=>{if(active)setExpiryNotifications(result.items||[]);})
      .catch(()=>{if(active)setExpiryNotifications([]);});
+   return()=>{active=false;};
+ },[domain,manager]);
+ useEffect(()=>{
+   if(domain!=="exit"||!manager)return;
+   let active=true;
+   Promise.all([apiRequest("/hr/establishments"),apiRequest("/hr/enterprise/exit/statutory-policies")])
+    .then(([establishments,policies])=>{
+      if(!active)return;
+      const rows=establishments.items||[];
+      setExitEstablishments(rows);
+      setExitPolicies(policies.items||[]);
+      if(!exitPolicyForm.establishment_id&&rows.length){
+        setExitPolicyForm(old=>({...old,establishment_id:String(rows[0].id)}));
+      }
+    }).catch(e=>{if(active)setError(e.message||"Unable to load exit statutory policies.");});
    return()=>{active=false;};
  },[domain,manager]);
  useEffect(()=>{
@@ -176,6 +200,32 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
      }
      setTitle("");setFields({});await load();
    }catch(e){setError(e.message||"Unable to create HR record.");}
+   finally{setBusy(false);}
+ }
+ async function createExitPolicy(e){
+   e.preventDefault();setBusy(true);setError("");setNotice("");
+   try{
+     const policy_config=JSON.parse(exitPolicyForm.policy_config);
+     const source_references=JSON.parse(exitPolicyForm.source_references);
+     await apiRequest("/hr/enterprise/exit/statutory-policies",{method:"POST",body:JSON.stringify({
+       establishment_id:Number(exitPolicyForm.establishment_id),version_label:exitPolicyForm.version_label,
+       jurisdiction_code:exitPolicyForm.jurisdiction_code,effective_from:exitPolicyForm.effective_from,
+       effective_to:exitPolicyForm.effective_to||null,policy_config,source_references
+     })});
+     const result=await apiRequest("/hr/enterprise/exit/statutory-policies");
+     setExitPolicies(result.items||[]);
+     setNotice("Exit statutory policy saved as draft. A different authorised manager must approve it.");
+   }catch(e){setError(e.message||"Unable to save exit statutory policy.");}
+   finally{setBusy(false);}
+ }
+ async function approveExitPolicy(id){
+   setBusy(true);setError("");setNotice("");
+   try{
+     await apiRequest("/hr/enterprise/exit/statutory-policies/"+id+"/approve",{method:"POST",body:"{}"});
+     const result=await apiRequest("/hr/enterprise/exit/statutory-policies");
+     setExitPolicies(result.items||[]);
+     setNotice("Exit statutory policy approved.");
+   }catch(e){setError(e.message||"Unable to approve exit statutory policy.");}
    finally{setBusy(false);}
  }
  async function refreshExpiryNotifications(){
@@ -391,11 +441,28 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
     </section>
     <p className="hr-enterprise-note">Metrics are calculated from recorded data. Attendance absence and rate are unavailable when there is no published shift schedule; late-arrival and attendance trend metrics are not currently calculated.</p></>}
    </section>}
+   {domain==="exit"&&manager&&<section className="hr-panel" aria-label="Exit statutory policies">
+    <div className="hr-directory-heading"><div><h3>Jurisdictional exit statutory policies</h3><p>Create effective-dated gratuity, leave encashment, notice pay and statutory deduction rules. A different manager must approve each version.</p></div></div>
+    <form className="hr-form hr-grid" onSubmit={createExitPolicy}>
+     <label>Establishment<select required value={exitPolicyForm.establishment_id} onChange={e=>setExitPolicyForm(x=>({...x,establishment_id:e.target.value}))}><option value="">Select establishment</option>{exitEstablishments.map(x=><option key={x.id} value={x.id}>{x.display_name} · {x.code}</option>)}</select></label>
+     <label>Policy version<input required value={exitPolicyForm.version_label} onChange={e=>setExitPolicyForm(x=>({...x,version_label:e.target.value}))}/></label>
+     <label>Jurisdiction code<input required value={exitPolicyForm.jurisdiction_code} onChange={e=>setExitPolicyForm(x=>({...x,jurisdiction_code:e.target.value}))}/></label>
+     <label>Effective from<input required type="date" value={exitPolicyForm.effective_from} onChange={e=>setExitPolicyForm(x=>({...x,effective_from:e.target.value}))}/></label>
+     <label>Effective to<input type="date" value={exitPolicyForm.effective_to} onChange={e=>setExitPolicyForm(x=>({...x,effective_to:e.target.value}))}/></label>
+     <label className="hr-full">Policy calculation rules (JSON)<textarea required rows="8" value={exitPolicyForm.policy_config} onChange={e=>setExitPolicyForm(x=>({...x,policy_config:e.target.value}))}/></label>
+     <label className="hr-full">Official legal / company source references (JSON)<textarea required rows="3" value={exitPolicyForm.source_references} onChange={e=>setExitPolicyForm(x=>({...x,source_references:e.target.value}))}/></label>
+     <button disabled={busy||!exitEstablishments.length}>Save policy draft</button>
+    </form>
+    <div className="hr-list">{exitPolicies.map(policy=><article key={policy.id} className="hr-list-row">
+     <div><strong>{policy.version_label}</strong><small>{policy.jurisdiction_code} · {policy.status} · {policy.effective_from} to {policy.effective_to||"open-ended"}</small></div>
+     {policy.status==="draft"&&<button type="button" className="hr-secondary" disabled={busy} onClick={()=>approveExitPolicy(policy.id)}>Approve policy</button>}
+    </article>)}</div>
+   </section>}
    <form className="hr-form hr-grid" onSubmit={create}>
     <label>Record type<select value={recordType} onChange={e=>{setRecordType(e.target.value);setFields({});}}>{availableTypes.map(x=><option key={x[0]} value={x[0]}>{x[1]}</option>)}</select></label>
     {domain!=="documents"&&<label>Title<input required maxLength="200" value={title} onChange={e=>setTitle(e.target.value)}/></label>}
     {manager&&<label>{domain==="travel"&&recordType==="request"||domain==="exit"&&recordType==="case"||domain==="performance"&&(recordType==="review"||recordType==="self_review")?"Employee (required)":"Employee (optional)"}<select required={domain==="travel"&&recordType==="request"||domain==="exit"&&recordType==="case"||domain==="performance"&&(recordType==="review"||recordType==="self_review")} value={employeeId} onChange={e=>setEmployeeId(e.target.value)}><option value="">Not employee-linked</option>{employees.map(x=><option key={x.id} value={x.id}>{employeeNames[x.id]}</option>)}</select></label>}
-    {type[2].map(([key,label,inputType])=><label key={key}>{label}{inputType==="checkbox"?<input type="checkbox" checked={Boolean(fields[key])} onChange={e=>update(key,e.target.checked)}/>:inputType==="select"?<select required value={fields[key]||"identity"} onChange={e=>update(key,e.target.value)}><option value="identity">Identity</option><option value="address">Address</option><option value="qualification">Qualification</option><option value="employment">Employment</option><option value="contract">Contract</option><option value="policy_acknowledgement">Policy acknowledgement</option><option value="other">Other</option></select>:inputType==="record_select"?<select required value={fields[key]||""} onChange={e=>update(key,e.target.value)}><option value="">Select a record</option>{selectableRecords(key).map(x=><option key={x.id} value={x.id}>{x.title} · #{x.id}</option>)}</select>:inputType==="textarea"?<textarea rows="2" value={fields[key]||""} onChange={e=>update(key,e.target.value)}/>:<input type={inputType||"text"} required={!optionalFields.has(key)} value={fields[key]||""} onChange={e=>update(key,e.target.value)}/>}</label>)}\n    {domain==="documents"&&<label>Document file<input type="file" accept="application/pdf,image/jpeg,image/png" required onChange={e=>setDocumentFile(e.target.files?.[0]||null)}/><small>Private encrypted storage · PDF/JPEG/PNG · maximum 10 MB</small></label>}
+    {type[2].map(([key,label,inputType])=><label key={key}>{label}{inputType==="checkbox"?<input type="checkbox" checked={Boolean(fields[key])} onChange={e=>update(key,e.target.checked)}/>:inputType==="exit_policy_select"?<select required value={fields[key]||""} onChange={e=>update(key,e.target.value)}><option value="">Select approved policy</option>{exitPolicies.filter(p=>p.status==="approved").map(p=><option key={p.id} value={p.id}>{p.version_label} · {p.jurisdiction_code} · #{p.id}</option>)}</select>:inputType==="select"?<select required value={fields[key]||"identity"} onChange={e=>update(key,e.target.value)}><option value="identity">Identity</option><option value="address">Address</option><option value="qualification">Qualification</option><option value="employment">Employment</option><option value="contract">Contract</option><option value="policy_acknowledgement">Policy acknowledgement</option><option value="other">Other</option></select>:inputType==="record_select"?<select required value={fields[key]||""} onChange={e=>update(key,e.target.value)}><option value="">Select a record</option>{selectableRecords(key).map(x=><option key={x.id} value={x.id}>{x.title} · #{x.id}</option>)}</select>:inputType==="textarea"?<textarea rows="2" value={fields[key]||""} onChange={e=>update(key,e.target.value)}/>:<input type={inputType||"text"} required={!optionalFields.has(key)} value={fields[key]||""} onChange={e=>update(key,e.target.value)}/>}</label>)}\n    {domain==="documents"&&<label>Document file<input type="file" accept="application/pdf,image/jpeg,image/png" required onChange={e=>setDocumentFile(e.target.files?.[0]||null)}/><small>Private encrypted storage · PDF/JPEG/PNG · maximum 10 MB</small></label>}
     <button disabled={busy}>Create {type[1].toLowerCase()}</button>
    </form>
    {emailCandidate&&manager&&<section className="hr-panel" aria-label="Send candidate email">
