@@ -431,13 +431,12 @@ def create_razorpay_order(payload: RazorpayOrderCreate, request: Request):
                         raise HTTPException(status_code=422, detail="Order total must be greater than zero")
                     existing = conn.execute(
                         """SELECT id, provider_order_id FROM payments
-                           WHERE order_id=%s AND method='other'
+                           WHERE order_id=%s AND method IN ('other','upi','card','wallet','netbanking')
                              AND status IN ('pending','authorized')
-                             AND provider_order_id IS NOT NULL
                            ORDER BY id DESC LIMIT 1 FOR UPDATE""",
                         (payload.order_id,),
                     ).fetchone()
-                    if existing:
+                    if existing and existing["provider_order_id"]:
                         return {
                             "key_id": settings.razorpay_key_id,
                             "razorpay_order_id": existing["provider_order_id"],
@@ -447,6 +446,7 @@ def create_razorpay_order(payload: RazorpayOrderCreate, request: Request):
                             "order_number": order["order_number"],
                         }
                     order_snapshot = dict(order)
+                    existing_payment_id = existing["id"] if existing else None
 
                 # The provider request is deliberately outside a database transaction.
                 receipt = str(order_snapshot["order_number"])[:40]
@@ -475,10 +475,10 @@ def create_razorpay_order(payload: RazorpayOrderCreate, request: Request):
 
                 with conn.transaction():
                     current = conn.execute(
-                        "SELECT o.id, o.order_number, o.customer_email, o.total, o.status, o.channel,
-                               s.cashier_user_id
-                        FROM orders o LEFT JOIN pos_register_shifts s ON s.id=o.pos_register_shift_id
-                        WHERE o.id=%s FOR UPDATE OF o",
+                        """SELECT o.id, o.order_number, o.customer_email, o.total, o.status, o.channel,
+                                  s.cashier_user_id
+                           FROM orders o LEFT JOIN pos_register_shifts s ON s.id=o.pos_register_shift_id
+                           WHERE o.id=%s FOR UPDATE OF o""",
                         (payload.order_id,),
                     ).fetchone()
                     if (current is None or current["status"] != "placed"
@@ -487,13 +487,23 @@ def create_razorpay_order(payload: RazorpayOrderCreate, request: Request):
                         or (role != "customer" and (current["channel"] != "pos" or int(current["cashier_user_id"] or 0) != int(actor_id)))):
                         raise HTTPException(status_code=409, detail="Order changed while payment was being initialised")
                     payment_reference = "PAY-" + uuid.uuid4().hex[:12].upper()
-                    payment = conn.execute(
-                        """INSERT INTO payments
-                           (payment_reference, order_id, method, amount, status, provider_order_id, currency, note)
-                           VALUES (%s,%s,'other',%s,'pending',%s,'INR','Razorpay Standard Checkout')
-                           RETURNING id""",
-                        (payment_reference, current["id"], current["total"], provider_order_id),
-                    ).fetchone()
+                    if existing_payment_id:
+                        payment = conn.execute(
+                            """UPDATE payments SET provider_order_id=%s,currency='INR',
+                                      note='Razorpay Standard Checkout',updated_at=now()
+                               WHERE id=%s AND status IN ('pending','authorized') RETURNING id""",
+                            (provider_order_id, existing_payment_id),
+                        ).fetchone()
+                        if payment is None:
+                            raise HTTPException(status_code=409, detail="POS tender changed while payment was being initialised")
+                    else:
+                        payment = conn.execute(
+                            """INSERT INTO payments
+                               (payment_reference, order_id, method, amount, status, provider_order_id, currency, note)
+                               VALUES (%s,%s,'other',%s,'pending',%s,'INR','Razorpay Standard Checkout')
+                               RETURNING id""",
+                            (payment_reference, current["id"], current["total"], provider_order_id),
+                        ).fetchone()
                 return {
                     "key_id": settings.razorpay_key_id,
                     "razorpay_order_id": provider_order_id,
