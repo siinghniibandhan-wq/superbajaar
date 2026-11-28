@@ -75,6 +75,19 @@ class PaymentCreate(BaseModel):
         return value
 
 
+class PaymentRefundCreate(BaseModel):
+    amount: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
+    note: str = Field(min_length=3, max_length=500)
+
+    @field_validator("note")
+    @classmethod
+    def clean_note(cls, value):
+        value = value.strip()
+        if len(value) < 3:
+            raise ValueError("A refund reason is required")
+        return value
+
+
 class PaymentStatusUpdate(BaseModel):
     status: str
 
@@ -118,6 +131,99 @@ def list_payments(
             ).fetchall()
             total = conn.execute("SELECT count(*) AS total FROM payments p JOIN orders o ON o.id=p.order_id" + where, params).fetchone()["total"]
         return {"items": items, "total": total, "limit": limit, "offset": offset}
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.post("/{payment_id}/refunds", status_code=201)
+def create_payment_refund(
+    payment_id: int,
+    payload: PaymentRefundCreate,
+    request: Request,
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=16, max_length=120),
+):
+    """Create a verified Razorpay partial/full refund with a durable idempotency record."""
+    role = getattr(request.state, "role", None)
+    actor_id = getattr(request.state, "user_id", None)
+    actor_email = getattr(request.state, "user_email", None)
+    if role not in {"manager", "admin", "super_admin"} or not actor_id or not actor_email:
+        raise HTTPException(status_code=403, detail="A manager or administrator session is required to refund a payment")
+    if not settings.razorpay_key_id or not settings.razorpay_key_secret:
+        raise HTTPException(status_code=503, detail="Razorpay refunds are not configured")
+    lock_key = f"razorpay-refund:{payment_id}:{idempotency_key}"
+    try:
+        with _connect() as conn:
+            conn.execute("SELECT pg_advisory_lock(hashtextextended(%s,0))", (lock_key,))
+            conn.commit()
+            try:
+                with conn.transaction():
+                    previous = conn.execute(
+                        "SELECT id,payment_id,amount,status,provider_refund_id,note FROM payment_refunds WHERE idempotency_key=%s FOR UPDATE",
+                        (idempotency_key,),
+                    ).fetchone()
+                    if previous:
+                        if int(previous["payment_id"]) != payment_id or Decimal(str(previous["amount"])) != payload.amount or previous["note"] != payload.note:
+                            raise HTTPException(status_code=409, detail="Refund idempotency key was reused with different details")
+                        if previous["status"] == "processed":
+                            return previous
+                        raise HTTPException(status_code=409, detail="This refund attempt is pending provider reconciliation; do not retry it with a new key")
+                    payment = conn.execute(
+                        "SELECT id,order_id,amount,status,method,provider_reference FROM payments WHERE id=%s FOR UPDATE",
+                        (payment_id,),
+                    ).fetchone()
+                    if payment is None:
+                        raise HTTPException(status_code=404, detail="Payment not found")
+                    if payment["status"] not in {"captured", "refunded"} or not payment["provider_reference"]:
+                        raise HTTPException(status_code=409, detail="Only a captured Razorpay payment can be refunded through this endpoint")
+                    refunded = conn.execute(
+                        "SELECT COALESCE(sum(amount),0) AS amount FROM payment_refunds WHERE payment_id=%s AND status IN ('processed','pending')",
+                        (payment_id,),
+                    ).fetchone()["amount"]
+                    remaining = Decimal(str(payment["amount"])) - Decimal(str(refunded))
+                    if payload.amount > remaining:
+                        raise HTTPException(status_code=422, detail=f"Refund exceeds the remaining refundable amount {remaining}")
+                    refund = conn.execute(
+                        """INSERT INTO payment_refunds(payment_id,order_id,amount,status,idempotency_key,note,created_by_user_id,created_by_email)
+                           VALUES(%s,%s,%s,'pending',%s,%s,%s,%s)
+                           RETURNING id,payment_id,order_id,amount,status,idempotency_key,note,created_at""",
+                        (payment_id,payment["order_id"],payload.amount,idempotency_key,payload.note,int(actor_id),str(actor_email)),
+                    ).fetchone()
+                    provider_payment_id = payment["provider_reference"]
+                amount_paise = int((payload.amount * 100).quantize(Decimal("1")))
+                try:
+                    with httpx.Client(timeout=20.0) as client:
+                        response = client.post(
+                            f"https://api.razorpay.com/v1/payments/{provider_payment_id}/refund",
+                            auth=(settings.razorpay_key_id, settings.razorpay_key_secret),
+                            json={"amount": amount_paise, "notes": {"superbajaar_refund_id": str(refund["id"]), "reason": payload.note}},
+                        )
+                    response.raise_for_status()
+                    provider_refund = response.json()
+                except (httpx.HTTPError, ValueError) as exc:
+                    # Keep the attempt pending: a timeout may have happened after the provider accepted it.
+                    raise HTTPException(status_code=502, detail="Razorpay refund outcome is pending reconciliation; do not submit a new refund") from exc
+                if (not isinstance(provider_refund.get("id"), str) or not provider_refund.get("id")
+                    or provider_refund.get("amount") != amount_paise
+                    or provider_refund.get("payment_id") != provider_payment_id):
+                    raise HTTPException(status_code=502, detail="Razorpay returned an invalid refund response; reconcile before retrying")
+                with conn.transaction():
+                    saved = conn.execute(
+                        """UPDATE payment_refunds SET status='processed',provider_refund_id=%s,updated_at=now()
+                           WHERE id=%s AND status='pending'
+                           RETURNING id,payment_id,order_id,amount,status,provider_refund_id,idempotency_key,note,created_at""",
+                        (provider_refund["id"],refund["id"]),
+                    ).fetchone()
+                    total_refunded = conn.execute(
+                        "SELECT COALESCE(sum(amount),0) AS amount FROM payment_refunds WHERE payment_id=%s AND status='processed'",
+                        (payment_id,),
+                    ).fetchone()["amount"]
+                    if Decimal(str(total_refunded)) >= Decimal(str(payment["amount"])):
+                        conn.execute("UPDATE payments SET status='refunded',updated_at=now() WHERE id=%s", (payment_id,))
+                return saved
+            finally:
+                conn.execute("SELECT pg_advisory_unlock(hashtextextended(%s,0))", (lock_key,))
+    except HTTPException:
+        raise
     except psycopg.Error as exc:
         raise _db_error(exc) from exc
 
