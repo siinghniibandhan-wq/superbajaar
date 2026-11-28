@@ -184,6 +184,8 @@ def _validate_references(conn, domain, record_type, data):
         ("recruitment","interview"): {"application_id": ("recruitment","application")},
         ("recruitment","offer"): {"application_id": ("recruitment","application")},
         ("performance","feedback"): {"review_id": ("performance","review")},
+        ("performance","calibration"): {"review_id": ("performance","review")},
+        ("performance","acknowledgement"): {"review_id": ("performance","review")},
         ("learning","enrollment"): {"course_id": ("learning","course")},
         ("learning","assessment"): {"enrollment_id": ("learning","enrollment")},
         ("learning","certificate"): {"enrollment_id": ("learning","enrollment")},
@@ -223,6 +225,18 @@ def _validate_references(conn, domain, record_type, data):
         allowed={"interview":{"shortlisted","interview"},"offer":{"interview"}}
         if application["status"] not in allowed[record_type]:
             raise HTTPException(409,"The application must reach the required recruitment stage first")
+    if domain=="performance" and record_type=="calibration":
+        review=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["review_id"],)).fetchone()
+        if review["status"]!="calibration":
+            raise HTTPException(409,"A review must enter calibration before a calibration record can be added")
+    if domain=="performance" and record_type=="acknowledgement":
+        review=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["review_id"],)).fetchone()
+        if review["status"] not in {"acknowledged","closed"}:
+            raise HTTPException(409,"Employees can acknowledge only a manager-finalized review")
+    if domain=="performance" and record_type=="feedback":
+        review=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["review_id"],)).fetchone()
+        if review["status"] not in {"manager_review","calibration","acknowledged","closed"}:
+            raise HTTPException(409,"Feedback can be added only after manager review begins")
     if domain=="learning" and record_type=="enrollment":
         course=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["course_id"],)).fetchone()
         if course["status"]!="enrolled":
