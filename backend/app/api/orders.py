@@ -113,15 +113,23 @@ def _apply_order_gst(conn, order_id: int, *, delivery_pin: str | None, discount_
     supply_type = "intra_state" if destination_state_code == origin_state_code else "inter_state"
     lines = conn.execute(
         """SELECT ol.id,ol.quantity,ol.line_total,p.id AS product_id,p.category_id,
-                  p.tax_code,p.tax_rate,p.name,
-                  rule.hsn_code AS rule_hsn_code,rule.gst_rate AS rule_gst_rate
+                  p.tax_code,p.tax_rate,p.name,v.attributes,
+                  rule.id AS gst_rule_id,rule.hsn_code AS rule_hsn_code,rule.gst_rate AS rule_gst_rate
            FROM order_lines ol
            JOIN product_variants v ON v.id=ol.variant_id
            JOIN products p ON p.id=v.product_id
            LEFT JOIN LATERAL (
-               SELECT h.hsn_code,h.gst_rate FROM hsn_rules h
-               WHERE h.is_active=TRUE AND h.category_id=p.category_id AND h.conditions='{}'::jsonb
-               ORDER BY h.updated_at DESC,h.id DESC LIMIT 1
+               WITH RECURSIVE category_hierarchy(id,depth) AS (
+                   SELECT p.category_id,0 WHERE p.category_id IS NOT NULL
+                   UNION ALL
+                   SELECT c.parent_id,ch.depth+1 FROM categories c
+                   JOIN category_hierarchy ch ON ch.id=c.id WHERE c.parent_id IS NOT NULL
+               )
+               SELECT h.id,h.hsn_code,h.gst_rate FROM hsn_rules h
+               JOIN category_hierarchy ch ON ch.id=h.category_id
+               WHERE h.is_active=TRUE AND v.attributes @> h.conditions
+               ORDER BY ch.depth ASC,jsonb_object_length(h.conditions) DESC,h.updated_at DESC,h.id DESC
+               LIMIT 1
            ) rule ON TRUE
            WHERE ol.order_id=%s ORDER BY ol.id FOR UPDATE OF ol""",
         (order_id,),
@@ -140,8 +148,8 @@ def _apply_order_gst(conn, order_id: int, *, delivery_pin: str | None, discount_
         line_discount = min(max(line_discount, Decimal("0.00")), gross)
         remaining_discount -= line_discount
         discounted_gross = gross - line_discount
-        hsn_code = line["tax_code"] or line["rule_hsn_code"]
-        rate_value = line["tax_rate"] if line["tax_rate"] is not None else line["rule_gst_rate"]
+        hsn_code = line["rule_hsn_code"] or line["tax_code"]
+        rate_value = line["rule_gst_rate"] if line["rule_gst_rate"] is not None else line["tax_rate"]
         if rate_value is None or not hsn_code:
             raise HTTPException(status_code=422, detail=f"GST/HSN mapping is missing for {line['name']}; configure its product tax code or category HSN rule")
         try:
@@ -152,11 +160,11 @@ def _apply_order_gst(conn, order_id: int, *, delivery_pin: str | None, discount_
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=f"Invalid GST/HSN mapping for {line['name']}: {exc}") from exc
         conn.execute(
-            """UPDATE order_lines SET hsn_code=%s,gst_rate=%s,taxable_value=%s,
+            """UPDATE order_lines SET hsn_code=%s,gst_rule_id=%s,gst_rate=%s,taxable_value=%s,
                       cgst_rate=%s,sgst_rate=%s,igst_rate=%s,cgst_amount=%s,
                       sgst_amount=%s,igst_amount=%s,tax_total=%s
                WHERE id=%s""",
-            (tax["hsn_code"],tax["gst_rate"],tax["taxable_value"],
+            (tax["hsn_code"],line["gst_rule_id"],tax["gst_rate"],tax["taxable_value"],
              tax["cgst_rate"],tax["sgst_rate"],tax["igst_rate"],
              tax["cgst_amount"],tax["sgst_amount"],tax["igst_amount"],
              tax["total_tax"],line["id"]),
