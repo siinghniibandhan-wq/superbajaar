@@ -187,12 +187,39 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
    finally{setBusy(false);}
  }
  const employeeNames=useMemo(()=>Object.fromEntries(employees.map(x=>[x.id,x.employee_code+" — "+x.first_name+" "+(x.last_name||"")])),[employees]);
+ const recruitmentView=useMemo(()=>{
+  const records=items.filter(x=>x.domain==="recruitment");
+  const ofType=name=>records.filter(x=>x.payload?.record_type===name);
+  const candidates=ofType("candidate"),jobs=ofType("job_opening"),applications=ofType("application");
+  const candidateById=Object.fromEntries(candidates.map(x=>[x.id,x]));
+  const jobById=Object.fromEntries(jobs.map(x=>[x.id,x]));
+  return {jobs,candidates,applications,interviews:ofType("interview"),offers:ofType("offer"),
+   hired:ofType("offer").filter(x=>x.status==="hired").length,
+   active:applications.filter(x=>!["rejected","withdrawn","hired","archived"].includes(x.status)),
+   candidateById,jobById};
+ },[items]);
  return <section className="hr-enterprise">
   <div className="hr-panel">
    <div className="hr-directory-heading"><div><h2>Integrated HR operations</h2><p>Recruitment, employee records, performance, training, assets, travel, exits and workforce reporting.</p></div><span className="hr-directory-count">8 domains</span></div>
    <nav className="hr-advanced-nav" aria-label="HR enterprise domains">{domains.filter(x=>manager||!["recruitment","analytics"].includes(x.id)).map(x=><button type="button" key={x.id} className={domain===x.id?"active":""} aria-pressed={domain===x.id} onClick={()=>setDomain(x.id)}>{x.label}</button>)}</nav>
    {error&&<p className="sb-alert" role="alert">{error}</p>}{notice&&<p className="sb-success" role="status">{notice}</p>}
    <h3>{current.label}</h3>
+   {domain==="recruitment"&&manager&&<section className="hr-panel" aria-label="Recruitment pipeline">
+    <div className="hr-directory-heading"><div><h3>Recruitment pipeline</h3><p>Live hiring funnel from open roles through candidate applications, interviews, offers and completed hires.</p></div><span className="hr-directory-count">{recruitmentView.jobs.filter(x=>x.status==="open").length} open roles</span></div>
+    <div className="hr-overview">
+     <article><span>Open roles</span><strong>{recruitmentView.jobs.filter(x=>x.status==="open").length}</strong><small>Approved headcount being recruited</small></article>
+     <article><span>Candidate profiles</span><strong>{recruitmentView.candidates.length}</strong><small>Unique candidate records</small></article>
+     <article><span>Active applications</span><strong>{recruitmentView.active.length}</strong><small>Not rejected, withdrawn or hired</small></article>
+     <article><span>Interviews</span><strong>{recruitmentView.interviews.length}</strong><small>Scheduled interview records</small></article>
+     <article><span>Open offers</span><strong>{recruitmentView.offers.filter(x=>x.status==="offered").length}</strong><small>Awaiting acceptance or decision</small></article>
+     <article><span>Hires completed</span><strong>{recruitmentView.hired}</strong><small>Converted into employee profiles</small></article>
+    </div>
+    <div className="hr-directory-heading"><h3>Application pipeline</h3><span className="hr-directory-count">{recruitmentView.applications.length} applications</span></div>
+    <div className="hr-table-wrap"><table><thead><tr><th>Candidate</th><th>Position</th><th>Stage</th><th>Last updated</th></tr></thead><tbody>
+     {recruitmentView.applications.map(app=>{const candidate=recruitmentView.candidateById[app.payload?.candidate_id];const job=recruitmentView.jobById[app.payload?.job_id];return <tr key={app.id}><td><strong>{candidate?[candidate.payload?.first_name,candidate.payload?.last_name].filter(Boolean).join(" "):"Candidate record #"+app.payload?.candidate_id}</strong><small>{candidate?.payload?.email||"Candidate details unavailable"}</small></td><td>{job?.title||"Job #"+app.payload?.job_id}</td><td>{app.status.replaceAll("_"," ")}</td><td>{app.updated_at?new Date(app.updated_at).toLocaleDateString():"—"}</td></tr>;})}
+     {!recruitmentView.applications.length&&<tr><td colSpan="4">No applications yet. Create a job opening and candidate profile, then link them with an application.</td></tr>}
+    </tbody></table></div>
+   </section>}
    {domain==="documents"&&manager&&<section className="hr-panel" aria-label="Document and asset expiry queue">
     <div className="hr-directory-heading"><div><h3>Expiring records</h3><p>Offers, employee documents, learning certificates and asset warranties due within 30 days or already expired.</p></div><span className="hr-directory-count">{expiringItems.length} due</span></div>
     {expiringError&&<p role="alert" className="sb-alert">{expiringError}</p>}
