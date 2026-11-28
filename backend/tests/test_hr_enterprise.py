@@ -5,7 +5,8 @@ from fastapi import HTTPException
 
 from app.api.hr_enterprise import (
     DOMAINS, REQUIRED, STATUSES, TRANSITIONS,
-    _employee_transition_allowed, _initial_status, _validate, _ensure_offer_unexpired, _allowed_record_transitions,\n    _ensure_goal_weight_limit, _ensure_assessment_attempt_limit, _calculate_asset_book_value,
+    _employee_transition_allowed, _initial_status, _validate, _ensure_offer_unexpired, _allowed_record_transitions,
+    _ensure_goal_weight_limit, _ensure_assessment_attempt_limit, _calculate_asset_book_value,
 )
 
 
