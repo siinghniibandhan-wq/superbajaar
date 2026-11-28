@@ -177,3 +177,32 @@ def test_asset_custody_acknowledgement_is_an_employee_action():
     assert _employee_transition_allowed("assets", "assigned", "acknowledged")
     assert "acknowledged" in TRANSITIONS["assets"]["assigned"]
     assert "returned" in TRANSITIONS["assets"]["acknowledged"]
+
+
+
+def test_performance_review_template_validates_sections_and_scale():
+    result = _validate("performance", "review_template", {
+        "name":"Annual review",
+        "sections":'[{"key":"delivery","weight":60},{"key":"behaviour","weight":40}]',
+        "rating_scale":"5"
+    })
+    assert isinstance(result["sections"], list)
+    assert result["rating_scale"] == 5
+    with pytest.raises(HTTPException):
+        _validate("performance", "review_template", {
+            "name":"Broken template", "sections":"{}", "rating_scale":"5"
+        })
+
+
+def test_performance_calibration_and_acknowledgement_are_validated():
+    result = _validate("performance", "calibration", {
+        "review_id":3, "calibrated_rating":"4.5", "rationale":"Consistent with peer outcomes"
+    })
+    assert result["calibrated_rating"] == "4.5"
+    assert _validate("performance", "acknowledgement", {
+        "review_id":3, "acknowledgement":"TRUE"
+    })["acknowledgement"] is True
+    with pytest.raises(HTTPException):
+        _validate("performance", "acknowledgement", {
+            "review_id":3, "acknowledgement":"maybe"
+        })
