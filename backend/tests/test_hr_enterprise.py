@@ -698,3 +698,8 @@ def test_travel_policy_defaults_job_grade_to_all():
         "max_trip_cost":"50000","per_diem_limit":"3000","currency":"INR"
     })
     assert result["job_grade"]=="all"
+
+def test_performance_cycle_activation_requires_complete_weighted_goals():
+    _ensure_goal_weight_limit("100","0")
+    with pytest.raises(HTTPException):
+        _ensure_goal_weight_limit("100","1")
