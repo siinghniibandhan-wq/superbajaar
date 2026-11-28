@@ -325,9 +325,11 @@ def _calculate_asset_book_value(purchase_value, salvage_value, useful_life_month
         book=max(salvage,cost*(annual_factor**years))
     else:
         raise HTTPException(422,"Depreciation method must be straight_line or reducing_balance")
+    book=book.quantize(Decimal("0.01"))
+    accumulated=(cost-book).quantize(Decimal("0.01"))
     return {"method":method,"purchase_value":str(cost),"salvage_value":str(salvage),"useful_life_months":life,
             "elapsed_months":elapsed,"as_of_date":as_of.isoformat(),"annual_rate_percent":str(rate),
-            "accumulated_depreciation":str(cost-book),"book_value":str(book)}
+            "accumulated_depreciation":str(accumulated),"book_value":str(book)}
 
 
 def _validate_references(conn, domain, record_type, data):
