@@ -432,3 +432,39 @@ def test_coupon_discount_is_applied_once_and_enforces_customer_limit(api):
             (promotion["id"],),
         ).fetchone()
         assert redemption == (1, 1, Decimal("10.00"))
+
+def test_manual_pos_cash_refund_is_idempotent_and_reconciles_drawer(api):
+    register = ok(api.post("/api/pos/registers", json={
+        "location_id": api.location_id,
+        "register_code": "REFUND-" + api.suffix,
+        "name": "Refund Counter",
+    }), 201)
+    shift = ok(api.post(f"/api/pos/registers/{register['id']}/open", json={"opening_float":"500"}), 201)
+    order = ok(api.post("/api/orders", json={
+        "channel":"pos","customer_name":"Refund Customer","location_id":api.location_id,
+        "pos_register_id":register["id"],"pos_payment_method":"cod",
+        "checkout_idempotency_key":"manual-refund-sale-"+api.suffix,
+        "lines":[{"variant_id":api.variant_id,"quantity":1}],
+    }),201)
+    payment_id=order["payment"]["id"]
+    ok(api.post(f"/api/pos/shifts/{shift['id']}/payments/{payment_id}/confirm-cash",json={}))
+    headers={"Idempotency-Key":"manual-pos-refund-"+api.suffix+"-key"}
+    refund=ok(api.post(f"/api/payments/{payment_id}/manual-refunds",headers=headers,json={
+        "amount":"100.00","note":"Returned unopened product",
+    }),201)
+    assert refund["provider"]=="manual"
+    assert refund["pos_shift_id"]==shift["id"]
+    replay=ok(api.post(f"/api/payments/{payment_id}/manual-refunds",headers=headers,json={
+        "amount":"100.00","note":"Returned unopened product",
+    }),201)
+    assert replay["id"]==refund["id"]
+    with psycopg.connect(TEST_DB) as conn:
+        assert conn.execute("SELECT status FROM payments WHERE id=%s",(payment_id,)).fetchone()[0]=="refunded"
+        cash_out=conn.execute(
+            "SELECT count(*),sum(amount) FROM pos_cash_movements WHERE shift_id=%s AND movement_type='cash_out' AND reference=%s",
+            (shift["id"],"payment-refund:"+str(refund["id"])),
+        ).fetchone()
+        assert cash_out==(1,Decimal("100.00"))
+        assert conn.execute(
+            "SELECT pos_shift_id FROM payment_refunds WHERE id=%s",(refund["id"],)
+        ).fetchone()[0]==shift["id"]
