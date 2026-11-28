@@ -209,7 +209,7 @@ REQUIRED = {
  "travel":{
   "travel_policy":["name","employment_type","max_trip_cost","per_diem_limit","currency"],
   "request":["destination","purpose","start_date","end_date","estimated_cost","estimated_per_diem","policy_id"],
-  "booking":["travel_record_id","booked_cost"],
+  "booking":["travel_record_id","booked_cost","client_reference"],
   "advance":["travel_record_id","requested_amount"],
   "claim":["travel_record_id","actual_cost","receipt_reference"]
  },
@@ -471,6 +471,16 @@ def _validate_references(conn, domain, record_type, data):
         if asset["status"] not in {"available","approved"}:
             raise HTTPException(409,"Only available or approved assets can be allocated")
     if domain=="travel" and record_type=="booking":
+        client_ref=str(data["client_reference"]).strip()
+        if not re.fullmatch(r"[A-Za-z0-9._:-]{8,100}",client_ref):
+            raise HTTPException(422,"Travel booking client_reference must be 8 to 100 safe characters")
+        data["client_reference"]=client_ref
+        details=data.get("booking_details",{})
+        if isinstance(details,str):
+            try: details=json.loads(details or "{}")
+            except (ValueError,TypeError): raise HTTPException(422,"Provider booking details must be valid JSON")
+        if not isinstance(details,dict): raise HTTPException(422,"Provider booking details must be a JSON object")
+        data["booking_details"]=details
         try: amount=Decimal(str(data["booked_cost"]))
         except (InvalidOperation,TypeError): raise HTTPException(422,"Booking cost must be numeric")
         if amount<=0: raise HTTPException(422,"Booking cost must be greater than zero")
@@ -1563,8 +1573,12 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                     ).fetchone()
                     if not travel or travel["employee_id"] is None:
                         raise HTTPException(409,"Travel booking requires an employee-linked travel request")
+                    policy=conn.execute("SELECT payload FROM hr_enterprise_records WHERE id=%s",(int(travel["payload"]["policy_id"]),)).fetchone()
+                    data["currency"]=str(data.get("currency") or policy["payload"].get("currency","INR")).upper()
                     provider_result=create_provider_booking(travel={**travel["payload"],"employee_id":travel["employee_id"]},
                         booking=data,record_id=row["id"])
+                    if Decimal(provider_result["booked_cost"])>Decimal(str(policy["payload"]["max_trip_cost"])):
+                        raise HTTPException(502,"Travel provider confirmed an amount above the approved policy ceiling; contact the provider before retrying")
                     data.update(provider_result)
                     row=conn.execute(
                         "UPDATE hr_enterprise_records SET payload=%s::jsonb,updated_at=now(),version=version+1 WHERE id=%s RETURNING *",
