@@ -31,7 +31,7 @@ STATUSES = {
  "documents":{"pending","uploaded","under_review","verified","rejected","expired","archived"},
  "performance":{"draft","active","self_review","manager_review","calibration","acknowledged","closed","cancelled"},
  "learning":{"planned","enrolled","in_progress","completed","failed","cancelled"},
- "assets":{"available","requested","approved","assigned","acknowledged","returned","maintenance","written_off","rejected"},
+ "assets":{"available","requested","approved","assigned","acknowledged","returned","maintenance","written_off","rejected","received","partially_received","reconciled","investigating","closed"},
  "travel":{"draft","submitted","approved","rejected","booked","in_progress","completed","claimed","reimbursed","cancelled"},
  "exit":{"initiated","notice_period","handover","clearance","settlement_review","completed","withdrawn"},
  "analytics":{"saved","scheduled","archived"}
@@ -48,7 +48,7 @@ TRANSITIONS = {
 }
 MANAGER_ONLY_TYPES = {
  "recruitment":{"job_opening","candidate","application","interview","interview_feedback","offer","communication"},
- "assets":{"asset","allocation","maintenance"},
+ "assets":{"asset","allocation","maintenance","procurement","stock_receipt","stock_reconciliation","asset_loss"},
  "performance":{"review_template","review_cycle","review","calibration"},
  "learning":{"course","assessment","certificate"},
  "travel":{"travel_policy","booking","advance"},
@@ -102,6 +102,10 @@ def _allowed_record_transitions(domain, record_type, status):
             "asset_request": {"requested":{"approved","rejected"},"approved":{"assigned","rejected"}},
             "allocation": {"requested":{"approved","rejected"},"approved":{"assigned","rejected"},"assigned":{"acknowledged","returned","maintenance","written_off"},"acknowledged":{"returned","maintenance","written_off"}},
             "maintenance": {},
+            "procurement": {"requested":{"approved","rejected","archived"},"approved":{"received","partially_received","archived"},"partially_received":{"received","archived"},"received":{"archived"}},
+            "stock_receipt": {"received":{"archived"}},
+            "stock_reconciliation": {"requested":{"reconciled","investigating"},"investigating":{"reconciled","closed"},"reconciled":{"closed"}},
+            "asset_loss": {"investigating":{"closed","written_off"},"closed":{},"written_off":{}},
         },
         "travel": {
             "travel_policy": {}, "request": {"draft":{"submitted","cancelled"},"submitted":{"approved","rejected"},"approved":{"booked","cancelled"},"booked":{"in_progress","cancelled"},"in_progress":{"completed"},"completed":{"claimed"}},
@@ -136,6 +140,8 @@ def _initial_status(domain, record_type):
         ("learning", "certificate"): "completed",
         ("learning", "progress"): "in_progress",
         ("assets", "maintenance"): "maintenance",
+        ("assets", "stock_receipt"): "received",
+        ("assets", "asset_loss"): "investigating",
         ("travel", "travel_policy"): "approved",
         ("travel", "booking"): "booked",
         ("travel", "advance"): "approved",
@@ -184,7 +190,11 @@ REQUIRED = {
   "asset":["asset_type","asset_tag"],
   "asset_request":["asset_type","purpose","needed_by"],
   "allocation":["asset_id","employee_id","condition_out"],
-  "maintenance":["asset_id","maintenance_type","reported_at","description"]
+  "maintenance":["asset_id","maintenance_type","reported_at","description"],
+  "procurement":["vendor","requested_by","items","estimated_total"],
+  "stock_receipt":["procurement_id","received_at","items","received_by"],
+  "stock_reconciliation":["location","counted_at","expected_count","physical_count","variance_reason"],
+  "asset_loss":["asset_id","reported_at","description","investigation_reference"]
  },
  "travel":{
   "travel_policy":["name","employment_type","max_trip_cost","per_diem_limit","currency"],
@@ -318,6 +328,8 @@ def _validate_references(conn, domain, record_type, data):
         ("learning","certificate"): {"enrollment_id": ("learning","enrollment")},
         ("assets","allocation"): {"asset_id": ("assets","asset")},
         ("assets","maintenance"): {"asset_id": ("assets","asset")},
+        ("assets","stock_receipt"): {"procurement_id": ("assets","procurement")},
+        ("assets","asset_loss"): {"asset_id": ("assets","asset")},
         ("travel","request"): {"policy_id": ("travel","travel_policy")},
         ("travel","booking"): {"travel_record_id": ("travel","request")},
         ("travel","advance"): {"travel_record_id": ("travel","request")},
@@ -592,6 +604,50 @@ def _validate(domain, record_type, payload):
         try: needed_by=date.fromisoformat(str(data["needed_by"]))
         except ValueError: raise HTTPException(422,"Asset needed-by date is invalid")
         data["needed_by"]=needed_by.isoformat()
+    if domain=="assets" and record_type=="procurement":
+        try: total=Decimal(str(data["estimated_total"]))
+        except InvalidOperation: raise HTTPException(422,"Procurement estimated total must be numeric")
+        if total<=0 or not isinstance(data["items"],list) or not data["items"]:
+            raise HTTPException(422,"Procurement requires at least one item and a positive estimated total")
+        for item in data["items"]:
+            if not isinstance(item,dict) or not str(item.get("description","")).strip():
+                raise HTTPException(422,"Each procurement item requires a description")
+            try:
+                quantity=Decimal(str(item.get("quantity",0)))
+                unit_cost=Decimal(str(item.get("unit_cost",0)))
+            except InvalidOperation:
+                raise HTTPException(422,"Procurement item quantities and unit costs must be numeric")
+            if quantity<=0 or unit_cost<0:
+                raise HTTPException(422,"Procurement quantities must be positive and unit costs cannot be negative")
+        data["estimated_total"]=str(total)
+        data["vendor"]=str(data["vendor"]).strip()
+        data["requested_by"]=str(data["requested_by"]).strip()
+    if domain=="assets" and record_type=="stock_receipt":
+        try: received_at=date.fromisoformat(str(data["received_at"])[:10])
+        except ValueError: raise HTTPException(422,"Stock receipt date is invalid")
+        if not isinstance(data["items"],list) or not data["items"]:
+            raise HTTPException(422,"A stock receipt must contain at least one received item")
+        for item in data["items"]:
+            if not isinstance(item,dict) or not str(item.get("description","")).strip():
+                raise HTTPException(422,"Each received item requires a description")
+            try: quantity=Decimal(str(item.get("quantity",0)))
+            except InvalidOperation: raise HTTPException(422,"Received quantities must be numeric")
+            if quantity<=0: raise HTTPException(422,"Received quantities must be positive")
+        data["received_at"]=received_at.isoformat()
+    if domain=="assets" and record_type=="stock_reconciliation":
+        try:
+            expected=int(data["expected_count"]); physical=int(data["physical_count"])
+            counted=date.fromisoformat(str(data["counted_at"])[:10])
+        except (ValueError,TypeError): raise HTTPException(422,"Stock reconciliation counts or date are invalid")
+        if min(expected,physical)<0: raise HTTPException(422,"Stock counts cannot be negative")
+        if expected!=physical and len(str(data["variance_reason"]).strip())<5:
+            raise HTTPException(422,"A variance reason of at least five characters is required")
+        data.update({"expected_count":expected,"physical_count":physical,"counted_at":counted.isoformat(),"variance":physical-expected})
+    if domain=="assets" and record_type=="asset_loss":
+        try: date.fromisoformat(str(data["reported_at"])[:10])
+        except ValueError: raise HTTPException(422,"Asset loss report date is invalid")
+        if len(str(data["description"]).strip())<10:
+            raise HTTPException(422,"Asset loss investigation requires a detailed description")
     if domain=="assets" and record_type=="maintenance":
         if int(data["asset_id"])<=0: raise HTTPException(422,"Asset ID must be positive")
         try: date.fromisoformat(str(data["reported_at"])[:10])
