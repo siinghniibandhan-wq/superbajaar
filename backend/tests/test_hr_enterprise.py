@@ -61,7 +61,7 @@ def test_employee_document_requires_checksum_and_safe_mime_type():
 
 def test_domain_transition_graph_rejects_skipped_approval_stages():
     assert "hired" not in TRANSITIONS["recruitment"]["open"]
-    assert "approved" not in TRANSITIONS["travel"]["submitted"]
+    assert "completed" not in TRANSITIONS["travel"]["submitted"]
     assert "completed" not in TRANSITIONS["exit"]["clearance"]
 
 
