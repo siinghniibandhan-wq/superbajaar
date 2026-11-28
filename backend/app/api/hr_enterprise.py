@@ -290,13 +290,21 @@ def _validate_references(conn, domain, record_type, data):
         if Decimal(data["estimated_per_diem"])>Decimal(policy["payload"]["per_diem_limit"])*days:
             raise HTTPException(422,"Estimated per diem exceeds the selected travel policy limit")
     if domain=="travel" and record_type in {"booking","advance"}:
-        travel=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["travel_record_id"],)).fetchone()
+        travel=conn.execute("SELECT status,payload FROM hr_enterprise_records WHERE id=%s",(data["travel_record_id"],)).fetchone()
         if travel["status"] not in {"approved","booked","in_progress"}:
             raise HTTPException(409,"Travel must be approved before booking or advance processing")
+        policy=conn.execute("SELECT payload FROM hr_enterprise_records WHERE id=%s",(int(travel["payload"]["policy_id"]),)).fetchone()
+        if record_type=="booking" and Decimal(data["booked_cost"])>Decimal(policy["payload"]["max_trip_cost"]):
+            raise HTTPException(422,"Booking cost exceeds the approved travel policy cap")
+        if record_type=="advance" and Decimal(data["requested_amount"])>Decimal(travel["payload"]["estimated_cost"]):
+            raise HTTPException(422,"Travel advance cannot exceed the approved estimated trip cost")
     if domain=="travel" and record_type=="claim":
-        travel=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["travel_record_id"],)).fetchone()
+        travel=conn.execute("SELECT status,payload FROM hr_enterprise_records WHERE id=%s",(data["travel_record_id"],)).fetchone()
         if travel["status"]!="completed":
             raise HTTPException(409,"Travel must be completed before a claim can be submitted")
+        policy=conn.execute("SELECT payload FROM hr_enterprise_records WHERE id=%s",(int(travel["payload"]["policy_id"]),)).fetchone()
+        if Decimal(data["actual_cost"])>Decimal(policy["payload"]["max_trip_cost"]):
+            raise HTTPException(422,"Claim amount exceeds the approved travel policy cap")
     if domain=="exit" and record_type=="clearance":
         exit_case=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["exit_record_id"],)).fetchone()
         if exit_case["status"]!="clearance":
