@@ -635,7 +635,7 @@ def create_razorpay_order(payload: RazorpayOrderCreate, request: Request):
     if role != "customer" and not (role in {"staff", "manager", "admin", "super_admin"} and actor_id):
         raise HTTPException(status_code=403, detail="Customer or authenticated POS cashier session is required")
 
-    lock_key = f\"razorpay-order:{payload.order_id}:{payload.payment_id or 'full'}\"
+    lock_key = str(payload.order_id) + str(payload.payment_id)
     try:
         with _connect() as conn:
             # Session-level lock serializes provider-order creation for one local order.
