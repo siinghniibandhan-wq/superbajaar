@@ -617,6 +617,7 @@ async def razorpay_webhook(request: Request):
 
 class RazorpayOrderCreate(BaseModel):
     order_id: int = Field(gt=0)
+    payment_id: int | None = Field(default=None, gt=0)
 
 
 class RazorpayPaymentVerify(BaseModel):
@@ -635,7 +636,7 @@ def create_razorpay_order(payload: RazorpayOrderCreate, request: Request):
     if role != "customer" and not (role in {"staff", "manager", "admin", "super_admin"} and actor_id):
         raise HTTPException(status_code=403, detail="Customer or authenticated POS cashier session is required")
 
-    lock_key = f"razorpay-order:{payload.order_id}"
+    lock_key = f"razorpay-order:{payload.order_id}:{payload.payment_id or 'full'}
     try:
         with _connect() as conn:
             # Session-level lock serializes provider-order creation for one local order.
@@ -661,16 +662,25 @@ def create_razorpay_order(payload: RazorpayOrderCreate, request: Request):
                         raise HTTPException(status_code=403, detail="POS payment can only be initiated by the cashier assigned to this sale")
                     if order["status"] != "placed":
                         raise HTTPException(status_code=409, detail="Only newly placed orders can start payment")
-                    amount_paise = int((Decimal(str(order["total"])) * 100).quantize(Decimal("1")))
+                                        if payload.payment_id:
+                        existing = conn.execute(
+                            "SELECT id,order_id,method,amount,status,provider_order_id FROM payments WHERE id=%s AND order_id=%s FOR UPDATE",
+                            (payload.payment_id,payload.order_id),
+                        ).fetchone()
+                        if not existing or existing["method"] not in {"other","upi","card","wallet","netbanking"} or existing["status"] not in {"pending","authorized"}:
+                            raise HTTPException(status_code=409,detail="Selected online tender is not payable")
+                        amount_paise = int((Decimal(str(existing["amount"])) * 100).quantize(Decimal("1")))
+                    else:
+                        amount_paise = int((Decimal(str(order["total"])) * 100).quantize(Decimal("1")))
+                        existing = conn.execute(
+                            """SELECT id, provider_order_id,method,amount,status FROM payments
+                               WHERE order_id=%s AND method IN ('other','upi','card','wallet','netbanking')
+                                 AND status IN ('pending','authorized')
+                               ORDER BY id DESC LIMIT 1 FOR UPDATE""",
+                            (payload.order_id,),
+                        ).fetchone()
                     if amount_paise <= 0:
-                        raise HTTPException(status_code=422, detail="Order total must be greater than zero")
-                    existing = conn.execute(
-                        """SELECT id, provider_order_id FROM payments
-                           WHERE order_id=%s AND method IN ('other','upi','card','wallet','netbanking')
-                             AND status IN ('pending','authorized')
-                           ORDER BY id DESC LIMIT 1 FOR UPDATE""",
-                        (payload.order_id,),
-                    ).fetchone()
+                        raise HTTPException(status_code=422, detail="Tender amount must be greater than zero")
                     if existing and existing["provider_order_id"]:
                         return {
                             "key_id": settings.razorpay_key_id,
@@ -694,7 +704,7 @@ def create_razorpay_order(payload: RazorpayOrderCreate, request: Request):
                                 "amount": amount_paise,
                                 "currency": "INR",
                                 "receipt": receipt,
-                                "notes": {"superbajaar_order_id": str(order_snapshot["id"])},
+                                "notes": {"superbajaar_order_id": str(order_snapshot["id"]), "superbajaar_payment_id": str(existing_payment_id or "")},
                             },
                         )
                     response.raise_for_status()
@@ -735,9 +745,9 @@ def create_razorpay_order(payload: RazorpayOrderCreate, request: Request):
                         payment = conn.execute(
                             """INSERT INTO payments
                                (payment_reference, order_id, method, amount, status, provider_order_id, currency, note)
-                               VALUES (%s,%s,'other',%s,'pending',%s,'INR','Razorpay Standard Checkout')
+                               VALUES (%s,%s,%s,%s,'pending',%s,'INR','Razorpay Standard Checkout')
                                RETURNING id""",
-                            (payment_reference, current["id"], current["total"], provider_order_id),
+                            (payment_reference, current["id"], existing["method"] if existing else "other", existing["amount"] if existing else current["total"], provider_order_id),
                         ).fetchone()
                 return {
                     "key_id": settings.razorpay_key_id,
