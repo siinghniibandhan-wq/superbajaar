@@ -20,6 +20,21 @@ const PAYMENT_METHODS = [
 ];
 const methodLabel = id => PAYMENT_METHODS.find(m => m.id === id)?.label || id;
 
+let posRazorpayScript;
+function loadPosRazorpay() {
+  if (window.Razorpay) return Promise.resolve();
+  if (!posRazorpayScript) posRazorpayScript = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    script.onload = resolve;
+    script.onerror = () => { posRazorpayScript = null; reject(new Error("Unable to load secure Razorpay Checkout.")); };
+    document.head.appendChild(script);
+  });
+  return posRazorpayScript;
+}
+
+
 // Readable variant text. Picture-type values show their name, never a long link.
 const cleanValue = value => {
   const text = Array.isArray(value) ? value.join(", ") : String(value ?? "");
@@ -369,7 +384,35 @@ export default function POSWorkspace({ onBack }) {
         method: "POST",
         body: JSON.stringify({ ...checkoutPayload, checkout_idempotency_key: checkoutAttempt.current.key }),
       });
-      const payment = order.payment || null;
+      let payment = order.payment || null;
+      if (!payment) {
+        setError("Order " + order.order_number + " was returned without its tender record. Do not create another order; reconcile this sale before retrying.");
+        return;
+      }
+      if (method !== "cod") {
+        const gatewayOrder = await apiRequest("/razorpay/orders", {
+          method: "POST", body: JSON.stringify({ order_id: order.id }),
+        });
+        await loadPosRazorpay();
+        const result = await new Promise((resolve, reject) => {
+          let settled = false;
+          const finish = (fn, value) => { if (settled) return; settled = true; fn(value); };
+          const checkout = new window.Razorpay({
+            key: gatewayOrder.key_id, amount: gatewayOrder.amount, currency: gatewayOrder.currency,
+            name: "Super Bajaar", description: "POS sale " + order.order_number,
+            order_id: gatewayOrder.razorpay_order_id,
+            prefill: { name: customerName, contact: customer.phone.trim() },
+            handler: response => finish(resolve, response),
+            modal: { ondismiss: () => finish(reject, new Error("Payment window closed. The sale is pending; retry using the same checkout.")) },
+          });
+          checkout.on("payment.failed", response => finish(reject, new Error(response?.error?.description || "Payment failed. Retry this sale.")));
+          checkout.open();
+        });
+        const verified = await apiRequest("/razorpay/verify", {
+          method: "POST", body: JSON.stringify(result),
+        });
+        payment = { ...payment, status: verified.status || "captured", provider_reference: result.razorpay_payment_id };
+      }
       const sale = {
         order, payment, method, at: new Date().toISOString(), counter: activeShift?.register_code || "",
         customer: { name: customerName, phone: customer.phone.trim() },
@@ -377,11 +420,7 @@ export default function POSWorkspace({ onBack }) {
         lines: cart.map(line => ({ id: line.id, name: productTitle(line), label: variantLabel(line), sku: line.sku, quantity: line.quantity, price: Number(line.selling_price || 0) })),
       };
       setReceipt(sale);
-      if (!payment) {
-        setError("Order " + order.order_number + " was returned without its tender record. Do not create another order; reconcile this sale before retrying.");
-      } else {
-        resetSale(); setShowReceipt(true);
-      }
+      resetSale(); setShowReceipt(true);
       void refreshAnalytics();
     } catch (e) {
       setError(e.message || "POS checkout could not be completed. Retry the same sale to safely reuse its checkout key.");
