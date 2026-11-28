@@ -204,6 +204,29 @@ def _validate_references(conn, domain, record_type, data):
         job=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["job_id"],)).fetchone()
         if job["status"]!="open":
             raise HTTPException(409,"Applications can be created only for open job openings")
+    if domain=="recruitment" and record_type in {"interview","offer"}:
+        application=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["application_id"],)).fetchone()
+        allowed={"interview":{"shortlisted","interview"},"offer":{"interview"}}
+        if application["status"] not in allowed[record_type]:
+            raise HTTPException(409,"The application must reach the required recruitment stage first")
+    if domain=="learning" and record_type=="enrollment":
+        course=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["course_id"],)).fetchone()
+        if course["status"]!="enrolled":
+            raise HTTPException(409,"The course must be published for enrollment before employees can enroll")
+    if domain=="learning" and record_type=="assessment":
+        enrollment=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["enrollment_id"],)).fetchone()
+        if enrollment["status"] not in {"in_progress","completed"}:
+            raise HTTPException(409,"The enrollment must be in progress before assessment")
+    if domain=="learning" and record_type=="certificate":
+        enrollment=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["enrollment_id"],)).fetchone()
+        passed=conn.execute(
+            "SELECT EXISTS(SELECT 1 FROM hr_enterprise_records WHERE domain='learning' "
+            "AND payload->>'record_type'='assessment' AND payload->>'enrollment_id'=%s "
+            "AND (payload->>'score')::numeric >= (payload->>'pass_score')::numeric) AS passed",
+            (str(data["enrollment_id"]),),
+        ).fetchone()["passed"]
+        if enrollment["status"]!="completed" or not passed:
+            raise HTTPException(409,"A certificate requires a completed enrollment and a passing assessment")
     if domain=="assets" and record_type=="allocation":
         asset=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["asset_id"],)).fetchone()
         if asset["status"] not in {"available","approved"}:
@@ -216,6 +239,10 @@ def _validate_references(conn, domain, record_type, data):
         travel=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["travel_record_id"],)).fetchone()
         if travel["status"]!="completed":
             raise HTTPException(409,"Travel must be completed before a claim can be submitted")
+    if domain=="exit" and record_type=="clearance":
+        exit_case=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["exit_record_id"],)).fetchone()
+        if exit_case["status"]!="clearance":
+            raise HTTPException(409,"Department clearances can be created only during the exit clearance stage")
     if domain=="exit" and record_type=="settlement":
         exit_case=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["exit_record_id"],)).fetchone()
         if exit_case["status"]!="settlement_review":
