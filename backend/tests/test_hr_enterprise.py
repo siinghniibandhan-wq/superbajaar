@@ -291,3 +291,23 @@ def test_job_opening_requires_positive_headcount():
             "department":"Operations", "employment_type":"full_time",
             "location":"Patna", "headcount":"0"
         })
+
+
+
+def test_recruitment_interview_feedback_and_communication_logs():
+    feedback = _validate("recruitment", "interview_feedback", {
+        "interview_id":12, "interviewer_employee_id":4,
+        "rating":"4", "decision":"pass", "feedback":"Strong operational knowledge"
+    })
+    assert feedback["rating"] == "4"
+    communication = _validate("recruitment", "communication", {
+        "candidate_id":9, "channel":"email", "direction":"outbound",
+        "subject":"Interview invitation", "message":"Your interview is scheduled.",
+        "occurred_at":"2026-12-01T10:30"
+    })
+    assert communication["occurred_at"] == "2026-12-01T10:30:00"
+    with pytest.raises(HTTPException):
+        _validate("recruitment", "interview_feedback", {
+            "interview_id":12, "interviewer_employee_id":4,
+            "rating":"8", "decision":"pass", "feedback":"Out of range"
+        })
