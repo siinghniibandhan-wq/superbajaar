@@ -266,6 +266,11 @@ class EmployeeLoanInput(BaseModel):
     principal_amount: Decimal = Field(gt=0,max_digits=14,decimal_places=2)
     currency: str = Field(default="INR",min_length=3,max_length=3)
 
+class EmployeeLoanRepaymentInput(BaseModel):
+    amount: Decimal = Field(gt=0,max_digits=14,decimal_places=2)
+    transaction_date: date
+    reference: str = Field(min_length=3,max_length=160)
+
 class RecruitmentHireInput(BaseModel):
     application_id: int = Field(gt=0)
     candidate_accepted: bool
@@ -2203,6 +2208,32 @@ def approve_employee_loan(loan_id:int,request:Request):
                     "UPDATE hr_employee_loans SET status='active',approved_by_user_id=%s,approved_at=now(),updated_at=now() WHERE id=%s RETURNING *",
                     (actor,loan_id)
                 ).fetchone()
+    except HTTPException: raise
+    except psycopg.Error as exc: raise _db_error(exc) from exc
+
+
+@router.post("/exit/loans/{loan_id}/repayments",status_code=201)
+def record_employee_loan_repayment(loan_id:int,payload:EmployeeLoanRepaymentInput,request:Request):
+    actor=_manager(request)
+    try:
+        with _hr_connection() as conn:
+            with conn.transaction():
+                loan=conn.execute("SELECT * FROM hr_employee_loans WHERE id=%s FOR UPDATE",(loan_id,)).fetchone()
+                if not loan: raise HTTPException(404,"Employee loan not found")
+                if loan["status"] not in {"active","approved"}: raise HTTPException(409,"Only active employee loans can receive repayments")
+                outstanding=Decimal(str(loan["outstanding_amount"]))
+                if payload.amount>outstanding: raise HTTPException(422,"Repayment cannot exceed the outstanding loan balance")
+                remaining=outstanding-payload.amount
+                updated=conn.execute(
+                    "UPDATE hr_employee_loans SET outstanding_amount=%s,status=%s,updated_at=now() WHERE id=%s RETURNING *",
+                    (remaining,"closed" if remaining==0 else "active",loan_id)
+                ).fetchone()
+                transaction=conn.execute(
+                    "INSERT INTO hr_employee_loan_transactions(loan_id,transaction_type,amount,transaction_date,reference,created_by_user_id) "
+                    "VALUES(%s,'repayment',%s,%s,%s,%s) RETURNING *",
+                    (loan_id,payload.amount,payload.transaction_date,payload.reference.strip(),actor)
+                ).fetchone()
+                return {"loan":updated,"transaction":transaction}
     except HTTPException: raise
     except psycopg.Error as exc: raise _db_error(exc) from exc
 
