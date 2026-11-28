@@ -1069,14 +1069,14 @@ def hire_recruitment_candidate(offer_id:int,payload:RecruitmentHireInput,request
                     raise HTTPException(422,"Employee name must contain at least two characters for identity creation")
                 row=conn.execute(
                     "INSERT INTO hr_employees(user_id,employee_code,first_name,last_name,email,phone,department_id,"
-                    "designation,reports_to_employee_id,employment_type,status,joining_date,exit_date,basic_salary,"
+                    "designation,job_grade,reports_to_employee_id,employment_type,status,joining_date,exit_date,basic_salary,"
                     "hra,special_allowance,other_allowance,created_by_user_id) "
-                    "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
-                    "RETURNING id,user_id,employee_code,first_name,last_name,email,phone,department_id,designation,"
+                    "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                    "RETURNING id,user_id,employee_code,first_name,last_name,email,phone,department_id,designation,job_grade,"
                     "employment_type,status,joining_date,basic_salary,hra,special_allowance,other_allowance,created_at",
                     (employee.user_id,employee.employee_code.strip(),employee.first_name.strip(),employee.last_name.strip(),
                      employee.email,employee.phone.strip(),employee.department_id,employee.designation.strip(),
-                     employee.reports_to_employee_id,employee.employment_type,employee.status,employee.joining_date,
+                     employee.job_grade.strip(),employee.reports_to_employee_id,employee.employment_type,employee.status,employee.joining_date,
                      employee.exit_date,employee.basic_salary,employee.hra,employee.special_allowance,
                      employee.other_allowance,actor),
                 ).fetchone()
@@ -1554,21 +1554,6 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                         ).fetchone()
                         adjustment_id=adjustment["id"]
                     data["payroll_adjustment_id"]=adjustment_id
-                    for component in data.get("deductions_breakdown",[]):
-                        if component.get("type")=="employee_loan_recovery":
-                            loan_id=int(component["loan_id"])
-                            amount=Decimal(str(component["amount"]))
-                            loan=conn.execute("SELECT outstanding_amount FROM hr_employee_loans WHERE id=%s AND employee_id=%s FOR UPDATE",
-                                (loan_id,int(exit_case["employee_id"]))).fetchone()
-                            if not loan or amount>Decimal(str(loan["outstanding_amount"])):
-                                raise HTTPException(409,"Employee loan balance changed; recalculate the settlement")
-                            conn.execute("UPDATE hr_employee_loans SET outstanding_amount=outstanding_amount-%s,status=CASE WHEN outstanding_amount-%s=0 THEN 'closed' ELSE 'active' END,updated_at=now() WHERE id=%s",
-                                (amount,amount,loan_id))
-                            conn.execute(
-                                "INSERT INTO hr_employee_loan_transactions(loan_id,transaction_type,amount,transaction_date,reference,payroll_adjustment_id,created_by_user_id) "
-                                "VALUES(%s,'settlement_recovery',%s,%s,%s,%s,%s)",
-                                (loan_id,amount,payable,f"Exit settlement #{exit_id}",adjustment_id,actor)
-                            )
                 if domain=="analytics" and payload.record_type=="report":
                     interval=7 if data.get("frequency")=="weekly" else 30
                     data["next_run_at"]=(datetime.utcnow()+timedelta(days=interval)).isoformat()+"Z"
@@ -2033,6 +2018,27 @@ def transition_record(domain:str,record_id:int,payload:TransitionInput,request:R
                         ).fetchone()["paid"]
                         if not paid:
                             raise HTTPException(409,"The final-settlement payroll adjustment must be approved and paid before closing the settlement")
+                    for component in old["payload"].get("deductions_breakdown",[]):
+                        if component.get("type")=="employee_loan_recovery":
+                            loan_id=int(component["loan_id"])
+                            amount=Decimal(str(component["amount"]))
+                            loan=conn.execute(
+                                "SELECT outstanding_amount FROM hr_employee_loans "
+                                "WHERE id=%s AND employee_id=%s AND status IN ('approved','active') FOR UPDATE",
+                                (loan_id,int(old["employee_id"]))
+                            ).fetchone()
+                            if not loan or amount<=0 or amount>Decimal(str(loan["outstanding_amount"])):
+                                raise HTTPException(409,"Employee loan balance changed; settlement cannot be completed")
+                            conn.execute(
+                                "UPDATE hr_employee_loans SET outstanding_amount=outstanding_amount-%s,"
+                                "status=CASE WHEN outstanding_amount-%s=0 THEN 'closed' ELSE 'active' END,updated_at=now() WHERE id=%s",
+                                (amount,amount,loan_id)
+                            )
+                            conn.execute(
+                                "INSERT INTO hr_employee_loan_transactions(loan_id,transaction_type,amount,transaction_date,reference,payroll_adjustment_id,created_by_user_id) "
+                                "VALUES(%s,'settlement_recovery',%s,%s,%s,%s,%s)",
+                                (loan_id,amount,date.today(),f"Exit settlement #{record_id}",adjustment_id or None,actor)
+                            )
                 if domain=="travel" and record_type=="claim" and payload.status=="reimbursed":
                     travel_id=int(old["payload"]["travel_record_id"])
                     expense_id=int(old["payload"].get("expense_id") or 0)
