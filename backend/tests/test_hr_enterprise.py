@@ -155,3 +155,25 @@ def test_new_record_types_are_registered_for_each_domain():
     assert "asset_request" in REQUIRED["assets"]
     assert "booking" in REQUIRED["travel"]
     assert "settlement" in REQUIRED["exit"]
+
+
+
+def test_employee_self_review_rating_is_bounded():
+    result = _validate("performance", "self_review", {
+        "cycle":"FY2026", "summary":"Strong delivery",
+        "rating":"4", "achievements":"Completed core goals",
+        "development_areas":"Improve delegation"
+    })
+    assert result["rating"] == "4"
+    with pytest.raises(HTTPException):
+        _validate("performance", "self_review", {
+            "cycle":"FY2026", "summary":"Strong delivery",
+            "rating":"6", "achievements":"Completed core goals",
+            "development_areas":"Improve delegation"
+        })
+
+
+def test_asset_custody_acknowledgement_is_an_employee_action():
+    assert _employee_transition_allowed("assets", "assigned", "acknowledged")
+    assert "acknowledged" in TRANSITIONS["assets"]["assigned"]
+    assert "returned" in TRANSITIONS["assets"]["acknowledged"]
