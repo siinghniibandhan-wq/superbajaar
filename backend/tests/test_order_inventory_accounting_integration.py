@@ -502,3 +502,35 @@ def test_order_gst_uses_specific_category_attribute_rule_and_persists_tax_snapsh
             (order["id"],),
         ).fetchone()
         assert snapshot==(specific,"22222222",Decimal("5.00"),Decimal("95.24"),Decimal("2.38"),Decimal("2.38"),Decimal("0.00"),Decimal("4.76"))
+
+def test_split_pos_tenders_capture_cash_without_premature_stock_consumption(api):
+    register=ok(api.post("/api/pos/registers",json={
+        "location_id":api.location_id,"register_code":"SPLIT-"+api.suffix,"name":"Split Counter",
+    }),201)
+    shift=ok(api.post(f"/api/pos/registers/{register['id']}/open",json={"opening_float":"500"}),201)
+    order=ok(api.post("/api/orders",json={
+        "channel":"pos","customer_name":"Split Tender Customer","location_id":api.location_id,
+        "pos_register_id":register["id"],"checkout_idempotency_key":"split-tender-"+api.suffix,
+        "pos_tenders":[{"method":"cod","amount":"40.00"},{"method":"upi","amount":"60.00"}],
+        "lines":[{"variant_id":api.variant_id,"quantity":1}],
+    }),201)
+    assert len(order["payments"])==2
+    cash=next(p for p in order["payments"] if p["method"]=="cod")
+    online=next(p for p in order["payments"] if p["method"]=="upi")
+    assert Decimal(str(cash["amount"]))==Decimal("40.00")
+    assert Decimal(str(online["amount"]))==Decimal("60.00")
+    ok(api.post(f"/api/pos/shifts/{shift['id']}/payments/{cash['id']}/confirm-cash",json={}))
+    with psycopg.connect(TEST_DB) as conn:
+        statuses=conn.execute("SELECT method,status,amount FROM payments WHERE order_id=%s ORDER BY id",(order["id"],)).fetchall()
+        assert statuses==[("cod","captured",Decimal("40.00")),("upi","pending",Decimal("60.00"))]
+        order_status=conn.execute("SELECT status FROM orders WHERE id=%s",(order["id"],)).fetchone()[0]
+        assert order_status=="placed"
+        balance=conn.execute("SELECT on_hand,reserved FROM inventory_balances WHERE variant_id=%s AND location_id=%s",(api.variant_id,api.location_id)).fetchone()
+        assert balance==(5,1)
+    invalid=api.post("/api/orders",json={
+        "channel":"pos","customer_name":"Invalid Split","location_id":api.location_id,
+        "pos_register_id":register["id"],"checkout_idempotency_key":"invalid-split-"+api.suffix,
+        "pos_tenders":[{"method":"cod","amount":"30.00"},{"method":"upi","amount":"60.00"}],
+        "lines":[{"variant_id":api.variant_id,"quantity":1}],
+    })
+    assert invalid.status_code==422
