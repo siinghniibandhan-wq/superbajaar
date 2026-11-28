@@ -1581,6 +1581,7 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                     if Decimal(provider_result["booked_cost"])>Decimal(str(policy["payload"]["max_trip_cost"])):
                         raise HTTPException(502,"Travel provider confirmed an amount above the approved policy ceiling; contact the provider before retrying")
                     data.update(provider_result)
+                    data.pop("maximum_allowed_amount",None)
                     row=conn.execute(
                         "UPDATE hr_enterprise_records SET payload=%s::jsonb,updated_at=now(),version=version+1 WHERE id=%s RETURNING *",
                         (json.dumps(data,default=str),row["id"])
