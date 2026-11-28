@@ -343,6 +343,10 @@ def _validate(domain, record_type, payload):
         except InvalidOperation: raise HTTPException(422,"Calibrated rating must be numeric")
         if rating<1 or rating>5: raise HTTPException(422,"Calibrated rating must be between 1 and 5")
         data["calibrated_rating"]=str(rating)
+    if domain=="performance" and record_type=="acknowledgement":
+        accepted=str(data["acknowledgement"]).strip().lower()
+        if accepted not in {"true","false"}: raise HTTPException(422,"Acknowledgement must be true or false")
+        data["acknowledgement"]=accepted=="true"
     if domain=="learning" and record_type=="assessment":
         try: score=Decimal(str(data["score"])); passing=Decimal(str(data["pass_score"])); enrollment_id=int(data["enrollment_id"])
         except (InvalidOperation,ValueError,TypeError): raise HTTPException(422,"Assessment enrollment and scores must be valid")
