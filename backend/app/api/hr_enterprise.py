@@ -27,7 +27,7 @@ STATUSES = {
  "documents":{"pending","uploaded","under_review","verified","rejected","expired","archived"},
  "performance":{"draft","active","self_review","manager_review","calibration","acknowledged","closed","cancelled"},
  "learning":{"planned","enrolled","in_progress","completed","failed","cancelled"},
- "assets":{"available","requested","approved","assigned","returned","maintenance","written_off","rejected"},
+ "assets":{"available","requested","approved","assigned","acknowledged","returned","maintenance","written_off","rejected"},
  "travel":{"draft","submitted","approved","rejected","booked","in_progress","completed","claimed","reimbursed","cancelled"},
  "exit":{"initiated","notice_period","handover","clearance","settlement_review","completed","withdrawn"},
  "analytics":{"saved","scheduled","archived"}
@@ -37,7 +37,7 @@ TRANSITIONS = {
  "documents":{"pending":{"uploaded","archived"},"uploaded":{"under_review","rejected"},"under_review":{"verified","rejected","expired"},"verified":{"expired","archived"},"rejected":{"uploaded","archived"},"expired":{"uploaded","archived"}},
  "performance":{"draft":{"active","cancelled"},"active":{"self_review","cancelled"},"self_review":{"manager_review"},"manager_review":{"calibration","acknowledged"},"calibration":{"acknowledged"},"acknowledged":{"closed"}},
  "learning":{"planned":{"enrolled","cancelled"},"enrolled":{"in_progress","cancelled"},"in_progress":{"completed","failed"},"failed":{"enrolled"}},
- "assets":{"available":{"assigned","maintenance","written_off"},"requested":{"approved","rejected"},"approved":{"assigned","rejected"},"assigned":{"returned","maintenance","written_off"},"maintenance":{"assigned","written_off"},"returned":{"available","maintenance","written_off"}},
+ "assets":{"available":{"assigned","maintenance","written_off"},"requested":{"approved","rejected"},"approved":{"assigned","rejected"},"assigned":{"acknowledged","returned","maintenance","written_off"},"acknowledged":{"returned","maintenance","written_off"},"maintenance":{"assigned","written_off"},"returned":{"available","maintenance","written_off"}},
  "travel":{"draft":{"submitted","cancelled"},"submitted":{"approved","rejected"},"approved":{"booked","cancelled"},"booked":{"in_progress","cancelled"},"in_progress":{"completed"},"completed":{"claimed"},"claimed":{"reimbursed"}},
  "exit":{"initiated":{"notice_period","withdrawn"},"notice_period":{"handover","withdrawn"},"handover":{"clearance"},"clearance":{"settlement_review"},"settlement_review":{"completed"}},
  "analytics":{"saved":{"scheduled","archived"},"scheduled":{"saved","archived"}}
@@ -57,6 +57,7 @@ EMPLOYEE_TRANSITIONS = {
     ("performance", "active", "self_review"),
     ("learning", "enrolled", "in_progress"),
     ("learning", "in_progress", "completed"),
+    ("assets", "assigned", "acknowledged"),
     ("exit", "initiated", "withdrawn"),
 }
 
@@ -69,6 +70,7 @@ def _initial_status(domain, record_type):
         ("recruitment", "offer"): "offered",
         ("documents", "employee_document"): "pending",
         ("performance", "feedback"): "acknowledged",
+        ("performance", "self_review"): "self_review",
         ("learning", "assessment"): "completed",
         ("learning", "certificate"): "completed",
         ("assets", "maintenance"): "maintenance",
@@ -99,6 +101,7 @@ REQUIRED = {
  "performance":{
   "review_cycle":["period_start","period_end"],
   "review":["cycle","reviewer_employee_id"],
+  "self_review":["cycle","summary","rating","achievements","development_areas"],
   "goal":["description","measure","target"],
   "feedback":["review_id","feedback"]
  },
@@ -297,6 +300,11 @@ def _validate(domain, record_type, payload):
         try: start=date.fromisoformat(str(data["period_start"])); end=date.fromisoformat(str(data["period_end"]))
         except ValueError: raise HTTPException(422,"Performance cycle dates are invalid")
         if end<start: raise HTTPException(422,"Performance cycle end cannot precede start")
+    if domain=="performance" and record_type=="self_review":
+        try: rating=Decimal(str(data["rating"]))
+        except InvalidOperation: raise HTTPException(422,"Self-review rating must be numeric")
+        if rating<1 or rating>5: raise HTTPException(422,"Self-review rating must be between 1 and 5")
+        data["rating"]=str(rating)
     if domain=="learning" and record_type=="assessment":
         try: score=Decimal(str(data["score"])); passing=Decimal(str(data["pass_score"])); enrollment_id=int(data["enrollment_id"])
         except (InvalidOperation,ValueError,TypeError): raise HTTPException(422,"Assessment enrollment and scores must be valid")
