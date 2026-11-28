@@ -84,6 +84,7 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
  const [busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("");
  const [analyticsMonth,setAnalyticsMonth]=useState(()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");});
  const [analyticsData,setAnalyticsData]=useState(null),[analyticsError,setAnalyticsError]=useState(""),[analyticsLoading,setAnalyticsLoading]=useState(false);
+ const [enterpriseAnalytics,setEnterpriseAnalytics]=useState(null),[enterpriseAnalyticsError,setEnterpriseAnalyticsError]=useState("");
  const [eventRecord,setEventRecord]=useState(null),[recordEvents,setRecordEvents]=useState([]),[eventsBusy,setEventsBusy]=useState(false);
  const [recordSearch,setRecordSearch]=useState(""),[statusFilter,setStatusFilter]=useState("");
  const [hireOffer,setHireOffer]=useState(null),[hireAccepted,setHireAccepted]=useState(false);
@@ -117,6 +118,18 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
      .then(result=>{if(active)setAnalyticsData(result);})
      .catch(e=>{if(active)setAnalyticsError(e.message||"Unable to load HR analytics.");})
      .finally(()=>{if(active)setAnalyticsLoading(false);});
+   return()=>{active=false;};
+ },[domain,manager,analyticsMonth]);
+ useEffect(()=>{
+   if(domain!=="analytics"||!manager)return;
+   let active=true;
+   const [year,month]=analyticsMonth.split("-").map(Number);
+   const fromDate=analyticsMonth+"-01";
+   const toDate=analyticsMonth+"-"+String(new Date(year,month,0).getDate()).padStart(2,"0");
+   setEnterpriseAnalyticsError("");
+   apiRequest("/hr/enterprise/analytics/enterprise?from_date="+fromDate+"&to_date="+toDate)
+     .then(result=>{if(active)setEnterpriseAnalytics(result.domains||{});})
+     .catch(e=>{if(active)setEnterpriseAnalyticsError(e.message||"Unable to load enterprise workflow metrics.");});
    return()=>{active=false;};
  },[domain,manager,analyticsMonth]);
  const update=(key,value)=>setFields(old=>({...old,[key]:value}));
@@ -192,7 +205,7 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
    setHireForm(old=>({...old,first_name:data.first_name||"",last_name:data.last_name||"",email:data.email||"",phone:data.phone||"",acceptance_reference:""}));
  }
  function exportAnalyticsCsv(){
-   if(!analyticsData)return;
+   if(!analyticsData&&!enterpriseAnalytics)return;
    const rows=[
     ["Metric","Value"],
     ["Month",analyticsData.period?.month],
@@ -207,7 +220,11 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
     ["Approved payroll gross",analyticsData.payroll?.gross],
     ["Approved payroll net",analyticsData.payroll?.net]
    ];
-   rows.push([],["Department","Headcount"],...(analyticsData.workforce?.departments||[]).map(d=>[d.name,d.headcount]));
+   if(analyticsData)rows.push([],["Department","Headcount"],...(analyticsData.workforce?.departments||[]).map(d=>[d.name,d.headcount]));
+   if(enterpriseAnalytics){
+    rows.push([],["HR domain","Records","Overdue","Due in 30 days"]);
+    Object.entries(enterpriseAnalytics).forEach(([name,value])=>rows.push([name,value.records,value.overdue,value.due_soon]));
+   }
    const quote=v=>'"'+String(v??"").replace(/"/g,'""')+'"';
    const csv=rows.map(row=>row.map(quote).join(",")).join("\r\n");
    const url=URL.createObjectURL(new Blob(["\\uFEFF",csv],{type:"text/csv;charset=utf-8"}));
@@ -286,7 +303,7 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
     {expiringLoading?<p role="status">Loading expiry queue…</p>:<div className="hr-table-wrap"><table><thead><tr><th>Record</th><th>Employee</th><th>Due date</th><th>Status</th></tr></thead><tbody>{expiringItems.map(x=><tr key={x.id}><td>{x.title}<small>{x.domain} · #{x.id}</small></td><td>{x.employee_code?x.employee_code+" — "+x.first_name+" "+(x.last_name||""):"—"}</td><td>{x.due_date}</td><td>{x.status}</td></tr>)}{!expiringItems.length&&<tr><td colSpan="4">No expiring records in this window.</td></tr>}</tbody></table></div>}
    </section>}
    {domain==="analytics"&&manager&&<section className="hr-panel" aria-label="Computed workforce analytics">
-    <div className="hr-directory-heading"><div><h3>Workforce analytics</h3><p>Live metrics from the existing HR, attendance, leave and approved payroll records.</p></div><label>Reporting month<input type="month" value={analyticsMonth} onChange={e=>setAnalyticsMonth(e.target.value)}/></label><button type="button" className="hr-secondary" disabled={!analyticsData} onClick={exportAnalyticsCsv}>Export CSV</button></div>
+    <div className="hr-directory-heading"><div><h3>Workforce analytics</h3><p>Live metrics from the existing HR, attendance, leave and approved payroll records.</p></div><label>Reporting month<input type="month" value={analyticsMonth} onChange={e=>setAnalyticsMonth(e.target.value)}/></label><button type="button" className="hr-secondary" disabled={!analyticsData&&!enterpriseAnalytics} onClick={exportAnalyticsCsv}>Export CSV</button></div>
     {analyticsError&&<p role="alert" className="sb-alert">{analyticsError}</p>}
     {analyticsLoading&&<p role="status">Loading workforce metrics…</p>}
     {analyticsData&&<><div className="hr-overview">
@@ -298,6 +315,15 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
      <article><span>Approved payroll gross</span><strong>{new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR",maximumFractionDigits:0}).format(Number(analyticsData.payroll?.gross||0))}</strong><small>Net {new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR",maximumFractionDigits:0}).format(Number(analyticsData.payroll?.net||0))}</small></article>
     </div>
     <div className="hr-table-wrap"><table><thead><tr><th>Department</th><th>Headcount</th></tr></thead><tbody>{(analyticsData.workforce?.departments||[]).map(d=><tr key={d.id}><td>{d.name}</td><td>{d.headcount}</td></tr>)}{!analyticsData.workforce?.departments?.length&&<tr><td colSpan="2">No active departments.</td></tr>}</tbody></table></div>
+
+    <section aria-label="Enterprise HR workflow KPIs">
+     <div className="hr-directory-heading"><div><h3>Seven-domain operations</h3><p>Operational record volumes, overdue work and items due within 30 days for the selected creation period.</p></div></div>
+     {enterpriseAnalyticsError&&<p role="alert" className="sb-alert">{enterpriseAnalyticsError}</p>}
+     <div className="hr-table-wrap"><table><thead><tr><th>Domain</th><th>Records</th><th>Overdue</th><th>Due in 30 days</th></tr></thead><tbody>
+      {Object.entries(enterpriseAnalytics||{}).map(([name,value])=><tr key={name}><td>{name.replaceAll("_"," ")}</td><td>{value.records}</td><td>{value.overdue}</td><td>{value.due_soon}</td></tr>)}
+      {!Object.keys(enterpriseAnalytics||{}).length&&<tr><td colSpan="4">No enterprise workflow records in this reporting period.</td></tr>}
+     </tbody></table></div>
+    </section>
     <p className="hr-enterprise-note">Metrics are calculated from recorded data. Attendance absence and rate are unavailable when there is no published shift schedule; late-arrival and attendance trend metrics are not currently calculated.</p></>}
    </section>}
    <form className="hr-form hr-grid" onSubmit={create}>
