@@ -432,3 +432,8 @@ def test_recruitment_duplicate_guard_reports_existing_application():
         _ensure_no_active_recruitment_duplicate({"id": 28}, "This candidate already has an active application")
     assert exc.value.status_code == 409
     assert "application" in exc.value.detail.lower()
+
+
+def test_recruitment_job_can_close_when_headcount_is_filled():
+    assert "closed" in STATUSES["recruitment"]
+    assert "closed" in TRANSITIONS["recruitment"]["open"]
