@@ -189,6 +189,13 @@ def _ensure_travel_claimable(status):
         raise HTTPException(409,"Travel must be completed before a claim can be submitted")
 
 
+def _ensure_asset_allocatable(status, active_allocations):
+    if status not in {"available", "approved"}:
+        raise HTTPException(409,"Only available or approved assets can be allocated")
+    if active_allocations:
+        raise HTTPException(409,"This asset already has an active allocation")
+
+
 def _validate_references(conn, domain, record_type, data):
     references = {
         ("recruitment","application"): {
@@ -802,6 +809,21 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                     if not locked_travel:
                         raise HTTPException(404,"Travel request not found")
                     _ensure_travel_claimable(locked_travel["status"])
+                if domain=="assets" and payload.record_type=="allocation":
+                    asset=conn.execute(
+                        "SELECT status FROM hr_enterprise_records WHERE id=%s AND domain='assets' "
+                        "AND payload->>'record_type'='asset' FOR UPDATE",
+                        (int(data["asset_id"]),),
+                    ).fetchone()
+                    if not asset:
+                        raise HTTPException(404,"Asset not found")
+                    active_allocation=conn.execute(
+                        "SELECT EXISTS(SELECT 1 FROM hr_enterprise_records WHERE domain='assets' "
+                        "AND payload->>'record_type'='allocation' AND payload->>'asset_id'=%s "
+                        "AND status IN ('requested','approved','assigned','acknowledged')) AS active",
+                        (str(data["asset_id"]),),
+                    ).fetchone()["active"]
+                    _ensure_asset_allocatable(asset["status"],active_allocation)
                 if domain=="learning" and payload.record_type=="progress":
                     enrollment=conn.execute("SELECT employee_id FROM hr_enterprise_records WHERE id=%s",(int(data["enrollment_id"]),)).fetchone()
                     if employee_id is None or enrollment["employee_id"] is None or int(employee_id)!=int(enrollment["employee_id"]):
