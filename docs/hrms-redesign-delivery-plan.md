@@ -133,8 +133,18 @@ The enterprise workflow slice has advanced beyond generic record entry:
 - The analytics page consumes the existing permission-checked HR overview aggregation. It deliberately displays unavailable attendance measures as unavailable instead of inferring absence or lateness.
 - Migration 072 adds unique candidate-email, asset-tag, candidate/job application, and document-object-key indexes plus a due-date lookup index.
 
-Latest validated branch head at this update: `8459f54f49660b138b028bbcca68c53ca2d41218`. Backend identity tests passed (657 passed, 62 skipped, 1 warning); frontend tests and production build passed; Python dependency/SAST, frontend dependency audit and secret scanning passed.
+Latest validated branch head at this update: `922c81b2f6cb8f3bc628a278de69d13377ca16b4`. Backend identity tests passed (664 passed, 62 skipped, 1 warning); frontend tests and production build passed; Python dependency/SAST, frontend dependency audit and secret scanning passed.
 
 ## Still not production-complete
 
 The eight domains still need malware scanning and retention/expiry automation for documents; candidate communication and offer letter signing; configurable performance templates, weighting and calibration; richer learning evidence/provider integrations; procurement, warranty and physical stock reconciliation for assets; travel policy/booking/finance integrations; statutory notice, leave/loan deductions and accounting-backed final settlement; and enterprise analytics filters, exports and scheduled delivery. PostgreSQL migrations 070–072 have not been applied to production. Live database integration, S3/IAM configuration, malware-scanner integration, manual responsive browser QA and release/deployment checks remain release gates.
+
+
+## Additional workflow details at validated head 922c81b
+
+- Performance review templates are versioned records with JSON section validation and rating-scale bounds. Review cycles are linked to employee goals and self-reviews; manager appraisals require an active template and the correct cycle stage; calibration and employee acknowledgement records are separately permissioned.
+- Employees can select only published learning courses and active travel policies from linked-record selectors. Learning progress evidence is scoped to the enrolled employee and a valid in-progress enrollment.
+- Travel policies define eligible employment types, trip caps, currency and per-diem ceilings. Booking, advance and claim amounts are checked against the selected policy; claims create existing HR expense records and flow through approval and paid-payroll status before the travel request is marked reimbursed.
+- The manager expiry queue surfaces employee documents, learning certificates and asset warranties that are due within the next 30 days or already overdue.
+- Asset master records retain vendor, purchase date, purchase reference, location and warranty expiry metadata. The warranty date is included in the shared due-date index.
+- The analytics workspace provides a CSV export of the existing HR overview metrics; richer filters and XLSX/PDF export remain outstanding.
