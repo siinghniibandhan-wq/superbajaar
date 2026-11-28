@@ -1606,6 +1606,7 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                         (travel_id,json.dumps(dict(travel),default=str),json.dumps(dict(updated_travel),default=str),actor))
         return row
     except HTTPException: raise
+    except TravelIntegrationConfigurationError as exc: raise HTTPException(503,str(exc)) from exc
     except psycopg.Error as exc: raise _db_error(exc) from exc
 
 @router.get("/analytics/enterprise")
