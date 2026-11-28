@@ -933,9 +933,7 @@ test("HR enterprise workflows expose travel integrations and policy-driven exit 
       clientWidth: el.clientWidth, scrollWidth: el.scrollWidth,
       overflowX: getComputedStyle(el).overflowX,
     }));
-    if (width === 390) {
-      expect(navMetrics.overflowX).toMatch(/auto|scroll/);
-      expect(navMetrics.scrollWidth).toBeGreaterThanOrEqual(navMetrics.clientWidth);
-    }
+    expect(navMetrics.overflowX).toBe("visible");
+    expect(navMetrics.scrollWidth).toBeLessThanOrEqual(navMetrics.clientWidth + 1);
   }
 });
