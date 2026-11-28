@@ -1267,6 +1267,40 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                          data["receipt_reference"]),
                     ).fetchone()
                     data["expense_id"]=expense["id"]
+                if domain=="exit" and payload.record_type=="settlement":
+                    exit_id=int(data["exit_record_id"])
+                    exit_case=conn.execute(
+                        "SELECT employee_id FROM hr_enterprise_records WHERE id=%s AND domain='exit' "
+                        "AND payload->>'record_type'='case' FOR UPDATE",(exit_id,)
+                    ).fetchone()
+                    if not exit_case or exit_case["employee_id"] is None:
+                        raise HTTPException(409,"Full-and-final settlement requires an employee-linked exit case")
+                    existing_settlement=conn.execute(
+                        "SELECT id FROM hr_enterprise_records WHERE domain='exit' AND payload->>'record_type'='settlement' "
+                        "AND payload->>'exit_record_id'=%s AND status NOT IN ('rejected','archived') LIMIT 1",(str(exit_id),)
+                    ).fetchone()
+                    if existing_settlement:
+                        raise HTTPException(409,"A full-and-final settlement already exists for this exit case")
+                    payable=date.fromisoformat(str(data["payable_on"]))
+                    period_start=payable.replace(day=1)
+                    next_month=(period_start.replace(day=28)+timedelta(days=4)).replace(day=1)
+                    period_end=next_month-timedelta(days=1)
+                    if Decimal(str(data["net_due"]))>0:
+                        closed_period=conn.execute(
+                            "SELECT id FROM hr_payroll_runs WHERE period_start=%s AND period_end=%s "
+                            "AND status IN ('approved','paid') LIMIT 1",(period_start,period_end)
+                        ).fetchone()
+                        if closed_period:
+                            raise HTTPException(409,"The settlement payroll period is already approved or paid; choose a future payable date")
+                        adjustment=conn.execute(
+                            "INSERT INTO hr_payroll_earning_adjustments(employee_id,earning_type,period_start,period_end,amount,reason,created_by_user_id) "
+                            "VALUES(%s,'final_settlement',%s,%s,%s,%s,%s) RETURNING id",
+                            (exit_case["employee_id"],period_start,period_end,data["net_due"],
+                             f"Full-and-final settlement for exit case #{exit_id}",actor)
+                        ).fetchone()
+                        data["payroll_adjustment_id"]=adjustment["id"]
+                    else:
+                        data["payroll_adjustment_id"]=None
                 data["record_type"]=payload.record_type
                 status=_initial_status(domain,payload.record_type)
                 due_date=payload.due_date
@@ -1439,6 +1473,17 @@ def transition_record(domain:str,record_id:int,payload:TransitionInput,request:R
                 if domain=="recruitment" and record_type=="job_opening" and payload.status=="closed":
                     job_payload=dict(old["payload"])
                     _ensure_job_opening_closable(job_payload.get("filled_headcount",0),job_payload.get("headcount",0))
+                if domain=="exit" and record_type=="settlement" and payload.status=="completed":
+                    adjustment_id=int(old["payload"].get("payroll_adjustment_id") or 0)
+                    if adjustment_id:
+                        paid=conn.execute(
+                            "SELECT EXISTS(SELECT 1 FROM hr_payroll_earning_adjustments a "
+                            "JOIN hr_payroll_runs r ON r.id=a.payroll_run_id "
+                            "WHERE a.id=%s AND a.earning_type='final_settlement' AND a.status='approved' AND r.status='paid') AS paid",
+                            (adjustment_id,)
+                        ).fetchone()["paid"]
+                        if not paid:
+                            raise HTTPException(409,"The final-settlement payroll adjustment must be approved and paid before closing the settlement")
                 if domain=="travel" and record_type=="claim" and payload.status=="reimbursed":
                     travel_id=int(old["payload"]["travel_record_id"])
                     expense_id=int(old["payload"].get("expense_id") or 0)
