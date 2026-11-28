@@ -1512,6 +1512,15 @@ def transition_record(domain:str,record_id:int,payload:TransitionInput,request:R
                     raise HTTPException(409,"Travel policies are managed by archiving the old version and creating a new version")
                 if domain=="documents" and payload.status in {"verified","rejected"} and not (payload.note and payload.note.strip()):
                     raise HTTPException(422,"A verification or rejection note is required for employee documents")
+                if domain=="performance" and record_type=="review_cycle" and payload.status=="active":
+                    goal_summary=conn.execute(
+                        "SELECT count(*)::int AS total,COALESCE(sum((payload->>'weight')::numeric),0) AS weight "
+                        "FROM hr_enterprise_records WHERE domain='performance' AND payload->>'record_type'='goal' "
+                        "AND payload->>'cycle_id'=%s AND status NOT IN ('cancelled','archived')",
+                        (str(record_id),)
+                    ).fetchone()
+                    if goal_summary["total"]==0 or Decimal(str(goal_summary["weight"]))!=Decimal("100"):
+                        raise HTTPException(409,"A performance cycle can start only when its active goals have weights totalling exactly 100 percent")
                 if domain=="documents" and payload.status=="verified" and old["payload"].get("malware_scan_status")!="clean":
                     raise HTTPException(409,"Employee documents cannot be verified until a clean malware scan is recorded; re-upload after scanner configuration")
                 if domain=="recruitment" and payload.status=="rejected" and not (payload.note and payload.note.strip()):
