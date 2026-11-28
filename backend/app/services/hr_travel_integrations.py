@@ -1,6 +1,7 @@
 """Provider-backed travel booking and ledger-backed advance disbursement."""
 from __future__ import annotations
 import os
+from urllib.parse import urlparse
 from datetime import date
 from decimal import Decimal
 import httpx
@@ -13,7 +14,8 @@ def create_provider_booking(*,travel:dict,booking:dict,record_id:int)->dict:
     base=os.getenv("SB_TRAVEL_BOOKING_API_URL","").strip().rstrip("/")
     token=os.getenv("SB_TRAVEL_BOOKING_API_TOKEN","").strip()
     provider=os.getenv("SB_TRAVEL_BOOKING_PROVIDER","").strip()
-    if not base or not token or not provider:
+    parsed=urlparse(base) if base else None
+    if not base or not token or not provider or parsed.scheme not in {"https","http"} or (parsed.scheme=="http" and parsed.hostname not in {"localhost","127.0.0.1"}):
         raise TravelIntegrationConfigurationError(
             "Travel booking integration is not configured; set SB_TRAVEL_BOOKING_API_URL, SB_TRAVEL_BOOKING_API_TOKEN and SB_TRAVEL_BOOKING_PROVIDER"
         )
