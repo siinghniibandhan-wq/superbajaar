@@ -790,6 +790,8 @@ def update_record(domain:str,record_id:int,payload:RecordUpdate,request:Request)
             with conn.transaction():
                 old=conn.execute("SELECT * FROM hr_enterprise_records WHERE id=%s AND domain=%s FOR UPDATE",(record_id,domain)).fetchone()
                 if not old: raise HTTPException(404,"HR record not found")
+                if domain=="travel" and old["payload"].get("record_type")=="travel_policy":
+                    raise HTTPException(409,"Travel policies are versioned; archive the old policy and create a replacement")
                 if old["version"]!=payload.expected_version: raise HTTPException(409,"Record changed since it was loaded; refresh before editing")
                 data=dict(old["payload"])
                 if payload.payload is not None:
