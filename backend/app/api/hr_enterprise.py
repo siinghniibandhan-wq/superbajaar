@@ -109,6 +109,7 @@ REQUIRED = {
  },
  "assets":{
   "asset":["asset_type","asset_tag"],
+  "asset_request":["asset_type","purpose","needed_by"],
   "allocation":["asset_id","employee_id","condition_out"],
   "maintenance":["asset_id","maintenance_type","reported_at","description"]
  },
