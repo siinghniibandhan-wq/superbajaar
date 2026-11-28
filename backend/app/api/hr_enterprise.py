@@ -246,6 +246,7 @@ async def upload_document(
     file:UploadFile=File(...),
     document_type:str=Form(...),
     employee_id:int|None=Form(default=None),
+    expiry_date:date|None=Form(default=None),
 ):
     actor=_actor(request)
     manager=_role(request) in MANAGER_ROLES
@@ -266,9 +267,9 @@ async def upload_document(
         with _hr_connection() as conn:
             with conn.transaction():
                 row=conn.execute(
-                  "INSERT INTO hr_enterprise_records(domain,employee_id,title,status,payload,created_by_user_id,updated_by_user_id) "
-                  "VALUES('documents',%s,%s,'pending',%s::jsonb,%s,%s) RETURNING *",
-                  (employee_id,stored["file_name"],json.dumps(payload),actor,actor)
+                  "INSERT INTO hr_enterprise_records(domain,employee_id,title,status,payload,due_date,created_by_user_id,updated_by_user_id) "
+                  "VALUES('documents',%s,%s,'pending',%s::jsonb,%s,%s,%s) RETURNING *",
+                  (employee_id,stored["file_name"],json.dumps({**payload,"expiry_date":expiry_date.isoformat() if expiry_date else None}),expiry_date,actor,actor)
                 ).fetchone()
                 conn.execute("INSERT INTO hr_enterprise_events(record_id,event_type,to_status,after_state,actor_user_id) "
                   "VALUES(%s,'document_uploaded','pending',%s::jsonb,%s)",
