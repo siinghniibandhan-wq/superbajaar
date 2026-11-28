@@ -5,6 +5,7 @@ import "./HRWorkspace.css";
 import HRStatutoryPolicies from "./HRStatutoryPolicies.jsx";
 import HROverview from "./HROverview.jsx";
 import HRAdvancedWorkflows from "./HRAdvancedWorkflows.jsx";
+import HREmployeeRecords from "./HREmployeeRecords.jsx";
 import OrganisationChart from "./OrganisationChart.jsx";
 import { formatHRDateTime, toLocalDateTimeInput, todayHRDate } from "./hrDateTime.js";
 import { exportPayslipsCsv } from "./hrPayslipExport.js";
@@ -215,6 +216,7 @@ export default function HRWorkspace({onBack,currentUser}) {
           <div><span>Last working date</span><strong>{selectedEmployee.exit_date?String(selectedEmployee.exit_date).slice(0,10):"—"}</strong></div>
           <div><span>Monthly gross salary</span><strong>{money(Number(selectedEmployee.basic_salary||0)+Number(selectedEmployee.hra||0)+Number(selectedEmployee.special_allowance||0)+Number(selectedEmployee.other_allowance||0))}</strong></div>
         </div>
+        <HREmployeeRecords employee={selectedEmployee} />
         <div className="hr-employee-profile-actions"><button type="button" onClick={()=>{setEditingEmployee(selectedEmployee.id);setEmp({user_id:selectedEmployee.user_id||"",employee_code:selectedEmployee.employee_code,first_name:selectedEmployee.first_name,last_name:selectedEmployee.last_name||"",email:selectedEmployee.email,phone:selectedEmployee.phone||"",department_id:selectedEmployee.department_id||"",designation:selectedEmployee.designation,reports_to_employee_id:selectedEmployee.reports_to_employee_id||"",employment_type:selectedEmployee.employment_type,status:selectedEmployee.status,joining_date:selectedEmployee.joining_date?String(selectedEmployee.joining_date).slice(0,10):"",exit_date:selectedEmployee.exit_date||"",basic_salary:selectedEmployee.basic_salary||0,hra:selectedEmployee.hra||0,special_allowance:selectedEmployee.special_allowance||0,other_allowance:selectedEmployee.other_allowance||0});window.scrollTo({top:0,behavior:"smooth"});}}>Edit employee</button><button type="button" onClick={async()=>{try{const result=await apiRequest("/hr/employees/"+selectedEmployee.id+"/salary-revisions");setSalaryRevisions(result.items||[]);setSalaryEmployeeId(selectedEmployee.id);setSalaryDraft({effective_from:today(),effective_to:"",basic_salary:String(selectedEmployee.basic_salary||0),hra:String(selectedEmployee.hra||0),special_allowance:String(selectedEmployee.special_allowance||0),other_allowance:String(selectedEmployee.other_allowance||0),reason:""});}catch(err){setError(err.message||"Unable to load salary history.");}}}>Open salary history</button></div>
       </section>}
        {salaryEmployeeId&&<section className="hr-panel hr-salary-history" aria-label="Salary revision history">
