@@ -332,6 +332,25 @@ def _ensure_travel_amount_budget(existing, requested, limit, label):
     if Decimal(str(existing)) + Decimal(str(requested)) > Decimal(str(limit)):
         raise HTTPException(422,f"Combined {label} exceeds the permitted travel amount")
 
+
+def _employee_loan_voucher_lines(receivable_account_id, bank_account_id, amount, transaction_type):
+    amount=Decimal(str(amount))
+    if not amount.is_finite() or amount<=0:
+        raise HTTPException(422,"Employee loan accounting amount must be finite and greater than zero")
+    if int(receivable_account_id)==int(bank_account_id):
+        raise HTTPException(422,"Employee loan receivable and funding accounts must be different")
+    if transaction_type=="disbursement":
+        return [
+            {"account_id":int(receivable_account_id),"debit":amount,"credit":Decimal("0"),"narration":"Employee loan receivable"},
+            {"account_id":int(bank_account_id),"debit":Decimal("0"),"credit":amount,"narration":"Employee loan bank disbursement"},
+        ]
+    if transaction_type=="repayment":
+        return [
+            {"account_id":int(bank_account_id),"debit":amount,"credit":Decimal("0"),"narration":"Employee loan repayment received"},
+            {"account_id":int(receivable_account_id),"debit":Decimal("0"),"credit":amount,"narration":"Reduce employee loan receivable"},
+        ]
+    raise HTTPException(422,"Unsupported employee loan accounting transaction type")
+
 def _ensure_goal_weight_limit(existing, proposed):
     if Decimal(str(existing)) + Decimal(str(proposed)) > Decimal("100"):
         raise HTTPException(422,"Active goal weights for a review cycle cannot exceed 100 percent")
@@ -2355,12 +2374,8 @@ def disburse_employee_loan(loan_id:int,request:Request):
                     "reference":loan["loan_reference"],"party_type":"employee",
                     "party_name":f"Employee #{loan['employee_id']}",
                     "idempotency_key":f"hr-employee-loan-disbursement-{loan_id}",
-                },[
-                    {"account_id":accounts[receivable_code]["id"],"debit":amount,"credit":Decimal("0"),
-                     "narration":"Employee loan receivable"},
-                    {"account_id":accounts[bank_code]["id"],"debit":Decimal("0"),"credit":amount,
-                     "narration":"Employee loan bank disbursement"},
-                ],(actor,getattr(request.state,"user_email",None)))
+                },_employee_loan_voucher_lines(accounts[receivable_code]["id"],accounts[bank_code]["id"],amount,"disbursement"),
+                  (actor,getattr(request.state,"user_email",None)))
                 transaction=conn.execute(
                     "INSERT INTO hr_employee_loan_transactions(loan_id,transaction_type,amount,transaction_date,reference,accounting_voucher_id,created_by_user_id) "
                     "VALUES(%s,'disbursement',%s,%s,%s,%s,%s) RETURNING *",
@@ -2399,12 +2414,8 @@ def record_employee_loan_repayment(loan_id:int,payload:EmployeeLoanRepaymentInpu
                     "reference":payload.reference.strip(),"party_type":"employee",
                     "party_name":f"Employee #{loan['employee_id']}",
                     "idempotency_key":f"hr-employee-loan-repayment-{loan_id}-{__import__('hashlib').sha256(payload.reference.strip().encode()).hexdigest()}",
-                },[
-                    {"account_id":accounts[bank_code]["id"],"debit":payload.amount,"credit":Decimal("0"),
-                     "narration":"Employee loan repayment received"},
-                    {"account_id":accounts[receivable_code]["id"],"debit":Decimal("0"),"credit":payload.amount,
-                     "narration":"Reduce employee loan receivable"},
-                ],(actor,getattr(request.state,"user_email",None)))
+                },_employee_loan_voucher_lines(accounts[receivable_code]["id"],accounts[bank_code]["id"],payload.amount,"repayment"),
+                  (actor,getattr(request.state,"user_email",None)))
                 remaining=outstanding-payload.amount
                 updated=conn.execute(
                     "UPDATE hr_employee_loans SET outstanding_amount=%s,status=%s,updated_at=now() WHERE id=%s RETURNING *",
