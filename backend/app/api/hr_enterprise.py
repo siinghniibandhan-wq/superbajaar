@@ -47,7 +47,7 @@ MANAGER_ONLY_TYPES = {
  "assets":{"asset","allocation","maintenance"},
  "performance":{"review_template","review_cycle","review","calibration"},
  "learning":{"course","assessment","certificate"},
- "travel":{"booking","advance"},
+ "travel":{"travel_policy","booking","advance"},
  "exit":{"clearance","settlement"},
  "analytics":{"report"}
 }
@@ -78,6 +78,7 @@ def _initial_status(domain, record_type):
         ("learning", "certificate"): "completed",
         ("learning", "progress"): "in_progress",
         ("assets", "maintenance"): "maintenance",
+        ("travel", "travel_policy"): "approved",
         ("travel", "booking"): "booked",
         ("travel", "advance"): "approved",
         ("travel", "claim"): "claimed",
@@ -126,7 +127,8 @@ REQUIRED = {
   "maintenance":["asset_id","maintenance_type","reported_at","description"]
  },
  "travel":{
-  "request":["destination","purpose","start_date","end_date","estimated_cost"],
+  "travel_policy":["name","employment_type","max_trip_cost","per_diem_limit","currency"],
+  "request":["destination","purpose","start_date","end_date","estimated_cost","estimated_per_diem","policy_id"],
   "booking":["travel_record_id","booking_reference","provider","booked_cost"],
   "advance":["travel_record_id","requested_amount"],
   "claim":["travel_record_id","actual_cost","receipt_reference"]
@@ -197,6 +199,7 @@ def _validate_references(conn, domain, record_type, data):
         ("learning","certificate"): {"enrollment_id": ("learning","enrollment")},
         ("assets","allocation"): {"asset_id": ("assets","asset")},
         ("assets","maintenance"): {"asset_id": ("assets","asset")},
+        ("travel","request"): {"policy_id": ("travel","travel_policy")},
         ("travel","booking"): {"travel_record_id": ("travel","request")},
         ("travel","advance"): {"travel_record_id": ("travel","request")},
         ("travel","claim"): {"travel_record_id": ("travel","request")},
@@ -277,6 +280,13 @@ def _validate_references(conn, domain, record_type, data):
         asset=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["asset_id"],)).fetchone()
         if asset["status"] not in {"available","approved"}:
             raise HTTPException(409,"Only available or approved assets can be allocated")
+    if domain=="travel" and record_type=="request":
+        policy=conn.execute("SELECT payload FROM hr_enterprise_records WHERE id=%s",(data["policy_id"],)).fetchone()
+        days=(date.fromisoformat(str(data["end_date"]))-date.fromisoformat(str(data["start_date"]))).days+1
+        if Decimal(data["estimated_cost"])>Decimal(policy["payload"]["max_trip_cost"]):
+            raise HTTPException(422,"Estimated trip cost exceeds the selected travel policy limit")
+        if Decimal(data["estimated_per_diem"])>Decimal(policy["payload"]["per_diem_limit"])*days:
+            raise HTTPException(422,"Estimated per diem exceeds the selected travel policy limit")
     if domain=="travel" and record_type in {"booking","advance"}:
         travel=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["travel_record_id"],)).fetchone()
         if travel["status"] not in {"approved","booked","in_progress"}:
@@ -305,13 +315,24 @@ def _validate(domain, record_type, payload):
         email=str(data["email"]).strip().lower()
         if "@" not in email or email.startswith("@") or email.endswith("@"): raise HTTPException(422,"Candidate email is invalid")
         data["email"]=email
+    if domain=="travel" and record_type=="travel_policy":
+        try: trip_cap=Decimal(str(data["max_trip_cost"])); per_diem=Decimal(str(data["per_diem_limit"]))
+        except InvalidOperation: raise HTTPException(422,"Travel policy limits must be numeric")
+        if trip_cap<=0 or per_diem<=0: raise HTTPException(422,"Travel policy limits must be greater than zero")
+        if data["employment_type"] not in {"all","full_time","part_time","contract","intern","shift_worker"}:
+            raise HTTPException(422,"Travel policy employment type is invalid")
+        if len(str(data["currency"]))!=3: raise HTTPException(422,"Travel policy currency must be a 3-letter code")
+        data["max_trip_cost"]=str(trip_cap);data["per_diem_limit"]=str(per_diem);data["currency"]=str(data["currency"]).upper()
     if domain=="travel" and record_type=="request":
         try:
             start=date.fromisoformat(str(data["start_date"]))
             end=date.fromisoformat(str(data["end_date"]))
             cost=Decimal(str(data["estimated_cost"]))
-        except (ValueError,InvalidOperation): raise HTTPException(422,"Travel dates or estimated cost are invalid")
-        if end<start or cost<=0: raise HTTPException(422,"Travel end date must follow start date and cost must be positive")
+            per_diem=Decimal(str(data["estimated_per_diem"]))
+            policy_id=int(data["policy_id"])
+        except (ValueError,InvalidOperation,TypeError): raise HTTPException(422,"Travel dates, policy ID or estimated costs are invalid")
+        if end<start or cost<=0 or per_diem<0 or policy_id<=0: raise HTTPException(422,"Travel dates and cost values are invalid")
+        data["estimated_cost"]=str(cost);data["estimated_per_diem"]=str(per_diem);data["policy_id"]=policy_id
     if domain=="documents":
         digest=str(data.get("sha256",""))
         if len(digest)!=64 or any(ch not in "0123456789abcdef" for ch in digest.lower()):
@@ -686,6 +707,13 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                         employee_id=allocation_employee_id
                     elif int(employee_id)!=allocation_employee_id:
                         raise HTTPException(422,"Allocation employee must match the linked employee profile")
+                if domain=="travel" and payload.record_type=="request":
+                    if employee_id is None:
+                        raise HTTPException(422,"A travel request must be linked to an employee")
+                    employee_row=conn.execute("SELECT employment_type FROM hr_employees WHERE id=%s",(employee_id,)).fetchone()
+                    policy=conn.execute("SELECT payload FROM hr_enterprise_records WHERE id=%s",(int(data["policy_id"]),)).fetchone()
+                    if policy["payload"]["employment_type"] not in {"all",employee_row["employment_type"]}:
+                        raise HTTPException(403,"The selected travel policy does not apply to this employee type")
                 if domain=="travel" and payload.record_type=="claim":
                     travel=conn.execute("SELECT employee_id,payload FROM hr_enterprise_records WHERE id=%s AND domain='travel'",(int(data["travel_record_id"]),)).fetchone()
                     if not travel or travel["employee_id"] is None:
