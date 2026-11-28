@@ -21,7 +21,7 @@ export default function PricingWorkspace({ onBack }) {
   const [promotions, setPromotions] = useState([]);
   const [promotionAccess, setPromotionAccess] = useState(true);
   const [promotionBusy, setPromotionBusy] = useState(false);
-  const [promotionDraft, setPromotionDraft] = useState({ code: "", name: "", discount_type: "percent", discount_value: "", minimum_subtotal: "0", maximum_discount: "", usage_limit: "", per_customer_limit: "" });
+  const [promotionDraft, setPromotionDraft] = useState({ code: "", name: "", discount_type: "percent", discount_value: "", minimum_subtotal: "0", maximum_discount: "", usage_limit: "", per_customer_limit: "", starts_at: "", ends_at: "" });
   const load = useCallback(async () => {
     setLoading(true); setError("");
     try {
@@ -55,7 +55,7 @@ export default function PricingWorkspace({ onBack }) {
       discount_value: Number(draft.discount_value), minimum_subtotal: Number(draft.minimum_subtotal || 0),
       maximum_discount: draft.discount_type === "percent" && draft.maximum_discount !== "" ? Number(draft.maximum_discount) : null,
       usage_limit: draft.usage_limit === "" ? null : Number(draft.usage_limit),
-      per_customer_limit: draft.per_customer_limit === "" ? null : Number(draft.per_customer_limit), is_active: true,
+      per_customer_limit: draft.per_customer_limit === "" ? null : Number(draft.per_customer_limit),\n      starts_at: draft.starts_at ? new Date(draft.starts_at).toISOString() : null, ends_at: draft.ends_at ? new Date(draft.ends_at).toISOString() : null, is_active: true,
     };
     try {
       const created = await apiRequest("/orders/promotions", { method: "POST", body: JSON.stringify(body) });
