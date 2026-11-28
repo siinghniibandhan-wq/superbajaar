@@ -342,6 +342,8 @@ def payment_reconciliation():
             "captured_amount_recorded": captured,
             "refunded_amount_recorded": refunded,
             "net_captured_amount_recorded": captured - refunded,
+            "pending_refunds": pending_refunds,
+            "refunds_by_provider": refund_channels,
             "note": "Amounts reflect application records only; provider settlement, fees, chargebacks and bank deposits are not verified.",
         }
     except psycopg.Error as exc:
