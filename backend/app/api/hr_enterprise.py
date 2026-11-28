@@ -1503,17 +1503,19 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                         ).fetchone()
                         if not employee or not employee["joining_date"]:
                             raise HTTPException(409,"Employee joining date and statutory establishment profile are required for automatic settlement")
+                        case_payload=conn.execute("SELECT payload FROM hr_enterprise_records WHERE id=%s",(exit_id,)).fetchone()["payload"]
+                        exit_effective_date=date.fromisoformat(str(case_payload["last_working_date"]))
                         policy=conn.execute(
                             "SELECT * FROM hr_exit_statutory_policy_versions WHERE id=%s AND establishment_id=%s "
                             "AND status='approved' AND effective_from<=%s AND (effective_to IS NULL OR effective_to>=%s) FOR SHARE",
-                            (policy_id,employee["establishment_id"],payable,payable)
+                            (policy_id,employee["establishment_id"],exit_effective_date,exit_effective_date)
                         ).fetchone()
                         if not policy: raise HTTPException(409,"No approved exit statutory policy is effective for this employee and payable date")
                         salary=conn.execute(
                             "SELECT basic_salary,hra,special_allowance,other_allowance FROM hr_employee_salary_versions "
                             "WHERE employee_id=%s AND status='approved' AND effective_from<=%s AND (effective_to IS NULL OR effective_to>=%s) "
                             "ORDER BY effective_from DESC LIMIT 1 FOR SHARE",
-                            (int(exit_case["employee_id"]),payable,payable)
+                            (int(exit_case["employee_id"]),exit_effective_date,exit_effective_date)
                         ).fetchone()
                         if not salary: raise HTTPException(409,"An approved salary version effective on the settlement date is required")
                         basic=Decimal(str(salary["basic_salary"]))
@@ -1523,7 +1525,7 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                             "FROM hr_leave_ledger l WHERE l.employee_id=b.employee_id AND l.leave_type=b.leave_type "
                             "AND l.created_at>b.calculated_at AND l.effective_date<=%s),0)) AS balance FROM hr_leave_balances b "
                             "WHERE b.employee_id=%s AND b.period_end<=%s ORDER BY b.leave_type,b.period_end DESC",
-                            (payable,int(exit_case["employee_id"]),payable)
+                            (exit_effective_date,int(exit_case["employee_id"]),exit_effective_date)
                         ).fetchall()
                         leave_balances={r["leave_type"]:Decimal(str(r["balance"])) for r in leave_rows}
                         loans=conn.execute(
@@ -1531,11 +1533,10 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                             "WHERE employee_id=%s AND status IN ('approved','active') AND outstanding_amount>0 FOR UPDATE",
                             (int(exit_case["employee_id"]),)
                         ).fetchall()
-                        case_payload=conn.execute("SELECT payload FROM hr_enterprise_records WHERE id=%s",(exit_id,)).fetchone()["payload"]
                         notice_total=int(case_payload.get("notice_days") or 0)
                         notice_served=int(case_payload.get("notice_days_served") or 0)
                         notice_unserved=max(0,notice_total-notice_served)
-                        service_days=(payable-employee["joining_date"]).days
+                        service_days=(exit_effective_date-employee["joining_date"]).days
                         service_years=Decimal(max(0,service_days))/Decimal("365.2425")
                         calculated=calculate_exit_settlement(
                             config=policy["policy_config"],monthly_basic=basic,monthly_gross=gross_monthly,
