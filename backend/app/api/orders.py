@@ -207,6 +207,7 @@ class OrderCreate(BaseModel):
     redeem_coins: int = Field(default=0, ge=0, le=10000000)
     checkout_idempotency_key: str = Field(min_length=16, max_length=100)
     pos_payment_method: str | None = None
+    pos_tenders: list[PosTenderCreate] | None = Field(default=None, min_length=2, max_length=5)
     pos_register_id: int | None = Field(default=None, gt=0)
     coupon_code: str | None = Field(default=None, max_length=40)
     lines: list[OrderLineCreate] = Field(min_length=1, max_length=100)
