@@ -16,6 +16,7 @@ migrations=(
   076_hr_exit_and_loan_ledger.sql
   077_hr_travel_advance_disbursements.sql
   078_hr_travel_payout_beneficiaries.sql
+  079_hr_employee_loan_accounting.sql
 )
 for migration in "${migrations[@]}"; do
   file="$schema/$migration"
