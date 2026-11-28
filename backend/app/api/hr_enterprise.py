@@ -559,6 +559,9 @@ def hire_recruitment_candidate(offer_id:int,payload:RecruitmentHireInput,request
                 employee=payload.employee
                 if employee.status not in {"active","probation"}:
                     raise HTTPException(422,"A newly hired employee must start as active or probationary")
+                display_name=(employee.first_name+" "+employee.last_name).strip()
+                if len(display_name)<2:
+                    raise HTTPException(422,"Employee name must contain at least two characters for identity creation")
                 row=conn.execute(
                     "INSERT INTO hr_employees(user_id,employee_code,first_name,last_name,email,phone,department_id,"
                     "designation,reports_to_employee_id,employment_type,status,joining_date,exit_date,basic_salary,"
