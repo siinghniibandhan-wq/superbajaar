@@ -466,3 +466,21 @@ def test_razorpay_verify_reports_captured_payment_for_cancelled_order_without_cl
     }
     assert any("UPDATE payments SET status='captured'" in query for query, _ in db.statements)
     assert not any("UPDATE orders SET status='confirmed'" in query for query, _ in db.statements)
+
+def test_manual_refund_requires_manager_or_admin_session():
+    response = client.post(
+        "/api/payments/1/manual-refunds",
+        headers={"Idempotency-Key":"manual-refund-key-0001"},
+        json={"amount":"10.00","note":"Customer returned item"},
+    )
+    assert response.status_code == 403
+    assert "manager or administrator" in response.json()["detail"]
+
+
+def test_manual_refund_requires_positive_amount_and_reason():
+    response = client.post(
+        "/api/payments/1/manual-refunds",
+        headers={"Idempotency-Key":"manual-refund-key-0002"},
+        json={"amount":"0","note":"No"},
+    )
+    assert response.status_code == 422
