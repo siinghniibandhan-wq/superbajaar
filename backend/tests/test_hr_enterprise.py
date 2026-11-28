@@ -160,14 +160,14 @@ def test_new_record_types_are_registered_for_each_domain():
 
 def test_employee_self_review_rating_is_bounded():
     result = _validate("performance", "self_review", {
-        "cycle":"FY2026", "summary":"Strong delivery",
+        "cycle_id":12, "summary":"Strong delivery",
         "rating":"4", "achievements":"Completed core goals",
         "development_areas":"Improve delegation"
     })
     assert result["rating"] == "4"
     with pytest.raises(HTTPException):
         _validate("performance", "self_review", {
-            "cycle":"FY2026", "summary":"Strong delivery",
+            "cycle_id":12, "summary":"Strong delivery",
             "rating":"6", "achievements":"Completed core goals",
             "development_areas":"Improve delegation"
         })
@@ -206,3 +206,9 @@ def test_performance_calibration_and_acknowledgement_are_validated():
         _validate("performance", "acknowledgement", {
             "review_id":3, "acknowledgement":"maybe"
         })
+
+
+
+def test_manager_review_starts_at_manager_review_stage():
+    assert _initial_status("performance", "review") == "manager_review"
+    assert _initial_status("performance", "self_review") == "self_review"
