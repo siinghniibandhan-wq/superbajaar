@@ -2,7 +2,8 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.hr_enterprise import (
-    DOMAINS, REQUIRED, STATUSES, TRANSITIONS, _validate,
+    DOMAINS, EMPLOYEE_TRANSITIONS, REQUIRED, STATUSES, TRANSITIONS,
+    _employee_transition_allowed, _validate,
 )
 
 
@@ -69,3 +70,22 @@ def test_unknown_record_type_is_rejected():
     with pytest.raises(HTTPException) as exc:
         _validate("assets", "unknown", {})
     assert exc.value.status_code == 422
+
+
+
+def test_employee_can_submit_own_travel_and_withdraw_exit():
+    assert _employee_transition_allowed("travel", "draft", "submitted")
+    assert _employee_transition_allowed("exit", "initiated", "withdrawn")
+
+
+def test_employee_can_submit_self_review_and_update_learning_progress():
+    assert _employee_transition_allowed("performance", "active", "self_review")
+    assert _employee_transition_allowed("learning", "enrolled", "in_progress")
+    assert _employee_transition_allowed("learning", "in_progress", "completed")
+
+
+def test_employee_cannot_approve_or_complete_manager_workflows():
+    assert not _employee_transition_allowed("travel", "submitted", "approved")
+    assert not _employee_transition_allowed("assets", "requested", "approved")
+    assert not _employee_transition_allowed("documents", "under_review", "verified")
+    assert not _employee_transition_allowed("recruitment", "offered", "hired")
