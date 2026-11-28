@@ -573,11 +573,16 @@ def create_order(payload: OrderCreate, request: Request):
                     if promotion["per_customer_limit"] is not None:
                         if not customer_identifier:
                             raise HTTPException(status_code=422, detail="This coupon requires customer details to enforce its per-customer limit")
-                        customer_redemptions = conn.execute(
-                            "SELECT count(*) AS n FROM promotion_redemptions WHERE promotion_id=%s "
-                            "AND (lower(COALESCE(customer_email,''))=%s OR (COALESCE(customer_email,'')='' AND customer_phone=%s))",
-                            (promotion["id"], customer_identifier if payload.customer_email else "", customer_identifier if payload.customer_phone and not payload.customer_email else ""),
-                        ).fetchone()["n"]
+                        if payload.customer_email:
+                            customer_redemptions = conn.execute(
+                                "SELECT count(*) AS n FROM promotion_redemptions WHERE promotion_id=%s AND lower(customer_email)=lower(%s)",
+                                (promotion["id"], customer_identifier),
+                            ).fetchone()["n"]
+                        else:
+                            customer_redemptions = conn.execute(
+                                "SELECT count(*) AS n FROM promotion_redemptions WHERE promotion_id=%s AND COALESCE(customer_email,'')='' AND customer_phone=%s",
+                                (promotion["id"], customer_identifier),
+                            ).fetchone()["n"]
                         if customer_redemptions >= promotion["per_customer_limit"]:
                             raise HTTPException(status_code=409, detail="This customer has already used the coupon the allowed number of times")
                     try:
