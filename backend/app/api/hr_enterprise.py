@@ -735,7 +735,8 @@ def list_expiring_records(request:Request,within_days:int=Query(30,ge=0,le=365))
                 "AND r.status NOT IN ('archived','rejected','expired') "
                 "AND ((r.domain='documents' AND r.payload->>'record_type'='employee_document') "
                 "OR (r.domain='learning' AND r.payload->>'record_type'='certificate') "
-                "OR (r.domain='assets' AND r.payload->>'record_type'='asset')) "
+                "OR (r.domain='assets' AND r.payload->>'record_type'='asset') "
+                "OR (r.domain='recruitment' AND r.payload->>'record_type'='offer')) "
                 "ORDER BY r.due_date,r.id LIMIT 500",
                 (within_days,),
             ).fetchall()
@@ -831,6 +832,8 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                 if due_date is None:
                     if domain=="learning" and payload.record_type=="certificate":
                         due_date=date.fromisoformat(str(data["valid_until"]))
+                    elif domain=="recruitment" and payload.record_type=="offer":
+                        due_date=date.fromisoformat(str(data["expires_on"]))
                     elif domain=="exit" and payload.record_type=="case":
                         due_date=date.fromisoformat(str(data["last_working_date"]))
                     elif domain=="travel" and payload.record_type=="request":
