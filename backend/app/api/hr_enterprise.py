@@ -11,7 +11,11 @@ import json
 import psycopg
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel, Field, field_validator
-from app.api.hr import _actor, _manager, _employee, _hr_connection, _db_error\nfrom app.services.hr_employee_documents import (\n    EmployeeDocumentConfigurationError, EmployeeDocumentError,\n    upload_employee_document, employee_document_download_url,\n)
+from app.api.hr import _actor, _manager, _employee, _hr_connection, _db_error
+from app.services.hr_employee_documents import (
+    EmployeeDocumentConfigurationError, EmployeeDocumentError,
+    upload_employee_document, employee_document_download_url,
+)
 
 router = APIRouter(prefix="/hr/enterprise", tags=["hr-enterprise"])
 
