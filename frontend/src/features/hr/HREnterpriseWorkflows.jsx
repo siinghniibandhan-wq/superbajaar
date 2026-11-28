@@ -47,7 +47,11 @@ const domainRecordTransitions={
   asset:{available:["assigned","maintenance","written_off"],assigned:["acknowledged","returned","maintenance","written_off"],acknowledged:["returned","maintenance","written_off"],maintenance:["assigned","written_off"],returned:["available","maintenance","written_off"]},
   asset_request:{requested:["approved","rejected"],approved:["assigned","rejected"]},
   allocation:{requested:["approved","rejected"],approved:["assigned","rejected"],assigned:["acknowledged","returned","maintenance","written_off"],acknowledged:["returned","maintenance","written_off"]},
-  maintenance:{}
+  maintenance:{},
+  procurement:{requested:["approved","rejected","archived"],approved:["received","partially_received","archived"],partially_received:["received","archived"],received:["archived"]},
+  stock_receipt:{received:["archived"]},
+  stock_reconciliation:{requested:["reconciled","investigating"],investigating:["reconciled","closed"],reconciled:["closed"]},
+  asset_loss:{investigating:["closed","written_off"]}
  },
  travel:{
   travel_policy:{},request:{draft:["submitted","cancelled"],submitted:["approved","rejected"],approved:["booked","cancelled"],booked:["in_progress","cancelled"],in_progress:["completed"],completed:["claimed"]},
