@@ -457,3 +457,36 @@ def test_recruitment_job_cannot_close_before_headcount_is_filled(filled,capacity
 def test_recruitment_job_can_close_at_approved_headcount():
     from app.api.hr_enterprise import _ensure_job_opening_closable
     _ensure_job_opening_closable(3,3)
+
+
+def test_recruitment_email_requires_smtp_configuration(monkeypatch):
+    from app.services.hr_candidate_email import CandidateEmailConfigurationError, send_candidate_email
+    for key in ("SB_HR_SMTP_HOST","SB_HR_SMTP_FROM","SB_HR_SMTP_USERNAME","SB_HR_SMTP_PASSWORD"):
+        monkeypatch.delenv(key, raising=False)
+    with pytest.raises(CandidateEmailConfigurationError) as exc:
+        send_candidate_email(recipient="candidate@example.com",subject="Interview",body="Your interview is confirmed.")
+    assert "SB_HR_SMTP_HOST" in str(exc.value)
+    assert "SB_HR_SMTP_PASSWORD" in str(exc.value)
+
+
+def test_recruitment_email_uses_authenticated_starttls_smtp(monkeypatch):
+    import app.services.hr_candidate_email as mailer
+    sent=[]
+    class FakeSMTP:
+        def __init__(self,host,port,timeout): sent.append(("connect",host,port,timeout))
+        def __enter__(self): return self
+        def __exit__(self,*args): return False
+        def ehlo(self): sent.append(("ehlo",))
+        def starttls(self): sent.append(("starttls",))
+        def login(self,user,password): sent.append(("login",user,password))
+        def send_message(self,message): sent.append(("send",message["To"],message["Subject"]))
+    monkeypatch.setenv("SB_HR_SMTP_HOST","smtp.example.com")
+    monkeypatch.setenv("SB_HR_SMTP_PORT","587")
+    monkeypatch.setenv("SB_HR_SMTP_FROM","hr@example.com")
+    monkeypatch.setenv("SB_HR_SMTP_USERNAME","hr@example.com")
+    monkeypatch.setenv("SB_HR_SMTP_PASSWORD","test-secret")
+    monkeypatch.setattr(mailer.smtplib,"SMTP",FakeSMTP)
+    mailer.send_candidate_email(recipient="candidate@example.com",subject=" Interview ",body="Details")
+    assert ("starttls",) in sent
+    assert ("login","hr@example.com","test-secret") in sent
+    assert ("send","candidate@example.com"," Interview ") in sent
