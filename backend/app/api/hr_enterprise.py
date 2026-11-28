@@ -16,7 +16,7 @@ from app.api.hr import _actor, _manager, _employee, _hr_connection, _db_error
 router = APIRouter(prefix="/hr/enterprise", tags=["hr-enterprise"])
 
 DOMAINS = {"recruitment","documents","performance","learning","assets","travel","exit","analytics"}
-MANAGER_ROLES = {"super_admin","owner","admin","manager","hr_manager"}
+MANAGER_ROLES = {"super_admin","owner","admin","manager"}
 EMPLOYEE_DOMAINS = {"documents","performance","learning","assets","travel","exit"}
 STATUSES = {
  "recruitment":{"draft","open","screening","shortlisted","interview","offered","hired","rejected","withdrawn","archived"},
@@ -138,7 +138,7 @@ def list_records(domain:str,request:Request,status:str|None=None,employee_id:int
 
 @router.post("/{domain}",status_code=201)
 def create_record(domain:str,payload:RecordInput,request:Request):
-    actor=_manager(request) if domain in {"recruitment","analytics"} or payload.employee_id is None else _actor(request)
+    actor=_manager(request) if domain in {"recruitment","analytics"} or _role(request) in MANAGER_ROLES else _actor(request)
     try:
         with _hr_connection() as conn:
             with conn.transaction():
