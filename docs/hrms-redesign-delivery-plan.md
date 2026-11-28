@@ -133,7 +133,7 @@ The enterprise workflow slice has advanced beyond generic record entry:
 - The analytics page consumes the existing permission-checked HR overview aggregation. It deliberately displays unavailable attendance measures as unavailable instead of inferring absence or lateness.
 - Migration 072 adds unique candidate-email, asset-tag, candidate/job application, and document-object-key indexes plus a due-date lookup index.
 
-Latest validated branch head at this update: `922c81b2f6cb8f3bc628a278de69d13377ca16b4`. Backend identity tests passed (664 passed, 62 skipped, 1 warning); frontend tests and production build passed; Python dependency/SAST, frontend dependency audit and secret scanning passed.
+Latest validated branch head at this update: `9b1fcbfd34231f787e2c0b8b51a85c503803b072`. Backend identity tests passed (666 passed, 62 skipped, 1 warning); frontend tests and production build passed; Python dependency/SAST, frontend dependency audit and secret scanning passed.
 
 ## Still not production-complete
 
@@ -148,3 +148,10 @@ The eight domains still need malware scanning and retention/expiry automation fo
 - The manager expiry queue surfaces employee documents, learning certificates and asset warranties that are due within the next 30 days or already overdue.
 - Asset master records retain vendor, purchase date, purchase reference, location and warranty expiry metadata. The warranty date is included in the shared due-date index.
 - The analytics workspace provides a CSV export of the existing HR overview metrics; richer filters and XLSX/PDF export remain outstanding.
+
+
+## Latest follow-on integration details
+
+- Recruitment now validates positive job headcount and tracks filled positions. Interview feedback includes a bounded rating and decision; candidate communications are stored as auditable inbound/outbound interaction records. Offer conversion locks the job opening and closes it when approved headcount is filled.
+- Travel request creation requires an active policy matching the employee's employment type. Per-trip and per-diem ceilings are enforced on requests; booking, advances and final claims are checked against the selected policy.
+- The expiry queue also includes recruitment offer expiry dates. Migration 072's due-date index covers recruitment offers.
