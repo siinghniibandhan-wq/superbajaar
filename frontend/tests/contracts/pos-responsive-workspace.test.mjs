@@ -56,3 +56,11 @@ test("POS sales history opens server-backed item and payment details", () => {
   assert.match(workspace, /selectedSale\.payments/);
   assert.match(workspace, /Close details/);
 });
+
+
+test("POS sales history paginates server-filtered results", () => {
+  assert.match(workspace, /salesOffset/);
+  assert.match(workspace, /offset: String\(offset\)/);
+  assert.match(workspace, />Previous</);
+  assert.match(workspace, />Next</);
+});
