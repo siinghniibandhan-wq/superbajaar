@@ -1,5 +1,6 @@
 """Order management API foundation. Requires database/migrations/002_orders.sql to be applied."""
 from decimal import Decimal
+from datetime import datetime
 import json
 import secrets
 import re
@@ -238,6 +239,156 @@ class OrderStatusUpdate(BaseModel):
         if value not in ORDER_STATUSES:
             raise ValueError("Unsupported order status")
         return value
+
+
+class PromotionCreate(BaseModel):
+    code: str = Field(min_length=2, max_length=40)
+    name: str = Field(min_length=2, max_length=160)
+    discount_type: str = Field(pattern=r"^(percent|fixed)$")
+    discount_value: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
+    minimum_subtotal: Decimal = Field(default=0, ge=0, max_digits=14, decimal_places=2)
+    maximum_discount: Decimal | None = Field(default=None, gt=0, max_digits=14, decimal_places=2)
+    usage_limit: int | None = Field(default=None, gt=0)
+    per_customer_limit: int | None = Field(default=None, gt=0)
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    is_active: bool = True
+
+    @field_validator("code")
+    @classmethod
+    def clean_code(cls, value):
+        code = value.strip().upper()
+        if not re.fullmatch(r"[A-Z0-9][A-Z0-9_-]{1,39}", code):
+            raise ValueError("Promotion code must be 2-40 letters, numbers, hyphens or underscores")
+        return code
+
+    @field_validator("name")
+    @classmethod
+    def clean_name(cls, value):
+        if not value.strip():
+            raise ValueError("Promotion name cannot be blank")
+        return value.strip()
+
+    @field_validator("discount_value")
+    @classmethod
+    def validate_value(cls, value, info):
+        if info.data.get("discount_type") == "percent" and value > 100:
+            raise ValueError("Percentage discount cannot exceed 100")
+        return value
+
+    @field_validator("maximum_discount")
+    @classmethod
+    def max_discount_only_for_percentage(cls, value, info):
+        if value is not None and info.data.get("discount_type") != "percent":
+            raise ValueError("Maximum discount cap is only valid for percentage promotions")
+        return value
+
+    @field_validator("ends_at")
+    @classmethod
+    def valid_window(cls, value, info):
+        starts = info.data.get("starts_at")
+        if starts is not None and value is not None and value <= starts:
+            raise ValueError("Promotion end must be after start")
+        return value
+
+
+class PromotionUpdate(PromotionCreate):
+    pass
+
+
+def _require_promotion_admin(request: Request):
+    if getattr(request.state, "role", "") not in {"super_admin", "admin"}:
+        raise HTTPException(status_code=403, detail="Administrator access required")
+
+
+@router.get("/promotions/quote")
+def promotion_quote(code: str = Query(min_length=2, max_length=40), subtotal: Decimal = Query(gt=0)):
+    """Non-reserving quote. Checkout recalculates and enforces all usage limits in its transaction."""
+    normalized = code.strip().upper()
+    try:
+        with _connect() as conn:
+            promo = conn.execute(
+                "SELECT * FROM promotions WHERE upper(code)=upper(%s) AND is_active=TRUE",
+                (normalized,),
+            ).fetchone()
+            if promo is None:
+                raise HTTPException(status_code=404, detail="Coupon code is invalid or inactive")
+            now = conn.execute("SELECT now() AS current_time").fetchone()["current_time"]
+            if promo["starts_at"] and promo["starts_at"] > now:
+                raise HTTPException(status_code=422, detail="Coupon is not active yet")
+            if promo["ends_at"] and promo["ends_at"] <= now:
+                raise HTTPException(status_code=422, detail="Coupon has expired")
+            used = conn.execute("SELECT count(*) AS n FROM promotion_redemptions WHERE promotion_id=%s",(promo["id"],)).fetchone()["n"]
+            if promo["usage_limit"] is not None and used >= promo["usage_limit"]:
+                raise HTTPException(status_code=409, detail="Coupon redemption limit has been reached")
+            try:
+                amount = calculate_promotion_discount(
+                    subtotal=subtotal, discount_type=promo["discount_type"], discount_value=promo["discount_value"],
+                    minimum_subtotal=promo["minimum_subtotal"], maximum_discount=promo["maximum_discount"],
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            return {"code":promo["code"],"name":promo["name"],"discount_amount":amount,"subtotal":subtotal,"payable":subtotal-amount}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.get("/promotions")
+def list_promotions(request: Request, include_inactive: bool = False):
+    _require_promotion_admin(request)
+    try:
+        with _connect() as conn:
+            rows = conn.execute(
+                "SELECT p.*, (SELECT count(*) FROM promotion_redemptions r WHERE r.promotion_id=p.id) AS redeemed_count "
+                "FROM promotions p WHERE (%s OR p.is_active=TRUE) ORDER BY p.created_at DESC",
+                (include_inactive,),
+            ).fetchall()
+        return {"items":rows}
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.post("/promotions", status_code=201)
+def create_promotion(payload: PromotionCreate, request: Request):
+    _require_promotion_admin(request)
+    try:
+        with _connect() as conn:
+            row = conn.execute(
+                "INSERT INTO promotions(code,name,discount_type,discount_value,minimum_subtotal,maximum_discount,usage_limit,per_customer_limit,starts_at,ends_at,is_active,created_by_user_id) "
+                "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *",
+                (payload.code,payload.name,payload.discount_type,payload.discount_value,payload.minimum_subtotal,payload.maximum_discount,
+                 payload.usage_limit,payload.per_customer_limit,payload.starts_at,payload.ends_at,payload.is_active,getattr(request.state,"user_id",None)),
+            ).fetchone()
+        return row
+    except psycopg.Error as exc:
+        if getattr(exc,"sqlstate",None)=="23505":
+            raise HTTPException(status_code=409,detail="Promotion code already exists") from exc
+        raise _db_error(exc) from exc
+
+
+@router.patch("/promotions/{promotion_id}")
+def update_promotion(promotion_id: int, payload: PromotionUpdate, request: Request):
+    _require_promotion_admin(request)
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                current = conn.execute("SELECT id FROM promotions WHERE id=%s FOR UPDATE",(promotion_id,)).fetchone()
+                if current is None:
+                    raise HTTPException(status_code=404,detail="Promotion not found")
+                row = conn.execute(
+                    "UPDATE promotions SET code=%s,name=%s,discount_type=%s,discount_value=%s,minimum_subtotal=%s,maximum_discount=%s,usage_limit=%s,per_customer_limit=%s,starts_at=%s,ends_at=%s,is_active=%s,updated_at=now() WHERE id=%s RETURNING *",
+                    (payload.code,payload.name,payload.discount_type,payload.discount_value,payload.minimum_subtotal,payload.maximum_discount,
+                     payload.usage_limit,payload.per_customer_limit,payload.starts_at,payload.ends_at,payload.is_active,promotion_id),
+                ).fetchone()
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        if getattr(exc,"sqlstate",None)=="23505":
+            raise HTTPException(status_code=409,detail="Promotion code already exists") from exc
+        raise _db_error(exc) from exc
 
 
 @router.get("")
