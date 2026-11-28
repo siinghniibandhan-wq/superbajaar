@@ -322,11 +322,17 @@ def payment_reconciliation():
                 "FROM orders WHERE status <> 'cancelled'"
             ).fetchone()
             captured = conn.execute(
-                "SELECT COALESCE(sum(amount), 0) AS amount FROM payments WHERE status='captured'"
+                "SELECT COALESCE(sum(amount), 0) AS amount FROM payments WHERE status IN ('captured','refunded')"
             ).fetchone()["amount"]
             refunded = conn.execute(
-                "SELECT COALESCE(sum(amount), 0) AS amount FROM payments WHERE status='refunded'"
+                "SELECT COALESCE(sum(amount), 0) AS amount FROM payment_refunds WHERE status='processed'"
             ).fetchone()["amount"]
+            pending_refunds = conn.execute(
+                "SELECT count(*) AS count,COALESCE(sum(amount),0) AS amount FROM payment_refunds WHERE status='pending'"
+            ).fetchone()
+            refund_channels = conn.execute(
+                "SELECT provider,count(*) AS count,COALESCE(sum(amount),0) AS amount FROM payment_refunds WHERE status='processed' GROUP BY provider ORDER BY provider"
+            ).fetchall()
         by_status = {row["status"]: {"count": row["payment_count"], "amount": row["amount"]} for row in rows}
         return {
             "scope": "recorded_application_data_only",
