@@ -76,6 +76,7 @@ def _initial_status(domain, record_type):
         ("performance", "acknowledgement"): "acknowledged",
         ("learning", "assessment"): "completed",
         ("learning", "certificate"): "completed",
+        ("learning", "progress"): "in_progress",
         ("assets", "maintenance"): "maintenance",
         ("travel", "booking"): "booked",
         ("travel", "advance"): "approved",
@@ -114,6 +115,7 @@ REQUIRED = {
  "learning":{
   "course":["provider","course_type"],
   "enrollment":["course_id"],
+  "progress":["enrollment_id","progress_percent"],
   "assessment":["enrollment_id","score","pass_score"],
   "certificate":["enrollment_id","certificate_number","valid_until"]
  },
@@ -190,6 +192,7 @@ def _validate_references(conn, domain, record_type, data):
         ("performance","calibration"): {"review_id": ("performance","review")},
         ("performance","acknowledgement"): {"review_id": ("performance","review")},
         ("learning","enrollment"): {"course_id": ("learning","course")},
+        ("learning","progress"): {"enrollment_id": ("learning","enrollment")},
         ("learning","assessment"): {"enrollment_id": ("learning","enrollment")},
         ("learning","certificate"): {"enrollment_id": ("learning","enrollment")},
         ("assets","allocation"): {"asset_id": ("assets","asset")},
@@ -252,6 +255,10 @@ def _validate_references(conn, domain, record_type, data):
         course=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["course_id"],)).fetchone()
         if course["status"]!="enrolled":
             raise HTTPException(409,"The course must be published for enrollment before employees can enroll")
+    if domain=="learning" and record_type=="progress":
+        enrollment=conn.execute("SELECT status,employee_id FROM hr_enterprise_records WHERE id=%s",(data["enrollment_id"],)).fetchone()
+        if enrollment["status"]!="in_progress":
+            raise HTTPException(409,"Progress evidence can be recorded only for an in-progress enrollment")
     if domain=="learning" and record_type=="assessment":
         enrollment=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["enrollment_id"],)).fetchone()
         if enrollment["status"] not in {"in_progress","completed"}:
@@ -358,6 +365,11 @@ def _validate(domain, record_type, payload):
         accepted=str(data["acknowledgement"]).strip().lower()
         if accepted not in {"true","false"}: raise HTTPException(422,"Acknowledgement must be true or false")
         data["acknowledgement"]=accepted=="true"
+    if domain=="learning" and record_type=="progress":
+        try: progress=Decimal(str(data["progress_percent"]))
+        except InvalidOperation: raise HTTPException(422,"Course progress must be numeric")
+        if progress<0 or progress>100: raise HTTPException(422,"Course progress must be between 0 and 100")
+        data["progress_percent"]=str(progress)
     if domain=="learning" and record_type=="assessment":
         try: score=Decimal(str(data["score"])); passing=Decimal(str(data["pass_score"])); enrollment_id=int(data["enrollment_id"])
         except (InvalidOperation,ValueError,TypeError): raise HTTPException(422,"Assessment enrollment and scores must be valid")
@@ -652,6 +664,10 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                     raise HTTPException(422,"Parent record must belong to the same HR domain")
                 data=_validate(domain,payload.record_type,payload.payload)
                 _validate_references(conn,domain,payload.record_type,data)
+                if domain=="learning" and payload.record_type=="progress":
+                    enrollment=conn.execute("SELECT employee_id FROM hr_enterprise_records WHERE id=%s",(int(data["enrollment_id"]),)).fetchone()
+                    if employee_id is None or enrollment["employee_id"] is None or int(employee_id)!=int(enrollment["employee_id"]):
+                        raise HTTPException(403,"Learning progress must be recorded by the enrolled employee")
                 if domain=="assets" and payload.record_type=="allocation":
                     allocation_employee_id=int(data["employee_id"])
                     if employee_id is None:
