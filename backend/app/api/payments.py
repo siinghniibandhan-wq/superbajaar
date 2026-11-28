@@ -231,6 +231,78 @@ def create_payment_refund(
         raise _db_error(exc) from exc
 
 
+@router.post("/{payment_id}/manual-refunds", status_code=201)
+def create_manual_payment_refund(
+    payment_id: int,
+    payload: PaymentRefundCreate,
+    request: Request,
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=16, max_length=120),
+):
+    """Record manager-approved cash/terminal refunds; provider-managed payments must use the gateway refund route."""
+    role = getattr(request.state, "role", None)
+    actor_id = getattr(request.state, "user_id", None)
+    actor_email = getattr(request.state, "user_email", None)
+    if role not in {"manager", "admin", "super_admin"} or not actor_id or not actor_email:
+        raise HTTPException(status_code=403, detail="A manager or administrator session is required to refund a payment")
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                lock_key = f"manual-payment-refund:{payment_id}:{idempotency_key}"
+                conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (lock_key,))
+                previous = conn.execute(
+                    "SELECT id,payment_id,amount,status,provider,provider_refund_id,idempotency_key,note,created_at "
+                    "FROM payment_refunds WHERE idempotency_key=%s FOR UPDATE",
+                    (idempotency_key,),
+                ).fetchone()
+                if previous:
+                    if int(previous["payment_id"]) != payment_id or Decimal(str(previous["amount"])) != payload.amount or previous["note"] != payload.note or previous["provider"] != "manual":
+                        raise HTTPException(status_code=409, detail="Refund idempotency key was reused with different details")
+                    return previous
+                payment = conn.execute(
+                    "SELECT p.id,p.order_id,p.amount,p.status,p.method,p.provider_reference,o.order_number,o.channel,o.pos_register_shift_id "
+                    "FROM payments p JOIN orders o ON o.id=p.order_id WHERE p.id=%s FOR UPDATE OF p,o",
+                    (payment_id,),
+                ).fetchone()
+                if payment is None:
+                    raise HTTPException(status_code=404, detail="Payment not found")
+                if payment["status"] not in {"captured", "refunded"}:
+                    raise HTTPException(status_code=409, detail="Only captured payments can be refunded")
+                if payment["provider_reference"]:
+                    raise HTTPException(status_code=409, detail="This payment is provider-managed; use the gateway refund workflow")
+                refunded = conn.execute(
+                    "SELECT COALESCE(sum(amount),0) AS amount FROM payment_refunds WHERE payment_id=%s AND status IN ('processed','pending')",
+                    (payment_id,),
+                ).fetchone()["amount"]
+                remaining = Decimal(str(payment["amount"])) - Decimal(str(refunded))
+                if payload.amount > remaining:
+                    raise HTTPException(status_code=422, detail=f"Refund exceeds the remaining refundable amount {remaining}")
+                shift_id = payment["pos_register_shift_id"]
+                if payment["method"] == "cod" and payment["channel"] == "pos":
+                    shift = conn.execute("SELECT status FROM pos_register_shifts WHERE id=%s FOR UPDATE", (shift_id,)).fetchone()
+                    if not shift or shift["status"] != "open":
+                        raise HTTPException(status_code=409, detail="Cash refunds against POS sales must be recorded during an open cashier shift")
+                refund = conn.execute(
+                    "INSERT INTO payment_refunds(payment_id,order_id,amount,status,provider,idempotency_key,note,created_by_user_id,created_by_email) "
+                    "VALUES(%s,%s,%s,'processed','manual',%s,%s,%s,%s) "
+                    "RETURNING id,payment_id,order_id,amount,status,provider,provider_refund_id,idempotency_key,note,created_at",
+                    (payment_id,payment["order_id"],payload.amount,idempotency_key,payload.note,int(actor_id),str(actor_email)),
+                ).fetchone()
+                total_refunded = Decimal(str(refunded)) + payload.amount
+                if total_refunded >= Decimal(str(payment["amount"])):
+                    conn.execute("UPDATE payments SET status='refunded',updated_at=now() WHERE id=%s", (payment_id,))
+                if payment["method"] == "cod" and payment["channel"] == "pos":
+                    conn.execute(
+                        "INSERT INTO pos_cash_movements(shift_id,movement_type,amount,reason,reference,created_by) "
+                        "VALUES(%s,'cash_out',%s,%s,%s,%s)",
+                        (shift_id,payload.amount,"Refund: "+payment["order_number"],"payment-refund:"+str(refund["id"]),int(actor_id)),
+                    )
+                return refund
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
 @router.get("/reconciliation")
 def payment_reconciliation():
     """Summarise recorded payment states; this is not a bank or gateway settlement reconciliation."""
