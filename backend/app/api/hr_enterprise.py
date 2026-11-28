@@ -777,7 +777,8 @@ def execute_document_retention(request:Request):
             with conn.transaction():
                 rows=conn.execute(
                     "SELECT * FROM hr_enterprise_records WHERE domain='documents' AND status='archived' "
-                    "AND due_date IS NOT NULL AND due_date<=CURRENT_DATE "
+                    "AND payload->>'retention_until' IS NOT NULL "
+                    "AND (payload->>'retention_until')::date<=CURRENT_DATE "
                     "AND COALESCE((payload->>'legal_hold')::boolean,false)=false "
                     "AND payload->>'storage_deleted_at' IS NULL FOR UPDATE"
                 ).fetchall()
