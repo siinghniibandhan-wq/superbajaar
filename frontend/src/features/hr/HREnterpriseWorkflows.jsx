@@ -69,12 +69,12 @@ const managerOnlyTypes={
  recruitment:["job_opening","candidate","application","interview","interview_feedback","offer","communication"],
  performance:["review_template","review_cycle","review","calibration"],
  learning:["course","assessment","certificate"],
- assets:["asset","allocation","maintenance"],
+ assets:["asset","allocation","maintenance","procurement","stock_receipt","stock_reconciliation","asset_loss"],
  travel:["travel_policy","booking","advance"],
  exit:["clearance","settlement"],
  analytics:["report"]
 };
-const optionalFields=new Set(["last_name","phone","source","resume_reference","description","serial_number","purchase_value","condition","completion_due","due_date","expiry_date","handover_owner","weight","department_id","reports_to_employee_id","acceptance_reference","evidence_reference","vendor","purchase_date","warranty_expiry","purchase_order_reference","location"]);
+const optionalFields=new Set(["last_name","phone","source","resume_reference","description","serial_number","purchase_value","condition","completion_due","due_date","expiry_date","handover_owner","weight","department_id","reports_to_employee_id","acceptance_reference","evidence_reference","vendor","purchase_date","warranty_expiry","purchase_order_reference","location","max_attempts"]);
 const referenceTypeByField={policy_id:"travel_policy",candidate_id:"candidate",job_id:"job_opening",application_id:"application",interview_id:"interview",cycle_id:"review_cycle",template_id:"review_template",review_id:"review",course_id:"course",enrollment_id:"enrollment",asset_id:"asset",travel_record_id:"request",exit_record_id:"case"};
 const blank={};
 
