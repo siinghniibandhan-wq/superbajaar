@@ -37,7 +37,7 @@ export default function POSWorkspace({ onBack }) {
   const [recentSales, setRecentSales] = useState([]);
   const [salesTotal, setSalesTotal] = useState(0);
   const [salesOffset, setSalesOffset] = useState(0);
-  const [salesFilters, setSalesFilters] = useState({ search: "", date_from: "", date_to: "", payment_method: "", register_id: "" });
+  const [salesFilters, setSalesFilters] = useState({ search: "", date_from: "", date_to: "", payment_method: "", register_id: "", cashier_user_id: "" });
   const [salesBusy, setSalesBusy] = useState(false);
   const [selectedSale, setSelectedSale] = useState(null);
   const [saleDetailBusy, setSaleDetailBusy] = useState(false);
@@ -428,9 +428,10 @@ export default function POSWorkspace({ onBack }) {
         <label>From date<input type="date" value={salesFilters.date_from} onChange={event => setSalesFilters(old => ({ ...old, date_from: event.target.value }))} /></label>
         <label>To date<input type="date" value={salesFilters.date_to} onChange={event => setSalesFilters(old => ({ ...old, date_to: event.target.value }))} /></label>
         <label>Register<select value={salesFilters.register_id} onChange={event => setSalesFilters(old => ({ ...old, register_id: event.target.value }))}><option value="">All registers</option>{registers.map(register => <option key={register.id} value={register.id}>{register.register_code} — {register.name}</option>)}</select></label>
+        <label>Cashier user ID<input type="number" min="1" step="1" value={salesFilters.cashier_user_id} onChange={event => setSalesFilters(old => ({ ...old, cashier_user_id: event.target.value }))} placeholder="All cashiers" /></label>
         <label>Payment method<select value={salesFilters.payment_method} onChange={event => setSalesFilters(old => ({ ...old, payment_method: event.target.value }))}><option value="">All methods</option><option value="cod">Cash / COD</option><option value="upi">UPI</option><option value="card">Card</option><option value="wallet">Wallet</option><option value="netbanking">Net banking</option><option value="bank_transfer">Bank transfer</option><option value="other">Other</option></select></label>
         <button type="submit" disabled={salesBusy}>{salesBusy ? "Searching…" : "Apply filters"}</button>
-        <button type="button" onClick={() => { const cleared = { search: "", date_from: "", date_to: "", payment_method: "", register_id: "" }; setSalesFilters(cleared); loadSales(cleared, 0); }} disabled={salesBusy}>Clear</button>
+        <button type="button" onClick={() => { const cleared = { search: "", date_from: "", date_to: "", payment_method: "", register_id: "", cashier_user_id: "" }; setSalesFilters(cleared); loadSales(cleared, 0); }} disabled={salesBusy}>Clear</button>
       </form>
       <div className="sb-data-heading"><span>Showing {recentSales.length} of {salesTotal}</span><button type="button" onClick={() => loadSales()} disabled={salesBusy}>Refresh sales</button></div>
       {recentSales.length ? <div className="sb-table-wrap"><table><thead><tr><th>Order</th><th>Customer</th><th>Register / cashier</th><th>Status</th><th>Total</th><th>Captured</th><th>Payment state</th><th>Details</th></tr></thead><tbody>{recentSales.map(sale => <tr key={sale.id}><td>{sale.order_number}</td><td>{sale.customer_name}<br/><small>{sale.customer_phone || "—"}</small></td><td>{sale.register_id ? "#" + sale.register_id : "—"} / {sale.cashier_user_id || "—"}</td><td>{sale.status}</td><td>{money(sale.total)}</td><td>{money(sale.captured_amount)}</td><td>{sale.payment_statuses || "No payment record"}</td><td><button type="button" onClick={() => openSaleDetails(sale.id)} disabled={saleDetailBusy}>View</button></td></tr>)}</tbody></table></div> : <p className="sb-empty">{salesBusy ? "Loading sales…" : "No POS sales match these filters."}</p>}
