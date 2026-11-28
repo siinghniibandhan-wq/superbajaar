@@ -262,3 +262,17 @@ def test_travel_policy_and_request_amount_fields_are_validated():
             "name":"Invalid", "employment_type":"all",
             "max_trip_cost":"0", "per_diem_limit":"3000", "currency":"INR"
         })
+
+
+
+def test_performance_goal_requires_cycle_and_valid_weight():
+    result = _validate("performance", "goal", {
+        "cycle_id":8, "description":"Reduce picking errors",
+        "measure":"Error rate", "target":"Below 1%", "weight":"25"
+    })
+    assert result["weight"] == "25"
+    with pytest.raises(HTTPException):
+        _validate("performance", "goal", {
+            "cycle_id":8, "description":"Reduce picking errors",
+            "measure":"Error rate", "target":"Below 1%", "weight":"110"
+        })
