@@ -550,6 +550,17 @@ def _validate(domain, record_type, payload):
             except (ValueError,TypeError): raise HTTPException(422,"Analytics report filters must be valid JSON")
         if not isinstance(filters,dict):
             raise HTTPException(422,"Analytics report filters must be a JSON object")
+        allowed_domains={"documents","performance","learning","assets","travel","exit","analytics"}
+        if filters.get("domain") not in (None,"") and filters["domain"] not in allowed_domains:
+            raise HTTPException(422,"Analytics report domain filter is invalid")
+        if filters.get("department_id") not in (None,""):
+            try: filters["department_id"]=int(filters["department_id"])
+            except (ValueError,TypeError): raise HTTPException(422,"Analytics report department ID must be a positive integer")
+            if filters["department_id"]<=0: raise HTTPException(422,"Analytics report department ID must be a positive integer")
+        if filters.get("record_type") is not None and len(str(filters["record_type"]))>48:
+            raise HTTPException(422,"Analytics report record type is too long")
+        if filters.get("status") is not None and len(str(filters["status"]))>32:
+            raise HTTPException(422,"Analytics report status is too long")
         frequency=str(data.get("frequency","weekly")).strip().lower()
         if frequency not in {"weekly","monthly"}:
             raise HTTPException(422,"Scheduled analytics frequency must be weekly or monthly")
