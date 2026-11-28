@@ -247,7 +247,7 @@ def create_manual_payment_refund(
         with _connect() as conn:
             with conn.transaction():
                 lock_key = f"manual-payment-refund:{payment_id}:{idempotency_key}"
-                conn.execute("SELECT pg_advisory_xact_lock(%s)", (payload.order_id,))
+                conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (lock_key,))
                 previous = conn.execute(
                     "SELECT id,payment_id,amount,status,provider,provider_refund_id,idempotency_key,note,created_at "
                     "FROM payment_refunds WHERE idempotency_key=%s FOR UPDATE",
