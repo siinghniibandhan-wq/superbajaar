@@ -104,4 +104,4 @@ def test_clamav_stream_uses_nul_terminated_command_and_length_framing(monkeypatc
     monkeypatch.setattr(docs.socket, "create_connection", lambda *args, **kwargs: fake)
 
     assert docs.scan_employee_document(b"abc") == "clean"
-    assert sent == [b"zINSTREAM\\0", struct.pack("!I", 3) + b"abc", struct.pack("!I", 0)]
+    assert sent == [b"zINSTREAM\0", struct.pack("!I", 3) + b"abc", struct.pack("!I", 0)]
