@@ -118,6 +118,29 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
    setHireOffer(item);setHireAccepted(false);
    setHireForm(old=>({...old,first_name:data.first_name||"",last_name:data.last_name||"",email:data.email||"",phone:data.phone||"",acceptance_reference:""}));
  }
+ function exportAnalyticsCsv(){
+   if(!analyticsData)return;
+   const rows=[
+    ["Metric","Value"],
+    ["Month",analyticsData.period?.month],
+    ["Total workforce",analyticsData.workforce?.total],
+    ["Active workforce",analyticsData.workforce?.active],
+    ["Inactive workforce",analyticsData.workforce?.inactive],
+    ["Joiners",analyticsData.workforce?.joiners],
+    ["Exits",analyticsData.workforce?.exits],
+    ["Present employees",analyticsData.attendance?.present],
+    ["Absent employees",analyticsData.attendance?.absent],
+    ["Attendance rate",analyticsData.attendance?.rate],
+    ["Approved payroll gross",analyticsData.payroll?.gross],
+    ["Approved payroll net",analyticsData.payroll?.net]
+   ];
+   rows.push([],["Department","Headcount"],...(analyticsData.workforce?.departments||[]).map(d=>[d.name,d.headcount]));
+   const quote=v=>'"'+String(v??"").replace(/"/g,'""')+'"';
+   const csv=rows.map(row=>row.map(quote).join(",")).join("\r\n");
+   const url=URL.createObjectURL(new Blob(["\\uFEFF",csv],{type:"text/csv;charset=utf-8"}));
+   const link=document.createElement("a");link.href=url;link.download="hr-workforce-"+analyticsMonth+".csv";
+   document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
+ }
  async function submitHire(e){
    e.preventDefault();if(!hireOffer)return;
    if(!hireAccepted){setError("Confirm that the candidate accepted this offer.");return;}
@@ -143,7 +166,7 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
    {error&&<p className="sb-alert" role="alert">{error}</p>}{notice&&<p className="sb-success" role="status">{notice}</p>}
    <h3>{current.label}</h3>
    {domain==="analytics"&&manager&&<section className="hr-panel" aria-label="Computed workforce analytics">
-    <div className="hr-directory-heading"><div><h3>Workforce analytics</h3><p>Live metrics from the existing HR, attendance, leave and approved payroll records.</p></div><label>Reporting month<input type="month" value={analyticsMonth} onChange={e=>setAnalyticsMonth(e.target.value)}/></label></div>
+    <div className="hr-directory-heading"><div><h3>Workforce analytics</h3><p>Live metrics from the existing HR, attendance, leave and approved payroll records.</p></div><label>Reporting month<input type="month" value={analyticsMonth} onChange={e=>setAnalyticsMonth(e.target.value)}/></label><button type="button" className="hr-secondary" disabled={!analyticsData} onClick={exportAnalyticsCsv}>Export CSV</button></div>
     {analyticsError&&<p role="alert" className="sb-alert">{analyticsError}</p>}
     {analyticsLoading&&<p role="status">Loading workforce metrics…</p>}
     {analyticsData&&<><div className="hr-overview">
