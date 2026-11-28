@@ -329,7 +329,7 @@ export default function POSWorkspace({ onBack }) {
   const shortBy = !splitTender && tenderedNumber != null && tenderedNumber < total ? round2(total - tenderedNumber) : null;
   const splitCash = splitCashAmount === "" ? null : Number(splitCashAmount);
   const splitOnline = splitCash == null ? null : round2(total - splitCash);
-  const splitIsTwoTenders = splitTender && splitCash != null && splitCash > 0 && splitCash < total && splitOnline > 0;
+  const splitIsTwoTenders = splitTender && splitCash != null && splitCash > 0 && splitCash < total && splitOnline > 0;\n  const checkoutMethod = splitTender ? (splitCash === total ? "cod" : splitOnlineMethod) : method;
   const splitTenders = splitIsTwoTenders ? [{method:"cod",amount:splitCash},{method:splitOnlineMethod,amount:splitOnline}] : null;
   const quickCash = useMemo(() => {
     if (method !== "cod" || total <= 0) return [];
@@ -469,7 +469,7 @@ export default function POSWorkspace({ onBack }) {
         }
       } else {
         let payment = payments[0];
-        if (method !== "cod" && payment) {
+        if (checkoutMethod !== "cod" && payment) {
           const gatewayOrder = await apiRequest("/razorpay/orders", {method:"POST",body:JSON.stringify({order_id:order.id,payment_id:payment.id})});
           await loadPosRazorpay();
           const result = await new Promise((resolve,reject)=>{
@@ -485,7 +485,7 @@ export default function POSWorkspace({ onBack }) {
       }
       let payment = payments[0];
       const sale = {
-        order, payment, payments, method: splitIsTwoTenders ? "split" : method, at: new Date().toISOString(), counter: activeShift?.register_code || "",
+        order, payment, payments, method: splitTender ? (splitIsTwoTenders ? "split" : checkoutMethod) : method, at: new Date().toISOString(), counter: activeShift?.register_code || "",
         customer: { name: customerName, phone: customer.phone.trim() },
         tendered: splitIsTwoTenders ? splitCash : tenderedNumber,
         lines: cart.map((line, index) => ({ id: line.id, name: productTitle(line), label: variantLabel(line), sku: line.sku, quantity: line.quantity, price: Number(line.selling_price || 0), tax: order.tax_lines?.[index] || null })),
@@ -645,7 +645,7 @@ export default function POSWorkspace({ onBack }) {
                 {!selectedRegisterId && <label>Stock location<select value={locationId} onChange={e => setLocationId(e.target.value)}><option value="">Choose stock location</option>{locations.map(location => <option key={location.id} value={location.id}>{location.name} · {location.location_type || "location"}</option>)}</select></label>}
               </div>}
             </div>
-            <div className="sb-pos-methods" role="radiogroup" aria-label="Payment method">
+            <label className="sb-pos-split-toggle"><input type="checkbox" checked={splitTender} onChange={e=>{setSplitTender(e.target.checked);setSplitCashAmount("");setTendered("");}}/> Split tender (cash + online)</label>{splitTender ? <div className="sb-pos-split-controls"><label>Cash portion (₹)<input type="number" min="0" max={total} step="0.01" inputMode="decimal" value={splitCashAmount} onChange={e=>setSplitCashAmount(e.target.value)} placeholder="0.00"/></label><label>Online method<select value={splitOnlineMethod} onChange={e=>setSplitOnlineMethod(e.target.value)}><option value="upi">UPI</option><option value="card">Card</option><option value="wallet">Wallet</option><option value="netbanking">Net banking</option></select></label><p>Online balance: {splitCash==null?"—":money(Math.max(0,splitOnline))}</p><small>Cash and online amounts must add up to the total. Cash is confirmed at the register; the online part is verified through Razorpay.</small></div> : <div className="sb-pos-methods" role="radiogroup" aria-label="Payment method">
               {PAYMENT_METHODS.map(m => <button type="button" role="radio" aria-checked={method === m.id} key={m.id} className={method === m.id ? "is-selected" : ""} onClick={() => { setMethod(m.id); setTendered(""); }}><i aria-hidden="true">{m.mark}</i>{m.label}</button>)}
             </div>
             <div className="sb-pos-tender">
