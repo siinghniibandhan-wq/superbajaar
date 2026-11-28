@@ -527,3 +527,14 @@
 .hr-workspace .hr-inline-field select,.hr-workspace .hr-inline-field input{min-width:125px;max-width:180px;padding:6px;font-size:12px}
 
 .hr-employee-records{display:grid;gap:16px;min-width:0}.hr-employee-records .hr-panel{min-width:0}.hr-employee-records .hr-directory-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}.hr-employee-records .hr-directory-heading h3{margin:0}.hr-employee-records .hr-directory-heading p{margin:5px 0 0;color:var(--muted,#737b82);font-size:13px}.hr-employee-records .hr-check{display:flex;align-items:center;gap:8px}.hr-employee-records .hr-check input{width:16px;min-width:16px;height:16px}
+
+
+.hr-enterprise{display:grid;gap:16px;min-width:0}
+.hr-enterprise .hr-panel{min-width:0}
+.hr-enterprise .hr-directory-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.hr-enterprise .hr-directory-heading h3{margin:0}
+.hr-enterprise .hr-directory-heading p{margin:5px 0 0;color:var(--muted,#737b82);font-size:13px}
+.hr-enterprise .hr-check{display:flex;align-items:center;gap:8px}
+.hr-enterprise .hr-check input{width:16px;min-width:16px;height:16px}
+.hr-enterprise-note{margin:0;color:var(--muted,#737b82);font-size:12px;line-height:1.5}
+.hr-enterprise .hr-table-wrap{min-width:0}
