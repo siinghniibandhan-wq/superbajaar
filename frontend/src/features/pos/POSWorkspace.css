@@ -218,3 +218,10 @@
 .sb-pos-picker-qty { min-width:58px; padding:6px 8px; border-radius:999px; background:#eee8f7; color:#5927a6; font-size:12px; font-weight:800; text-align:center; }
 .sb-pos-picker-row.is-in-cart .sb-pos-picker-qty { background:#5927a6; color:#fff; }
 .sb-pos-picker-done { min-height:48px; border:0; border-radius:12px; background:#16a34a; color:#fff; font-size:15px; font-weight:800; cursor:pointer; }
+
+/* Coupon/tax display in POS checkout */
+.sb-pos-coupon { display:flex; align-items:flex-end; gap:8px; margin:10px 0; flex-wrap:wrap; }
+.sb-pos-coupon label { flex:1 1 160px; display:flex; flex-direction:column; gap:5px; font-size:12px; }
+.sb-pos-coupon input { min-width:0; width:100%; }
+.sb-pos-coupon button { min-height:38px; }
+.sb-pos-discount { color:var(--sb-success,#18794e); }
