@@ -874,3 +874,29 @@ def test_employee_loan_accounting_rejects_same_account_and_invalid_amount():
         _employee_loan_voucher_lines(1150,1150,"500","disbursement")
     with pytest.raises(HTTPException):
         _employee_loan_voucher_lines(1150,1010,"0","repayment")
+
+
+def test_travel_payout_rejects_non_object_provider_response(monkeypatch):
+    import app.services.hr_travel_integrations as travel
+    class FakeResponse:
+        def raise_for_status(self): pass
+        def json(self): return ["paid"]
+    monkeypatch.setenv("SB_TRAVEL_PAYOUT_API_URL","https://provider.example.test")
+    monkeypatch.setenv("SB_TRAVEL_PAYOUT_API_TOKEN","test-token")
+    monkeypatch.setenv("SB_TRAVEL_PAYOUT_PROVIDER","test-provider")
+    monkeypatch.setattr(travel.httpx,"post",lambda *args,**kwargs:FakeResponse())
+    with pytest.raises(HTTPException,match="invalid payout response"):
+        travel.create_provider_payout(record_id=9,beneficiary_reference="BEN-1234",amount=Decimal("100"),currency="INR")
+
+
+def test_travel_payout_rejects_non_finite_paid_amount(monkeypatch):
+    import app.services.hr_travel_integrations as travel
+    class FakeResponse:
+        def raise_for_status(self): pass
+        def json(self): return {"payout_reference":"PAY-1234","status":"paid","paid_amount":"NaN"}
+    monkeypatch.setenv("SB_TRAVEL_PAYOUT_API_URL","https://provider.example.test")
+    monkeypatch.setenv("SB_TRAVEL_PAYOUT_API_TOKEN","test-token")
+    monkeypatch.setenv("SB_TRAVEL_PAYOUT_PROVIDER","test-provider")
+    monkeypatch.setattr(travel.httpx,"post",lambda *args,**kwargs:FakeResponse())
+    with pytest.raises(HTTPException,match="paid amount"):
+        travel.create_provider_payout(record_id=9,beneficiary_reference="BEN-1234",amount=Decimal("100"),currency="INR")
