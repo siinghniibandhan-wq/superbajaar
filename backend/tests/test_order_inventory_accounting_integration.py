@@ -94,6 +94,8 @@ def api(monkeypatch):
     client.suffix=suffix
     yield client
     app.dependency_overrides.pop(require_active_session,None)
+    with psycopg.connect(TEST_DB) as conn:
+        conn.execute("DELETE FROM accounting_event_account_mappings WHERE legal_entity_code=%s", (client.legal_entity_code,))
 
 
 def ok(response,status=200):
@@ -163,8 +165,12 @@ def test_paid_pos_cash_sale_consumes_stock_and_records_cost_once(api):
 
 
 def test_pos_order_reservation_dispatch_and_cogs_posting(api):
+    register=ok(api.post("/api/pos/registers",json={
+        "location_id":api.location_id,"register_code":"SHIP-"+api.suffix,"name":"Dispatch Counter",
+    }),201)
+    ok(api.post(f"/api/pos/registers/{register['id']}/open",json={"opening_float":"100"}),201)
     order=ok(api.post("/api/orders",json={
-        "channel":"pos","customer_name":"POS Test Customer","location_id":api.location_id,
+        "channel":"pos","customer_name":"POS Test Customer","location_id":api.location_id,"pos_register_id":register["id"],
         "checkout_idempotency_key":"integration-pos-order-key-0001",
         "lines":[{"variant_id":api.variant_id,"quantity":3}]
     }),201)
@@ -472,6 +478,10 @@ def test_manual_pos_cash_refund_is_idempotent_and_reconciles_drawer(api):
 def test_order_gst_uses_specific_category_attribute_rule_and_persists_tax_snapshot(api, monkeypatch):
     from app.api import orders
     monkeypatch.setattr(orders.settings, "company_gstin", "20ABCDE1234F1Z5")
+    register=ok(api.post("/api/pos/registers",json={
+        "location_id":api.location_id,"register_code":"GST-"+api.suffix,"name":"GST Counter",
+    }),201)
+    ok(api.post(f"/api/pos/registers/{register['id']}/open",json={"opening_float":"100"}),201)
     with psycopg.connect(TEST_DB) as conn:
         attribute_id=conn.execute(
             "INSERT INTO product_attributes(name,code,value_type,is_variant_attribute) VALUES('Packaging','packaging','text',false) RETURNING id",
@@ -490,7 +500,7 @@ def test_order_gst_uses_specific_category_attribute_rule_and_persists_tax_snapsh
             (category_id,json.dumps({"packaging":"Loose"})),
         ).fetchone()[0]
     order=ok(api.post("/api/orders",json={
-        "channel":"pos","customer_name":"GST Snapshot Customer","location_id":api.location_id,
+        "channel":"pos","customer_name":"GST Snapshot Customer","location_id":api.location_id,"pos_register_id":register["id"],
         "checkout_idempotency_key":"gst-rule-snapshot-"+api.suffix,
         "lines":[{"variant_id":api.variant_id,"quantity":1}],
     }),201)
