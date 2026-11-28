@@ -41,10 +41,23 @@ export default function HREnterpriseWorkflows({manager,employees=[]}) {
  async function create(e){
    e.preventDefault();setBusy(true);setError("");setNotice("");
    try{
-     const payload={record_type:recordType,title:title.trim(),payload:fields};
-     if(manager&&employeeId)payload.employee_id=Number(employeeId);
-     await apiRequest("/hr/enterprise/"+domain,{method:"POST",body:JSON.stringify(payload)});
-     setTitle("");setFields({});setNotice("Record created.");await load();
+     if(domain==="documents"){
+       if(!documentFile)throw new Error("Choose a document file to upload.");
+       if(manager&&!employeeId)throw new Error("Select the employee whose profile will own this document.");
+       const form=new FormData();
+       form.append("file",documentFile);
+       form.append("document_type",fields.document_type||"identity");
+       if(manager&&employeeId)form.append("employee_id",employeeId);
+       await apiRequest("/hr/enterprise/documents/upload",{method:"POST",body:form});
+       setDocumentFile(null);
+       setNotice("Document uploaded to private storage.");
+     }else{
+       const payload={record_type:recordType,title:title.trim(),payload:fields};
+       if(manager&&employeeId)payload.employee_id=Number(employeeId);
+       await apiRequest("/hr/enterprise/"+domain,{method:"POST",body:JSON.stringify(payload)});
+       setNotice("Record created.");
+     }
+     setTitle("");setFields({});await load();
    }catch(e){setError(e.message||"Unable to create HR record.");}
    finally{setBusy(false);}
  }
