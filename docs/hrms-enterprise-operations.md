@@ -14,7 +14,9 @@ Employee document uploads require all of the following:
 
 Uploads are blocked when the malware scanner is missing or unavailable. Files are checked by ClamAV before private S3 storage, and verification is blocked unless the stored scan result is clean. Downloads remain short-lived, employee-scoped and encryption-checked.
 
-Set a document expiry date separately from its retention deletion date. HR can place a legal hold by setting `payload.legal_hold=true` on the document record. After a document has been archived and its retention date has passed, an authorised HR manager can invoke:
+Set a document expiry date separately from its retention deletion date. HR can place a legal hold by setting `payload.legal_hold=true` on the document record. Expiry reminders for documents, learning certificates and asset warranties are stored as employee-scoped in-app notifications. An authorised HR manager can refresh the reminder queue with `POST /hr/enterprise/notifications/refresh`; employees can view and acknowledge their own reminders through `GET /hr/enterprise/notifications` and `POST /hr/enterprise/notifications/{id}/read`. An external scheduler can invoke the refresh endpoint daily.
+
+After a document has been archived and its retention date has passed, an authorised HR manager can invoke:
 
 `POST /hr/enterprise/documents/retention/execute`
 
@@ -73,7 +75,7 @@ The workspace includes CSV, XLSX and PDF exports. Scheduled workspace snapshots 
 
 ## Database rollout
 
-The feature branch adds migrations 071–073 for enterprise workflow records, integrity indexes and employee job grades. They are additive and must be reviewed and applied in the target environment through the repository's normal controlled migration process. They have not been applied to production by this work.
+The feature branch adds migrations 071–074 for enterprise workflow records, integrity indexes, employee job grades and durable expiry notifications. They are additive and must be reviewed and applied in the target environment through the repository's normal controlled migration process. They have not been applied to production by this work.
 
 ## Release checks still required
 
