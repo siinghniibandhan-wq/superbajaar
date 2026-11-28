@@ -64,6 +64,9 @@ class _FakePaymentConnection:
             return _FakeResult({"amount": Decimal("12.34")})
         if "FROM orders o LEFT JOIN pos_register_shifts" in normalized_query:
             return _FakeResult(self.order)
+        if "UPDATE orders SET status='confirmed'" in normalized_query and self.payment:
+            self.payment["order_status"] = "confirmed"
+            return _FakeResult()
         if "SELECT status FROM orders WHERE id=%s" in normalized_query:
             status = self.payment.get("order_status", "confirmed") if self.payment else "confirmed"
             return _FakeResult({"status": status})
