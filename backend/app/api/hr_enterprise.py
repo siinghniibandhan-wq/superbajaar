@@ -540,6 +540,20 @@ def _validate(domain, record_type, payload):
             raise HTTPException(422,"Document SHA-256 checksum is invalid")
         if data.get("content_type") not in {"application/pdf","image/jpeg","image/png"}:
             raise HTTPException(422,"Only PDF, JPEG and PNG employee documents are supported")
+    if domain=="analytics" and record_type=="report":
+        report_type=str(data["report_type"]).strip()
+        if report_type not in {"enterprise","workforce"}:
+            raise HTTPException(422,"Analytics report type must be enterprise or workforce")
+        filters=data["filters"]
+        if isinstance(filters,str):
+            try: filters=json.loads(filters)
+            except (ValueError,TypeError): raise HTTPException(422,"Analytics report filters must be valid JSON")
+        if not isinstance(filters,dict):
+            raise HTTPException(422,"Analytics report filters must be a JSON object")
+        frequency=str(data.get("frequency","weekly")).strip().lower()
+        if frequency not in {"weekly","monthly"}:
+            raise HTTPException(422,"Scheduled analytics frequency must be weekly or monthly")
+        data.update({"report_type":report_type,"filters":filters,"frequency":frequency,"delivery_channel":"workspace_snapshot"})
     if domain=="exit" and record_type=="case":
         try: last=date.fromisoformat(str(data["last_working_date"]))
         except ValueError: raise HTTPException(422,"Last working date must be an ISO date")
@@ -1360,6 +1374,9 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                         data["payroll_adjustment_id"]=adjustment["id"]
                     else:
                         data["payroll_adjustment_id"]=None
+                if domain=="analytics" and payload.record_type=="report":
+                    interval=7 if data.get("frequency")=="weekly" else 30
+                    data["next_run_at"]=(datetime.utcnow()+timedelta(days=interval)).isoformat()+"Z"
                 data["record_type"]=payload.record_type
                 status=_initial_status(domain,payload.record_type)
                 due_date=payload.due_date
@@ -1466,6 +1483,57 @@ def enterprise_workflow_analytics(
             bucket["by_type"][record_type]=bucket["by_type"].get(record_type,0)+count
             bucket["by_status"][row["status"]]=bucket["by_status"].get(row["status"],0)+count
         return {"from_date":from_date,"to_date":to_date,"domains":summary}
+    except HTTPException: raise
+    except psycopg.Error as exc: raise _db_error(exc) from exc
+
+
+@router.post("/analytics/scheduled/run")
+def run_scheduled_analytics_reports(request:Request):
+    actor=_manager(request)
+    processed=[]
+    try:
+        with _hr_connection() as conn:
+            with conn.transaction():
+                due=conn.execute(
+                    "SELECT * FROM hr_enterprise_records WHERE domain='analytics' "
+                    "AND payload->>'record_type'='report' AND status='scheduled' "
+                    "AND payload->>'next_run_at' IS NOT NULL "
+                    "AND (payload->>'next_run_at')::timestamptz<=now() FOR UPDATE SKIP LOCKED"
+                ).fetchall()
+                for row in due:
+                    payload=dict(row["payload"])
+                    frequency=payload.get("frequency","weekly")
+                    today=date.today()
+                    if frequency=="monthly":
+                        first_this_month=today.replace(day=1)
+                        period_end=first_this_month-timedelta(days=1)
+                        period_start=period_end.replace(day=1)
+                        next_run=(first_this_month.replace(day=28)+timedelta(days=4)).replace(day=1)
+                    else:
+                        period_end=today
+                        period_start=today-timedelta(days=7)
+                        next_run=today+timedelta(days=7)
+                    filters=payload.get("filters",{})
+                    result=enterprise_workflow_analytics(
+                        request,period_start,period_end,filters.get("domain"),
+                        filters.get("record_type"),filters.get("status"),
+                        int(filters["department_id"]) if filters.get("department_id") else None
+                    )
+                    payload["last_result"]=result["domains"]
+                    payload["last_run_at"]=datetime.utcnow().isoformat()+"Z"
+                    payload["last_period"]={"from_date":period_start.isoformat(),"to_date":period_end.isoformat()}
+                    payload["next_run_at"]=datetime.combine(next_run,datetime.min.time()).isoformat()+"Z"
+                    updated=conn.execute(
+                        "UPDATE hr_enterprise_records SET payload=%s::jsonb,version=version+1,updated_by_user_id=%s,updated_at=now() "
+                        "WHERE id=%s RETURNING *",(json.dumps(payload,default=str),actor,row["id"])
+                    ).fetchone()
+                    conn.execute(
+                        "INSERT INTO hr_enterprise_events(record_id,event_type,before_state,after_state,actor_user_id) "
+                        "VALUES(%s,'scheduled_report_generated',%s::jsonb,%s::jsonb,%s)",
+                        (row["id"],json.dumps(dict(row),default=str),json.dumps(dict(updated),default=str),actor)
+                    )
+                    processed.append({"report_id":row["id"],"period":payload["last_period"],"next_run_at":payload["next_run_at"]})
+        return {"processed":len(processed),"reports":processed}
     except HTTPException: raise
     except psycopg.Error as exc: raise _db_error(exc) from exc
 
