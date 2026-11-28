@@ -1,4 +1,8 @@
 -- 082: transactional promotion/coupon rules and order redemption snapshots.
+ALTER TABLE public.order_lines
+    ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(14,2) NOT NULL DEFAULT 0 CHECK (discount_amount >= 0),
+    ADD COLUMN IF NOT EXISTS discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0 CHECK (discount_percent >= 0 AND discount_percent <= 100);
+
 ALTER TABLE public.orders
     ADD COLUMN IF NOT EXISTS discount_total NUMERIC(14,2) NOT NULL DEFAULT 0 CHECK (discount_total >= 0),
     ADD COLUMN IF NOT EXISTS promotion_code VARCHAR(40);
