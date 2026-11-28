@@ -716,3 +716,17 @@ def test_analytics_report_validates_schedule_and_filters():
         _validate("analytics","report",{
             "report_type":"enterprise","frequency":"yearly","filters":{}
         })
+
+def test_exit_settlement_component_breakdowns_must_reconcile():
+    result=_validate("exit","settlement",{
+        "exit_record_id":7,"gross_due":"60000","deductions":"5000","net_due":"55000","payable_on":"2027-01-05",
+        "earnings_breakdown":[{"type":"final_salary","amount":"45000"},{"type":"leave_encashment","amount":"15000"}],
+        "deductions_breakdown":[{"type":"loan_recovery","amount":"5000"}]
+    })
+    assert len(result["earnings_breakdown"])==2
+    assert result["deductions_breakdown"][0]["amount"]=="5000"
+    with pytest.raises(HTTPException):
+        _validate("exit","settlement",{
+            "exit_record_id":7,"gross_due":"60000","deductions":"5000","net_due":"55000","payable_on":"2027-01-05",
+            "earnings_breakdown":[{"type":"final_salary","amount":"40000"}]
+        })
