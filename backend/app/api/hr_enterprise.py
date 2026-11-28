@@ -22,6 +22,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from pydantic import BaseModel, Field, field_validator
 from app.api.hr import EmployeeInput, _actor, _manager, _employee, _hr_connection, _db_error, _link_employee_login_identity, hr_overview
 from app.services.hr_travel_integrations import create_provider_booking, disburse_travel_advance, TravelIntegrationConfigurationError
+from app.services.hr_exit_settlement import calculate_exit_settlement, validate_exit_policy
 from app.services.hr_employee_documents import (
     EmployeeDocumentConfigurationError, EmployeeDocumentError,
     upload_employee_document, employee_document_download_url, delete_employee_document,
@@ -215,7 +216,7 @@ REQUIRED = {
  "exit":{
   "case":["reason","last_working_date"],
   "clearance":["exit_record_id","department","owner_employee_id"],
-  "settlement":["exit_record_id","gross_due","deductions","net_due","payable_on"]
+  "settlement":["exit_record_id","payable_on"]
  },
  "analytics":{"report":["report_type","filters"]}
 }
@@ -489,6 +490,12 @@ def _validate_references(conn, domain, record_type, data):
         policy=conn.execute("SELECT payload FROM hr_enterprise_records WHERE id=%s",(int(travel["payload"]["policy_id"]),)).fetchone()
         if Decimal(data["actual_cost"])>Decimal(policy["payload"]["max_trip_cost"]):
             raise HTTPException(422,"Claim amount exceeds the approved travel policy cap")
+    if domain=="exit" and record_type=="settlement":
+        try: date.fromisoformat(str(data["payable_on"]))
+        except (ValueError,TypeError): raise HTTPException(422,"Settlement payable date is invalid")
+        if data.get("auto_calculate") is not True:
+            missing_amounts=[k for k in ("gross_due","deductions","net_due") if data.get(k) in (None,"")]
+            if missing_amounts: raise HTTPException(422,"Manual settlements require gross_due, deductions and net_due")
     if domain=="exit" and record_type=="clearance":
         exit_case=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["exit_record_id"],)).fetchone()
         if exit_case["status"]!="clearance":
@@ -1397,6 +1404,64 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                     if existing_settlement:
                         raise HTTPException(409,"A full-and-final settlement already exists for this exit case")
                     payable=date.fromisoformat(str(data["payable_on"]))
+                    if data.get("auto_calculate") is True:
+                        policy_id=int(data.get("statutory_policy_id") or 0)
+                        if policy_id<=0: raise HTTPException(422,"Select an approved exit statutory policy to calculate final settlement")
+                        employee=conn.execute(
+                            "SELECT e.id,e.joining_date,sp.establishment_id,sp.pf_applicable_override,sp.esi_applicable_override,sp.pt_applicable_override "
+                            "FROM hr_employees e JOIN hr_employee_statutory_profiles sp ON sp.employee_id=e.id WHERE e.id=%s FOR UPDATE",
+                            (int(exit_case["employee_id"]),)
+                        ).fetchone()
+                        if not employee or not employee["joining_date"]:
+                            raise HTTPException(409,"Employee joining date and statutory establishment profile are required for automatic settlement")
+                        policy=conn.execute(
+                            "SELECT * FROM hr_exit_statutory_policy_versions WHERE id=%s AND establishment_id=%s "
+                            "AND status='approved' AND effective_from<=%s AND (effective_to IS NULL OR effective_to>=%s) FOR SHARE",
+                            (policy_id,employee["establishment_id"],payable,payable)
+                        ).fetchone()
+                        if not policy: raise HTTPException(409,"No approved exit statutory policy is effective for this employee and payable date")
+                        salary=conn.execute(
+                            "SELECT basic_salary,hra,special_allowance,other_allowance FROM hr_employee_salary_versions "
+                            "WHERE employee_id=%s AND status='approved' AND effective_from<=%s AND (effective_to IS NULL OR effective_to>=%s) "
+                            "ORDER BY effective_from DESC LIMIT 1 FOR SHARE",
+                            (int(exit_case["employee_id"]),payable,payable)
+                        ).fetchone()
+                        if not salary: raise HTTPException(409,"An approved salary version effective on the settlement date is required")
+                        basic=Decimal(str(salary["basic_salary"]))
+                        gross_monthly=sum((Decimal(str(salary[k])) for k in ("basic_salary","hra","special_allowance","other_allowance")),Decimal("0"))
+                        leave_rows=conn.execute(
+                            "SELECT DISTINCT ON (b.leave_type) b.leave_type,GREATEST(0,b.closing_days+COALESCE((SELECT sum(l.quantity_days) "
+                            "FROM hr_leave_ledger l WHERE l.employee_id=b.employee_id AND l.leave_type=b.leave_type "
+                            "AND l.created_at>b.calculated_at),0)) AS balance FROM hr_leave_balances b "
+                            "WHERE b.employee_id=%s AND b.period_start<=%s ORDER BY b.leave_type,b.period_end DESC",
+                            (int(exit_case["employee_id"]),payable)
+                        ).fetchall()
+                        leave_balances={r["leave_type"]:Decimal(str(r["balance"])) for r in leave_rows}
+                        loans=conn.execute(
+                            "SELECT id,loan_reference,outstanding_amount FROM hr_employee_loans "
+                            "WHERE employee_id=%s AND status IN ('approved','active') AND outstanding_amount>0 FOR UPDATE",
+                            (int(exit_case["employee_id"]),)
+                        ).fetchall()
+                        case_payload=conn.execute("SELECT payload FROM hr_enterprise_records WHERE id=%s",(exit_id,)).fetchone()["payload"]
+                        notice_total=int(case_payload.get("notice_days") or 0)
+                        notice_served=int(case_payload.get("notice_days_served") or 0)
+                        notice_unserved=max(0,notice_total-notice_served)
+                        service_days=(payable-employee["joining_date"]).days
+                        service_years=Decimal(max(0,service_days))/Decimal("365.2425")
+                        calculated=calculate_exit_settlement(
+                            config=policy["policy_config"],monthly_basic=basic,monthly_gross=gross_monthly,
+                            service_years=service_years,leave_balances=leave_balances,
+                            loan_balances=[dict(x) for x in loans],notice_days_unserved=notice_unserved
+                        )
+                        if Decimal(calculated["net_due"])<0:
+                            raise HTTPException(409,"Configured exit deductions exceed payable earnings; review statutory and loan recovery policy before settlement")
+                        data.update(calculated)
+                        data["statutory_policy_id"]=policy_id
+                        data["jurisdiction_code"]=policy["jurisdiction_code"]
+                        data["calculation_policy_version_id"]=policy_id
+                    gross=Decimal(str(data["gross_due"])); deductions=Decimal(str(data["deductions"])); net=Decimal(str(data["net_due"]))
+                    if gross-deductions!=net:
+                        raise HTTPException(422,"Exit settlement net due must equal gross due less deductions")
                     period_start=payable.replace(day=1)
                     next_month=(period_start.replace(day=28)+timedelta(days=4)).replace(day=1)
                     period_end=next_month-timedelta(days=1)
@@ -1414,6 +1479,21 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                              f"Full-and-final settlement for exit case #{exit_id}",actor)
                         ).fetchone()
                         data["payroll_adjustment_id"]=adjustment["id"]
+                        for component in data.get("deductions_breakdown",[]):
+                            if component.get("type")=="employee_loan_recovery":
+                                loan_id=int(component["loan_id"])
+                                amount=Decimal(str(component["amount"]))
+                                loan=conn.execute("SELECT outstanding_amount FROM hr_employee_loans WHERE id=%s AND employee_id=%s FOR UPDATE",
+                                    (loan_id,int(exit_case["employee_id"]))).fetchone()
+                                if not loan or amount>Decimal(str(loan["outstanding_amount"])):
+                                    raise HTTPException(409,"Employee loan balance changed; recalculate the settlement")
+                                conn.execute("UPDATE hr_employee_loans SET outstanding_amount=outstanding_amount-%s,status=CASE WHEN outstanding_amount-%s=0 THEN 'closed' ELSE 'active' END,updated_at=now() WHERE id=%s",
+                                    (amount,amount,loan_id))
+                                conn.execute(
+                                    "INSERT INTO hr_employee_loan_transactions(loan_id,transaction_type,amount,transaction_date,reference,payroll_adjustment_id,created_by_user_id) "
+                                    "VALUES(%s,'settlement_recovery',%s,%s,%s,%s,%s)",
+                                    (loan_id,amount,payable,f"Exit settlement #{exit_id}",adjustment["id"],actor)
+                                )
                     else:
                         data["payroll_adjustment_id"]=None
                 if domain=="analytics" and payload.record_type=="report":
