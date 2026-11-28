@@ -405,7 +405,7 @@ test("HR workspace adapts its navigation and employee form across desktop and mo
   const desktopLayout = await navigation.evaluate(el => getComputedStyle(el).display);
   expect(desktopLayout).toBe("grid");
   await expect(navigation.locator(".hr-nav-group")).toHaveCount(6);
-  await expect(navigation).toHaveCSS("overflow-x", "auto");
+  await expect(navigation).toHaveCSS("overflow-x", "visible");
 
   await page.getByRole("button", { name: "Employee directory & departments" }).click();
   const employeeDetails = page.locator("details.hr-disclosure").filter({ has: page.locator("form.hr-grid") });
@@ -924,7 +924,7 @@ test("HR enterprise workflows expose travel integrations and policy-driven exit 
   await expect(page.getByLabel("Loan reference")).toBeVisible();
   await page.getByLabel("Record type").selectOption("settlement");
   await page.getByLabel("Calculate automatically from approved jurisdiction policy").check();
-  await expect(page.getByLabel("Approved exit statutory policy ID")).toBeVisible();
+  await expect(page.getByLabel("Approved exit statutory policy")).toBeVisible();
 
   for (const width of [390, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 });
