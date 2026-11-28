@@ -271,6 +271,12 @@ class EmployeeLoanRepaymentInput(BaseModel):
     transaction_date: date
     reference: str = Field(min_length=3,max_length=160)
 
+class TravelPayoutBeneficiaryInput(BaseModel):
+    employee_id: int = Field(gt=0)
+    provider_name: str = Field(min_length=2,max_length=80)
+    beneficiary_reference: str = Field(min_length=4,max_length=160)
+    currency: str = Field(default="INR",min_length=3,max_length=3)
+
 class RecruitmentHireInput(BaseModel):
     application_id: int = Field(gt=0)
     candidate_accepted: bool
@@ -2049,18 +2055,34 @@ def transition_record(domain:str,record_id:int,payload:TransitionInput,request:R
                     already=conn.execute("SELECT accounting_voucher_id FROM hr_travel_advance_disbursements WHERE enterprise_record_id=%s",(record_id,)).fetchone()
                     if already:
                         raise HTTPException(409,"This travel advance has already been disbursed")
+                    payout_provider=os.getenv("SB_TRAVEL_PAYOUT_PROVIDER","").strip()
+                    beneficiary=conn.execute(
+                        "SELECT * FROM hr_employee_payout_beneficiaries WHERE employee_id=%s AND provider_name=%s "
+                        "AND currency=%s AND status='verified' FOR SHARE",
+                        (int(old["employee_id"]),payout_provider,str(policy["payload"].get("currency","INR")).upper())
+                    ).fetchone()
+                    if not beneficiary:
+                        raise HTTPException(409,"A verified employee payout beneficiary for the configured provider and currency is required before disbursement")
+                    amount=Decimal(str(old["payload"]["requested_amount"]))
+                    currency=str(policy["payload"].get("currency","INR")).upper()
                     try:
+                        payout=create_provider_payout(record_id=record_id,beneficiary_reference=beneficiary["beneficiary_reference"],
+                            amount=amount,currency=currency)
                         voucher_id=disburse_travel_advance(conn,record_id=record_id,employee_id=int(old["employee_id"]),
-                            amount=Decimal(str(old["payload"]["requested_amount"])),
-                            currency=str(policy["payload"].get("currency","INR")),actor_user_id=actor)
+                            amount=amount,currency=currency,actor_user_id=actor)
                     except TravelIntegrationConfigurationError as exc:
                         raise HTTPException(503,str(exc)) from exc
                     advance_payload=dict(old["payload"])
-                    advance_payload.update({"accounting_voucher_id":voucher_id,"disbursed_at":datetime.utcnow().isoformat()+"Z"})
+                    advance_payload.update({"accounting_voucher_id":voucher_id,"provider_payout_reference":payout["payout_reference"],
+                        "provider_payout_status":payout["payout_status"],"provider_name":payout["provider"],
+                        "disbursed_at":datetime.utcnow().isoformat()+"Z"})
                     old=conn.execute("UPDATE hr_enterprise_records SET payload=%s::jsonb,version=version+1,updated_by_user_id=%s,updated_at=now() WHERE id=%s RETURNING *",
                         (json.dumps(advance_payload,default=str),actor,record_id)).fetchone()
-                    conn.execute("INSERT INTO hr_travel_advance_disbursements(enterprise_record_id,employee_id,accounting_voucher_id,amount,currency,disbursed_by_user_id) VALUES(%s,%s,%s,%s,%s,%s)",
-                        (record_id,int(old["employee_id"]),voucher_id,advance_payload["requested_amount"],str(policy["payload"].get("currency","INR")).upper(),actor))
+                    conn.execute(
+                        "INSERT INTO hr_travel_advance_disbursements(enterprise_record_id,employee_id,accounting_voucher_id,amount,currency,disbursed_by_user_id,provider_name,provider_payout_reference,provider_payout_status) "
+                        "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                        (record_id,int(old["employee_id"]),voucher_id,amount,currency,actor,payout["provider"],payout["payout_reference"],payout["payout_status"])
+                    )
                 row=conn.execute("UPDATE hr_enterprise_records SET status=%s,version=version+1,updated_by_user_id=%s,updated_at=now() WHERE id=%s RETURNING *",
                   (payload.status,actor,record_id)).fetchone()
                 if domain=="assets" and record_type=="allocation":
@@ -2210,6 +2232,61 @@ def approve_employee_loan(loan_id:int,request:Request):
                 ).fetchone()
     except HTTPException: raise
     except psycopg.Error as exc: raise _db_error(exc) from exc
+
+
+@router.post("/travel/beneficiaries",status_code=201)
+def create_travel_payout_beneficiary(payload:TravelPayoutBeneficiaryInput,request:Request):
+    actor=_manager(request)
+    if payload.currency.upper()!="INR": raise HTTPException(422,"Travel payout beneficiaries currently support INR only")
+    configured=os.getenv("SB_TRAVEL_PAYOUT_PROVIDER","").strip()
+    if not configured or payload.provider_name.strip()!=configured:
+        raise HTTPException(422,"Beneficiary provider must match SB_TRAVEL_PAYOUT_PROVIDER")
+    try:
+        with _hr_connection() as conn:
+            with conn.transaction():
+                if not conn.execute("SELECT id FROM hr_employees WHERE id=%s",(payload.employee_id,)).fetchone():
+                    raise HTTPException(404,"Employee not found")
+                return conn.execute(
+                    "INSERT INTO hr_employee_payout_beneficiaries(employee_id,provider_name,beneficiary_reference,currency,created_by_user_id) "
+                    "VALUES(%s,%s,%s,%s,%s) RETURNING id,employee_id,provider_name,currency,status,created_at",
+                    (payload.employee_id,configured,payload.beneficiary_reference.strip(),"INR",actor)
+                ).fetchone()
+    except HTTPException: raise
+    except psycopg.Error as exc: raise _db_error(exc) from exc
+
+
+@router.post("/travel/beneficiaries/{beneficiary_id}/verify")
+def verify_travel_payout_beneficiary(beneficiary_id:int,request:Request):
+    actor=_manager(request)
+    try:
+        with _hr_connection() as conn:
+            with conn.transaction():
+                row=conn.execute("SELECT * FROM hr_employee_payout_beneficiaries WHERE id=%s FOR UPDATE",(beneficiary_id,)).fetchone()
+                if not row: raise HTTPException(404,"Travel payout beneficiary not found")
+                if row["status"]!="draft": raise HTTPException(409,"Only draft payout beneficiaries can be verified")
+                if row["created_by_user_id"]==actor: raise HTTPException(403,"A different authorised manager must verify the payout beneficiary")
+                return conn.execute(
+                    "UPDATE hr_employee_payout_beneficiaries SET status='verified',verified_by_user_id=%s,verified_at=now(),updated_at=now() "
+                    "WHERE id=%s RETURNING id,employee_id,provider_name,currency,status,verified_by_user_id,verified_at",
+                    (actor,beneficiary_id)
+                ).fetchone()
+    except HTTPException: raise
+    except psycopg.Error as exc: raise _db_error(exc) from exc
+
+
+@router.get("/travel/beneficiaries")
+def list_travel_payout_beneficiaries(request:Request,employee_id:int|None=Query(None,gt=0)):
+    actor=_actor(request)
+    if _role(request) not in MANAGER_ROLES:
+        with _hr_connection() as conn:
+            own=_employee(conn,actor)
+            if employee_id is not None and employee_id!=own["id"]: raise HTTPException(403,"Employees may view only their own payout beneficiary")
+            employee_id=own["id"]
+    with _hr_connection() as conn:
+        return {"items":conn.execute(
+            "SELECT id,employee_id,provider_name,currency,status,created_at,verified_at FROM hr_employee_payout_beneficiaries "
+            "WHERE (%s::bigint IS NULL OR employee_id=%s) ORDER BY employee_id,id DESC",(employee_id,employee_id)
+        ).fetchall()}
 
 
 @router.post("/exit/loans/{loan_id}/repayments",status_code=201)
