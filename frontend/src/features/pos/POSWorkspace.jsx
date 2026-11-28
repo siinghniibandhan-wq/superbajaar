@@ -38,6 +38,8 @@ export default function POSWorkspace({ onBack }) {
   const [salesTotal, setSalesTotal] = useState(0);
   const [salesFilters, setSalesFilters] = useState({ search: "", date_from: "", date_to: "", payment_method: "", register_id: "" });
   const [salesBusy, setSalesBusy] = useState(false);
+  const [selectedSale, setSelectedSale] = useState(null);
+  const [saleDetailBusy, setSaleDetailBusy] = useState(false);
   const [analyticsError, setAnalyticsError] = useState("");
   const [locations, setLocations] = useState([]);
   const [registers, setRegisters] = useState([]);
@@ -88,6 +90,18 @@ export default function POSWorkspace({ onBack }) {
       setAnalyticsError(e.message || "Unable to load POS sales history.");
     } finally {
       setSalesBusy(false);
+    }
+  }
+
+  async function openSaleDetails(saleId) {
+    setSaleDetailBusy(true);
+    setSelectedSale(null);
+    try {
+      setSelectedSale(await apiRequest("/pos/sales/" + saleId));
+    } catch (e) {
+      setAnalyticsError(e.message || "Unable to load sale details.");
+    } finally {
+      setSaleDetailBusy(false);
     }
   }
 
@@ -417,7 +431,14 @@ export default function POSWorkspace({ onBack }) {
         <button type="button" onClick={() => { const cleared = { search: "", date_from: "", date_to: "", payment_method: "", register_id: "" }; setSalesFilters(cleared); loadSales(cleared); }} disabled={salesBusy}>Clear</button>
       </form>
       <div className="sb-data-heading"><span>Showing {recentSales.length} of {salesTotal}</span><button type="button" onClick={() => loadSales()} disabled={salesBusy}>Refresh sales</button></div>
-      {recentSales.length ? <div className="sb-table-wrap"><table><thead><tr><th>Order</th><th>Customer</th><th>Register / cashier</th><th>Status</th><th>Total</th><th>Captured</th><th>Payment state</th></tr></thead><tbody>{recentSales.map(sale => <tr key={sale.id}><td>{sale.order_number}</td><td>{sale.customer_name}<br/><small>{sale.customer_phone || "—"}</small></td><td>{sale.register_id ? "#" + sale.register_id : "—"} / {sale.cashier_user_id || "—"}</td><td>{sale.status}</td><td>{money(sale.total)}</td><td>{money(sale.captured_amount)}</td><td>{sale.payment_statuses || "No payment record"}</td></tr>)}</tbody></table></div> : <p className="sb-empty">{salesBusy ? "Loading sales…" : "No POS sales match these filters."}</p>}
+      {recentSales.length ? <div className="sb-table-wrap"><table><thead><tr><th>Order</th><th>Customer</th><th>Register / cashier</th><th>Status</th><th>Total</th><th>Captured</th><th>Payment state</th><th>Details</th></tr></thead><tbody>{recentSales.map(sale => <tr key={sale.id}><td>{sale.order_number}</td><td>{sale.customer_name}<br/><small>{sale.customer_phone || "—"}</small></td><td>{sale.register_id ? "#" + sale.register_id : "—"} / {sale.cashier_user_id || "—"}</td><td>{sale.status}</td><td>{money(sale.total)}</td><td>{money(sale.captured_amount)}</td><td>{sale.payment_statuses || "No payment record"}</td><td><button type="button" onClick={() => openSaleDetails(sale.id)} disabled={saleDetailBusy}>View</button></td></tr>)}</tbody></table></div> : <p className="sb-empty">{salesBusy ? "Loading sales…" : "No POS sales match these filters."}</p>}
+      {saleDetailBusy && <p role="status">Loading sale details…</p>}
+      {selectedSale && <section className="sb-pos-sale-detail" aria-label={"Sale details " + selectedSale.order_number}>
+        <div className="sb-data-heading"><h3>{selectedSale.order_number} · {money(selectedSale.total)}</h3><button type="button" onClick={() => setSelectedSale(null)}>Close details</button></div>
+        <p>{selectedSale.customer_name} · {selectedSale.customer_phone || "No phone"} · {selectedSale.status}</p>
+        <div className="sb-table-wrap"><table><thead><tr><th>Item</th><th>SKU</th><th>Qty</th><th>Unit price</th><th>Line total</th></tr></thead><tbody>{(selectedSale.lines || []).map(line => <tr key={line.id}><td>{line.product_name}</td><td>{line.sku}</td><td>{line.quantity}</td><td>{money(line.unit_price)}</td><td>{money(line.line_total)}</td></tr>)}</tbody></table></div>
+        <div className="sb-table-wrap"><table><thead><tr><th>Payment ref</th><th>Method</th><th>Amount</th><th>Status</th><th>Provider ref</th></tr></thead><tbody>{(selectedSale.payments || []).map(payment => <tr key={payment.id}><td>{payment.payment_reference}</td><td>{payment.method}</td><td>{money(payment.amount)}</td><td>{payment.status}</td><td>{payment.provider_reference || "—"}</td></tr>)}</tbody></table></div>
+      </section>}
     </div>
     <div className="sb-pos-terminal" style={{ display: activeView === "checkout" ? "block" : "none" }}>
       <div className={"sb-pos-statusbar" + (activeShift ? " is-open" : "")}>
