@@ -241,3 +241,24 @@ def test_asset_warranty_dates_and_purchase_value_are_validated():
             "purchase_value":"65000", "purchase_date":"2026-12-01",
             "warranty_expiry":"2026-11-01"
         })
+
+
+
+def test_travel_policy_and_request_amount_fields_are_validated():
+    policy = _validate("travel", "travel_policy", {
+        "name":"Standard", "employment_type":"all",
+        "max_trip_cost":"50000", "per_diem_limit":"3000", "currency":"inr"
+    })
+    assert policy["currency"] == "INR"
+    assert _initial_status("travel", "travel_policy") == "approved"
+    request = _validate("travel", "request", {
+        "destination":"Delhi", "purpose":"Client visit",
+        "start_date":"2026-12-01", "end_date":"2026-12-03",
+        "estimated_cost":"20000", "estimated_per_diem":"6000", "policy_id":4
+    })
+    assert request["policy_id"] == 4
+    with pytest.raises(HTTPException):
+        _validate("travel", "travel_policy", {
+            "name":"Invalid", "employment_type":"all",
+            "max_trip_cost":"0", "per_diem_limit":"3000", "currency":"INR"
+        })
