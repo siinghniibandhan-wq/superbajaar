@@ -468,7 +468,7 @@ export default function POSWorkspace({ onBack }) {
           await loadPosRazorpay();
           const result = await new Promise((resolve,reject) => {
             let settled=false; const finish=(fn,value)=>{if(settled)return;settled=true;fn(value);};
-            const checkout = new window.Razorpay({key:gatewayOrder.key_id,amount:gatewayOrder.amount,currency:gatewayOrder.currency,name:"Super Bajaar",description:"POS split sale "+order.order_number,order_id:gatewayOrder.razorpay_order_id,prefill:{name:customerName,contact:customer.phone.trim()},handler:response=>finish(resolve,response),modal:{ondismiss:()=>finish(reject,new Error("Online split tender window closed. Cash remains recorded; online amount is still pending and may be retried from the sale."))});
+            const checkout = new window.Razorpay({key:gatewayOrder.key_id,amount:gatewayOrder.amount,currency:gatewayOrder.currency,name:"Super Bajaar",description:"POS split sale "+order.order_number,order_id:gatewayOrder.razorpay_order_id,prefill:{name:customerName,contact:customer.phone.trim()},handler:response=>finish(resolve,response),modal:{ondismiss:()=>finish(reject,new Error("Online split tender window closed. Cash remains recorded; online amount is still pending and may be retried from the sale."))}});
             checkout.on("payment.failed",response=>finish(reject,new Error(response?.error?.description||"Online split payment failed; cash remains recorded.")));
             checkout.open();
           });
