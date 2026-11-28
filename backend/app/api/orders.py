@@ -136,7 +136,7 @@ def _apply_order_gst(conn, order_id: int, *, delivery_pin: str | None, discount_
                LEFT JOIN category_hierarchy ch ON ch.id=h.category_id
                WHERE h.is_active=TRUE AND (h.category_id IS NULL OR ch.id IS NOT NULL)
                  AND (COALESCE(pa.attributes,'{}'::jsonb) || v.attributes) @> h.conditions
-               ORDER BY COALESCE(ch.depth,999) ASC,jsonb_object_length(h.conditions) DESC,h.updated_at DESC,h.id DESC
+               ORDER BY COALESCE(ch.depth,999) ASC,(SELECT count(*) FROM jsonb_object_keys(h.conditions)) DESC,h.updated_at DESC,h.id DESC
                LIMIT 1
            ) rule ON TRUE
            WHERE ol.order_id=%s ORDER BY ol.id FOR UPDATE OF ol""",
