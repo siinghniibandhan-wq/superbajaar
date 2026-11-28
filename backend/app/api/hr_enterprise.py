@@ -201,6 +201,11 @@ def _ensure_candidate_hireable(status):
         raise HTTPException(409,"This candidate has already been hired")
 
 
+def _ensure_travel_amount_budget(existing, requested, limit, label):
+    if Decimal(str(existing)) + Decimal(str(requested)) > Decimal(str(limit)):
+        raise HTTPException(422,f"Combined {label} exceeds the permitted travel amount")
+
+
 def _validate_references(conn, domain, record_type, data):
     references = {
         ("recruitment","application"): {
@@ -815,6 +820,36 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                     if not locked_travel:
                         raise HTTPException(404,"Travel request not found")
                     _ensure_travel_claimable(locked_travel["status"])
+                if domain=="travel" and payload.record_type in {"booking","advance"}:
+                    travel_id=int(data["travel_record_id"])
+                    travel=conn.execute(
+                        "SELECT status,payload FROM hr_enterprise_records WHERE id=%s AND domain='travel' "
+                        "AND payload->>'record_type'='request' FOR UPDATE",(travel_id,),
+                    ).fetchone()
+                    if not travel:
+                        raise HTTPException(404,"Travel request not found")
+                    if travel["status"] not in {"approved","booked","in_progress"}:
+                        raise HTTPException(409,"Travel must be approved before booking or advance processing")
+                    if payload.record_type=="booking":
+                        booked=conn.execute(
+                            "SELECT COALESCE(sum((payload->>'booked_cost')::numeric),0) AS total "
+                            "FROM hr_enterprise_records WHERE domain='travel' AND payload->>'record_type'='booking' "
+                            "AND payload->>'travel_record_id'=%s AND status NOT IN ('rejected','archived','cancelled')",
+                            (str(travel_id),),
+                        ).fetchone()["total"]
+                        policy=conn.execute(
+                            "SELECT payload FROM hr_enterprise_records WHERE id=%s AND domain='travel'",
+                            (int(travel["payload"]["policy_id"]),),
+                        ).fetchone()
+                        _ensure_travel_amount_budget(booked,data["booked_cost"],policy["payload"]["max_trip_cost"],"bookings")
+                    else:
+                        advances=conn.execute(
+                            "SELECT COALESCE(sum((payload->>'requested_amount')::numeric),0) AS total "
+                            "FROM hr_enterprise_records WHERE domain='travel' AND payload->>'record_type'='advance' "
+                            "AND payload->>'travel_record_id'=%s AND status NOT IN ('rejected','archived','cancelled')",
+                            (str(travel_id),),
+                        ).fetchone()["total"]
+                        _ensure_travel_amount_budget(advances,data["requested_amount"],travel["payload"]["estimated_cost"],"travel advances")
                 if domain=="assets" and payload.record_type=="allocation":
                     asset=conn.execute(
                         "SELECT status FROM hr_enterprise_records WHERE id=%s AND domain='assets' "
