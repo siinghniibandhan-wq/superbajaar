@@ -872,6 +872,14 @@ def _visible_employee(conn,request,employee_id):
         raise HTTPException(403,"Employees may access only their own HR records")
 
 
+def _ensure_performance_review_subject(actor_employee_id, review_employee_id):
+    if review_employee_id is None:
+        raise HTTPException(409,"The performance review is not linked to a subject employee")
+    if actor_employee_id is not None and int(actor_employee_id)!=int(review_employee_id):
+        raise HTTPException(403,"Performance feedback and acknowledgement must belong to the reviewed employee")
+    return int(review_employee_id)
+
+
 @router.post("/documents/upload",status_code=201)
 async def upload_document(
     request:Request,
@@ -1260,6 +1268,15 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                     raise HTTPException(422,"Parent record must belong to the same HR domain")
                 data=_validate(domain,payload.record_type,payload.payload)
                 _validate_references(conn,domain,payload.record_type,data)
+                if domain=="performance" and payload.record_type in {"feedback","acknowledgement"}:
+                    review=conn.execute(
+                        "SELECT employee_id FROM hr_enterprise_records WHERE id=%s AND domain='performance' "
+                        "AND payload->>'record_type'='review' FOR SHARE",
+                        (int(data["review_id"]),)
+                    ).fetchone()
+                    if not review:
+                        raise HTTPException(404,"Performance review not found")
+                    employee_id=_ensure_performance_review_subject(employee_id,review["employee_id"])
                 if domain=="recruitment" and payload.record_type=="candidate":
                     email=data["email"]
                     conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",(email,))
