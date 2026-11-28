@@ -362,6 +362,11 @@ def _validate(domain, record_type, payload):
         try: last=date.fromisoformat(str(data["last_working_date"]))
         except ValueError: raise HTTPException(422,"Last working date must be an ISO date")
         if last<date.today(): raise HTTPException(422,"Last working date cannot be in the past when initiating an exit case")
+    if domain=="recruitment" and record_type=="job_opening":
+        try: headcount=int(data["headcount"])
+        except (ValueError,TypeError): raise HTTPException(422,"Job headcount must be a positive integer")
+        if headcount<=0: raise HTTPException(422,"Job headcount must be a positive integer")
+        data["headcount"]=headcount;data["filled_headcount"]=0
     if domain=="recruitment" and record_type=="interview":
         try:
             application_id=int(data["application_id"]); interviewer_id=int(data["interviewer_employee_id"])
@@ -553,6 +558,17 @@ def hire_recruitment_candidate(offer_id:int,payload:RecruitmentHireInput,request
                     "AND payload->>'record_type'='candidate' FOR UPDATE",(candidate_id,)
                 ).fetchone()
                 if not candidate: raise HTTPException(409,"The linked candidate record is missing")
+                job_id=int(application["payload"]["job_id"])
+                job=conn.execute(
+                    "SELECT * FROM hr_enterprise_records WHERE id=%s AND domain='recruitment' "
+                    "AND payload->>'record_type'='job_opening' FOR UPDATE",(job_id,)
+                ).fetchone()
+                if not job or job["status"]!="open":
+                    raise HTTPException(409,"The linked job opening is no longer open")
+                job_data=dict(job["payload"])
+                filled=int(job_data.get("filled_headcount",0));capacity=int(job_data.get("headcount",1))
+                if filled>=capacity:
+                    raise HTTPException(409,"The job opening has reached its approved headcount")
                 candidate_email=str(candidate["payload"].get("email","")).strip().lower()
                 if candidate_email!=payload.employee.email.strip().lower():
                     raise HTTPException(422,"Employee email must match the accepted candidate's email")
@@ -627,6 +643,18 @@ def hire_recruitment_candidate(offer_id:int,payload:RecruitmentHireInput,request
                                 "VALUES(%s,'created',%s::jsonb,%s)",
                                 (task["id"],json.dumps({"status":"pending","label":task["label"]}),actor),
                             )
+                job_data["filled_headcount"]=filled+1
+                next_job_status="closed" if filled+1>=capacity else "open"
+                updated_job=conn.execute(
+                    "UPDATE hr_enterprise_records SET payload=%s::jsonb,status=%s,version=version+1,updated_by_user_id=%s,updated_at=now() "
+                    "WHERE id=%s RETURNING *",
+                    (json.dumps(job_data,default=str),next_job_status,actor,job_id),
+                ).fetchone()
+                conn.execute(
+                    "INSERT INTO hr_enterprise_events(record_id,event_type,from_status,to_status,before_state,after_state,actor_user_id) "
+                    "VALUES(%s,'headcount_filled',%s,%s,%s::jsonb,%s::jsonb,%s)",
+                    (job_id,job["status"],next_job_status,json.dumps(dict(job),default=str),json.dumps(dict(updated_job),default=str),actor),
+                )
                 hired_offer=conn.execute(
                     "UPDATE hr_enterprise_records SET status='hired',employee_id=%s,payload=%s::jsonb,"
                     "version=version+1,updated_by_user_id=%s,updated_at=now() WHERE id=%s RETURNING *",
