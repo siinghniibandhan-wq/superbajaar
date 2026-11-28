@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from app.api.hr_enterprise import (
     DOMAINS, REQUIRED, STATUSES, TRANSITIONS,
     _employee_transition_allowed, _initial_status, _validate, _ensure_offer_unexpired, _allowed_record_transitions,
-    _ensure_goal_weight_limit, _ensure_assessment_attempt_limit, _calculate_asset_book_value, _ensure_performance_review_subject,
+    _ensure_goal_weight_limit, _ensure_assessment_attempt_limit, _calculate_asset_book_value, _ensure_performance_review_subject, _employee_loan_voucher_lines,
 )
 
 
@@ -852,3 +852,24 @@ def test_performance_feedback_and_acknowledgement_are_scoped_to_review_subject()
     with pytest.raises(HTTPException) as exc:
         _ensure_performance_review_subject(7,None)
     assert exc.value.status_code == 409
+
+
+def test_employee_loan_disbursement_posts_debit_receivable_and_credit_bank():
+    lines=_employee_loan_voucher_lines(1150,1010,"2500.00","disbursement")
+    assert lines[0]["account_id"]==1150 and lines[0]["debit"]==Decimal("2500.00")
+    assert lines[1]["account_id"]==1010 and lines[1]["credit"]==Decimal("2500.00")
+    assert sum((line["debit"] for line in lines),Decimal("0"))==sum((line["credit"] for line in lines),Decimal("0"))
+
+
+def test_employee_loan_repayment_posts_debit_bank_and_credit_receivable():
+    lines=_employee_loan_voucher_lines(1150,1010,"500.00","repayment")
+    assert lines[0]["account_id"]==1010 and lines[0]["debit"]==Decimal("500.00")
+    assert lines[1]["account_id"]==1150 and lines[1]["credit"]==Decimal("500.00")
+    assert sum((line["debit"] for line in lines),Decimal("0"))==sum((line["credit"] for line in lines),Decimal("0"))
+
+
+def test_employee_loan_accounting_rejects_same_account_and_invalid_amount():
+    with pytest.raises(HTTPException):
+        _employee_loan_voucher_lines(1150,1150,"500","disbursement")
+    with pytest.raises(HTTPException):
+        _employee_loan_voucher_lines(1150,1010,"0","repayment")
