@@ -326,7 +326,7 @@ def promotion_quote(code: str = Query(min_length=2, max_length=40), subtotal: De
                 raise HTTPException(status_code=422, detail="Coupon is not active yet")
             if promo["ends_at"] and promo["ends_at"] <= now:
                 raise HTTPException(status_code=422, detail="Coupon has expired")
-            used = conn.execute("SELECT count(*) AS n FROM promotion_redemptions WHERE promotion_id=%s",(promo["id"],)).fetchone()["n"]
+            used = conn.execute("SELECT count(*) AS n FROM promotion_redemptions WHERE promotion_id=%s AND status='redeemed'",(promo["id"],)).fetchone()["n"]
             if promo["usage_limit"] is not None and used >= promo["usage_limit"]:
                 raise HTTPException(status_code=409, detail="Coupon redemption limit has been reached")
             try:
@@ -349,7 +349,7 @@ def list_promotions(request: Request, include_inactive: bool = False):
     try:
         with _connect() as conn:
             rows = conn.execute(
-                "SELECT p.*, (SELECT count(*) FROM promotion_redemptions r WHERE r.promotion_id=p.id) AS redeemed_count "
+                "SELECT p.*, (SELECT count(*) FROM promotion_redemptions r WHERE r.promotion_id=p.id AND r.status='redeemed') AS redeemed_count "
                 "FROM promotions p WHERE (%s OR p.is_active=TRUE) ORDER BY p.created_at DESC",
                 (include_inactive,),
             ).fetchall()
@@ -591,12 +591,12 @@ def create_order(payload: OrderCreate, request: Request):
                             ).fetchone()["n"]
                         elif customer_email:
                             customer_redemptions = conn.execute(
-                                "SELECT count(*) AS n FROM promotion_redemptions WHERE promotion_id=%s AND lower(customer_email)=lower(%s)",
+                                "SELECT count(*) AS n FROM promotion_redemptions WHERE promotion_id=%s AND status='redeemed' AND lower(customer_email)=lower(%s)",
                                 (promotion["id"], customer_email),
                             ).fetchone()["n"]
                         else:
                             customer_redemptions = conn.execute(
-                                "SELECT count(*) AS n FROM promotion_redemptions WHERE promotion_id=%s AND customer_phone=%s",
+                                "SELECT count(*) AS n FROM promotion_redemptions WHERE promotion_id=%s AND status='redeemed' AND customer_phone=%s",
                                 (promotion["id"], customer_phone),
                             ).fetchone()["n"]
                         if customer_redemptions >= promotion["per_customer_limit"]:
@@ -729,6 +729,7 @@ def update_order_status(order_id: int, payload: OrderStatusUpdate, request: Requ
                         ensure_order_can_be_cancelled(conn, order_id)
                         release_order_stock(conn, order_id)
                         restore_order_redemption(conn, order_id=order_id, reason="Restored after eligible pre-dispatch cancellation")
+                        conn.execute("UPDATE promotion_redemptions SET status='reversed',reversed_at=now(),reversal_reason='Order cancelled before dispatch' WHERE order_id=%s AND status='redeemed'", (order_id,)
                     except ValueError as exc:
                         raise HTTPException(status_code=409, detail=str(exc)) from exc
                 elif payload.status == "delivered":
