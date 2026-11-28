@@ -5,7 +5,7 @@ from fastapi import HTTPException
 
 from app.api.hr_enterprise import (
     DOMAINS, REQUIRED, STATUSES, TRANSITIONS,
-    _employee_transition_allowed, _initial_status, _validate, _ensure_offer_unexpired, _allowed_record_transitions,
+    _employee_transition_allowed, _initial_status, _validate, _ensure_offer_unexpired, _allowed_record_transitions,\n    _ensure_goal_weight_limit, _ensure_assessment_attempt_limit,
 )
 
 
@@ -613,3 +613,24 @@ def test_non_recruitment_records_cannot_use_another_record_types_transitions():
 def test_travel_reimbursement_requires_claim_record_and_not_request_record():
     assert _allowed_record_transitions("travel","claim","claimed")=={"reimbursed"}
     assert _allowed_record_transitions("travel","request","claimed")==set()
+
+def test_performance_goal_weights_cannot_exceed_cycle_total():
+    _ensure_goal_weight_limit("65", "35")
+    with pytest.raises(HTTPException) as exc:
+        _ensure_goal_weight_limit("80", "25")
+    assert exc.value.status_code == 422
+
+
+@pytest.mark.parametrize("attempts,maximum", [(0,1),(2,3),(4,5)])
+def test_learning_assessment_attempt_limit_allows_remaining_attempts(attempts,maximum):
+    _ensure_assessment_attempt_limit(attempts,maximum)
+
+
+def test_learning_assessment_attempt_limit_blocks_exhausted_or_invalid_limits():
+    with pytest.raises(HTTPException) as exc:
+        _ensure_assessment_attempt_limit(3,3)
+    assert exc.value.status_code == 409
+    with pytest.raises(HTTPException):
+        _ensure_assessment_attempt_limit(0,0)
+    with pytest.raises(HTTPException):
+        _ensure_assessment_attempt_limit(0,21)
