@@ -395,8 +395,10 @@ def download_document(record_id:int,request:Request):
             if _role(request) not in MANAGER_ROLES:
                 own=_employee(conn,actor)
                 if own["id"]!=row["employee_id"]: raise HTTPException(403,"Employees may download only their own documents")
-            if row["status"] not in {"uploaded","under_review","verified"}:
-                raise HTTPException(409,"This document is not available for download")
+            if row["status"] not in {"under_review","verified"}:
+                raise HTTPException(409,"This document must enter HR review before it can be downloaded")
+            if _role(request) not in MANAGER_ROLES and row["status"]!="verified":
+                raise HTTPException(403,"Employees may download only HR-verified documents")
             url=employee_document_download_url(employee_id=row["employee_id"],object_key=row["payload"]["object_key"])
             conn.execute("INSERT INTO hr_enterprise_events(record_id,event_type,actor_user_id) VALUES(%s,'download_link_issued',%s)",(record_id,actor))
         return {"url":url,"expires_in_seconds":300}
