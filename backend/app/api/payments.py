@@ -202,16 +202,19 @@ def create_payment_refund(
                 except (httpx.HTTPError, ValueError) as exc:
                     # Keep the attempt pending: a timeout may have happened after the provider accepted it.
                     raise HTTPException(status_code=502, detail="Razorpay refund outcome is pending reconciliation; do not submit a new refund") from exc
+                provider_status = provider_refund.get("status")
                 if (not isinstance(provider_refund.get("id"), str) or not provider_refund.get("id")
                     or provider_refund.get("amount") != amount_paise
-                    or provider_refund.get("payment_id") != provider_payment_id):
+                    or provider_refund.get("payment_id") != provider_payment_id
+                    or provider_status not in {"processed", "pending", "failed"}):
                     raise HTTPException(status_code=502, detail="Razorpay returned an invalid refund response; reconcile before retrying")
+                local_status = provider_status
                 with conn.transaction():
                     saved = conn.execute(
-                        """UPDATE payment_refunds SET status='processed',provider_refund_id=%s,updated_at=now()
+                        """UPDATE payment_refunds SET status=%s,provider_refund_id=%s,updated_at=now()
                            WHERE id=%s AND status='pending'
                            RETURNING id,payment_id,order_id,amount,status,provider_refund_id,idempotency_key,note,created_at""",
-                        (provider_refund["id"],refund["id"]),
+                        (local_status,provider_refund["id"],refund["id"]),
                     ).fetchone()
                     total_refunded = conn.execute(
                         "SELECT COALESCE(sum(amount),0) AS amount FROM payment_refunds WHERE payment_id=%s AND status='processed'",
