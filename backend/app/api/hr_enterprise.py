@@ -210,6 +210,15 @@ def _ensure_candidate_hireable(status):
         raise HTTPException(409,"This candidate has already been hired")
 
 
+def _ensure_offer_unexpired(expires_on, today=None):
+    try:
+        expiry=date.fromisoformat(str(expires_on))
+    except (TypeError,ValueError):
+        raise HTTPException(409,"The offer has no valid expiry date and cannot be accepted")
+    if expiry < (today or date.today()):
+        raise HTTPException(409,"This offer has expired and cannot be converted into an employee")
+
+
 def _ensure_no_active_recruitment_duplicate(record, message):
     if record:
         raise HTTPException(409,message)
@@ -676,12 +685,7 @@ def hire_recruitment_candidate(offer_id:int,payload:RecruitmentHireInput,request
                 if not offer: raise HTTPException(404,"Recruitment offer not found")
                 if offer["status"]!="offered": raise HTTPException(409,"Only an active offer can be converted into an employee")
                 offer_data=dict(offer["payload"])
-                try:
-                    offer_expiry=date.fromisoformat(str(offer_data.get("expires_on","")))
-                except ValueError:
-                    raise HTTPException(409,"The offer has no valid expiry date and cannot be accepted")
-                if offer_expiry<date.today():
-                    raise HTTPException(409,"This offer has expired and cannot be converted into an employee")
+                _ensure_offer_unexpired(offer_data.get("expires_on"))
                 if int(offer_data.get("application_id") or 0)!=payload.application_id:
                     raise HTTPException(422,"Application does not match the selected offer")
                 application=conn.execute(
