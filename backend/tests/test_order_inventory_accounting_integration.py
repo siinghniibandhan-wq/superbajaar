@@ -95,6 +95,13 @@ def api(monkeypatch):
     yield client
     app.dependency_overrides.pop(require_active_session,None)
     with psycopg.connect(TEST_DB) as conn:
+        conn.execute("""
+            UPDATE pos_register_shifts s SET
+                expected_cash=s.opening_float+COALESCE((SELECT sum(amount) FROM pos_cash_movements WHERE shift_id=s.id AND movement_type='cash_in'),0)-COALESCE((SELECT sum(amount) FROM pos_cash_movements WHERE shift_id=s.id AND movement_type='cash_out'),0)+COALESCE((SELECT sum(p.amount) FROM payments p JOIN orders o ON o.id=p.order_id WHERE o.pos_register_shift_id=s.id AND p.method='cod' AND p.status IN ('captured','refunded')),0),
+                counted_cash=s.opening_float+COALESCE((SELECT sum(amount) FROM pos_cash_movements WHERE shift_id=s.id AND movement_type='cash_in'),0)-COALESCE((SELECT sum(amount) FROM pos_cash_movements WHERE shift_id=s.id AND movement_type='cash_out'),0)+COALESCE((SELECT sum(p.amount) FROM payments p JOIN orders o ON o.id=p.order_id WHERE o.pos_register_shift_id=s.id AND p.method='cod' AND p.status IN ('captured','refunded')),0),
+                cash_variance=0,status='closed',closed_by=%s,closed_at=now()
+            WHERE s.cashier_user_id=%s AND s.status='open'
+        """, (user_id,user_id))
         conn.execute("DELETE FROM accounting_event_account_mappings WHERE legal_entity_code=%s", (client.legal_entity_code,))
 
 
@@ -409,7 +416,7 @@ def test_coupon_discount_is_applied_once_and_enforces_customer_limit(api):
     shift = ok(api.post(f"/api/pos/registers/{register['id']}/open", json={"opening_float": "100"}), 201)
     payload = {
         "channel": "pos", "customer_name": "Coupon Customer",
-        "customer_email": "coupon-" + api.suffix + "@test.local",
+        "customer_email": "coupon-" + api.suffix + "@example.com",
         "location_id": api.location_id, "pos_register_id": register["id"],
         "pos_payment_method": "cod", "coupon_code": promotion["code"],
         "checkout_idempotency_key": "promo-checkout-" + api.suffix + "-one",
