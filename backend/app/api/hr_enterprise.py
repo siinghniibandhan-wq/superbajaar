@@ -161,6 +161,63 @@ class TransitionInput(BaseModel):
 def _role(request):
     return getattr(request.state,"role","")
 
+def _validate_references(conn, domain, record_type, data):
+    references = {
+        ("recruitment","application"): {
+            "candidate_id": ("recruitment","candidate"),
+            "job_id": ("recruitment","job_opening"),
+        },
+        ("recruitment","interview"): {"application_id": ("recruitment","application")},
+        ("recruitment","offer"): {"application_id": ("recruitment","application")},
+        ("performance","feedback"): {"review_id": ("performance","review")},
+        ("learning","enrollment"): {"course_id": ("learning","course")},
+        ("learning","assessment"): {"enrollment_id": ("learning","enrollment")},
+        ("learning","certificate"): {"enrollment_id": ("learning","enrollment")},
+        ("assets","allocation"): {"asset_id": ("assets","asset")},
+        ("assets","maintenance"): {"asset_id": ("assets","asset")},
+        ("travel","booking"): {"travel_record_id": ("travel","request")},
+        ("travel","advance"): {"travel_record_id": ("travel","request")},
+        ("travel","claim"): {"travel_record_id": ("travel","request")},
+        ("exit","clearance"): {"exit_record_id": ("exit","case")},
+        ("exit","settlement"): {"exit_record_id": ("exit","case")},
+    }
+    for field, (target_domain, target_type) in references.get((domain,record_type), {}).items():
+        try: target_id=int(data[field])
+        except (ValueError,TypeError): raise HTTPException(422,f"{field} must be a valid record ID")
+        if target_id<=0 or not conn.execute(
+            "SELECT id FROM hr_enterprise_records WHERE id=%s AND domain=%s AND payload->>'record_type'=%s",
+            (target_id,target_domain,target_type),
+        ).fetchone():
+            raise HTTPException(422,f"{field} must reference an existing {target_type.replace('_',' ')} record")
+        data[field]=target_id
+    employee_fields = {
+        "interviewer_employee_id", "reviewer_employee_id", "owner_employee_id", "employee_id"
+    }
+    for field in employee_fields:
+        if field in data and data[field] not in (None,""):
+            try: employee_id=int(data[field])
+            except (ValueError,TypeError): raise HTTPException(422,f"{field} must be a valid employee ID")
+            if employee_id<=0 or not conn.execute("SELECT id FROM hr_employees WHERE id=%s",(employee_id,)).fetchone():
+                raise HTTPException(422,f"{field} must reference an existing employee")
+            data[field]=employee_id
+    if domain=="recruitment" and record_type=="application":
+        job=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["job_id"],)).fetchone()
+        if job["status"]!="open":
+            raise HTTPException(409,"Applications can be created only for open job openings")
+    if domain=="assets" and record_type=="allocation":
+        asset=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["asset_id"],)).fetchone()
+        if asset["status"] not in {"available","approved"}:
+            raise HTTPException(409,"Only available or approved assets can be allocated")
+    if domain=="travel" and record_type in {"booking","advance"}:
+        travel=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["travel_record_id"],)).fetchone()
+        if travel["status"] not in {"approved","booked","in_progress"}:
+            raise HTTPException(409,"Travel must be approved before booking or advance processing")
+    if domain=="exit" and record_type=="settlement":
+        exit_case=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["exit_record_id"],)).fetchone()
+        if exit_case["status"]!="settlement_review":
+            raise HTTPException(409,"Exit clearance must reach settlement review before settlement creation")
+
+
 def _validate(domain, record_type, payload):
     if domain not in DOMAINS: raise HTTPException(404,"Unknown HR domain")
     if record_type not in REQUIRED[domain]: raise HTTPException(422,"Unsupported record type for this HR domain")
@@ -344,6 +401,7 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                 if payload.parent_id is not None and not conn.execute("SELECT id FROM hr_enterprise_records WHERE id=%s AND domain=%s",(payload.parent_id,domain)).fetchone():
                     raise HTTPException(422,"Parent record must belong to the same HR domain")
                 data=_validate(domain,payload.record_type,payload.payload)
+                _validate_references(conn,domain,payload.record_type,data)
                 data["record_type"]=payload.record_type
                 status=_initial_status(domain,payload.record_type)
                 row=conn.execute(
@@ -382,7 +440,9 @@ def update_record(domain:str,record_id:int,payload:RecordUpdate,request:Request)
                 data=dict(old["payload"])
                 if payload.payload is not None:
                     record_type=data.get("record_type")
-                    data=_validate(domain,record_type,payload.payload); data["record_type"]=record_type
+                    data=_validate(domain,record_type,payload.payload)
+                    _validate_references(conn,domain,record_type,data)
+                    data["record_type"]=record_type
                 row=conn.execute(
                   "UPDATE hr_enterprise_records SET title=COALESCE(%s,title),employee_id=%s,parent_id=%s,effective_date=%s,due_date=%s,payload=%s::jsonb,version=version+1,updated_by_user_id=%s,updated_at=now() "
                   "WHERE id=%s RETURNING *",
