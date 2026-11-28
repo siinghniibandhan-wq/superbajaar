@@ -201,6 +201,11 @@ def _ensure_candidate_hireable(status):
         raise HTTPException(409,"This candidate has already been hired")
 
 
+def _ensure_no_active_recruitment_duplicate(record, message):
+    if record:
+        raise HTTPException(409,message)
+
+
 def _ensure_travel_amount_budget(existing, requested, limit, label):
     if Decimal(str(existing)) + Decimal(str(requested)) > Decimal(str(limit)):
         raise HTTPException(422,f"Combined {label} exceeds the permitted travel amount")
@@ -820,8 +825,7 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                         "AND payload->>'record_type'='candidate' AND lower(payload->>'email')=%s "
                         "AND status NOT IN ('archived','withdrawn') LIMIT 1",(email,),
                     ).fetchone()
-                    if duplicate:
-                        raise HTTPException(409,"A candidate with this email already exists; update the existing candidate record")
+                    _ensure_no_active_recruitment_duplicate(duplicate,"A candidate with this email already exists; update the existing candidate record")
                 if domain=="recruitment" and payload.record_type=="application":
                     candidate=conn.execute(
                         "SELECT status FROM hr_enterprise_records WHERE id=%s AND domain='recruitment' "
@@ -841,8 +845,7 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                         "AND payload->>'job_id'=%s AND status NOT IN ('rejected','withdrawn','archived') LIMIT 1",
                         (str(data["candidate_id"]),str(data["job_id"])),
                     ).fetchone()
-                    if duplicate:
-                        raise HTTPException(409,"This candidate already has an active application for the selected job")
+                    _ensure_no_active_recruitment_duplicate(duplicate,"This candidate already has an active application for the selected job")
                 if domain=="travel" and payload.record_type=="claim":
                     locked_travel=conn.execute(
                         "SELECT status FROM hr_enterprise_records WHERE id=%s AND domain='travel' FOR UPDATE",
