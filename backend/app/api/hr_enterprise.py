@@ -118,7 +118,7 @@ REQUIRED = {
   "request":["destination","purpose","start_date","end_date","estimated_cost"],
   "booking":["travel_record_id","booking_reference","provider","booked_cost"],
   "advance":["travel_record_id","requested_amount"],
-  "claim":["travel_record_id","actual_cost"]
+  "claim":["travel_record_id","actual_cost","receipt_reference"]
  },
  "exit":{
   "case":["reason","last_working_date"],
@@ -589,6 +589,22 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                     raise HTTPException(422,"Parent record must belong to the same HR domain")
                 data=_validate(domain,payload.record_type,payload.payload)
                 _validate_references(conn,domain,payload.record_type,data)
+                if domain=="travel" and payload.record_type=="claim":
+                    travel=conn.execute("SELECT employee_id,payload FROM hr_enterprise_records WHERE id=%s AND domain='travel'",(int(data["travel_record_id"]),)).fetchone()
+                    if not travel or travel["employee_id"] is None:
+                        raise HTTPException(409,"Travel request must be linked to an employee before a claim can be submitted")
+                    if employee_id is None:
+                        employee_id=travel["employee_id"]
+                    if int(employee_id)!=int(travel["employee_id"]):
+                        raise HTTPException(403,"A travel claim must belong to the employee who submitted the travel request")
+                    expense=conn.execute(
+                        "INSERT INTO hr_expenses(employee_id,category,amount,expense_date,description,receipt_reference) "
+                        "VALUES(%s,'travel',%s,%s,%s,%s) RETURNING id",
+                        (employee_id,data["actual_cost"],travel["payload"]["end_date"],
+                         (payload.title+": "+str(travel["payload"].get("purpose","Travel claim")))[:1000],
+                         data["receipt_reference"]),
+                    ).fetchone()
+                    data["expense_id"]=expense["id"]
                 data["record_type"]=payload.record_type
                 status=_initial_status(domain,payload.record_type)
                 row=conn.execute(
@@ -676,6 +692,10 @@ def transition_record(domain:str,record_id:int,payload:TransitionInput,request:R
                     raise HTTPException(422,"A rejection reason is required for recruitment decisions")
                 if domain=="travel" and record_type=="claim" and payload.status=="reimbursed":
                     travel_id=int(old["payload"]["travel_record_id"])
+                    expense_id=int(old["payload"].get("expense_id") or 0)
+                    expense=conn.execute("SELECT status FROM hr_expenses WHERE id=%s",(expense_id,)).fetchone()
+                    if not expense or expense["status"]!="reimbursed":
+                        raise HTTPException(409,"The linked travel expense must be approved and paid through payroll before marking the claim reimbursed")
                     travel=conn.execute("SELECT * FROM hr_enterprise_records WHERE id=%s AND domain='travel' FOR UPDATE",(travel_id,)).fetchone()
                     if not travel or travel["status"]!="claimed":
                         raise HTTPException(409,"The linked travel request is not awaiting reimbursement")
