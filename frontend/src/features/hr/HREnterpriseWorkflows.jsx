@@ -29,6 +29,35 @@ const recruitmentRecordTransitions={
  offer:{offered:["rejected","withdrawn"]},
  interview_feedback:{},communication:{}
 };
+const domainRecordTransitions={
+ documents:{employee_document:{pending:["under_review","archived"],under_review:["verified","rejected","expired"],verified:["expired","archived"],rejected:["archived"],expired:["archived"]}},
+ performance:{
+  review_template:{draft:["active","cancelled"],active:["cancelled"]},
+  review_cycle:{draft:["active","cancelled"],active:["self_review","cancelled"],self_review:["manager_review"],manager_review:["calibration","closed"],calibration:["closed"]},
+  review:{manager_review:["calibration","acknowledged"],calibration:["acknowledged"],acknowledged:["closed"]},
+  self_review:{self_review:["manager_review"]},goal:{draft:["active","cancelled"],active:["cancelled"]},
+  feedback:{},calibration:{calibration:["acknowledged"]},acknowledgement:{acknowledged:["closed"]}
+ },
+ learning:{
+  course:{planned:["enrolled","cancelled"],enrolled:["cancelled"]},
+  enrollment:{planned:["enrolled","cancelled"],enrolled:["in_progress","cancelled"],in_progress:["completed","failed"],failed:["enrolled"]},
+  progress:{},assessment:{},certificate:{completed:["expired","archived"],expired:["archived"]}
+ },
+ assets:{
+  asset:{available:["assigned","maintenance","written_off"],assigned:["acknowledged","returned","maintenance","written_off"],acknowledged:["returned","maintenance","written_off"],maintenance:["assigned","written_off"],returned:["available","maintenance","written_off"]},
+  asset_request:{requested:["approved","rejected"],approved:["assigned","rejected"]},
+  allocation:{requested:["approved","rejected"],approved:["assigned","rejected"],assigned:["acknowledged","returned","maintenance","written_off"],acknowledged:["returned","maintenance","written_off"]},
+  maintenance:{}
+ },
+ travel:{
+  travel_policy:{},request:{draft:["submitted","cancelled"],submitted:["approved","rejected"],approved:["booked","cancelled"],booked:["in_progress","cancelled"],in_progress:["completed"],completed:["claimed"],claimed:["reimbursed"]},
+  booking:{},advance:{},claim:{}
+ },
+ exit:{
+  case:{initiated:["notice_period","withdrawn"],notice_period:["handover","withdrawn"],handover:["clearance"],clearance:["settlement_review"],settlement_review:["completed"]},
+  clearance:{clearance:["completed","rejected"]},settlement:{settlement_review:["completed"]}
+ }
+};
 const employeeTransitions={
  travel:{draft:["submitted","cancelled"]},
  performance:{active:["self_review"]},
@@ -133,9 +162,10 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
    finally{setEventsBusy(false);}
  }
  function allowedTransitionsForRecord(item){
-   if(domain==="recruitment"){
-     return recruitmentRecordTransitions[item.payload?.record_type]?.[item.status]||[];
-   }
+   const recordType=item.payload?.record_type;
+   if(domain==="recruitment")return recruitmentRecordTransitions[recordType]?.[item.status]||[];
+   const rules=domainRecordTransitions[domain];
+   if(rules)return rules[recordType]?.[item.status]||[];
    return transitions[domain]?.[item.status]||[];
  }
  function selectableRecords(key){
