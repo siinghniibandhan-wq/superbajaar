@@ -1,9 +1,11 @@
+from datetime import date
+
 import pytest
 from fastapi import HTTPException
 
 from app.api.hr_enterprise import (
     DOMAINS, REQUIRED, STATUSES, TRANSITIONS,
-    _employee_transition_allowed, _initial_status, _validate,
+    _employee_transition_allowed, _initial_status, _validate, _ensure_offer_unexpired,
 )
 
 
@@ -558,4 +560,20 @@ def test_recruitment_offer_rejects_non_iso_currency_and_past_expiry():
             "currency":"INR", "expires_on":"2026-01-01"
         })
     assert expiry_error.value.status_code == 422
+
+def test_recruitment_application_starts_in_screening_and_can_progress():
+    assert _initial_status("recruitment", "application") == "screening"
+    assert "shortlisted" in TRANSITIONS["recruitment"]["screening"]
+    assert "interview" in TRANSITIONS["recruitment"]["shortlisted"]
+    assert "offered" in TRANSITIONS["recruitment"]["interview"]
+
+
+def test_recruitment_hire_rejects_expired_or_invalid_offer():
+    _ensure_offer_unexpired("2026-12-31", today=date(2026,12,1))
+    with pytest.raises(HTTPException) as expired:
+        _ensure_offer_unexpired("2026-11-30", today=date(2026,12,1))
+    assert expired.value.status_code == 409
+    with pytest.raises(HTTPException) as malformed:
+        _ensure_offer_unexpired("not-a-date", today=date(2026,12,1))
+    assert malformed.value.status_code == 409
 
