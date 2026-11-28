@@ -251,6 +251,21 @@ class TransitionInput(BaseModel):
     note: str | None = Field(default=None,max_length=2000)
     expected_version: int | None = Field(default=None,ge=1)
 
+class ExitStatutoryPolicyInput(BaseModel):
+    establishment_id: int = Field(gt=0)
+    version_label: str = Field(min_length=2,max_length=100)
+    jurisdiction_code: str = Field(min_length=2,max_length=32)
+    effective_from: date
+    effective_to: date | None = None
+    policy_config: dict
+    source_references: list[dict] = Field(min_length=1,max_length=30)
+
+class EmployeeLoanInput(BaseModel):
+    employee_id: int = Field(gt=0)
+    loan_reference: str = Field(min_length=2,max_length=80)
+    principal_amount: Decimal = Field(gt=0,max_digits=14,decimal_places=2)
+    currency: str = Field(default="INR",min_length=3,max_length=3)
+
 class RecruitmentHireInput(BaseModel):
     application_id: int = Field(gt=0)
     candidate_accepted: bool
@@ -767,9 +782,12 @@ def _validate(domain, record_type, payload):
         if amount<=0: raise HTTPException(422,"Travel amount must be greater than zero")
         data[amount_key]=str(amount)
     if domain=="exit" and record_type=="settlement":
-        try: gross=Decimal(str(data["gross_due"])); deductions=Decimal(str(data["deductions"])); net=Decimal(str(data["net_due"])); payable=date.fromisoformat(str(data["payable_on"]))
-        except (ValueError,InvalidOperation): raise HTTPException(422,"Exit settlement amounts or payable date are invalid")
-        if min(gross,deductions,net)<0 or gross-deductions!=net: raise HTTPException(422,"Exit settlement net due must equal gross due less deductions")
+        try: payable=date.fromisoformat(str(data["payable_on"]))
+        except (ValueError,TypeError): raise HTTPException(422,"Exit settlement payable date is invalid")
+        if data.get("auto_calculate") is not True:
+            try: gross=Decimal(str(data["gross_due"])); deductions=Decimal(str(data["deductions"])); net=Decimal(str(data["net_due"]))
+            except (ValueError,InvalidOperation,KeyError): raise HTTPException(422,"Exit settlement amounts are invalid")
+            if min(gross,deductions,net)<0 or gross-deductions!=net: raise HTTPException(422,"Exit settlement net due must equal gross due less deductions")
         for field,expected in (("earnings_breakdown",gross),("deductions_breakdown",deductions)):
             components=data.get(field)
             if components is not None:
@@ -2047,3 +2065,114 @@ def archive_record(domain:str,record_id:int,request:Request):
         return row
     except HTTPException: raise
     except psycopg.Error as exc: raise _db_error(exc) from exc
+
+@router.post("/exit/statutory-policies",status_code=201)
+def create_exit_statutory_policy(payload:ExitStatutoryPolicyInput,request:Request):
+    actor=_manager(request)
+    if payload.effective_to and payload.effective_to<payload.effective_from:
+        raise HTTPException(422,"Policy effective_to cannot precede effective_from")
+    config=validate_exit_policy(payload.policy_config)
+    if not all(str(item.get("title") or item.get("url") or "").strip() for item in payload.source_references):
+        raise HTTPException(422,"Every statutory policy source reference needs a title or URL")
+    try:
+        with _hr_connection() as conn:
+            with conn.transaction():
+                if not conn.execute("SELECT id FROM hr_establishments WHERE id=%s AND is_active=true",(payload.establishment_id,)).fetchone():
+                    raise HTTPException(404,"Active HR establishment not found")
+                return conn.execute(
+                    "INSERT INTO hr_exit_statutory_policy_versions(establishment_id,version_label,jurisdiction_code,effective_from,effective_to,policy_config,source_references,created_by_user_id) "
+                    "VALUES(%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s) RETURNING *",
+                    (payload.establishment_id,payload.version_label.strip(),payload.jurisdiction_code.upper(),
+                     payload.effective_from,payload.effective_to,json.dumps(config),json.dumps(payload.source_references),actor)
+                ).fetchone()
+    except HTTPException: raise
+    except psycopg.Error as exc: raise _db_error(exc) from exc
+
+
+@router.post("/exit/statutory-policies/{policy_id}/approve")
+def approve_exit_statutory_policy(policy_id:int,request:Request):
+    actor=_manager(request)
+    try:
+        with _hr_connection() as conn:
+            with conn.transaction():
+                policy=conn.execute("SELECT * FROM hr_exit_statutory_policy_versions WHERE id=%s FOR UPDATE",(policy_id,)).fetchone()
+                if not policy: raise HTTPException(404,"Exit statutory policy not found")
+                if policy["status"]!="draft": raise HTTPException(409,"Only draft exit statutory policies can be approved")
+                if policy["created_by_user_id"]==actor: raise HTTPException(403,"A different authorised manager must approve the exit statutory policy")
+                overlap=conn.execute(
+                    "SELECT id FROM hr_exit_statutory_policy_versions WHERE establishment_id=%s AND jurisdiction_code=%s "
+                    "AND status='approved' AND effective_from<=COALESCE(%s,'9999-12-31') "
+                    "AND COALESCE(effective_to,'9999-12-31')>=%s LIMIT 1",
+                    (policy["establishment_id"],policy["jurisdiction_code"],policy["effective_to"],policy["effective_from"])
+                ).fetchone()
+                if overlap: raise HTTPException(409,"An approved exit statutory policy already overlaps this effective period")
+                return conn.execute(
+                    "UPDATE hr_exit_statutory_policy_versions SET status='approved',approved_by_user_id=%s,approved_at=now() WHERE id=%s RETURNING *",
+                    (actor,policy_id)
+                ).fetchone()
+    except HTTPException: raise
+    except psycopg.Error as exc: raise _db_error(exc) from exc
+
+
+@router.get("/exit/statutory-policies")
+def list_exit_statutory_policies(request:Request,establishment_id:int|None=Query(None,gt=0)):
+    _manager(request)
+    with _hr_connection() as conn:
+        return {"items":conn.execute(
+            "SELECT p.*,e.code AS establishment_code,e.display_name FROM hr_exit_statutory_policy_versions p "
+            "JOIN hr_establishments e ON e.id=p.establishment_id WHERE (%s::bigint IS NULL OR p.establishment_id=%s) "
+            "ORDER BY p.effective_from DESC,p.id DESC",(establishment_id,establishment_id)
+        ).fetchall()}
+
+
+@router.post("/exit/loans",status_code=201)
+def create_employee_loan(payload:EmployeeLoanInput,request:Request):
+    actor=_manager(request)
+    if payload.currency.upper()!="INR": raise HTTPException(422,"Employee loan ledger currently supports INR")
+    try:
+        with _hr_connection() as conn:
+            with conn.transaction():
+                if not conn.execute("SELECT id FROM hr_employees WHERE id=%s FOR SHARE",(payload.employee_id,)).fetchone():
+                    raise HTTPException(404,"Employee not found")
+                return conn.execute(
+                    "INSERT INTO hr_employee_loans(employee_id,loan_reference,principal_amount,outstanding_amount,currency,created_by_user_id) "
+                    "VALUES(%s,%s,%s,%s,%s,%s) RETURNING *",
+                    (payload.employee_id,payload.loan_reference.strip(),payload.principal_amount,payload.principal_amount,"INR",actor)
+                ).fetchone()
+    except HTTPException: raise
+    except psycopg.Error as exc: raise _db_error(exc) from exc
+
+
+@router.post("/exit/loans/{loan_id}/approve")
+def approve_employee_loan(loan_id:int,request:Request):
+    actor=_manager(request)
+    try:
+        with _hr_connection() as conn:
+            with conn.transaction():
+                loan=conn.execute("SELECT * FROM hr_employee_loans WHERE id=%s FOR UPDATE",(loan_id,)).fetchone()
+                if not loan: raise HTTPException(404,"Employee loan not found")
+                if loan["status"]!="draft": raise HTTPException(409,"Only draft employee loans can be approved")
+                if loan["created_by_user_id"]==actor: raise HTTPException(403,"A different authorised manager must approve the employee loan")
+                return conn.execute(
+                    "UPDATE hr_employee_loans SET status='active',approved_by_user_id=%s,approved_at=now(),updated_at=now() WHERE id=%s RETURNING *",
+                    (actor,loan_id)
+                ).fetchone()
+    except HTTPException: raise
+    except psycopg.Error as exc: raise _db_error(exc) from exc
+
+
+@router.get("/exit/loans")
+def list_employee_loans(request:Request,employee_id:int|None=Query(None,gt=0)):
+    actor=_actor(request)
+    if _role(request) not in MANAGER_ROLES:
+        with _hr_connection() as conn:
+            own=_employee(conn,actor)
+            if employee_id is not None and employee_id!=own["id"]: raise HTTPException(403,"Employees may view only their own loans")
+            employee_id=own["id"]
+    with _hr_connection() as conn:
+        return {"items":conn.execute(
+            "SELECT * FROM hr_employee_loans WHERE (%s::bigint IS NULL OR employee_id=%s) ORDER BY created_at DESC",
+            (employee_id,employee_id)
+        ).fetchall()}
+
+
