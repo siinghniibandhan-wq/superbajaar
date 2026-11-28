@@ -8,9 +8,17 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 import json
 import re
+import csv
+import io
 
 import psycopg
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.responses import Response
+from openpyxl import Workbook
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import landscape, A4
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from pydantic import BaseModel, Field, field_validator
 from app.api.hr import EmployeeInput, _actor, _manager, _employee, _hr_connection, _db_error, _link_employee_login_identity
 from app.services.hr_employee_documents import (
@@ -1460,6 +1468,73 @@ def enterprise_workflow_analytics(
         return {"from_date":from_date,"to_date":to_date,"domains":summary}
     except HTTPException: raise
     except psycopg.Error as exc: raise _db_error(exc) from exc
+
+
+@router.get("/analytics/enterprise/export")
+def export_enterprise_analytics(
+    request:Request,
+    from_date:date=Query(...),
+    to_date:date=Query(...),
+    format:str=Query("csv",pattern="^(csv|xlsx|pdf)$"),
+    domain_filter:str|None=Query(None,alias="domain",pattern="^(documents|performance|learning|assets|travel|exit|analytics)$"),
+    record_type:str|None=Query(None,max_length=48),
+    status:str|None=Query(None,max_length=32),
+    department_id:int|None=Query(None,gt=0),
+):
+    report=enterprise_workflow_analytics(request,from_date,to_date,domain_filter,record_type,status,department_id)
+    summary=report["domains"]
+    headers=["Domain","Records","Overdue","Due within 30 days","By type","By status"]
+    rows=[headers]
+    for domain,value in sorted(summary.items()):
+        rows.append([domain,value["records"],value["overdue"],value["due_soon"],
+                     json.dumps(value["by_type"],sort_keys=True),json.dumps(value["by_status"],sort_keys=True)])
+    filename=f"hr-enterprise-{from_date.isoformat()}-{to_date.isoformat()}"
+    if format=="csv":
+        output=io.StringIO()
+        writer=csv.writer(output)
+        writer.writerows(rows)
+        return Response(output.getvalue(),media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition":f'attachment; filename="{filename}.csv"'})
+    if format=="xlsx":
+        workbook=Workbook()
+        sheet=workbook.active
+        sheet.title="Domain summary"
+        for row in rows: sheet.append(row)
+        sheet.freeze_panes="A2"
+        sheet.auto_filter.ref=sheet.dimensions
+        for column,width in {"A":20,"B":14,"C":14,"D":22,"E":48,"F":48}.items():
+            sheet.column_dimensions[column].width=width
+        detail=workbook.create_sheet("Breakdown")
+        detail.append(["Domain","Breakdown","Value"])
+        for domain,value in sorted(summary.items()):
+            for kind,counts in (("Record type",value["by_type"]),("Status",value["by_status"])):
+                for name,count in sorted(counts.items()):
+                    detail.append([domain,kind+":"+name,count])
+        buffer=io.BytesIO()
+        workbook.save(buffer)
+        return Response(buffer.getvalue(),media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        headers={"Content-Disposition":f'attachment; filename="{filename}.xlsx"'})
+    buffer=io.BytesIO()
+    document=SimpleDocTemplate(buffer,pagesize=landscape(A4),title="HR enterprise analytics")
+    styles=getSampleStyleSheet()
+    story=[Paragraph("HR enterprise analytics",styles["Title"]),
+           Paragraph(f"Reporting period: {from_date.isoformat()} to {to_date.isoformat()}",styles["Normal"]),
+           Spacer(1,12)]
+    pdf_rows=[["Domain","Records","Overdue","Due in 30 days"]]
+    for domain,value in sorted(summary.items()):
+        pdf_rows.append([domain,str(value["records"]),str(value["overdue"]),str(value["due_soon"])])
+    table=Table(pdf_rows,repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#24364b")),
+        ("TEXTCOLOR",(0,0),(-1,0),colors.white),
+        ("GRID",(0,0),(-1,-1),0.5,colors.HexColor("#b8c2cc")),
+        ("PADDING",(0,0),(-1,-1),7),
+        ("ROWBACKGROUNDS",(0,1),(-1,-1),[colors.white,colors.HexColor("#f2f5f8")]),
+    ]))
+    story.append(table)
+    document.build(story)
+    return Response(buffer.getvalue(),media_type="application/pdf",
+                    headers={"Content-Disposition":f'attachment; filename="{filename}.pdf"'})
 
 
 @router.get("/{domain}/{record_id}")
