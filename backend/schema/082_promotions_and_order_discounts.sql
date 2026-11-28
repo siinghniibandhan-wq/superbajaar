@@ -41,6 +41,9 @@ CREATE TABLE IF NOT EXISTS public.promotion_redemptions (
     minimum_subtotal_snapshot NUMERIC(14,2) NOT NULL CHECK (minimum_subtotal_snapshot >= 0),
     maximum_discount_snapshot NUMERIC(14,2),
     code_snapshot VARCHAR(40) NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'redeemed' CHECK (status IN ('redeemed','reversed')),
+    reversed_at TIMESTAMPTZ,
+    reversal_reason TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS promotion_redemptions_promotion_idx ON public.promotion_redemptions(promotion_id, created_at);
