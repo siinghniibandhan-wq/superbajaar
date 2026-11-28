@@ -225,3 +225,19 @@ def test_learning_progress_evidence_is_bounded():
         _validate("learning", "progress", {
             "enrollment_id":5, "progress_percent":"101"
         })
+
+
+
+def test_asset_warranty_dates_and_purchase_value_are_validated():
+    result = _validate("assets", "asset", {
+        "asset_type":"Laptop", "asset_tag":"SB-LAP-100",
+        "purchase_value":"65000", "purchase_date":"2026-01-01",
+        "warranty_expiry":"2028-01-01"
+    })
+    assert result["purchase_value"] == "65000"
+    with pytest.raises(HTTPException):
+        _validate("assets", "asset", {
+            "asset_type":"Laptop", "asset_tag":"SB-LAP-101",
+            "purchase_value":"65000", "purchase_date":"2026-12-01",
+            "warranty_expiry":"2026-11-01"
+        })
