@@ -1,5 +1,5 @@
 import { useCallback,useEffect,useMemo,useState } from "react";
-import { apiRequest } from "../../services/api.js";
+import { apiRequest, apiDownload } from "../../services/api.js";
 
 const domains=[
  {id:"recruitment",label:"Recruitment",types:[["job_opening","Job opening",[["department","Department"],["employment_type","Employment type"],["location","Location"],["headcount","Headcount","number"],["description","Job description","textarea"]]],["candidate","Candidate",[["first_name","First name"],["last_name","Last name"],["email","Email","email"],["phone","Phone"],["source","Source"],["resume_reference","Resume reference"]]],["application","Application",[["candidate_id","Candidate record ID","record_select"],["job_id","Job opening record ID","record_select"],["cover_note","Cover note","textarea"]]],["interview","Interview",[["application_id","Application record ID","record_select"],["scheduled_at","Scheduled date","datetime-local"],["interviewer_employee_id","Interviewer employee ID","number"],["interview_type","Interview type"]]],["interview_feedback","Interview evaluation",[["interview_id","Interview record ID","record_select"],["interviewer_employee_id","Interviewer employee ID","number"],["rating","Rating (1–5)","number"],["decision","Decision (pass/hold/reject)"],["feedback","Feedback","textarea"]]],["offer","Offer",[["application_id","Application record ID","record_select"],["offered_salary","Offered salary","number"],["currency","Currency (e.g. INR)"],["expires_on","Offer expiry","date"]]],["communication","Candidate communication log",[["candidate_id","Candidate record ID","record_select"],["channel","Channel (email/phone/sms/in_person/other)"],["direction","Direction (inbound/outbound)"],["subject","Subject"],["message","Message","textarea"],["occurred_at","Date and time","datetime-local"]]]]},
@@ -213,6 +213,19 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
    setHireOffer(item);setHireAccepted(false);
    setHireForm(old=>({...old,first_name:data.first_name||"",last_name:data.last_name||"",email:data.email||"",phone:data.phone||"",acceptance_reference:""}));
  }
+ async function exportAnalyticsFile(format){
+   const [year,month]=analyticsMonth.split("-").map(Number);
+   const fromDate=analyticsMonth+"-01";
+   const toDate=analyticsMonth+"-"+String(new Date(year,month,0).getDate()).padStart(2,"0");
+   const query="?from_date="+fromDate+"&to_date="+toDate
+     +(analyticsDomainFilter?"&domain="+encodeURIComponent(analyticsDomainFilter):"")
+     +(analyticsDepartmentFilter?"&department_id="+encodeURIComponent(analyticsDepartmentFilter):"");
+   try{
+     setError("");
+     await apiDownload("/hr/enterprise/analytics/enterprise/export"+query+"&format="+format,
+       "hr-enterprise-"+fromDate+"-"+toDate+"."+format);
+   }catch(e){setError(e.message||"Unable to export analytics.");}
+ }
  function exportAnalyticsCsv(){
    if(!analyticsData&&!enterpriseAnalytics)return;
    const rows=[
@@ -314,7 +327,9 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
    {domain==="analytics"&&manager&&<section className="hr-panel" aria-label="Computed workforce analytics">
     <div className="hr-directory-heading"><div><h3>Workforce analytics</h3><p>Live metrics from the existing HR, attendance, leave and approved payroll records.</p></div><label>Reporting month<input type="month" value={analyticsMonth} onChange={e=>setAnalyticsMonth(e.target.value)}/></label>
      <label>Domain filter<select value={analyticsDomainFilter} onChange={e=>setAnalyticsDomainFilter(e.target.value)}><option value="">All seven domains</option>{domains.filter(x=>x.id!=="recruitment").map(x=><option key={x.id} value={x.id}>{x.label}</option>)}</select></label>
-     <label>Department filter<select value={analyticsDepartmentFilter} onChange={e=>setAnalyticsDepartmentFilter(e.target.value)}><option value="">All departments</option>{[...new Map(employees.filter(x=>x.department_id).map(x=>[String(x.department_id),x.department_name||("Department "+x.department_id)])).entries()].map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></label><button type="button" className="hr-secondary" disabled={!analyticsData&&!enterpriseAnalytics} onClick={exportAnalyticsCsv}>Export CSV</button></div>
+     <label>Department filter<select value={analyticsDepartmentFilter} onChange={e=>setAnalyticsDepartmentFilter(e.target.value)}><option value="">All departments</option>{[...new Map(employees.filter(x=>x.department_id).map(x=>[String(x.department_id),x.department_name||("Department "+x.department_id)])).entries()].map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></label><button type="button" className="hr-secondary" disabled={!analyticsData&&!enterpriseAnalytics} onClick={exportAnalyticsCsv}>Export CSV</button>
+     <button type="button" className="hr-secondary" disabled={!enterpriseAnalytics} onClick={()=>exportAnalyticsFile("xlsx")}>Export XLSX</button>
+     <button type="button" className="hr-secondary" disabled={!enterpriseAnalytics} onClick={()=>exportAnalyticsFile("pdf")}>Export PDF</button></div>
     {analyticsError&&<p role="alert" className="sb-alert">{analyticsError}</p>}
     {analyticsLoading&&<p role="status">Loading workforce metrics…</p>}
     {analyticsData&&<><div className="hr-overview">
