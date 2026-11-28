@@ -68,6 +68,34 @@ EMPLOYEE_TRANSITIONS = {
 def _employee_transition_allowed(domain, from_status, to_status):
     return (domain, from_status, to_status) in EMPLOYEE_TRANSITIONS
 
+
+def _allowed_record_transitions(domain, record_type, status):
+    if domain != "recruitment":
+        return TRANSITIONS[domain].get(status,set())
+    per_type = {
+        "job_opening": {
+            "draft":{"open","archived"},
+            "open":{"closed","archived"},
+            "closed":{"archived"},
+        },
+        "candidate": {
+            "draft":{"withdrawn","archived"},
+            "withdrawn":{"archived"},
+        },
+        "application": {
+            "screening":{"shortlisted","rejected","withdrawn"},
+            "shortlisted":{"interview","rejected","withdrawn"},
+            "interview":{"offered","rejected","withdrawn"},
+            "offered":{"rejected","withdrawn"},
+        },
+        "interview": {"interview":{"completed"}},
+        "offer": {"offered":{"rejected","withdrawn"}},
+        "interview_feedback": {},
+        "communication": {},
+    }
+    return per_type.get(record_type,{}).get(status,set())
+
+
 def _initial_status(domain, record_type):
     typed = {
         ("recruitment", "application"): "screening",
@@ -1144,8 +1172,8 @@ def transition_record(domain:str,record_id:int,payload:TransitionInput,request:R
                         raise HTTPException(403,"Employees may change only their own HR records")
                     if not _employee_transition_allowed(domain,old["status"],payload.status):
                         raise HTTPException(403,"This workflow action requires HR manager permission")
-                if payload.status not in TRANSITIONS[domain].get(old["status"],set()):
-                    raise HTTPException(409,f"Transition from {old['status']} to {payload.status} is not allowed")
+                if payload.status not in _allowed_record_transitions(domain,old["payload"].get("record_type"),old["status"]):
+                    raise HTTPException(409,f"Transition from {old['status']} to {payload.status} is not allowed for this {old['payload'].get('record_type','record').replace('_',' ')}")
                 record_type=old["payload"].get("record_type")
                 if domain=="travel" and record_type=="travel_policy":
                     raise HTTPException(409,"Travel policies are managed by archiving the old version and creating a new version")
