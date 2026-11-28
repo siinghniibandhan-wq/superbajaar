@@ -37,7 +37,7 @@ TRANSITIONS = {
  "documents":{"pending":{"uploaded","archived"},"uploaded":{"under_review","rejected"},"under_review":{"verified","rejected","expired"},"verified":{"expired","archived"},"rejected":{"uploaded","archived"},"expired":{"uploaded","archived"}},
  "performance":{"draft":{"active","cancelled"},"active":{"self_review","cancelled"},"self_review":{"manager_review"},"manager_review":{"calibration","acknowledged"},"calibration":{"acknowledged"},"acknowledged":{"closed"}},
  "learning":{"planned":{"enrolled","cancelled"},"enrolled":{"in_progress","cancelled"},"in_progress":{"completed","failed"},"failed":{"enrolled"}},
- "assets":{"available":{"assigned","maintenance","written_off"},"requested":{"approved","rejected"},"approved":{"assigned","rejected"},"assigned":{"returned","maintenance","written_off"},"maintenance":{"assigned","written_off"},"returned":{"maintenance","written_off"}},
+ "assets":{"available":{"assigned","maintenance","written_off"},"requested":{"approved","rejected"},"approved":{"assigned","rejected"},"assigned":{"returned","maintenance","written_off"},"maintenance":{"assigned","written_off"},"returned":{"available","maintenance","written_off"}},
  "travel":{"draft":{"submitted","cancelled"},"submitted":{"approved","rejected"},"approved":{"booked","cancelled"},"booked":{"in_progress","cancelled"},"in_progress":{"completed"},"completed":{"claimed"},"claimed":{"reimbursed"}},
  "exit":{"initiated":{"notice_period","withdrawn"},"notice_period":{"handover","withdrawn"},"handover":{"clearance"},"clearance":{"settlement_review"},"settlement_review":{"completed"}},
  "analytics":{"saved":{"scheduled","archived"},"scheduled":{"saved","archived"}}
@@ -475,8 +475,46 @@ def transition_record(domain:str,record_id:int,payload:TransitionInput,request:R
                         raise HTTPException(403,"This workflow action requires HR manager permission")
                 if payload.status not in TRANSITIONS[domain].get(old["status"],set()):
                     raise HTTPException(409,f"Transition from {old['status']} to {payload.status} is not allowed")
+                record_type=old["payload"].get("record_type")
+                if domain=="documents" and payload.status in {"verified","rejected"} and not (payload.note and payload.note.strip()):
+                    raise HTTPException(422,"A verification or rejection note is required for employee documents")
+                if domain=="recruitment" and payload.status=="rejected" and not (payload.note and payload.note.strip()):
+                    raise HTTPException(422,"A rejection reason is required for recruitment decisions")
+                if domain=="exit" and record_type=="case" and payload.status=="completed":
+                    if old["employee_id"] is None:
+                        raise HTTPException(409,"An exit case must be linked to an employee before completion")
+                    clearance=conn.execute(
+                        "SELECT count(*)::int AS total,count(*) FILTER (WHERE status NOT IN ('settlement_review','completed'))::int AS pending "
+                        "FROM hr_enterprise_records WHERE domain='exit' AND payload->>'record_type'='clearance' AND payload->>'exit_record_id'=%s",
+                        (str(record_id),),
+                    ).fetchone()
+                    settlement=conn.execute(
+                        "SELECT id FROM hr_enterprise_records WHERE domain='exit' AND payload->>'record_type'='settlement' "
+                        "AND payload->>'exit_record_id'=%s AND status='completed' LIMIT 1",
+                        (str(record_id),),
+                    ).fetchone()
+                    if clearance["total"]==0 or clearance["pending"]>0 or not settlement:
+                        raise HTTPException(409,"Complete every department clearance and the full-and-final settlement before closing the exit case")
                 row=conn.execute("UPDATE hr_enterprise_records SET status=%s,version=version+1,updated_by_user_id=%s,updated_at=now() WHERE id=%s RETURNING *",
                   (payload.status,actor,record_id)).fetchone()
+                if domain=="assets" and record_type=="allocation":
+                    asset_id=int(old["payload"]["asset_id"])
+                    linked_status={"assigned":"assigned","returned":"available","maintenance":"maintenance","written_off":"written_off"}.get(payload.status)
+                    if linked_status:
+                        asset=conn.execute("SELECT * FROM hr_enterprise_records WHERE id=%s AND domain='assets' AND payload->>'record_type'='asset' FOR UPDATE",(asset_id,)).fetchone()
+                        if not asset: raise HTTPException(409,"The allocated asset record no longer exists")
+                        if linked_status not in TRANSITIONS["assets"].get(asset["status"],set()):
+                            raise HTTPException(409,f"Asset cannot move from {asset['status']} to {linked_status}")
+                        updated_asset=conn.execute("UPDATE hr_enterprise_records SET status=%s,version=version+1,updated_by_user_id=%s,updated_at=now() WHERE id=%s RETURNING *",
+                            (linked_status,actor,asset_id)).fetchone()
+                        conn.execute("INSERT INTO hr_enterprise_events(record_id,event_type,from_status,to_status,before_state,after_state,note,actor_user_id) VALUES(%s,'custody_sync',%s,%s,%s::jsonb,%s::jsonb,%s,%s)",
+                            (asset_id,asset["status"],linked_status,json.dumps(dict(asset),default=str),json.dumps(dict(updated_asset),default=str),payload.note,actor))
+                if domain=="exit" and record_type=="case" and payload.status=="completed":
+                    employee_id=int(old["employee_id"])
+                    conn.execute("UPDATE hr_employees SET status='terminated',exit_date=%s,updated_at=now() WHERE id=%s",
+                        (old["payload"]["last_working_date"],employee_id))
+                    conn.execute("UPDATE app_users SET is_active=FALSE WHERE id=(SELECT user_id FROM hr_employees WHERE id=%s) AND role='staff'",
+                        (employee_id,))
                 conn.execute("INSERT INTO hr_enterprise_events(record_id,event_type,from_status,to_status,before_state,after_state,note,actor_user_id) "
                   "VALUES(%s,'status_transition',%s,%s,%s::jsonb,%s::jsonb,%s,%s)",
                   (record_id,old["status"],payload.status,json.dumps(dict(old),default=str),json.dumps(dict(row),default=str),payload.note,actor))
