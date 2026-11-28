@@ -102,6 +102,8 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
  const [employeeLoans,setEmployeeLoans]=useState([]);
  const [loanRepaymentAmounts,setLoanRepaymentAmounts]=useState({});
  const [loanForm,setLoanForm]=useState({employee_id:"",loan_reference:"",principal_amount:"",currency:"INR"});
+ const [payoutBeneficiaries,setPayoutBeneficiaries]=useState([]);
+ const [beneficiaryForm,setBeneficiaryForm]=useState({employee_id:"",provider_name:"",beneficiary_reference:"",currency:"INR"});
  const [exitPolicyForm,setExitPolicyForm]=useState({
   establishment_id:"",version_label:"Exit settlement policy v1",jurisdiction_code:"IN",
   effective_from:new Date().toISOString().slice(0,10),effective_to:"",
@@ -126,6 +128,14 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
    apiRequest("/hr/enterprise/notifications?unread_only=true")
      .then(result=>{if(active)setExpiryNotifications(result.items||[]);})
      .catch(()=>{if(active)setExpiryNotifications([]);});
+   return()=>{active=false;};
+ },[domain,manager]);
+ useEffect(()=>{
+   if(domain!=="travel"||!manager)return;
+   let active=true;
+   apiRequest("/hr/enterprise/travel/beneficiaries")
+    .then(result=>{if(active)setPayoutBeneficiaries(result.items||[]);})
+    .catch(e=>{if(active)setError(e.message||"Unable to load travel payout beneficiaries.");});
    return()=>{active=false;};
  },[domain,manager]);
  useEffect(()=>{
@@ -205,6 +215,30 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
      }
      setTitle("");setFields({});await load();
    }catch(e){setError(e.message||"Unable to create HR record.");}
+   finally{setBusy(false);}
+ }
+ async function createPayoutBeneficiary(e){
+   e.preventDefault();setBusy(true);setError("");setNotice("");
+   try{
+     await apiRequest("/hr/enterprise/travel/beneficiaries",{method:"POST",body:JSON.stringify({
+       employee_id:Number(beneficiaryForm.employee_id),provider_name:beneficiaryForm.provider_name,
+       beneficiary_reference:beneficiaryForm.beneficiary_reference,currency:"INR"
+     })});
+     const result=await apiRequest("/hr/enterprise/travel/beneficiaries");
+     setPayoutBeneficiaries(result.items||[]);
+     setBeneficiaryForm(old=>({...old,beneficiary_reference:""}));
+     setNotice("Payout beneficiary saved as draft. A different manager must verify it.");
+   }catch(e){setError(e.message||"Unable to save payout beneficiary.");}
+   finally{setBusy(false);}
+ }
+ async function verifyPayoutBeneficiary(id){
+   setBusy(true);setError("");setNotice("");
+   try{
+     await apiRequest("/hr/enterprise/travel/beneficiaries/"+id+"/verify",{method:"POST",body:"{}"});
+     const result=await apiRequest("/hr/enterprise/travel/beneficiaries");
+     setPayoutBeneficiaries(result.items||[]);
+     setNotice("Payout beneficiary verified.");
+   }catch(e){setError(e.message||"Unable to verify payout beneficiary.");}
    finally{setBusy(false);}
  }
  async function createExitPolicy(e){
@@ -484,6 +518,19 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
      </tbody></table></div>
     </section>
     <p className="hr-enterprise-note">Metrics are calculated from recorded data. Attendance absence and rate are unavailable when there is no published shift schedule; late-arrival and attendance trend metrics are not currently calculated.</p></>}
+   </section>}
+   {domain==="travel"&&manager&&<section className="hr-panel" aria-label="Employee travel payout beneficiaries">
+    <div className="hr-directory-heading"><div><h3>Employee payout beneficiaries</h3><p>Store the tokenized beneficiary reference issued by the configured payout provider. A second manager must verify it before an advance can be paid.</p></div></div>
+    <form className="hr-form hr-grid" onSubmit={createPayoutBeneficiary}>
+     <label>Employee<select required value={beneficiaryForm.employee_id} onChange={e=>setBeneficiaryForm(x=>({...x,employee_id:e.target.value}))}><option value="">Select employee</option>{employees.map(x=><option key={x.id} value={x.id}>{employeeNames[x.id]}</option>)}</select></label>
+     <label>Provider name<input required value={beneficiaryForm.provider_name} onChange={e=>setBeneficiaryForm(x=>({...x,provider_name:e.target.value}))}/></label>
+     <label>Provider beneficiary reference<input required value={beneficiaryForm.beneficiary_reference} onChange={e=>setBeneficiaryForm(x=>({...x,beneficiary_reference:e.target.value}))}/></label>
+     <button disabled={busy||!employees.length}>Save beneficiary draft</button>
+    </form>
+    <div className="hr-list">{payoutBeneficiaries.map(item=><article key={item.id} className="hr-list-row">
+     <div><strong>{item.provider_name} · {employeeNames[item.employee_id]}</strong><small>{item.currency} · {item.status} · Reference #{item.id}</small></div>
+     {item.status==="draft"&&<button type="button" className="hr-secondary" disabled={busy} onClick={()=>verifyPayoutBeneficiary(item.id)}>Verify beneficiary</button>}
+    </article>)}</div>
    </section>}
    {domain==="exit"&&manager&&<section className="hr-panel" aria-label="Exit statutory policies">
     <div className="hr-directory-heading"><div><h3>Jurisdictional exit statutory policies</h3><p>Create effective-dated gratuity, leave encashment, notice pay and statutory deduction rules. A different manager must approve each version.</p></div></div>
