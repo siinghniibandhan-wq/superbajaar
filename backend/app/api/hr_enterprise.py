@@ -1891,6 +1891,27 @@ def transition_record(domain:str,record_id:int,payload:TransitionInput,request:R
                     ).fetchone()
                     if clearance["total"]==0 or clearance["pending"]>0 or not settlement:
                         raise HTTPException(409,"Complete every department clearance and the full-and-final settlement before closing the exit case")
+                if domain=="travel" and record_type=="advance" and payload.status=="disbursed":
+                    if old["employee_id"] is None:
+                        raise HTTPException(409,"Travel advance must be linked to an employee before disbursement")
+                    travel=conn.execute("SELECT payload FROM hr_enterprise_records WHERE id=%s AND domain='travel'",(int(old["payload"]["travel_record_id"]),)).fetchone()
+                    if not travel:
+                        raise HTTPException(409,"Linked travel request no longer exists")
+                    already=conn.execute("SELECT accounting_voucher_id FROM hr_travel_advance_disbursements WHERE enterprise_record_id=%s",(record_id,)).fetchone()
+                    if already:
+                        raise HTTPException(409,"This travel advance has already been disbursed")
+                    try:
+                        voucher_id=disburse_travel_advance(conn,record_id=record_id,employee_id=int(old["employee_id"]),
+                            amount=Decimal(str(old["payload"]["requested_amount"])),
+                            currency=str(travel["payload"].get("currency","INR")),actor_user_id=actor)
+                    except TravelIntegrationConfigurationError as exc:
+                        raise HTTPException(503,str(exc)) from exc
+                    advance_payload=dict(old["payload"])
+                    advance_payload.update({"accounting_voucher_id":voucher_id,"disbursed_at":datetime.utcnow().isoformat()+"Z"})
+                    old=conn.execute("UPDATE hr_enterprise_records SET payload=%s::jsonb,version=version+1,updated_by_user_id=%s,updated_at=now() WHERE id=%s RETURNING *",
+                        (json.dumps(advance_payload,default=str),actor,record_id)).fetchone()
+                    conn.execute("INSERT INTO hr_travel_advance_disbursements(enterprise_record_id,employee_id,accounting_voucher_id,amount,currency,disbursed_by_user_id) VALUES(%s,%s,%s,%s,%s,%s)",
+                        (record_id,int(old["employee_id"]),voucher_id,advance_payload["requested_amount"],str(travel["payload"].get("currency","INR")).upper(),actor))
                 row=conn.execute("UPDATE hr_enterprise_records SET status=%s,version=version+1,updated_by_user_id=%s,updated_at=now() WHERE id=%s RETURNING *",
                   (payload.status,actor,record_id)).fetchone()
                 if domain=="assets" and record_type=="allocation":
