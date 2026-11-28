@@ -572,7 +572,7 @@ def create_order(payload: OrderCreate, request: Request):
                     if promotion["ends_at"] and promotion["ends_at"] <= conn.execute("SELECT now() AS current_time").fetchone()["current_time"]:
                         raise HTTPException(status_code=422, detail="Coupon has expired")
                     redeemed_count = conn.execute(
-                        "SELECT count(*) AS n FROM promotion_redemptions WHERE promotion_id=%s",
+                        "SELECT count(*) AS n FROM promotion_redemptions WHERE promotion_id=%s AND status='redeemed'",
                         (promotion["id"],),
                     ).fetchone()["n"]
                     if promotion["usage_limit"] is not None and redeemed_count >= promotion["usage_limit"]:
@@ -585,7 +585,7 @@ def create_order(payload: OrderCreate, request: Request):
                         customer_phone = str(payload.customer_phone).strip() if payload.customer_phone else None
                         if customer_email and customer_phone:
                             customer_redemptions = conn.execute(
-                                "SELECT count(*) AS n FROM promotion_redemptions WHERE promotion_id=%s "
+                                "SELECT count(*) AS n FROM promotion_redemptions WHERE promotion_id=%s AND status='redeemed' "
                                 "AND (lower(customer_email)=lower(%s) OR customer_phone=%s)",
                                 (promotion["id"], customer_email, customer_phone),
                             ).fetchone()["n"]
