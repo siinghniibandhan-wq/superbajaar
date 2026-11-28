@@ -50,6 +50,7 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
  const [eventRecord,setEventRecord]=useState(null),[recordEvents,setRecordEvents]=useState([]),[eventsBusy,setEventsBusy]=useState(false);
  const [recordSearch,setRecordSearch]=useState(""),[statusFilter,setStatusFilter]=useState("");
  const [hireOffer,setHireOffer]=useState(null),[hireAccepted,setHireAccepted]=useState(false);
+ const [expiringItems,setExpiringItems]=useState([]),[expiringLoading,setExpiringLoading]=useState(false),[expiringError,setExpiringError]=useState("");
  const [hireForm,setHireForm]=useState({employee_code:"",first_name:"",last_name:"",email:"",phone:"",department_id:"",designation:"",employment_type:"full_time",status:"active",joining_date:new Date().toISOString().slice(0,10),reports_to_employee_id:"",basic_salary:"0",hra:"0",special_allowance:"0",other_allowance:"0",acceptance_reference:""});
  const current=domains.find(x=>x.id===domain);
  const availableTypes=current.types.filter(x=>manager||!managerOnlyTypes[domain]?.includes(x[0]));
@@ -62,6 +63,15 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
  },[domain]);
  useEffect(()=>{const selected=domains.find(x=>x.id===domain);const first=selected.types.find(x=>manager||!managerOnlyTypes[domain]?.includes(x[0]));setRecordType(first?.[0]||selected.types[0][0]);setFields({});setTitle("");setDocumentFile(null);},[domain,manager]);
  useEffect(()=>{load();},[load]);
+ useEffect(()=>{
+   if(domain!=="documents"||!manager)return;
+   let active=true;setExpiringLoading(true);setExpiringError("");
+   apiRequest("/hr/enterprise/expiring?within_days=30")
+     .then(result=>{if(active)setExpiringItems(result.items||[]);})
+     .catch(e=>{if(active)setExpiringError(e.message||"Unable to load expiry queue.");})
+     .finally(()=>{if(active)setExpiringLoading(false);});
+   return()=>{active=false;};
+ },[domain,manager]);
  useEffect(()=>{
    if(domain!=="analytics"||!manager)return;
    let active=true;setAnalyticsLoading(true);setAnalyticsError("");
@@ -182,6 +192,11 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
    <nav className="hr-advanced-nav" aria-label="HR enterprise domains">{domains.filter(x=>manager||!["recruitment","analytics"].includes(x.id)).map(x=><button type="button" key={x.id} className={domain===x.id?"active":""} aria-pressed={domain===x.id} onClick={()=>setDomain(x.id)}>{x.label}</button>)}</nav>
    {error&&<p className="sb-alert" role="alert">{error}</p>}{notice&&<p className="sb-success" role="status">{notice}</p>}
    <h3>{current.label}</h3>
+   {domain==="documents"&&manager&&<section className="hr-panel" aria-label="Document and asset expiry queue">
+    <div className="hr-directory-heading"><div><h3>Expiring records</h3><p>Documents, learning certificates and asset warranties due within 30 days or already expired.</p></div><span className="hr-directory-count">{expiringItems.length} due</span></div>
+    {expiringError&&<p role="alert" className="sb-alert">{expiringError}</p>}
+    {expiringLoading?<p role="status">Loading expiry queue…</p>:<div className="hr-table-wrap"><table><thead><tr><th>Record</th><th>Employee</th><th>Due date</th><th>Status</th></tr></thead><tbody>{expiringItems.map(x=><tr key={x.id}><td>{x.title}<small>{x.domain} · #{x.id}</small></td><td>{x.employee_code?x.employee_code+" — "+x.first_name+" "+(x.last_name||""):"—"}</td><td>{x.due_date}</td><td>{x.status}</td></tr>)}{!expiringItems.length&&<tr><td colSpan="4">No expiring records in this window.</td></tr>}</tbody></table></div>}
+   </section>}
    {domain==="analytics"&&manager&&<section className="hr-panel" aria-label="Computed workforce analytics">
     <div className="hr-directory-heading"><div><h3>Workforce analytics</h3><p>Live metrics from the existing HR, attendance, leave and approved payroll records.</p></div><label>Reporting month<input type="month" value={analyticsMonth} onChange={e=>setAnalyticsMonth(e.target.value)}/></label><button type="button" className="hr-secondary" disabled={!analyticsData} onClick={exportAnalyticsCsv}>Export CSV</button></div>
     {analyticsError&&<p role="alert" className="sb-alert">{analyticsError}</p>}
