@@ -1,5 +1,6 @@
 """POS reporting/read APIs backed by the existing order and payment ledger."""
 import psycopg
+from datetime import date
 from fastapi import APIRouter, HTTPException, Query
 from psycopg.rows import dict_row
 
@@ -50,25 +51,53 @@ def pos_summary():
 @router.get("/sales")
 def list_pos_sales(
     status: str | None = Query(default=None, max_length=40),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    register_id: int | None = Query(default=None, gt=0),
+    cashier_user_id: int | None = Query(default=None, gt=0),
+    payment_method: str | None = Query(default=None, pattern=r"^(upi|card|netbanking|cod|wallet|bank_transfer|other)$"),
+    search: str | None = Query(default=None, max_length=200),
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ):
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(status_code=422, detail="date_from cannot be after date_to")
     clauses = ["o.channel='pos'"]
     params = []
     if status:
         clauses.append("o.status=%s")
         params.append(status)
+    if date_from:
+        clauses.append("(o.created_at AT TIME ZONE 'Asia/Kolkata')::date >= %s")
+        params.append(date_from)
+    if date_to:
+        clauses.append("(o.created_at AT TIME ZONE 'Asia/Kolkata')::date <= %s")
+        params.append(date_to)
+    if register_id:
+        clauses.append("s.register_id=%s")
+        params.append(register_id)
+    if cashier_user_id:
+        clauses.append("s.cashier_user_id=%s")
+        params.append(cashier_user_id)
+    if payment_method:
+        clauses.append("EXISTS (SELECT 1 FROM payments pm WHERE pm.order_id=o.id AND pm.method=%s)")
+        params.append(payment_method)
+    if search and search.strip():
+        term = "%" + search.strip() + "%"
+        clauses.append("(o.order_number ILIKE %s OR o.customer_name ILIKE %s OR COALESCE(o.customer_phone,'') ILIKE %s)")
+        params.extend([term, term, term])
     where = " AND ".join(clauses)
     try:
         with _connect() as conn:
             items = conn.execute(
                 f"""SELECT o.id, o.order_number, o.customer_name, o.customer_phone, o.status,
-                           o.subtotal, o.total, o.created_at,
+                           o.subtotal, o.total, o.created_at, s.register_id, s.cashier_user_id,
                            COALESCE(l.line_count, 0) AS line_count,
                            COALESCE(p.captured_amount, 0) AS captured_amount,
                            COALESCE(p.pending_amount, 0) AS pending_amount,
                            COALESCE(p.payment_statuses, '') AS payment_statuses
                     FROM orders o
+                    LEFT JOIN pos_register_shifts s ON s.id=o.pos_register_shift_id
                     LEFT JOIN (
                       SELECT order_id, count(*) AS line_count
                       FROM order_lines GROUP BY order_id
@@ -85,7 +114,10 @@ def list_pos_sales(
                     LIMIT %s OFFSET %s""",
                 (*params, limit, offset),
             ).fetchall()
-            total = conn.execute(f"SELECT count(*) AS total FROM orders o WHERE {where}", params).fetchone()["total"]
+            total = conn.execute(
+                f"SELECT count(*) AS total FROM orders o LEFT JOIN pos_register_shifts s ON s.id=o.pos_register_shift_id WHERE {where}",
+                params,
+            ).fetchone()["total"]
         return {"items": items, "total": total, "limit": limit, "offset": offset, "source": "postgresql"}
     except psycopg.Error as exc:
         raise _db_error(exc) from exc
