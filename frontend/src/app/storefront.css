@@ -2170,3 +2170,5 @@
   height:21px;
 }
 .storefront-auth-shell .storefront-social-icon-github{color:#24292f}
+
+.storefront-checkout-coupon{display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;margin:12px 0}.storefront-checkout-coupon label{display:grid;gap:5px;flex:1 1 180px}.storefront-checkout-coupon button{min-height:40px}.storefront-checkout-coupon input{width:100%;min-width:0}
