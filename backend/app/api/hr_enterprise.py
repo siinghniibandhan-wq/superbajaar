@@ -4,7 +4,7 @@ All eight HR domains share audited, versioned records while retaining explicit
 domain validation and controlled state transitions. Employee self-service is
 bound to the authenticated user's linked employee record.
 """
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 import json
 
@@ -389,6 +389,8 @@ def _validate(domain, record_type, payload):
         if data["channel"] not in {"email","phone","sms","in_person","other"}: raise HTTPException(422,"Communication channel is invalid")
         if data["direction"] not in {"inbound","outbound"}: raise HTTPException(422,"Communication direction is invalid")
         if len(str(data["message"]).strip())<2: raise HTTPException(422,"Communication message is required")
+        try: data["occurred_at"]=datetime.fromisoformat(str(data["occurred_at"])).isoformat()
+        except ValueError: raise HTTPException(422,"Communication date and time must be ISO formatted")
     if domain=="recruitment" and record_type=="offer":
         try: salary=Decimal(str(data["offered_salary"])); expiry=date.fromisoformat(str(data["expires_on"])); application_id=int(data["application_id"])
         except (ValueError,InvalidOperation,TypeError): raise HTTPException(422,"Offer application, salary or expiry date is invalid")
