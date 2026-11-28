@@ -1,0 +1,14 @@
+[Unit]
+Description=Super Bajaar HRMS expiry, retention and scheduled-report jobs
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+EnvironmentFile=/etc/superbajaar/hrms-scheduler.env
+ExecStart=/opt/superbajaar/source/deploy/hrms/hrms-expiry-scheduler.sh
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
