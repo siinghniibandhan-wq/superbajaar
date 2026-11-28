@@ -212,6 +212,10 @@ def _validate_references(conn, domain, record_type, data):
         travel=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["travel_record_id"],)).fetchone()
         if travel["status"] not in {"approved","booked","in_progress"}:
             raise HTTPException(409,"Travel must be approved before booking or advance processing")
+    if domain=="travel" and record_type=="claim":
+        travel=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["travel_record_id"],)).fetchone()
+        if travel["status"]!="completed":
+            raise HTTPException(409,"Travel must be completed before a claim can be submitted")
     if domain=="exit" and record_type=="settlement":
         exit_case=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["exit_record_id"],)).fetchone()
         if exit_case["status"]!="settlement_review":
@@ -411,6 +415,13 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                 ).fetchone()
                 conn.execute("INSERT INTO hr_enterprise_events(record_id,event_type,to_status,after_state,actor_user_id) VALUES(%s,'created',%s,%s::jsonb,%s)",
                   (row["id"],status,json.dumps(dict(row),default=str),actor))
+                if domain=="travel" and payload.record_type=="claim":
+                    travel_id=int(data["travel_record_id"])
+                    travel=conn.execute("SELECT * FROM hr_enterprise_records WHERE id=%s AND domain='travel' FOR UPDATE",(travel_id,)).fetchone()
+                    updated_travel=conn.execute("UPDATE hr_enterprise_records SET status='claimed',version=version+1,updated_by_user_id=%s,updated_at=now() WHERE id=%s RETURNING *",
+                        (actor,travel_id)).fetchone()
+                    conn.execute("INSERT INTO hr_enterprise_events(record_id,event_type,from_status,to_status,before_state,after_state,actor_user_id) VALUES(%s,'claim_submitted','completed','claimed',%s::jsonb,%s::jsonb,%s)",
+                        (travel_id,json.dumps(dict(travel),default=str),json.dumps(dict(updated_travel),default=str),actor))
         return row
     except HTTPException: raise
     except psycopg.Error as exc: raise _db_error(exc) from exc
@@ -480,6 +491,15 @@ def transition_record(domain:str,record_id:int,payload:TransitionInput,request:R
                     raise HTTPException(422,"A verification or rejection note is required for employee documents")
                 if domain=="recruitment" and payload.status=="rejected" and not (payload.note and payload.note.strip()):
                     raise HTTPException(422,"A rejection reason is required for recruitment decisions")
+                if domain=="travel" and record_type=="claim" and payload.status=="reimbursed":
+                    travel_id=int(old["payload"]["travel_record_id"])
+                    travel=conn.execute("SELECT * FROM hr_enterprise_records WHERE id=%s AND domain='travel' FOR UPDATE",(travel_id,)).fetchone()
+                    if not travel or travel["status"]!="claimed":
+                        raise HTTPException(409,"The linked travel request is not awaiting reimbursement")
+                    updated_travel=conn.execute("UPDATE hr_enterprise_records SET status='reimbursed',version=version+1,updated_by_user_id=%s,updated_at=now() WHERE id=%s RETURNING *",
+                        (actor,travel_id)).fetchone()
+                    conn.execute("INSERT INTO hr_enterprise_events(record_id,event_type,from_status,to_status,before_state,after_state,note,actor_user_id) VALUES(%s,'claim_reimbursed','claimed','reimbursed',%s::jsonb,%s::jsonb,%s,%s)",
+                        (travel_id,json.dumps(dict(travel),default=str),json.dumps(dict(updated_travel),default=str),payload.note,actor))
                 if domain=="exit" and record_type=="case" and payload.status=="completed":
                     if old["employee_id"] is None:
                         raise HTTPException(409,"An exit case must be linked to an employee before completion")
