@@ -277,8 +277,18 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
      await apiRequest("/hr/enterprise/exit/loans/"+id+"/approve",{method:"POST",body:"{}"});
      const result=await apiRequest("/hr/enterprise/exit/loans");
      setEmployeeLoans(result.items||[]);
-     setNotice("Employee loan approved and included in future exit calculations.");
+     setNotice("Employee loan approved. Disburse it to post the funds and activate the outstanding balance.");
    }catch(e){setError(e.message||"Unable to approve employee loan.");}
+   finally{setBusy(false);}
+ }
+ async function disburseEmployeeLoan(id){
+   setBusy(true);setError("");setNotice("");
+   try{
+     await apiRequest("/hr/enterprise/exit/loans/"+id+"/disburse",{method:"POST",body:"{}"});
+     const result=await apiRequest("/hr/enterprise/exit/loans");
+     setEmployeeLoans(result.items||[]);
+     setNotice("Employee loan disbursed and posted to the accounting ledger.");
+   }catch(e){setError(e.message||"Unable to disburse employee loan.");}
    finally{setBusy(false);}
  }
  async function recordLoanRepayment(id){
@@ -550,7 +560,7 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
     </article>)}</div>
    </section>}
    {domain==="exit"&&manager&&<section className="hr-panel" aria-label="Employee loan register">
-    <div className="hr-directory-heading"><div><h3>Employee loan register</h3><p>Approved outstanding balances feed automatic full-and-final deductions. Repayments are recorded in the loan ledger.</p></div></div>
+    <div className="hr-directory-heading"><div><h3>Employee loan register</h3><p>Only disbursed balances feed full-and-final deductions. Approval and actual accounting disbursement are separate steps; repayments post to the ledger.</p></div></div>
     <form className="hr-form hr-grid" onSubmit={createEmployeeLoan}>
      <label>Employee<select required value={loanForm.employee_id} onChange={e=>setLoanForm(x=>({...x,employee_id:e.target.value}))}><option value="">Select employee</option>{employees.map(x=><option key={x.id} value={x.id}>{employeeNames[x.id]||x.employee_code}</option>)}</select></label>
      <label>Loan reference<input required value={loanForm.loan_reference} onChange={e=>setLoanForm(x=>({...x,loan_reference:e.target.value}))}/></label>
@@ -561,7 +571,8 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
      <div><strong>{loan.loan_reference} · {loan.employee_id&&employeeNames[loan.employee_id]}</strong><small>Outstanding {new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR",maximumFractionDigits:2}).format(Number(loan.outstanding_amount||0))} · {loan.status}</small></div>
      <div className="hr-actions">
       {loan.status==="draft"&&<button type="button" className="hr-secondary" disabled={busy} onClick={()=>approveEmployeeLoan(loan.id)}>Approve</button>}
-      {["active","approved"].includes(loan.status)&&<><input aria-label={"Repayment amount for "+loan.loan_reference} type="number" min="0.01" step="0.01" value={loanRepaymentAmounts[loan.id]||""} onChange={e=>setLoanRepaymentAmounts(old=>({...old,[loan.id]:e.target.value}))}/><button type="button" className="hr-secondary" disabled={busy} onClick={()=>recordLoanRepayment(loan.id)}>Record repayment</button></>}
+      {loan.status==="approved"&&<button type="button" className="hr-secondary" disabled={busy} onClick={()=>disburseEmployeeLoan(loan.id)}>Disburse and post</button>}
+      {loan.status==="active"&&<><input aria-label={"Repayment amount for "+loan.loan_reference} type="number" min="0.01" max={loan.outstanding_amount} step="0.01" value={loanRepaymentAmounts[loan.id]||""} onChange={e=>setLoanRepaymentAmounts(old=>({...old,[loan.id]:e.target.value}))}/><button type="button" className="hr-secondary" disabled={busy} onClick={()=>recordLoanRepayment(loan.id)}>Record repayment</button></>}
      </div>
     </article>)}</div>
    </section>}
