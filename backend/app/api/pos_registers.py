@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.core.config import settings
 from app.services.pos_tender import order_is_fully_paid
+from app.services.order_inventory import consume_pos_order_stock
 
 router = APIRouter(prefix="/pos", tags=["pos-registers"])
 
@@ -340,6 +341,22 @@ def confirm_cash_payment(shift_id: int, payment_id: int, request: Request):
                            WHERE EXISTS (SELECT 1 FROM orders WHERE id=%s AND status='confirmed')
                              AND NOT EXISTS (SELECT 1 FROM order_status_history
                                              WHERE order_id=%s AND from_status='placed' AND to_status='confirmed')""",
+                        (payment["order_id"],payment["order_id"],payment["order_id"]),
+                    )
+                    try:
+                        consume_pos_order_stock(conn, int(payment["order_id"]))
+                    except ValueError as exc:
+                        raise HTTPException(status_code=409, detail=str(exc)) from exc
+                    conn.execute(
+                        "UPDATE orders SET status='delivered',updated_at=now() WHERE id=%s AND status='confirmed' AND channel='pos'",
+                        (payment["order_id"],),
+                    )
+                    conn.execute(
+                        """INSERT INTO order_status_history(order_id,from_status,to_status)
+                           SELECT %s,'confirmed','delivered'
+                           WHERE EXISTS (SELECT 1 FROM orders WHERE id=%s AND status='delivered')
+                             AND NOT EXISTS (SELECT 1 FROM order_status_history
+                                             WHERE order_id=%s AND from_status='confirmed' AND to_status='delivered')""",
                         (payment["order_id"],payment["order_id"],payment["order_id"]),
                     )
                 conn.execute(
