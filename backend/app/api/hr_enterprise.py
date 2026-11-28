@@ -1491,6 +1491,21 @@ def update_record(domain:str,record_id:int,payload:RecordUpdate,request:Request)
                     record_type=data.get("record_type")
                     data=_validate(domain,record_type,payload.payload)
                     _validate_references(conn,domain,record_type,data)
+                    if domain=="performance" and record_type=="goal" and data.get("weight") not in (None,""):
+                        cycle_id=int(data["cycle_id"])
+                        cycle=conn.execute(
+                            "SELECT status FROM hr_enterprise_records WHERE id=%s AND domain='performance' "
+                            "AND payload->>'record_type'='review_cycle' FOR UPDATE",(cycle_id,)
+                        ).fetchone()
+                        if not cycle or cycle["status"] not in {"draft","active","self_review"}:
+                            raise HTTPException(409,"Goals can be edited only while the performance cycle is editable")
+                        existing_weight=conn.execute(
+                            "SELECT COALESCE(sum((payload->>'weight')::numeric),0) AS weight "
+                            "FROM hr_enterprise_records WHERE domain='performance' AND payload->>'record_type'='goal' "
+                            "AND payload->>'cycle_id'=%s AND id<>%s AND status NOT IN ('cancelled','archived')",
+                            (str(cycle_id),record_id)
+                        ).fetchone()["weight"]
+                        _ensure_goal_weight_limit(existing_weight,data["weight"])
                     data["record_type"]=record_type
                 row=conn.execute(
                   "UPDATE hr_enterprise_records SET title=COALESCE(%s,title),employee_id=%s,parent_id=%s,effective_date=%s,due_date=%s,payload=%s::jsonb,version=version+1,updated_by_user_id=%s,updated_at=now() "
