@@ -395,3 +395,23 @@ def test_candidate_cannot_be_hired_twice():
     with pytest.raises(HTTPException) as exc:
         _ensure_candidate_hireable("hired")
     assert exc.value.status_code == 409
+
+
+@pytest.mark.parametrize("existing,requested,limit", [
+    ("0","100","100"),
+    ("25","75","100"),
+])
+def test_travel_budget_guard_accepts_within_limit(existing, requested, limit):
+    from app.api.hr_enterprise import _ensure_travel_amount_budget
+    _ensure_travel_amount_budget(existing, requested, limit, "bookings")
+
+
+@pytest.mark.parametrize("existing,requested,limit", [
+    ("0","101","100"),
+    ("60","50","100"),
+])
+def test_travel_budget_guard_rejects_over_limit(existing, requested, limit):
+    from app.api.hr_enterprise import _ensure_travel_amount_budget
+    with pytest.raises(HTTPException) as exc:
+        _ensure_travel_amount_budget(existing, requested, limit, "bookings")
+    assert exc.value.status_code == 422
