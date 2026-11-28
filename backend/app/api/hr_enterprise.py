@@ -812,6 +812,37 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                     raise HTTPException(422,"Parent record must belong to the same HR domain")
                 data=_validate(domain,payload.record_type,payload.payload)
                 _validate_references(conn,domain,payload.record_type,data)
+                if domain=="recruitment" and payload.record_type=="candidate":
+                    email=data["email"]
+                    conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",(email,))
+                    duplicate=conn.execute(
+                        "SELECT id FROM hr_enterprise_records WHERE domain='recruitment' "
+                        "AND payload->>'record_type'='candidate' AND lower(payload->>'email')=%s "
+                        "AND status NOT IN ('archived','withdrawn') LIMIT 1",(email,),
+                    ).fetchone()
+                    if duplicate:
+                        raise HTTPException(409,"A candidate with this email already exists; update the existing candidate record")
+                if domain=="recruitment" and payload.record_type=="application":
+                    candidate=conn.execute(
+                        "SELECT status FROM hr_enterprise_records WHERE id=%s AND domain='recruitment' "
+                        "AND payload->>'record_type'='candidate' FOR UPDATE",(int(data["candidate_id"]),),
+                    ).fetchone()
+                    job=conn.execute(
+                        "SELECT status FROM hr_enterprise_records WHERE id=%s AND domain='recruitment' "
+                        "AND payload->>'record_type'='job_opening' FOR UPDATE",(int(data["job_id"]),),
+                    ).fetchone()
+                    if candidate["status"]=="hired":
+                        raise HTTPException(409,"A hired candidate cannot be submitted for another application")
+                    if not job or job["status"]!="open":
+                        raise HTTPException(409,"Applications can be created only for open job openings")
+                    duplicate=conn.execute(
+                        "SELECT id FROM hr_enterprise_records WHERE domain='recruitment' "
+                        "AND payload->>'record_type'='application' AND payload->>'candidate_id'=%s "
+                        "AND payload->>'job_id'=%s AND status NOT IN ('rejected','withdrawn','archived') LIMIT 1",
+                        (str(data["candidate_id"]),str(data["job_id"])),
+                    ).fetchone()
+                    if duplicate:
+                        raise HTTPException(409,"This candidate already has an active application for the selected job")
                 if domain=="travel" and payload.record_type=="claim":
                     locked_travel=conn.execute(
                         "SELECT status FROM hr_enterprise_records WHERE id=%s AND domain='travel' FOR UPDATE",
