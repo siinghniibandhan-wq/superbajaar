@@ -364,3 +364,21 @@ def test_travel_claim_rejects_non_completed_status(status):
 def test_travel_claim_accepts_completed_status():
     from app.api.hr_enterprise import _ensure_travel_claimable
     _ensure_travel_claimable("completed")
+
+
+@pytest.mark.parametrize("status,active", [
+    ("available", False),
+    ("approved", False),
+    ("available", True),
+    ("assigned", False),
+    ("maintenance", False),
+    ("written_off", False),
+])
+def test_asset_allocation_guard(status, active):
+    from app.api.hr_enterprise import _ensure_asset_allocatable
+    if status in {"available", "approved"} and not active:
+        _ensure_asset_allocatable(status, active)
+    else:
+        with pytest.raises(HTTPException) as exc:
+            _ensure_asset_allocatable(status, active)
+        assert exc.value.status_code == 409
