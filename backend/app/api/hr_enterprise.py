@@ -740,6 +740,8 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                         employee_id=allocation_employee_id
                     elif int(employee_id)!=allocation_employee_id:
                         raise HTTPException(422,"Allocation employee must match the linked employee profile")
+                if domain=="performance" and payload.record_type in {"review","self_review"} and employee_id is None:
+                    raise HTTPException(422,"A performance review must be linked to its subject employee")
                 if domain=="travel" and payload.record_type=="request":
                     if employee_id is None:
                         raise HTTPException(422,"A travel request must be linked to an employee")
