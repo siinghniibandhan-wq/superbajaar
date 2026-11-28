@@ -76,3 +76,50 @@ def test_pos_sales_aggregates_payments_before_joining_order_lines(monkeypatch):
     assert "SELECT order_id," in query and "sum(amount) FILTER (WHERE p.status='captured')" in query
     assert "FROM payments p GROUP BY order_id" in query
     assert "string_agg(DISTINCT p.status" in query
+
+
+
+def test_pos_sales_supports_date_register_cashier_tender_and_search_filters(monkeypatch):
+    from datetime import date
+    conn = FakeConnection(
+        rows=[{"id": 7, "order_number": "POS-7", "register_id": 2, "cashier_user_id": 9}],
+        row={"total": 1},
+    )
+
+    @contextmanager
+    def connect():
+        yield conn
+
+    monkeypatch.setattr(pos, "_connect", connect)
+    result = pos.list_pos_sales(
+        date_from=date(2026, 11, 1),
+        date_to=date(2026, 11, 28),
+        register_id=2,
+        cashier_user_id=9,
+        payment_method="upi",
+        search="POS-7",
+        limit=25,
+        offset=0,
+    )
+
+    assert result["total"] == 1
+    query, params = conn.queries[0]
+    assert "pos_register_shifts s" in query
+    assert "s.register_id=%s" in query
+    assert "s.cashier_user_id=%s" in query
+    assert "EXISTS (SELECT 1 FROM payments pm" in query
+    assert "o.order_number ILIKE %s" in query
+    assert params == (
+        date(2026, 11, 1), date(2026, 11, 28), 2, 9, "upi",
+        "%POS-7%", "%POS-7%", "%POS-7%", 25, 0,
+    )
+    count_query, count_params = conn.queries[1]
+    assert "LEFT JOIN pos_register_shifts" in count_query
+    assert count_params == params[:-2]
+
+
+def test_pos_sales_rejects_inverted_date_range():
+    from datetime import date
+    with pytest.raises(HTTPException) as exc:
+        pos.list_pos_sales(date_from=date(2026, 11, 29), date_to=date(2026, 11, 1))
+    assert exc.value.status_code == 422
