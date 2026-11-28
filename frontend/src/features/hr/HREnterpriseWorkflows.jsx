@@ -511,7 +511,7 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
      <button disabled={busy||!employees.length}>Create loan draft</button>
     </form>
     <div className="hr-list">{employeeLoans.map(loan=><article key={loan.id} className="hr-list-row">
-     <div><strong>{loan.loan_reference} · {loan.employee_id&&employeeNames[loan.employee_id]}</strong><small>Outstanding {money(loan.outstanding_amount)} · {loan.status}</small></div>
+     <div><strong>{loan.loan_reference} · {loan.employee_id&&employeeNames[loan.employee_id]}</strong><small>Outstanding {new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR",maximumFractionDigits:2}).format(Number(loan.outstanding_amount||0))} · {loan.status}</small></div>
      <div className="hr-actions">
       {loan.status==="draft"&&<button type="button" className="hr-secondary" disabled={busy} onClick={()=>approveEmployeeLoan(loan.id)}>Approve</button>}
       {["active","approved"].includes(loan.status)&&<><input aria-label={"Repayment amount for "+loan.loan_reference} type="number" min="0.01" step="0.01" value={loanRepaymentAmounts[loan.id]||""} onChange={e=>setLoanRepaymentAmounts(old=>({...old,[loan.id]:e.target.value}))}/><button type="button" className="hr-secondary" disabled={busy} onClick={()=>recordLoanRepayment(loan.id)}>Record repayment</button></>}
