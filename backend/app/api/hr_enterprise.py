@@ -1415,6 +1415,10 @@ def enterprise_workflow_analytics(
     request:Request,
     from_date:date=Query(...),
     to_date:date=Query(...),
+    domain_filter:str|None=Query(None,alias="domain",pattern="^(documents|performance|learning|assets|travel|exit)$"),
+    record_type:str|None=Query(None,max_length=48),
+    status:str|None=Query(None,max_length=32),
+    department_id:int|None=Query(None,gt=0),
 ):
     """Computed operational KPIs for the seven non-recruitment HR domains."""
     _manager(request)
@@ -1422,17 +1426,25 @@ def enterprise_workflow_analytics(
         raise HTTPException(422,"Report end date cannot precede its start date")
     try:
         with _hr_connection() as conn:
+            clauses=["domain IN ('documents','performance','learning','assets','travel','exit')","created_at::date BETWEEN %s AND %s"]
+            params=[from_date,to_date]
+            if domain_filter:
+                clauses.append("domain=%s");params.append(domain_filter)
+            if record_type:
+                clauses.append("payload->>'record_type'=%s");params.append(record_type)
+            if status:
+                clauses.append("status=%s");params.append(status)
+            if department_id:
+                clauses.append("employee_id IN (SELECT id FROM hr_employees WHERE department_id=%s)");params.append(department_id)
             rows=conn.execute(
                 "SELECT domain,payload->>'record_type' AS record_type,status,count(*)::int AS records,"
                 "count(*) FILTER (WHERE due_date<CURRENT_DATE AND status NOT IN "
                 "('archived','rejected','expired','completed','cancelled','withdrawn','written_off','reimbursed'))::int AS overdue,"
                 "count(*) FILTER (WHERE due_date BETWEEN CURRENT_DATE AND CURRENT_DATE+INTERVAL '30 days' "
                 "AND status NOT IN ('archived','rejected','expired','completed','cancelled','withdrawn','written_off','reimbursed'))::int AS due_soon "
-                "FROM hr_enterprise_records WHERE domain IN "
-                "('documents','performance','learning','assets','travel','exit') "
-                "AND created_at::date BETWEEN %s AND %s "
+                "FROM hr_enterprise_records WHERE "+" AND ".join(clauses)+" "
                 "GROUP BY domain,payload->>'record_type',status ORDER BY domain,record_type,status",
-                (from_date,to_date),
+                tuple(params),
             ).fetchall()
         summary={}
         for row in rows:
