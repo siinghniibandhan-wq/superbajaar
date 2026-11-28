@@ -55,6 +55,10 @@ export default function POSWorkspace({ onBack }) {
   const [salesFilters, setSalesFilters] = useState({ search: "", date_from: "", date_to: "", payment_method: "", register_id: "", cashier_user_id: "", status: "" });
   const [salesBusy, setSalesBusy] = useState(false);
   const [selectedSale, setSelectedSale] = useState(null);
+  const [refundPayment, setRefundPayment] = useState(null);
+  const [refundAmount, setRefundAmount] = useState("");
+  const [refundReason, setRefundReason] = useState("");
+  const [refundBusy, setRefundBusy] = useState(false);
   const [saleDetailBusy, setSaleDetailBusy] = useState(false);
   const [analyticsError, setAnalyticsError] = useState("");
   const [locations, setLocations] = useState([]);
@@ -111,6 +115,30 @@ export default function POSWorkspace({ onBack }) {
     } finally {
       setSalesBusy(false);
     }
+  }
+
+  function startManualRefund(payment) {
+    const alreadyRefunded = (selectedSale?.refunds || []).filter(r => r.payment_id === payment.id && ["processed","pending"].includes(r.status)).reduce((sum,r)=>sum+Number(r.amount||0),0);
+    const remaining = Math.max(0,Number(payment.amount||0)-alreadyRefunded);
+    setRefundPayment(payment); setRefundAmount(remaining.toFixed(2)); setRefundReason("");
+  }
+
+  async function submitManualRefund(event) {
+    event.preventDefault();
+    if (!refundPayment || !selectedSale) return;
+    const amount = Number(refundAmount);
+    if (!Number.isFinite(amount) || amount <= 0 || !refundReason.trim()) { setAnalyticsError("Enter a positive refund amount and a reason."); return; }
+    setRefundBusy(true); setAnalyticsError("");
+    try {
+      const key = globalThis.crypto?.randomUUID?.() || (Date.now().toString(16)+Math.random().toString(16).slice(2));
+      await apiRequest("/payments/"+refundPayment.id+"/manual-refunds", {
+        method:"POST", headers:{"Idempotency-Key":key}, body:JSON.stringify({amount,note:refundReason.trim()}),
+      });
+      setRefundPayment(null); setRefundAmount(""); setRefundReason("");
+      await openSaleDetails(selectedSale.id); await refreshAnalytics();
+      setNotice("Manual refund recorded. POS cash drawer movement was audited where applicable.");
+    } catch(e) { setAnalyticsError(e.message || "Refund could not be recorded."); }
+    finally { setRefundBusy(false); }
   }
 
   async function openSaleDetails(saleId) {
@@ -503,7 +531,7 @@ export default function POSWorkspace({ onBack }) {
         <div className="sb-data-heading"><h3>{selectedSale.order_number} · {money(selectedSale.total)}</h3><button type="button" onClick={() => setSelectedSale(null)}>Close details</button></div>
         <p>{selectedSale.customer_name} · {selectedSale.customer_phone || "No phone"} · {selectedSale.status}</p><p>Subtotal {money(selectedSale.subtotal)} · Discount {money(selectedSale.discount_total)}{selectedSale.promotion_code ? " (" + selectedSale.promotion_code + ")" : ""} · GST {money(selectedSale.tax_total)} · Total {money(selectedSale.total)}</p>
         <div className="sb-table-wrap"><table><thead><tr><th>Item</th><th>SKU</th><th>Qty</th><th>Unit price</th><th>Line total</th><th>GST</th></tr></thead><tbody>{(selectedSale.lines || []).map(line => <tr key={line.id}><td>{line.product_name}</td><td>{line.sku}</td><td>{line.quantity}</td><td>{money(line.unit_price)}</td><td>{money(line.line_total)}</td><td>{money(line.tax_total)}{line.hsn_code ? <small>HSN {line.hsn_code} · {line.gst_rate}%</small> : null}</td></tr>)}</tbody></table></div>
-        <div className="sb-table-wrap"><table><thead><tr><th>Payment ref</th><th>Method</th><th>Amount</th><th>Status</th><th>Provider ref</th></tr></thead><tbody>{(selectedSale.payments || []).map(payment => <tr key={payment.id}><td>{payment.payment_reference}</td><td>{payment.method}</td><td>{money(payment.amount)}</td><td>{payment.status}</td><td>{payment.provider_reference || "—"}</td></tr>)}</tbody></table></div>
+        <div className="sb-table-wrap"><table><thead><tr><th>Payment ref</th><th>Method</th><th>Amount</th><th>Status</th><th>Provider ref</th><th>Action</th></tr></thead><tbody>{(selectedSale.payments || []).map(payment => <tr key={payment.id}><td>{payment.payment_reference}</td><td>{payment.method}</td><td>{money(payment.amount)}</td><td>{payment.status}</td><td>{payment.provider_reference || "—"}</td><td>{canManageRegisters && !payment.provider_reference && ["captured","refunded"].includes(payment.status) && Number(payment.amount) > (selectedSale.refunds || []).filter(r=>r.payment_id===payment.id && ["processed","pending"].includes(r.status)).reduce((sum,r)=>sum+Number(r.amount||0),0) ? <button type="button" onClick={()=>startManualRefund(payment)}>Refund</button> : "—"}</td></tr>)}</tbody></table></div>
       </section>}
     </div>
     <div className="sb-pos-terminal" style={{ display: activeView === "checkout" ? "block" : "none" }}>
