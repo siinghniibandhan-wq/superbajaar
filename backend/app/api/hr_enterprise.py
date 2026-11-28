@@ -665,6 +665,26 @@ def hire_recruitment_candidate(offer_id:int,payload:RecruitmentHireInput,request
     except psycopg.Error as exc: raise _db_error(exc) from exc
 
 
+@router.get("/expiring")
+def list_expiring_records(request:Request,within_days:int=Query(30,ge=0,le=365)):
+    _manager(request)
+    try:
+        with _hr_connection() as conn:
+            rows=conn.execute(
+                "SELECT r.*,e.employee_code,e.first_name,e.last_name FROM hr_enterprise_records r "
+                "LEFT JOIN hr_employees e ON e.id=r.employee_id "
+                "WHERE r.due_date IS NOT NULL AND r.due_date<=CURRENT_DATE+(%s*INTERVAL '1 day') "
+                "AND r.status NOT IN ('archived','rejected','expired') "
+                "AND ((r.domain='documents' AND r.payload->>'record_type'='employee_document') "
+                "OR (r.domain='learning' AND r.payload->>'record_type'='certificate') "
+                "OR (r.domain='assets' AND r.payload->>'record_type'='asset')) "
+                "ORDER BY r.due_date,r.id LIMIT 500",
+                (within_days,),
+            ).fetchall()
+            return {"items":rows,"within_days":within_days}
+    except psycopg.Error as exc: raise _db_error(exc) from exc
+
+
 @router.get("/{domain}")
 def list_records(domain:str,request:Request,status:str|None=None,employee_id:int|None=None,record_type:str|None=None,limit:int=Query(100,ge=1,le=500)):
     if domain not in DOMAINS: raise HTTPException(404,"Unknown HR domain")
