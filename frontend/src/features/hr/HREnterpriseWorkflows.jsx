@@ -85,8 +85,12 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
        setDocumentFile(null);
        setNotice("Document uploaded to private storage.");
      }else{
-       const payload={record_type:recordType,title:title.trim(),payload:fields};
-       if(manager&&employeeId)payload.employee_id=Number(employeeId);
+       const recordPayload={...fields};
+       const payload={record_type:recordType,title:title.trim(),payload:recordPayload};
+       if(manager&&employeeId){
+         payload.employee_id=Number(employeeId);
+         if(domain==="assets"&&recordType==="allocation")recordPayload.employee_id=Number(employeeId);
+       }
        await apiRequest("/hr/enterprise/"+domain,{method:"POST",body:JSON.stringify(payload)});
        setNotice("Record created.");
      }
