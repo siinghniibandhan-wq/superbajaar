@@ -667,7 +667,9 @@ def list_records(domain:str,request:Request,status:str|None=None,employee_id:int
             rows=conn.execute(
               "SELECT r.*,u.email AS creator_email FROM hr_enterprise_records r "
               "LEFT JOIN app_users u ON u.id=r.created_by_user_id WHERE r.domain=%s "
-              "AND (%s IS NULL OR r.status=%s) AND (%s IS NULL OR r.employee_id=%s) "
+              "AND (%s IS NULL OR r.status=%s) AND (%s IS NULL OR r.employee_id=%s "
+              "OR (r.domain='learning' AND r.payload->>'record_type'='course') "
+              "OR (r.domain='travel' AND r.payload->>'record_type'='travel_policy' AND r.status='approved')) "
               "AND (%s IS NULL OR r.payload->>'record_type'=%s) "
               "ORDER BY r.updated_at DESC,r.id DESC LIMIT %s",
               (domain,status,status,employee_id,employee_id,record_type,record_type,limit)
