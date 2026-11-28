@@ -196,6 +196,11 @@ def _ensure_asset_allocatable(status, active_allocations):
         raise HTTPException(409,"This asset already has an active allocation")
 
 
+def _ensure_candidate_hireable(status):
+    if status == "hired":
+        raise HTTPException(409,"This candidate has already been hired")
+
+
 def _validate_references(conn, domain, record_type, data):
     references = {
         ("recruitment","application"): {
@@ -588,8 +593,7 @@ def hire_recruitment_candidate(offer_id:int,payload:RecruitmentHireInput,request
                     "AND payload->>'record_type'='candidate' FOR UPDATE",(candidate_id,)
                 ).fetchone()
                 if not candidate: raise HTTPException(409,"The linked candidate record is missing")
-                if candidate["status"]=="hired":
-                    raise HTTPException(409,"This candidate has already been hired")
+                _ensure_candidate_hireable(candidate["status"])
                 job_id=int(application["payload"]["job_id"])
                 job=conn.execute(
                     "SELECT * FROM hr_enterprise_records WHERE id=%s AND domain='recruitment' "
