@@ -395,8 +395,10 @@ def create_razorpay_order(payload: RazorpayOrderCreate, request: Request):
     """Create or reuse a Razorpay order without holding a DB transaction over network I/O."""
     if not settings.razorpay_key_id or not settings.razorpay_key_secret:
         raise HTTPException(status_code=503, detail="Razorpay payments are not configured")
-    if getattr(request.state, "role", None) != "customer":
-        raise HTTPException(status_code=403, detail="Customer checkout is required")
+    role = getattr(request.state, "role", None)
+    actor_id = getattr(request.state, "user_id", None)
+    if role != "customer" and not (role in {"staff", "manager", "admin", "super_admin"} and actor_id):
+        raise HTTPException(status_code=403, detail="Customer or authenticated POS cashier session is required")
 
     lock_key = f"razorpay-order:{payload.order_id}"
     try:
@@ -408,14 +410,20 @@ def create_razorpay_order(payload: RazorpayOrderCreate, request: Request):
             try:
                 with conn.transaction():
                     order = conn.execute(
-                        """SELECT id, order_number, customer_email, total, status
-                           FROM orders WHERE id=%s FOR UPDATE""",
+                        """SELECT o.id, o.order_number, o.customer_email, o.total, o.status, o.channel,
+                                  s.cashier_user_id
+                           FROM orders o
+                           LEFT JOIN pos_register_shifts s ON s.id=o.pos_register_shift_id
+                           WHERE o.id=%s FOR UPDATE OF o""",
                         (payload.order_id,),
                     ).fetchone()
                     if order is None:
                         raise HTTPException(status_code=404, detail="Order not found")
-                    if str(order["customer_email"] or "").lower() != str(request.state.customer_email).lower():
-                        raise HTTPException(status_code=403, detail="Order does not belong to this customer")
+                    if role == "customer":
+                        if str(order["customer_email"] or "").lower() != str(request.state.customer_email).lower():
+                            raise HTTPException(status_code=403, detail="Order does not belong to this customer")
+                    elif order["channel"] != "pos" or int(order["cashier_user_id"] or 0) != int(actor_id):
+                        raise HTTPException(status_code=403, detail="POS payment can only be initiated by the cashier assigned to this sale")
                     if order["status"] != "placed":
                         raise HTTPException(status_code=409, detail="Only newly placed orders can start payment")
                     amount_paise = int((Decimal(str(order["total"])) * 100).quantize(Decimal("1")))
@@ -467,12 +475,16 @@ def create_razorpay_order(payload: RazorpayOrderCreate, request: Request):
 
                 with conn.transaction():
                     current = conn.execute(
-                        "SELECT id, order_number, customer_email, total, status FROM orders WHERE id=%s FOR UPDATE",
+                        "SELECT o.id, o.order_number, o.customer_email, o.total, o.status, o.channel,
+                               s.cashier_user_id
+                        FROM orders o LEFT JOIN pos_register_shifts s ON s.id=o.pos_register_shift_id
+                        WHERE o.id=%s FOR UPDATE OF o",
                         (payload.order_id,),
                     ).fetchone()
                     if (current is None or current["status"] != "placed"
-                        or str(current["customer_email"] or "").lower() != str(request.state.customer_email).lower()
-                        or Decimal(str(current["total"])) != Decimal(str(order_snapshot["total"]))):
+                        or Decimal(str(current["total"])) != Decimal(str(order_snapshot["total"]))
+                        or (role == "customer" and str(current["customer_email"] or "").lower() != str(request.state.customer_email).lower())
+                        or (role != "customer" and (current["channel"] != "pos" or int(current["cashier_user_id"] or 0) != int(actor_id)))):
                         raise HTTPException(status_code=409, detail="Order changed while payment was being initialised")
                     payment_reference = "PAY-" + uuid.uuid4().hex[:12].upper()
                     payment = conn.execute(
@@ -503,8 +515,10 @@ async def verify_razorpay_payment(payload: RazorpayPaymentVerify, request: Reque
     """Verify Checkout's HMAC response and confirm the payment with Razorpay's API."""
     if not settings.razorpay_key_id or not settings.razorpay_key_secret:
         raise HTTPException(status_code=503, detail="Razorpay payments are not configured")
-    if getattr(request.state, "role", None) != "customer":
-        raise HTTPException(status_code=403, detail="Customer checkout is required")
+    role = getattr(request.state, "role", None)
+    actor_id = getattr(request.state, "user_id", None)
+    if role != "customer" and not (role in {"staff", "manager", "admin", "super_admin"} and actor_id):
+        raise HTTPException(status_code=403, detail="Customer or authenticated POS cashier session is required")
     message = f"{payload.razorpay_order_id}|{payload.razorpay_payment_id}".encode("utf-8")
     expected = hmac.new(settings.razorpay_key_secret.encode("utf-8"), message, hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, payload.razorpay_signature):
@@ -531,13 +545,20 @@ async def verify_razorpay_payment(payload: RazorpayPaymentVerify, request: Reque
         with _connect() as conn:
             with conn.transaction():
                 payment = conn.execute(
-                    """SELECT p.id, p.order_id, p.amount, p.currency, p.status, o.customer_email, o.order_number, o.status AS order_status
+                    """SELECT p.id, p.order_id, p.amount, p.currency, p.status, o.customer_email, o.order_number,
+                              o.status AS order_status, o.channel, s.cashier_user_id
                        FROM payments p JOIN orders o ON o.id=p.order_id
+                       LEFT JOIN pos_register_shifts s ON s.id=o.pos_register_shift_id
                        WHERE p.provider_order_id=%s FOR UPDATE OF p, o""",
                     (payload.razorpay_order_id,),
                 ).fetchone()
-                if payment is None or str(payment["customer_email"] or "").lower() != str(request.state.customer_email).lower():
+                if payment is None:
                     raise HTTPException(status_code=404, detail="Payment attempt not found")
+                if role == "customer":
+                    if str(payment["customer_email"] or "").lower() != str(request.state.customer_email).lower():
+                        raise HTTPException(status_code=404, detail="Payment attempt not found")
+                elif payment["channel"] != "pos" or int(payment["cashier_user_id"] or 0) != int(actor_id):
+                    raise HTTPException(status_code=403, detail="POS payment can only be verified by the cashier assigned to this sale")
                 if payment["status"] == "refunded":
                     raise HTTPException(status_code=409, detail="This payment is already recorded as refunded; manual reconciliation is required")
                 if (int(Decimal(str(payment["amount"])) * 100) != provider_payment.get("amount")
