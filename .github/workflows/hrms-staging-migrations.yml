@@ -1,0 +1,29 @@
+name: HRMS Staging Migrations
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_staging:
+        description: "Type APPLY to run HRMS migrations against the protected staging environment"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  apply-hrms-migrations:
+    if: ${{ inputs.confirm_staging == 'APPLY' }}
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+      - name: Apply HRMS migrations to staging only
+        env:
+          SB_STAGING_DATABASE_URL: ${{ secrets.SB_STAGING_DATABASE_URL }}
+        run: backend/scripts/run_hr_staging_migrations.sh

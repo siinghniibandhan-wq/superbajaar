@@ -19,9 +19,9 @@ test("admin route presents accessible sign-in controls without a session", async
 test("payment information page discloses current online payment availability", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("link", { name: "Payment Information" }).click();
-  await expect(page.getByRole("heading", { name: "Payment Information" })).toBeVisible();
-  await expect(page.getByText(/Online payment, when available, is collected through the Razorpay secure checkout/)).toBeVisible();
-  await expect(page.getByText(/server-to-server confirmation has been securely verified/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Payment Terms" })).toBeVisible();
+  await expect(page.getByText(/Online payments are collected through Razorpay/)).toBeVisible();
+  await expect(page.getByText(/secure server confirmation is verified/)).toBeVisible();
 });
 
 test("customer checkout completes a mocked Razorpay payment", async ({ page }) => {
@@ -70,8 +70,15 @@ test("customer checkout completes a mocked Razorpay payment", async ({ page }) =
     const body = method === "POST" ? request.postDataJSON() : undefined;
     requests.push({ path: url.pathname, method, body });
 
+    if (url.pathname === "/api/customer-auth/addresses") {
+      return route.fulfill({ json: { items: [{
+        id: 501, label: "Home", recipient_name: "Test Buyer", phone: "9876543210",
+        address: "1 Test Street, Delhi", pin_code: "110001", is_default: true,
+      }] } });
+    }
     if (url.pathname === "/api/customer-auth/me") {
       return route.fulfill({ json: { customer: {
+        id: 501,
         full_name: "Test Buyer",
         email: "buyer@example.com",
         phone: "9876543210",
@@ -187,22 +194,22 @@ test("HR manager can access the HR workspace without admin-wide module access", 
   await expect(page.getByRole("heading", { name: "Admin access required" })).toHaveCount(0);
   await expect(page.getByRole("navigation", { name: "Module navigation" })).toHaveCount(0);
 
-  for (const section of ["People directory", "Attendance", "Leave", "Planning & lifecycle", "Expenses", "Payroll", "Payslips", "Statutory policies"]) {
+  for (const section of ["Employee directory & departments", "Attendance & shifts", "Leave management", "Workforce planning", "Expenses & claims", "Payroll processing", "Payslips", "Statutory compliance"]) {
     await expect(page.getByRole("button", { name: section, exact: true })).toBeVisible();
   }
-  await page.getByRole("button", { name: "People directory" }).click();
+  await page.getByRole("button", { name: "Employee directory & departments" }).click();
   await expect(page.getByRole("heading", { name: "Employee directory" })).toBeVisible();
-  await page.getByRole("button", { name: "Attendance", exact: true }).click();
+  await page.getByRole("button", { name: "Attendance & shifts", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Attendance register" })).toBeVisible();
-  await page.getByRole("button", { name: "Leave", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Leave requests" })).toBeVisible();
+  await page.getByRole("button", { name: "Leave management", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Leave management" })).toBeVisible();
   await expect(page.getByText("No leave requests for this period.")).toBeVisible();
-  await page.getByRole("button", { name: "Expenses", exact: true }).click();
+  await page.getByRole("button", { name: "Expenses & claims", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Expense claims" })).toBeVisible();
   await expect(page.getByText("No expense claims submitted for this period.")).toBeVisible();
-  await page.getByRole("button", { name: "Payroll", exact: true }).click();
+  await page.getByRole("button", { name: "Payroll processing", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Payroll", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Planning & lifecycle" }).click();
+  await page.getByRole("button", { name: "Workforce planning" }).click();
   await expect(page.getByRole("heading", { name: "Shift definitions & roster" })).toBeVisible();
   await page.getByRole("button", { name: "Holiday calendar" }).click();
   await expect(page.getByRole("heading", { name: "Holiday calendars" })).toBeVisible();
@@ -210,7 +217,7 @@ test("HR manager can access the HR workspace without admin-wide module access", 
   await expect(page.getByRole("heading", { name: "Leave policies & balances" })).toBeVisible();
   await page.getByRole("button", { name: "Onboarding & offboarding" }).click();
   await expect(page.getByRole("heading", { name: "Employee onboarding & offboarding" })).toBeVisible();
-  await page.getByRole("button", { name: "Statutory policies" }).click();
+  await page.getByRole("button", { name: "Statutory compliance" }).click();
   await expect(page.getByRole("heading", { name: "Establishments & statutory policies" })).toBeVisible();
   await page.getByRole("button", { name: "Payslips", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Payslips", exact: true })).toBeVisible();
@@ -262,7 +269,7 @@ test("HR manager can submit and approve an effective-dated salary revision", asy
   });
 
   await page.goto("/admin");
-  await page.getByRole("button", { name: "People directory" }).click();
+  await page.getByRole("button", { name: "Employee directory & departments" }).click();
   await page.getByRole("button", { name: "Salary history" }).click();
   await expect(page.getByRole("heading", { name: /Salary history — SB-0011/ })).toBeVisible();
   await page.getByLabel("Effective from").fill("2026-12-01");
@@ -319,7 +326,7 @@ test("HR manager reviews overtime and it is included as an approved variable ear
   });
 
   await page.goto("/admin");
-  await page.getByRole("button", { name: "Payroll", exact: true }).click();
+  await page.getByRole("button", { name: "Payroll processing", exact: true }).click();
   await page.locator(".hr-variable-pay").getByLabel("Employee").selectOption("11");
   await page.getByLabel("Overtime hours").fill("10");
   await page.getByLabel("Hourly rate (₹)").fill("150");
@@ -364,7 +371,7 @@ test("HR attendance register formats Unix-second timestamps as real dates", asyn
   });
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/admin");
-  await page.getByRole("button", { name: "Attendance", exact: true }).click();
+  await page.getByRole("button", { name: "Attendance & shifts", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Attendance register" })).toBeVisible();
   await expect(page.getByText(/2027/)).toBeVisible();
   await expect(page.getByText(/1970/)).toHaveCount(0);
@@ -396,11 +403,11 @@ test("HR workspace adapts its navigation and employee form across desktop and mo
   const navigation = page.getByRole("navigation", { name: "HR sections" });
   await expect(navigation).toBeVisible();
   const desktopLayout = await navigation.evaluate(el => getComputedStyle(el).display);
-  expect(desktopLayout).toBe("flex");
-  await expect(navigation.locator(".hr-nav-group")).toHaveCount(5);
-  await expect(navigation).toHaveCSS("overflow-x", "auto");
+  expect(desktopLayout).toBe("grid");
+  await expect(navigation.locator(".hr-nav-group")).toHaveCount(6);
+  await expect(navigation).toHaveCSS("overflow-x", "visible");
 
-  await page.getByRole("button", { name: "People directory" }).click();
+  await page.getByRole("button", { name: "Employee directory & departments" }).click();
   const employeeDetails = page.locator("details.hr-disclosure").filter({ has: page.locator("form.hr-grid") });
   await expect(employeeDetails).not.toHaveAttribute("open", "");
   await employeeDetails.locator("summary").click();
@@ -409,11 +416,11 @@ test("HR workspace adapts its navigation and employee form across desktop and mo
   const desktopFormColumns = await employeeForm.evaluate(el => getComputedStyle(el).gridTemplateColumns.split(" ").length);
   expect(desktopFormColumns).toBe(3);
 
-  await page.getByRole("button", { name: "Statutory policies" }).click();
+  await page.getByRole("button", { name: "Statutory compliance" }).click();
   await expect(page.getByRole("heading", { name: "Establishments & statutory policies" })).toBeVisible();
   await expect(page.getByLabel("State code")).toHaveValue("");
 
-  await page.getByRole("button", { name: "People directory" }).click();
+  await page.getByRole("button", { name: "Employee directory & departments" }).click();
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(navigation).toBeVisible();
   const mobileColumns = await navigation.evaluate(el => getComputedStyle(el).gridTemplateColumns.split(" ").length);
@@ -461,7 +468,7 @@ test("HR establishment edits preserve existing address and registration details"
   });
 
   await page.goto("/admin");
-  await page.getByRole("button", { name: "Statutory policies" }).click();
+  await page.getByRole("button", { name: "Statutory compliance" }).click();
   await expect(page.getByRole("heading", { name: "Establishments & statutory policies" })).toBeVisible();
   await page.getByRole("button", { name: "Edit", exact: true }).click();
   await expect(page.getByLabel("Address (JSON)")).toHaveValue(/Main Road/);
@@ -504,7 +511,7 @@ test("HR planning defaults use the employee's local calendar date, not the UTC d
   });
 
   await page.goto("/admin");
-  await page.getByRole("button", { name: "Planning & lifecycle" }).click();
+  await page.getByRole("button", { name: "Workforce planning" }).click();
   await expect(page.getByRole("heading", { name: "Shift definitions & roster" })).toBeVisible();
   await expect(page.getByLabel("Work date")).toHaveValue("2026-11-05");
   await expect(page.getByLabel("Effective from")).toHaveValue("2026-11-05");
@@ -535,7 +542,7 @@ test("HR planning surfaces workforce API failures instead of silently showing em
   });
 
   await page.goto("/admin");
-  await page.getByRole("button", { name: "Planning & lifecycle" }).click();
+  await page.getByRole("button", { name: "Workforce planning" }).click();
   await expect(page.getByRole("alert")).toContainText("HR shifts unavailable");
 });
 
@@ -565,7 +572,7 @@ test("HR establishment form retains entered details when the save request fails"
   });
 
   await page.goto("/admin");
-  await page.getByRole("button", { name: "Statutory policies" }).click();
+  await page.getByRole("button", { name: "Statutory compliance" }).click();
   await page.getByLabel("Establishment code").fill("KPMC-JH");
   await page.getByLabel("Legal name").fill("KPMC Enterprises");
   await page.getByLabel("Display name").fill("Jharkhand Office");
@@ -664,18 +671,18 @@ test("inventory workspace separates locations, stock operations, approvals, valu
   await expect(navigation).toBeVisible();
   await navigation.getByRole("button", { name: "Setup", exact: true }).click();
   await page.getByRole("button", { name: "Locations", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Add stock location" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Create storage location" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Add stock", exact: true })).toHaveCount(0);
 
   await navigation.getByRole("button", { name: "Update stock" }).click();
   await expect(page.getByRole("heading", { name: "Add stock", exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Add stock location" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Create storage location" })).toHaveCount(0);
   await page.getByRole("button", { name: /Remove stock/ }).click();
   await expect(page.getByRole("heading", { name: "Remove stock", exact: true })).toBeVisible();
   await page.getByRole("button", { name: /Count stock/ }).click();
   await expect(page.getByRole("heading", { name: "Count stock", exact: true })).toBeVisible();
   await page.getByRole("button", { name: /Move stock/ }).click();
-  await expect(page.getByRole("heading", { name: "Move stock between locations" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Move stock", exact: true })).toBeVisible();
 
   await navigation.getByRole("button", { name: /^To-do/ }).click();
   await page.getByRole("button", { name: /^Approvals/ }).click();
@@ -866,7 +873,7 @@ test("HR payroll calculation sends employee-specific manual deduction reasons", 
   });
 
   await page.goto("/admin");
-  await page.getByRole("button", { name: "Payroll", exact: true }).click();
+  await page.getByRole("button", { name: "Payroll processing", exact: true }).click();
   await page.getByLabel("Manual payroll deductions by employee ID").fill('{"123": 500}');
   await page.getByLabel("Manual deduction notes by employee ID").fill('{"123": "Approved salary advance recovery"}');
   await page.getByRole("button", { name: "Calculate payroll" }).click();
@@ -874,4 +881,59 @@ test("HR payroll calculation sends employee-specific manual deduction reasons", 
     deductions_by_employee: { "123": 500 },
     deduction_notes: { "123": "Approved salary advance recovery" },
   });
+});
+
+
+test("HR enterprise workflows expose travel integrations and policy-driven exit settlement responsively", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("superbajaar.access_token", "manager-test-token"));
+  await page.route("**/api/**", async route => {
+    const url = new URL(route.request().url());
+    if (url.pathname.includes("/auth/my-permissions")) {
+      return route.fulfill({ json: { permissions: { hr_payroll: { read: true, write: true } } } });
+    }
+    if (url.pathname === "/api/auth/me") {
+      return route.fulfill({ json: { user: { id: 77, full_name: "HR Manager", role: "manager" } } });
+    }
+    if (url.pathname === "/api/health") return route.fulfill({ json: { status: "ok", database: "connected" } });
+    if (url.pathname === "/api/hr/employees") return route.fulfill({ json: { items: [
+      { id: 11, employee_code: "SB-0011", first_name: "Asha", last_name: "Singh", status: "active" }
+    ] } });
+    return route.fulfill({ json: { items: [] } });
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/admin");
+  await page.getByRole("button", { name: "Recruitment & employee lifecycle" }).click();
+  await expect(page.getByRole("heading", { name: "Integrated HR operations" })).toBeVisible();
+  const domains = page.getByRole("navigation", { name: "HR enterprise domains" });
+  for (const name of ["Employee documents", "Performance", "Learning & development", "Assets", "Travel & expenses", "Resignation & exit", "HR analytics"]) {
+    await expect(domains.getByRole("button", { name, exact: true })).toBeVisible();
+  }
+
+  await domains.getByRole("button", { name: "Travel & expenses" }).click();
+  await page.getByLabel("Record type").selectOption("booking");
+  await expect(page.getByLabel("Quoted booking cost")).toBeVisible();
+  await expect(page.getByLabel("Provider booking details (JSON)")).toBeVisible();
+  await page.getByLabel("Record type").selectOption("advance");
+  await expect(page.getByLabel("Requested amount")).toBeVisible();
+
+  await domains.getByRole("button", { name: "Resignation & exit" }).click();
+  await expect(page.getByRole("heading", { name: "Jurisdictional exit statutory policies" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Employee loan register" })).toBeVisible();
+  await expect(page.getByLabel("Policy calculation rules (JSON)")).toBeVisible();
+  await expect(page.getByLabel("Loan reference")).toBeVisible();
+  await page.getByLabel("Record type").selectOption("settlement");
+  await page.getByLabel("Calculate automatically from approved jurisdiction policy").check();
+  await expect(page.getByLabel("Approved exit statutory policy")).toBeVisible();
+
+  for (const width of [390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(page.getByRole("heading", { name: "Integrated HR operations" })).toBeVisible();
+    const navMetrics = await domains.evaluate(el => ({
+      clientWidth: el.clientWidth, scrollWidth: el.scrollWidth,
+      overflowX: getComputedStyle(el).overflowX,
+    }));
+    expect(navMetrics.overflowX).toBe("visible");
+    expect(navMetrics.scrollWidth).toBeLessThanOrEqual(navMetrics.clientWidth + 1);
+  }
 });

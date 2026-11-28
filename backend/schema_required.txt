@@ -68,3 +68,13 @@
 067_distributed_api_rate_limits.sql
 068_payment_idempotency.sql
 069_super_coins_accounting_setup.sql
+070_hr_employee_records.sql
+071_hr_enterprise_workflows.sql
+072_hr_enterprise_integrity.sql
+073_recruitment_integrity.sql
+074_hr_enterprise_notifications.sql
+075_hr_employee_job_grades.sql
+076_hr_exit_and_loan_ledger.sql
+077_hr_travel_advance_disbursements.sql
+078_hr_travel_payout_beneficiaries.sql
+079_hr_employee_loan_accounting.sql

@@ -20,6 +20,7 @@ from app.api.identity import router as identity_router
 from app.api.purchasing import router as purchasing_router
 from app.api.purchasing_lifecycle import router as purchasing_lifecycle_router
 from app.api.hr import router as hr_router
+from app.api.hr_enterprise import router as hr_enterprise_router
 from app.api.auth import router as auth_router
 from app.api.portal_invitations import router as portal_invitations_router
 from app.api.vendor_portal import router as vendor_portal_router
@@ -147,6 +148,7 @@ app.include_router(identity_router, prefix=settings.api_prefix)
 app.include_router(purchasing_router, prefix=settings.api_prefix)
 app.include_router(purchasing_lifecycle_router, prefix=settings.api_prefix)
 app.include_router(hr_router, prefix=settings.api_prefix)
+app.include_router(hr_enterprise_router, prefix=settings.api_prefix)
 app.include_router(auth_router, prefix=settings.api_prefix)
 app.include_router(portal_invitations_router, prefix=settings.api_prefix)
 app.include_router(vendor_portal_router, prefix=settings.api_prefix)

@@ -1,0 +1,21 @@
+services:
+  clamav:
+    image: clamav/clamav:1.4
+    restart: unless-stopped
+    environment:
+      CLAMAV_NO_FRESHCLAMD: "false"
+      CLAMAV_NO_CLAMD: "false"
+    ports:
+      - "127.0.0.1:3310:3310"
+    volumes:
+      - clamav_database:/var/lib/clamav
+    healthcheck:
+      test: ["CMD-SHELL", "clamdscan --ping 3"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+    security_opt:
+      - no-new-privileges:true
+volumes:
+  clamav_database:

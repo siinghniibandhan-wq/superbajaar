@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Super Bajaar HRMS scheduled maintenance daily
+
+[Timer]
+OnCalendar=*-*-* 02:15:00 Asia/Kolkata
+Persistent=true
+RandomizedDelaySec=5m
+Unit=superbajaar-hrms-scheduler.service
+
+[Install]
+WantedBy=timers.target

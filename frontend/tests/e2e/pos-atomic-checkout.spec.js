@@ -22,6 +22,14 @@ test("POS creates order and pending tender atomically with a retry-safe checkout
     if (url.pathname === "/api/health") return route.fulfill({ json: { status: "ok", database: "connected" } });
     if (url.pathname === "/api/catalogue/variants") return route.fulfill({ json: { items: [{ id: 17, product_id: 8, product_name: "Wheat Flour 5kg", sku: "WF-5KG", selling_price: "250.00", is_active: true, attributes: {} }] } });
     if (url.pathname === "/api/inventory/locations") return route.fulfill({ json: { items: [{ id: 9, name: "Patna Main Store", location_type: "store", is_active: true }] } });
+    if (url.pathname === "/api/pos/registers") return route.fulfill({ json: { items: [
+      { id: 31, location_id: 9, location_name: "Patna Main Store", register_code: "COUNTER-01", name: "Main counter" },
+    ] } });
+    if (url.pathname === "/api/pos/registers/31/shift") return route.fulfill({ json: {
+      shift: { id: 41, register_code: "COUNTER-01", register_name: "Main counter", cashier_user_id: 1, opened_at: "2026-11-28T08:00:00Z", opening_float: "500.00" },
+      cash: { cash_sales: 0, cash_refunds: 0, cash_in: 0, cash_out: 0 }, movements: [],
+    } });
+    if (url.pathname === "/api/pos/registers/31/shifts") return route.fulfill({ json: { items: [] } });
     if (url.pathname === "/api/pos/summary") return route.fulfill({ json: { orders: { order_count: 0, today_order_count: 0, today_order_value: 0 }, payments: { captured_amount: 0, captured_count: 0, pending_amount: 0, pending_count: 0 } } });
     if (url.pathname === "/api/pos/sales") return route.fulfill({ json: { items: [] } });
     if (url.pathname === "/api/orders" && method === "POST") {
@@ -40,11 +48,14 @@ test("POS creates order and pending tender atomically with a retry-safe checkout
 
   await page.goto("/admin");
   await page.getByRole("button", { name: "POS & Stores", exact: true }).click();
-  await page.getByRole("button", { name: "Add to sale" }).click();
-  await page.getByLabel("Stock location").selectOption("9");
-  await page.getByRole("button", { name: "Create sale & pending tender" }).click();
-  await expect(page.getByText("SB-POS-101", { exact: true })).toBeVisible();
-  await expect(page.getByText(/PAY-POS-201 · pending/)).toBeVisible();
+  await page.getByRole("button", { name: /^Add to sale:/ }).click();
+  await expect(page.getByLabel("Counter", { exact: true })).toHaveValue("31");
+  await page.getByRole("radio", { name: "UPI", exact: true }).click();
+  const chargeButton = page.locator(".sb-pos-charge");
+  await expect(chargeButton).toBeEnabled();
+  await chargeButton.click();
+  await expect(page.getByRole("dialog", { name: "Sale receipt" }).getByText("SB-POS-101", { exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Sale receipt" }).getByText(/pending · PAY-POS-201/)).toBeVisible();
   expect(orderCreated).toBeTruthy();
   expect(writes).toHaveLength(1);
   expect(writes[0].body).toMatchObject({
