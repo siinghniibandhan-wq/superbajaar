@@ -484,3 +484,38 @@ def test_manual_refund_requires_positive_amount_and_reason():
         json={"amount":"0","note":"No"},
     )
     assert response.status_code == 422
+
+def test_payment_reconciliation_subtracts_refund_ledger_and_reports_pending(monkeypatch):
+    from contextlib import contextmanager
+    from app.api import payments
+    class Connection:
+        def __init__(self): self.queries=[]
+        def execute(self, query, params=()):
+            self.queries.append(query)
+            normalized=" ".join(query.split())
+            if "GROUP BY status ORDER BY status" in normalized:
+                return _FakeResult([{"status":"captured","payment_count":2,"amount":500}])
+            if "FROM orders WHERE status <> 'cancelled'" in normalized:
+                return _FakeResult({"order_count":2,"order_value":500})
+            if "status IN ('captured','refunded')" in normalized:
+                return _FakeResult({"amount":500})
+            if "payment_refunds WHERE status='processed'" in normalized:
+                return _FakeResult({"amount":75})
+            if "payment_refunds WHERE status='pending'" in normalized:
+                return _FakeResult({"count":1,"amount":20})
+            if "GROUP BY provider" in normalized:
+                return _FakeResult([{"provider":"manual","count":1,"amount":75}])
+            return _FakeResult()
+        def fetchone(self): return None
+        def fetchall(self): return []
+    connection=Connection()
+    @contextmanager
+    def connect():
+        yield connection
+    monkeypatch.setattr(payments,"_connect",connect)
+    result=payments.payment_reconciliation()
+    assert result["captured_amount_recorded"]==500
+    assert result["refunded_amount_recorded"]==75
+    assert result["net_captured_amount_recorded"]==425
+    assert result["pending_refunds"]["amount"]==20
+    assert result["refunds_by_provider"][0]["provider"]=="manual"
