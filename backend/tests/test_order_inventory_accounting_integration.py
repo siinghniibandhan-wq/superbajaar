@@ -373,3 +373,56 @@ def test_pos_order_reservation_dispatch_and_cogs_posting(api):
         assert conn.execute(
             "SELECT count(*) FROM accounting_vouchers WHERE source_type='fulfilment_return_line'",
         ).fetchone()[0]==3
+
+
+def test_coupon_discount_is_applied_once_and_enforces_customer_limit(api):
+    promotion = ok(api.post("/api/orders/promotions", json={
+        "code": "POS10-" + api.suffix,
+        "name": "Integration ten percent",
+        "discount_type": "percent",
+        "discount_value": "10",
+        "minimum_subtotal": "50",
+        "maximum_discount": "20",
+        "usage_limit": 5,
+        "per_customer_limit": 1,
+        "is_active": True,
+    }), 201)
+    quote = ok(api.get("/api/orders/promotions/quote", params={
+        "code": promotion["code"], "subtotal": "100.00",
+    }))
+    assert Decimal(str(quote["discount_amount"])) == Decimal("10.00")
+    assert Decimal(str(quote["payable"])) == Decimal("90.00")
+
+    register = ok(api.post("/api/pos/registers", json={
+        "location_id": api.location_id,
+        "register_code": "PROMO-" + api.suffix,
+        "name": "Coupon Counter",
+    }), 201)
+    shift = ok(api.post(f"/api/pos/registers/{register['id']}/open", json={"opening_float": "100"}), 201)
+    payload = {
+        "channel": "pos", "customer_name": "Coupon Customer",
+        "customer_email": "coupon-" + api.suffix + "@test.local",
+        "location_id": api.location_id, "pos_register_id": register["id"],
+        "pos_payment_method": "cod", "coupon_code": promotion["code"],
+        "checkout_idempotency_key": "promo-checkout-" + api.suffix + "-one",
+        "lines": [{"variant_id": api.variant_id, "quantity": 1}],
+    }
+    order = ok(api.post("/api/orders", json=payload), 201)
+    assert Decimal(str(order["subtotal"])) == Decimal("100.00")
+    assert Decimal(str(order["discount_total"])) == Decimal("10.00")
+    assert Decimal(str(order["total"])) == Decimal("90.00")
+    assert order["promotion_code"] == promotion["code"]
+    assert Decimal(str(order["payment"]["amount"])) == Decimal("90.00")
+    replay = ok(api.post("/api/orders", json=payload), 201)
+    assert replay["idempotent_replay"] is True
+    assert replay["id"] == order["id"]
+
+    payload["checkout_idempotency_key"] = "promo-checkout-" + api.suffix + "-two"
+    blocked = api.post("/api/orders", json=payload)
+    assert blocked.status_code == 409
+    with psycopg.connect(TEST_DB) as conn:
+        redemption = conn.execute(
+            "SELECT count(*),sum(discount_amount) FROM promotion_redemptions WHERE promotion_id=%s",
+            (promotion["id"],),
+        ).fetchone()
+        assert redemption == (1, Decimal("10.00"))
