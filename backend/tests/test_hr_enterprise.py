@@ -609,3 +609,7 @@ def test_non_recruitment_records_cannot_use_another_record_types_transitions():
     assert _allowed_record_transitions("learning","certificate","completed") != TRANSITIONS["learning"].get("completed",set())
     assert _allowed_record_transitions("travel","booking","booked")==set()
     assert _allowed_record_transitions("assets","asset","available") != _allowed_record_transitions("assets","allocation","requested")
+
+def test_travel_reimbursement_requires_claim_record_and_not_request_record():
+    assert _allowed_record_transitions("travel","claim","claimed")=={"reimbursed"}
+    assert _allowed_record_transitions("travel","request","claimed")==set()
