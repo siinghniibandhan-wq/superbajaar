@@ -284,6 +284,17 @@ def _ensure_travel_amount_budget(existing, requested, limit, label):
     if Decimal(str(existing)) + Decimal(str(requested)) > Decimal(str(limit)):
         raise HTTPException(422,f"Combined {label} exceeds the permitted travel amount")
 
+def _ensure_goal_weight_limit(existing, proposed):
+    if Decimal(str(existing)) + Decimal(str(proposed)) > Decimal("100"):
+        raise HTTPException(422,"Active goal weights for a review cycle cannot exceed 100 percent")
+
+
+def _ensure_assessment_attempt_limit(attempts, maximum):
+    if maximum < 1 or maximum > 20:
+        raise HTTPException(409,"The course assessment attempt limit is misconfigured")
+    if attempts >= maximum:
+        raise HTTPException(409,f"Assessment attempt limit reached ({maximum})")
+
 
 def _validate_references(conn, domain, record_type, data):
     references = {
@@ -1078,8 +1089,7 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                         "WHERE domain='performance' AND payload->>'record_type'='goal' AND payload->>'cycle_id'=%s "
                         "AND status NOT IN ('cancelled','archived')",(str(cycle_id),)
                     ).fetchone()["weight"]
-                    if Decimal(str(total))+Decimal(str(data["weight"]))>Decimal("100"):
-                        raise HTTPException(422,"Active goal weights for a review cycle cannot exceed 100 percent")
+                    _ensure_goal_weight_limit(total,data["weight"])
                 if domain=="learning" and payload.record_type=="assessment":
                     enrollment_id=int(data["enrollment_id"])
                     enrollment=conn.execute(
@@ -1096,15 +1106,13 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                         max_attempts=int(course["payload"].get("max_attempts",3))
                     except (TypeError,ValueError):
                         max_attempts=3
-                    if max_attempts<1 or max_attempts>20:
-                        raise HTTPException(409,"The course assessment attempt limit is misconfigured")
+                    _ensure_assessment_attempt_limit(0,max_attempts)
                     attempts=conn.execute(
                         "SELECT count(*)::int AS total FROM hr_enterprise_records WHERE domain='learning' "
                         "AND payload->>'record_type'='assessment' AND payload->>'enrollment_id'=%s "
                         "AND status NOT IN ('archived','cancelled')",(str(enrollment_id),)
                     ).fetchone()["total"]
-                    if attempts>=max_attempts:
-                        raise HTTPException(409,f"Assessment attempt limit reached ({max_attempts})")
+                    _ensure_assessment_attempt_limit(attempts,max_attempts)
                     data["attempt_number"]=attempts+1
                 if domain=="assets" and payload.record_type=="allocation":
                     allocation_employee_id=int(data["employee_id"])
