@@ -444,6 +444,8 @@ def create_order(payload: OrderCreate, request: Request):
                     conn, int(order["id"]), delivery_pin=payload.delivery_pin,
                     discount_total=loyalty_discount,
                 )
+                order["tax_total"] = tax_total
+                order["place_of_supply_state"] = place_of_supply_state
                 payment = None
                 if payload.pos_payment_method:
                     payment_reference = "PAY-" + uuid.uuid4().hex[:12].upper()
