@@ -23,6 +23,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from pydantic import BaseModel, Field, field_validator
 from app.api.hr import EmployeeInput, _actor, _manager, _employee, _hr_connection, _db_error, _link_employee_login_identity, hr_overview
 from app.services.hr_travel_integrations import create_provider_booking, disburse_travel_advance, TravelIntegrationConfigurationError
+from app.api.accounting import _accounts_by_code, _post_voucher
 from app.services.hr_exit_settlement import calculate_exit_settlement, validate_exit_policy
 from app.services.hr_employee_documents import (
     EmployeeDocumentConfigurationError, EmployeeDocumentError,
@@ -2269,7 +2270,7 @@ def approve_employee_loan(loan_id:int,request:Request):
                 if loan["status"]!="draft": raise HTTPException(409,"Only draft employee loans can be approved")
                 if loan["created_by_user_id"]==actor: raise HTTPException(403,"A different authorised manager must approve the employee loan")
                 return conn.execute(
-                    "UPDATE hr_employee_loans SET status='active',approved_by_user_id=%s,approved_at=now(),updated_at=now() WHERE id=%s RETURNING *",
+                    "UPDATE hr_employee_loans SET status='approved',approved_by_user_id=%s,approved_at=now(),updated_at=now() WHERE id=%s RETURNING *",
                     (actor,loan_id)
                 ).fetchone()
     except HTTPException: raise
@@ -2331,6 +2332,51 @@ def list_travel_payout_beneficiaries(request:Request,employee_id:int|None=Query(
         ).fetchall()}
 
 
+@router.post("/exit/loans/{loan_id}/disburse")
+def disburse_employee_loan(loan_id:int,request:Request):
+    actor=_manager(request)
+    receivable_code=os.getenv("SB_EMPLOYEE_LOAN_RECEIVABLE_ACCOUNT_CODE","1150").strip()
+    bank_code=os.getenv("SB_EMPLOYEE_LOAN_BANK_ACCOUNT_CODE","1010").strip()
+    try:
+        with _hr_connection() as conn:
+            with conn.transaction():
+                loan=conn.execute("SELECT * FROM hr_employee_loans WHERE id=%s FOR UPDATE",(loan_id,)).fetchone()
+                if not loan: raise HTTPException(404,"Employee loan not found")
+                if loan["status"]!="approved": raise HTTPException(409,"Only an approved, not-yet-disbursed employee loan can be disbursed")
+                accounts=_accounts_by_code(conn,[receivable_code,bank_code])
+                if accounts[receivable_code]["account_type"]!="asset":
+                    raise HTTPException(422,"Employee loan receivable account must be an asset account")
+                if accounts[bank_code]["account_type"]!="asset" or accounts[bank_code]["sub_type"] not in {"bank","cash"}:
+                    raise HTTPException(422,"Employee loan funding account must be a cash or bank account")
+                amount=Decimal(str(loan["principal_amount"]))
+                voucher_id=_post_voucher(conn,{
+                    "voucher_type":"payment","voucher_date":date.today(),
+                    "narration":f"Employee loan disbursement {loan['loan_reference']}",
+                    "reference":loan["loan_reference"],"party_type":"employee",
+                    "party_name":f"Employee #{loan['employee_id']}",
+                    "idempotency_key":f"hr-employee-loan-disbursement-{loan_id}",
+                },[
+                    {"account_id":accounts[receivable_code]["id"],"debit":amount,"credit":Decimal("0"),
+                     "narration":"Employee loan receivable"},
+                    {"account_id":accounts[bank_code]["id"],"debit":Decimal("0"),"credit":amount,
+                     "narration":"Employee loan bank disbursement"},
+                ],(actor,getattr(request.state,"user_email",None)))
+                transaction=conn.execute(
+                    "INSERT INTO hr_employee_loan_transactions(loan_id,transaction_type,amount,transaction_date,reference,accounting_voucher_id,created_by_user_id) "
+                    "VALUES(%s,'disbursement',%s,%s,%s,%s,%s) RETURNING *",
+                    (loan_id,amount,date.today(),loan["loan_reference"],voucher_id,actor)
+                ).fetchone()
+                updated=conn.execute(
+                    "UPDATE hr_employee_loans SET status='active',disbursement_voucher_id=%s,disbursed_by_user_id=%s,"
+                    "disbursed_at=now(),updated_at=now() WHERE id=%s RETURNING *",
+                    (voucher_id,actor,loan_id)
+                ).fetchone()
+                return {"loan":updated,"transaction":transaction,"accounting_voucher_id":voucher_id}
+    except HTTPException: raise
+    except TravelIntegrationConfigurationError as exc: raise HTTPException(503,str(exc)) from exc
+    except psycopg.Error as exc: raise _db_error(exc) from exc
+
+
 @router.post("/exit/loans/{loan_id}/repayments",status_code=201)
 def record_employee_loan_repayment(loan_id:int,payload:EmployeeLoanRepaymentInput,request:Request):
     actor=_manager(request)
@@ -2342,15 +2388,32 @@ def record_employee_loan_repayment(loan_id:int,payload:EmployeeLoanRepaymentInpu
                 if loan["status"] not in {"active","approved"}: raise HTTPException(409,"Only active employee loans can receive repayments")
                 outstanding=Decimal(str(loan["outstanding_amount"]))
                 if payload.amount>outstanding: raise HTTPException(422,"Repayment cannot exceed the outstanding loan balance")
+                receivable_code=os.getenv("SB_EMPLOYEE_LOAN_RECEIVABLE_ACCOUNT_CODE","1150").strip()
+                bank_code=os.getenv("SB_EMPLOYEE_LOAN_BANK_ACCOUNT_CODE","1010").strip()
+                accounts=_accounts_by_code(conn,[receivable_code,bank_code])
+                if accounts[receivable_code]["account_type"]!="asset" or accounts[bank_code]["account_type"]!="asset" or accounts[bank_code]["sub_type"] not in {"bank","cash"}:
+                    raise HTTPException(422,"Employee loan repayment requires an asset receivable account and a cash or bank account")
+                voucher_id=_post_voucher(conn,{
+                    "voucher_type":"receipt","voucher_date":payload.transaction_date,
+                    "narration":f"Employee loan repayment {loan['loan_reference']}",
+                    "reference":payload.reference.strip(),"party_type":"employee",
+                    "party_name":f"Employee #{loan['employee_id']}",
+                    "idempotency_key":f"hr-employee-loan-repayment-{loan_id}-{__import__('hashlib').sha256(payload.reference.strip().encode()).hexdigest()}",
+                },[
+                    {"account_id":accounts[bank_code]["id"],"debit":payload.amount,"credit":Decimal("0"),
+                     "narration":"Employee loan repayment received"},
+                    {"account_id":accounts[receivable_code]["id"],"debit":Decimal("0"),"credit":payload.amount,
+                     "narration":"Reduce employee loan receivable"},
+                ],(actor,getattr(request.state,"user_email",None)))
                 remaining=outstanding-payload.amount
                 updated=conn.execute(
                     "UPDATE hr_employee_loans SET outstanding_amount=%s,status=%s,updated_at=now() WHERE id=%s RETURNING *",
                     (remaining,"closed" if remaining==0 else "active",loan_id)
                 ).fetchone()
                 transaction=conn.execute(
-                    "INSERT INTO hr_employee_loan_transactions(loan_id,transaction_type,amount,transaction_date,reference,created_by_user_id) "
-                    "VALUES(%s,'repayment',%s,%s,%s,%s) RETURNING *",
-                    (loan_id,payload.amount,payload.transaction_date,payload.reference.strip(),actor)
+                    "INSERT INTO hr_employee_loan_transactions(loan_id,transaction_type,amount,transaction_date,reference,accounting_voucher_id,created_by_user_id) "
+                    "VALUES(%s,'repayment',%s,%s,%s,%s,%s) RETURNING *",
+                    (loan_id,payload.amount,payload.transaction_date,payload.reference.strip(),voucher_id,actor)
                 ).fetchone()
                 return {"loan":updated,"transaction":transaction}
     except HTTPException: raise
