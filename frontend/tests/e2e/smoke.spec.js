@@ -70,8 +70,15 @@ test("customer checkout completes a mocked Razorpay payment", async ({ page }) =
     const body = method === "POST" ? request.postDataJSON() : undefined;
     requests.push({ path: url.pathname, method, body });
 
+    if (url.pathname === "/api/customer-auth/addresses") {
+      return route.fulfill({ json: { items: [{
+        id: 501, label: "Home", recipient_name: "Test Buyer", phone: "9876543210",
+        address: "1 Test Street, Delhi", pin_code: "110001", is_default: true,
+      }] } });
+    }
     if (url.pathname === "/api/customer-auth/me") {
       return route.fulfill({ json: { customer: {
+        id: 501,
         full_name: "Test Buyer",
         email: "buyer@example.com",
         phone: "9876543210",
@@ -195,7 +202,7 @@ test("HR manager can access the HR workspace without admin-wide module access", 
   await page.getByRole("button", { name: "Attendance & shifts", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Attendance register" })).toBeVisible();
   await page.getByRole("button", { name: "Leave management", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Leave requests" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Leave management" })).toBeVisible();
   await expect(page.getByText("No leave requests for this period.")).toBeVisible();
   await page.getByRole("button", { name: "Expenses & claims", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Expense claims" })).toBeVisible();
@@ -396,7 +403,7 @@ test("HR workspace adapts its navigation and employee form across desktop and mo
   const navigation = page.getByRole("navigation", { name: "HR sections" });
   await expect(navigation).toBeVisible();
   const desktopLayout = await navigation.evaluate(el => getComputedStyle(el).display);
-  expect(desktopLayout).toBe("flex");
+  expect(desktopLayout).toBe("grid");
   await expect(navigation.locator(".hr-nav-group")).toHaveCount(5);
   await expect(navigation).toHaveCSS("overflow-x", "auto");
 
@@ -664,12 +671,12 @@ test("inventory workspace separates locations, stock operations, approvals, valu
   await expect(navigation).toBeVisible();
   await navigation.getByRole("button", { name: "Setup", exact: true }).click();
   await page.getByRole("button", { name: "Locations", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Add stock location" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Create storage location" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Add stock", exact: true })).toHaveCount(0);
 
   await navigation.getByRole("button", { name: "Update stock" }).click();
   await expect(page.getByRole("heading", { name: "Add stock", exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Add stock location" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Create storage location" })).toHaveCount(0);
   await page.getByRole("button", { name: /Remove stock/ }).click();
   await expect(page.getByRole("heading", { name: "Remove stock", exact: true })).toBeVisible();
   await page.getByRole("button", { name: /Count stock/ }).click();
@@ -899,7 +906,7 @@ test("HR enterprise workflows expose travel integrations and policy-driven exit 
   await page.getByRole("button", { name: "Recruitment & employee lifecycle" }).click();
   await expect(page.getByRole("heading", { name: "Integrated HR operations" })).toBeVisible();
   const domains = page.getByRole("navigation", { name: "HR enterprise domains" });
-  for (const name of ["Employee documents", "Performance", "Learning & development", "Asset management", "Travel & expenses", "Resignation & exit", "HR analytics"]) {
+  for (const name of ["Employee documents", "Performance", "Learning & development", "Assets", "Travel & expenses", "Resignation & exit", "HR analytics"]) {
     await expect(domains.getByRole("button", { name, exact: true })).toBeVisible();
   }
 
