@@ -135,7 +135,7 @@
 }
 
 /* Tablet / narrow desktop */
-@media(max-width:1100px) { .sb-pos .sb-pos-layout { grid-template-columns:minmax(0,1.2fr) minmax(300px,.95fr); } }
+@media(max-width:1100px) { .sb-pos .sb-pos-layout { grid-template-columns:minmax(0,1fr); height:auto; } }
 
 /* Phone: one step at a time (Items → Cart → Pay) */
 .sb-pos .sb-pos-mobile-step,.sb-pos .sb-pos-mobile-next,.sb-pos .sb-pos-mobile-back,.sb-pos .sb-pos-cartbar { display:none; }
