@@ -62,6 +62,8 @@ class _FakePaymentConnection:
             return _FakeResult(self.payment)
         if "FROM payments WHERE order_id" in normalized_query:
             return _FakeResult({"amount": Decimal("12.34")})
+        if "FROM orders o LEFT JOIN pos_register_shifts" in normalized_query:
+            return _FakeResult(self.order)
         if "FROM orders WHERE id=%s FOR UPDATE" in normalized_query:
             return _FakeResult(self.order)
         return _FakeResult()
