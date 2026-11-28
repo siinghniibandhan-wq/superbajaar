@@ -206,6 +206,11 @@ def _ensure_no_active_recruitment_duplicate(record, message):
         raise HTTPException(409,message)
 
 
+def _ensure_job_opening_closable(filled_headcount, headcount):
+    if int(filled_headcount or 0) < int(headcount or 0):
+        raise HTTPException(409,"A job opening can be closed only after its approved headcount has been filled")
+
+
 def _ensure_travel_amount_budget(existing, requested, limit, label):
     if Decimal(str(existing)) + Decimal(str(requested)) > Decimal(str(limit)):
         raise HTTPException(422,f"Combined {label} exceeds the permitted travel amount")
@@ -364,6 +369,8 @@ def _validate(domain, record_type, payload):
     missing=[key for key in REQUIRED[domain][record_type] if data.get(key) in (None,"")]
     if missing: raise HTTPException(422,"Missing required fields: "+", ".join(missing))
     if domain=="recruitment" and record_type=="candidate":
+        if len(str(data.get("first_name","")).strip())<1:
+            raise HTTPException(422,"Candidate first name is required")
         email=str(data["email"]).strip().lower()
         if "@" not in email or email.startswith("@") or email.endswith("@"): raise HTTPException(422,"Candidate email is invalid")
         data["email"]=email
@@ -826,6 +833,23 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                         "AND status NOT IN ('archived','withdrawn') LIMIT 1",(email,),
                     ).fetchone()
                     _ensure_no_active_recruitment_duplicate(duplicate,"A candidate with this email already exists; update the existing candidate record")
+                if domain=="recruitment" and payload.record_type=="offer":
+                    application_id=int(data["application_id"])
+                    application_for_offer=conn.execute(
+                        "SELECT status FROM hr_enterprise_records WHERE id=%s AND domain='recruitment' "
+                        "AND payload->>'record_type'='application' FOR UPDATE",(application_id,),
+                    ).fetchone()
+                    if not application_for_offer:
+                        raise HTTPException(404,"Recruitment application not found")
+                    active_offer=conn.execute(
+                        "SELECT id FROM hr_enterprise_records WHERE domain='recruitment' "
+                        "AND payload->>'record_type'='offer' AND payload->>'application_id'=%s "
+                        "AND status NOT IN ('rejected','withdrawn','archived','expired') LIMIT 1",
+                        (str(application_id),),
+                    ).fetchone()
+                    _ensure_no_active_recruitment_duplicate(active_offer,"An active offer already exists for this application")
+                    if date.fromisoformat(str(data["expires_on"])) < date.today():
+                        raise HTTPException(422,"Offer expiry date cannot be in the past")
                 if domain=="recruitment" and payload.record_type=="application":
                     candidate=conn.execute(
                         "SELECT status FROM hr_enterprise_records WHERE id=%s AND domain='recruitment' "
@@ -1039,6 +1063,9 @@ def transition_record(domain:str,record_id:int,payload:TransitionInput,request:R
                     raise HTTPException(422,"A verification or rejection note is required for employee documents")
                 if domain=="recruitment" and payload.status=="rejected" and not (payload.note and payload.note.strip()):
                     raise HTTPException(422,"A rejection reason is required for recruitment decisions")
+                if domain=="recruitment" and record_type=="job_opening" and payload.status=="closed":
+                    job_payload=dict(old["payload"])
+                    _ensure_job_opening_closable(job_payload.get("filled_headcount",0),job_payload.get("headcount",0))
                 if domain=="travel" and record_type=="claim" and payload.status=="reimbursed":
                     travel_id=int(old["payload"]["travel_record_id"])
                     expense_id=int(old["payload"].get("expense_id") or 0)
