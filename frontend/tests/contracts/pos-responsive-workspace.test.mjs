@@ -70,3 +70,10 @@ test("POS sales history can be narrowed to an individual cashier", () => {
   assert.match(workspace, /cashier_user_id/);
   assert.match(workspace, /Cashier user ID/);
 });
+
+
+test("POS sales history can filter by order lifecycle status", () => {
+  assert.match(workspace, /Order status/);
+  assert.match(workspace, /value=\{salesFilters\.status\}/);
+  assert.match(workspace, /ready_for_dispatch/);
+});
