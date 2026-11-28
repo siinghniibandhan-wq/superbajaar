@@ -109,3 +109,11 @@ Recruitment, full performance/appraisal, training, asset allocation, travel, doc
 - Tests pass and production build succeeds.
 - Manual QA at narrow phone, tablet and desktop widths.
 - Each delivered module has real data/actions, loading/empty/error states and accessible navigation.
+
+## Integrated enterprise HR workflows — implementation in progress
+
+The feature branch now contains an additive enterprise workflow foundation for recruitment, employee documents, performance, learning, assets, travel, exit and analytics. It includes domain-specific record types, controlled status transitions, optimistic version checks, append-only audit events, employee self-service scoping, manager-only master-record controls and an HR workspace entry point.
+
+Employee document files use the private document bucket, server-side AES256 encryption, employee-scoped object keys, PDF/JPEG/PNG signature checks, a 10 MB upload limit, SHA-256 metadata and short-lived access-checked download links. The document metadata endpoint cannot be used to inject arbitrary object keys; uploads must pass through the private storage service.
+
+This is not yet a completion claim for the eight domains. Remaining end-to-end work includes dedicated domain screens and field validation, recruitment interview/offer/hiring integrations, document malware scanning/retention/expiry policies, performance cycle and calibration workflows, course catalogue/progress/certification, asset procurement/stock and custody reconciliation, travel booking/advance/claim settlement integrations, full-and-final exit calculations and clearance gates, and computed analytics/report exports. The new migration must be applied in a controlled environment; CI, DB integration, browser QA, S3 configuration/permissions, retention and security review are release gates.
