@@ -5,6 +5,7 @@ cannot impersonate employees through request payloads. Statutory deductions are
 explicit payroll inputs; this module does not invent PF/ESI/PT/TDS rates.
 """
 from calendar import monthrange
+import json
 from contextlib import contextmanager
 from datetime import date, datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -155,6 +156,66 @@ class EmployeeInput(BaseModel):
             raise ValueError("Employee exit date cannot precede joining date")
         if self.status == "terminated" and self.exit_date is None:
             raise ValueError("Exit date is required when terminating an employee")
+        return self
+
+
+class EmergencyContactInput(BaseModel):
+    model_config = {"extra": "forbid"}
+    contact_name: str = Field(min_length=2, max_length=160)
+    relationship: str = Field(min_length=2, max_length=80)
+    phone: str = Field(min_length=5, max_length=32)
+    alternate_phone: str | None = Field(default=None, max_length=32)
+    email: str | None = Field(default=None, max_length=254)
+    address: str | None = Field(default=None, max_length=500)
+    is_primary: bool = False
+
+    @field_validator("contact_name", "relationship", "phone", "alternate_phone", "address")
+    @classmethod
+    def trim_contact_values(cls, value):
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            return None
+        return value
+
+    @field_validator("email")
+    @classmethod
+    def normalise_contact_email(cls, value):
+        if value is None:
+            return None
+        value = value.strip().lower()
+        if not value:
+            return None
+        if "@" not in value or value.startswith("@") or value.endswith("@"):
+            raise ValueError("A valid emergency contact email is required")
+        return value
+
+
+class EmploymentHistoryInput(BaseModel):
+    model_config = {"extra": "forbid"}
+    employer_name: str = Field(min_length=2, max_length=180)
+    job_title: str = Field(min_length=2, max_length=160)
+    employment_type: str = Field(default="full_time", pattern="^(full_time|part_time|contract|intern|self_employed|other)$")
+    location: str | None = Field(default=None, max_length=180)
+    start_date: date
+    end_date: date | None = None
+    description: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("employer_name", "job_title", "location", "description")
+    @classmethod
+    def trim_history_values(cls, value):
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+    @model_validator(mode="after")
+    def ordered_history_dates(self):
+        if self.end_date and self.end_date < self.start_date:
+            raise ValueError("Previous employment end date cannot precede its start date")
+        if self.start_date > date.today():
+            raise ValueError("Previous employment start date cannot be in the future")
         return self
 
 
@@ -3377,3 +3438,168 @@ def list_my_holidays(request: Request, year: int = Query(default=date.today().ye
             "ORDER BY h.holiday_date,h.name",
             (employee["id"],year)
         ).fetchall()}
+
+
+@router.get("/employees/{employee_id}/emergency-contacts")
+def list_employee_emergency_contacts(employee_id: int, request: Request):
+    _manager(request)
+    try:
+        with _hr_connection() as conn:
+            exists = conn.execute("SELECT id FROM hr_employees WHERE id=%s", (employee_id,)).fetchone()
+            if not exists:
+                raise HTTPException(404, "Employee not found")
+            rows = conn.execute(
+                "SELECT id,employee_id,contact_name,relationship,phone,alternate_phone,email,address,"
+                "is_primary,is_active,created_at,updated_at "
+                "FROM hr_employee_emergency_contacts WHERE employee_id=%s "
+                "ORDER BY is_active DESC,is_primary DESC,created_at,id",
+                (employee_id,),
+            ).fetchall()
+        return {"items": rows}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.post("/employees/{employee_id}/emergency-contacts", status_code=201)
+def create_employee_emergency_contact(employee_id: int, payload: EmergencyContactInput, request: Request):
+    actor = _manager(request)
+    try:
+        with _hr_connection() as conn:
+            with conn.transaction():
+                employee = conn.execute("SELECT id FROM hr_employees WHERE id=%s FOR UPDATE", (employee_id,)).fetchone()
+                if not employee:
+                    raise HTTPException(404, "Employee not found")
+                if payload.is_primary:
+                    conn.execute(
+                        "UPDATE hr_employee_emergency_contacts SET is_primary=false,updated_by_user_id=%s,updated_at=now() "
+                        "WHERE employee_id=%s AND is_active=true AND is_primary=true",
+                        (actor, employee_id),
+                    )
+                row = conn.execute(
+                    "INSERT INTO hr_employee_emergency_contacts(employee_id,contact_name,relationship,phone,"
+                    "alternate_phone,email,address,is_primary,created_by_user_id,updated_by_user_id) "
+                    "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                    "RETURNING id,employee_id,contact_name,relationship,phone,alternate_phone,email,address,"
+                    "is_primary,is_active,created_at,updated_at",
+                    (employee_id,payload.contact_name,payload.relationship,payload.phone,payload.alternate_phone,
+                     payload.email,payload.address,payload.is_primary,actor,actor),
+                ).fetchone()
+                conn.execute(
+                    "INSERT INTO hr_employee_record_events(employee_id,record_type,record_id,event_type,after_state,actor_user_id) "
+                    "VALUES(%s,'emergency_contact',%s,'created',%s::jsonb,%s)",
+                    (employee_id,row["id"],json.dumps(dict(row),default=str),actor),
+                )
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.post("/employees/{employee_id}/emergency-contacts/{contact_id}/deactivate")
+def deactivate_employee_emergency_contact(employee_id: int, contact_id: int, request: Request):
+    actor = _manager(request)
+    try:
+        with _hr_connection() as conn:
+            with conn.transaction():
+                previous = conn.execute(
+                    "SELECT id,employee_id,contact_name,relationship,phone,alternate_phone,email,address,"
+                    "is_primary,is_active FROM hr_employee_emergency_contacts "
+                    "WHERE id=%s AND employee_id=%s FOR UPDATE",
+                    (contact_id,employee_id),
+                ).fetchone()
+                if not previous:
+                    raise HTTPException(404, "Emergency contact not found")
+                if not previous["is_active"]:
+                    raise HTTPException(409, "Emergency contact is already inactive")
+                row = conn.execute(
+                    "UPDATE hr_employee_emergency_contacts SET is_active=false,is_primary=false,"
+                    "updated_by_user_id=%s,updated_at=now() WHERE id=%s "
+                    "RETURNING id,employee_id,contact_name,relationship,phone,alternate_phone,email,address,"
+                    "is_primary,is_active,created_at,updated_at",
+                    (actor,contact_id),
+                ).fetchone()
+                conn.execute(
+                    "INSERT INTO hr_employee_record_events(employee_id,record_type,record_id,event_type,before_state,after_state,actor_user_id) "
+                    "VALUES(%s,'emergency_contact',%s,'deactivated',%s::jsonb,%s::jsonb,%s)",
+                    (employee_id,contact_id,json.dumps(dict(previous),default=str),
+                     json.dumps(dict(row),default=str),actor),
+                )
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.get("/employees/{employee_id}/employment-history")
+def list_employee_employment_history(employee_id: int, request: Request):
+    _manager(request)
+    try:
+        with _hr_connection() as conn:
+            exists = conn.execute("SELECT id FROM hr_employees WHERE id=%s", (employee_id,)).fetchone()
+            if not exists:
+                raise HTTPException(404, "Employee not found")
+            rows = conn.execute(
+                "SELECT id,employee_id,employer_name,job_title,employment_type,location,start_date,end_date,"
+                "description,recorded_by_user_id,created_at FROM hr_employee_employment_history "
+                "WHERE employee_id=%s ORDER BY start_date DESC,id DESC",
+                (employee_id,),
+            ).fetchall()
+        return {"items": rows}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.post("/employees/{employee_id}/employment-history", status_code=201)
+def create_employee_employment_history(employee_id: int, payload: EmploymentHistoryInput, request: Request):
+    actor = _manager(request)
+    try:
+        with _hr_connection() as conn:
+            with conn.transaction():
+                exists = conn.execute("SELECT id FROM hr_employees WHERE id=%s FOR SHARE", (employee_id,)).fetchone()
+                if not exists:
+                    raise HTTPException(404, "Employee not found")
+                row = conn.execute(
+                    "INSERT INTO hr_employee_employment_history(employee_id,employer_name,job_title,employment_type,"
+                    "location,start_date,end_date,description,recorded_by_user_id) "
+                    "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                    "RETURNING id,employee_id,employer_name,job_title,employment_type,location,start_date,end_date,"
+                    "description,recorded_by_user_id,created_at",
+                    (employee_id,payload.employer_name,payload.job_title,payload.employment_type,payload.location,
+                     payload.start_date,payload.end_date,payload.description,actor),
+                ).fetchone()
+                conn.execute(
+                    "INSERT INTO hr_employee_record_events(employee_id,record_type,record_id,event_type,after_state,actor_user_id) "
+                    "VALUES(%s,'employment_history',%s,'created',%s::jsonb,%s)",
+                    (employee_id,row["id"],json.dumps(dict(row),default=str),actor),
+                )
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.get("/employees/{employee_id}/record-events")
+def list_employee_record_events(employee_id: int, request: Request):
+    _manager(request)
+    try:
+        with _hr_connection() as conn:
+            exists = conn.execute("SELECT id FROM hr_employees WHERE id=%s", (employee_id,)).fetchone()
+            if not exists:
+                raise HTTPException(404, "Employee not found")
+            rows = conn.execute(
+                "SELECT id,record_type,record_id,event_type,before_state,after_state,actor_user_id,created_at "
+                "FROM hr_employee_record_events WHERE employee_id=%s ORDER BY created_at DESC,id DESC LIMIT 200",
+                (employee_id,),
+            ).fetchall()
+        return {"items": rows}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
