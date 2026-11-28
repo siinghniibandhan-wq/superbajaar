@@ -57,7 +57,7 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
  const type=availableTypes.find(x=>x[0]===recordType)||availableTypes[0]||current.types[0];
  const load=useCallback(async()=>{
    setBusy(true);setError("");
-   try{const result=await apiRequest("/hr/enterprise/"+domain);setItems(result.items||[]);}
+   try{const result=await apiRequest("/hr/enterprise/"+domain+"?limit=500");setItems(result.items||[]);}
    catch(e){setError(e.message||"Unable to load HR records.");}
    finally{setBusy(false);}
  },[domain]);
