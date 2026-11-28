@@ -83,6 +83,8 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
  const [title,setTitle]=useState(""),[employeeId,setEmployeeId]=useState(""),[fields,setFields]=useState(blank),[documentFile,setDocumentFile]=useState(null);
  const [busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("");
  const [analyticsMonth,setAnalyticsMonth]=useState(()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");});
+ const [analyticsDomainFilter,setAnalyticsDomainFilter]=useState("");
+ const [analyticsDepartmentFilter,setAnalyticsDepartmentFilter]=useState("");
  const [analyticsData,setAnalyticsData]=useState(null),[analyticsError,setAnalyticsError]=useState(""),[analyticsLoading,setAnalyticsLoading]=useState(false);
  const [enterpriseAnalytics,setEnterpriseAnalytics]=useState(null),[enterpriseAnalyticsError,setEnterpriseAnalyticsError]=useState("");
  const [eventRecord,setEventRecord]=useState(null),[recordEvents,setRecordEvents]=useState([]),[eventsBusy,setEventsBusy]=useState(false);
@@ -127,11 +129,13 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
    const fromDate=analyticsMonth+"-01";
    const toDate=analyticsMonth+"-"+String(new Date(year,month,0).getDate()).padStart(2,"0");
    setEnterpriseAnalyticsError("");
-   apiRequest("/hr/enterprise/analytics/enterprise?from_date="+fromDate+"&to_date="+toDate)
+   apiRequest("/hr/enterprise/analytics/enterprise?from_date="+fromDate+"&to_date="+toDate
+     +(analyticsDomainFilter?"&domain="+encodeURIComponent(analyticsDomainFilter):"")
+     +(analyticsDepartmentFilter?"&department_id="+encodeURIComponent(analyticsDepartmentFilter):""))
      .then(result=>{if(active)setEnterpriseAnalytics(result.domains||{});})
      .catch(e=>{if(active)setEnterpriseAnalyticsError(e.message||"Unable to load enterprise workflow metrics.");});
    return()=>{active=false;};
- },[domain,manager,analyticsMonth]);
+ },[domain,manager,analyticsMonth,analyticsDomainFilter,analyticsDepartmentFilter]);
  const update=(key,value)=>setFields(old=>({...old,[key]:value}));
  async function create(e){
    e.preventDefault();setBusy(true);setError("");setNotice("");
@@ -304,7 +308,9 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
     {expiringLoading?<p role="status">Loading expiry queue…</p>:<div className="hr-table-wrap"><table><thead><tr><th>Record</th><th>Employee</th><th>Due date</th><th>Status</th></tr></thead><tbody>{expiringItems.map(x=><tr key={x.id}><td>{x.title}<small>{x.domain} · #{x.id}</small></td><td>{x.employee_code?x.employee_code+" — "+x.first_name+" "+(x.last_name||""):"—"}</td><td>{x.due_date}</td><td>{x.status}</td></tr>)}{!expiringItems.length&&<tr><td colSpan="4">No expiring records in this window.</td></tr>}</tbody></table></div>}
    </section>}
    {domain==="analytics"&&manager&&<section className="hr-panel" aria-label="Computed workforce analytics">
-    <div className="hr-directory-heading"><div><h3>Workforce analytics</h3><p>Live metrics from the existing HR, attendance, leave and approved payroll records.</p></div><label>Reporting month<input type="month" value={analyticsMonth} onChange={e=>setAnalyticsMonth(e.target.value)}/></label><button type="button" className="hr-secondary" disabled={!analyticsData&&!enterpriseAnalytics} onClick={exportAnalyticsCsv}>Export CSV</button></div>
+    <div className="hr-directory-heading"><div><h3>Workforce analytics</h3><p>Live metrics from the existing HR, attendance, leave and approved payroll records.</p></div><label>Reporting month<input type="month" value={analyticsMonth} onChange={e=>setAnalyticsMonth(e.target.value)}/></label>
+     <label>Domain filter<select value={analyticsDomainFilter} onChange={e=>setAnalyticsDomainFilter(e.target.value)}><option value="">All seven domains</option>{domains.filter(x=>!["recruitment","analytics"].includes(x.id)).map(x=><option key={x.id} value={x.id}>{x.label}</option>)}</select></label>
+     <label>Department filter<select value={analyticsDepartmentFilter} onChange={e=>setAnalyticsDepartmentFilter(e.target.value)}><option value="">All departments</option>{[...new Map(employees.filter(x=>x.department_id).map(x=>[String(x.department_id),x.department_name||("Department "+x.department_id)])).entries()].map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></label><button type="button" className="hr-secondary" disabled={!analyticsData&&!enterpriseAnalytics} onClick={exportAnalyticsCsv}>Export CSV</button></div>
     {analyticsError&&<p role="alert" className="sb-alert">{analyticsError}</p>}
     {analyticsLoading&&<p role="status">Loading workforce metrics…</p>}
     {analyticsData&&<><div className="hr-overview">
