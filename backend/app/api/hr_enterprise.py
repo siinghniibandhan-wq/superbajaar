@@ -1430,6 +1430,8 @@ def transition_record(domain:str,record_id:int,payload:TransitionInput,request:R
                     raise HTTPException(409,"Travel policies are managed by archiving the old version and creating a new version")
                 if domain=="documents" and payload.status in {"verified","rejected"} and not (payload.note and payload.note.strip()):
                     raise HTTPException(422,"A verification or rejection note is required for employee documents")
+                if domain=="documents" and payload.status=="verified" and old["payload"].get("malware_scan_status")!="clean":
+                    raise HTTPException(409,"Employee documents cannot be verified until a clean malware scan is recorded; re-upload after scanner configuration")
                 if domain=="recruitment" and payload.status=="rejected" and not (payload.note and payload.note.strip()):
                     raise HTTPException(422,"A rejection reason is required for recruitment decisions")
                 if domain=="recruitment" and record_type=="job_opening" and payload.status=="closed":
