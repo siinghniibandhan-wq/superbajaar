@@ -730,3 +730,43 @@ def test_exit_settlement_component_breakdowns_must_reconcile():
             "exit_record_id":7,"gross_due":"60000","deductions":"5000","net_due":"55000","payable_on":"2027-01-05",
             "earnings_breakdown":[{"type":"final_salary","amount":"40000"}]
         })
+
+from app.services.hr_exit_settlement import calculate_exit_settlement, validate_exit_policy
+
+
+def test_exit_policy_requires_explicit_jurisdiction_rules():
+    with pytest.raises(HTTPException):
+        validate_exit_policy({"daily_wage_basis":"basic"})
+    config=validate_exit_policy({
+        "daily_wage_basis":"basic","working_days_divisor":"26",
+        "gratuity":{"enabled":True,"minimum_service_years":"5","days_per_service_year":"15","divisor":"26"},
+        "leave_encashment":{"enabled":True,"divisor":"26"},
+        "notice_pay":{"enabled":True,"treatment":"deduction"},
+        "statutory_deductions":[{"name":"policy_tax","basis":"gross","rate_percent":"10"}]
+    })
+    assert config["daily_wage_basis"]=="basic"
+
+
+def test_exit_settlement_calculates_policy_earnings_leave_and_loan_deductions():
+    result=calculate_exit_settlement(
+        config={
+            "daily_wage_basis":"basic","working_days_divisor":"26",
+            "gratuity":{"enabled":True,"minimum_service_years":"5","days_per_service_year":"15","divisor":"26"},
+            "leave_encashment":{"enabled":True,"divisor":"26","leave_types":["earned"]},
+            "notice_pay":{"enabled":True,"treatment":"deduction"},
+            "statutory_deductions":[{"name":"policy_tax","basis":"gross","rate_percent":"5"}]
+        },
+        monthly_basic="26000",monthly_gross="40000",service_years="6",
+        leave_balances={"earned":"10","sick":"5"},
+        loan_balances=[{"id":3,"loan_reference":"LN-3","outstanding_amount":"2000"}],
+        notice_days_unserved=2
+    )
+    assert result["gross_due"]=="15000.00"
+    assert result["deductions"]=="3500.00"
+    assert result["net_due"]=="11500.00"
+    assert any(x["type"]=="employee_loan_recovery" for x in result["deductions_breakdown"])
+
+
+def test_travel_advance_requires_approval_before_disbursement():
+    assert _allowed_record_transitions("travel","advance","requested")=={"approved","rejected"}
+    assert _allowed_record_transitions("travel","advance","approved")=={"disbursed"}
