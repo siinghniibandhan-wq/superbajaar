@@ -417,7 +417,7 @@ export default function POSWorkspace({ onBack }) {
         order, payment, method, at: new Date().toISOString(), counter: activeShift?.register_code || "",
         customer: { name: customerName, phone: customer.phone.trim() },
         tendered: tenderedNumber,
-        lines: cart.map(line => ({ id: line.id, name: productTitle(line), label: variantLabel(line), sku: line.sku, quantity: line.quantity, price: Number(line.selling_price || 0) })),
+        lines: cart.map((line, index) => ({ id: line.id, name: productTitle(line), label: variantLabel(line), sku: line.sku, quantity: line.quantity, price: Number(line.selling_price || 0), tax: order.tax_lines?.[index] || null })),
       };
       setReceipt(sale);
       resetSale(); setShowReceipt(true);
@@ -606,7 +606,8 @@ export default function POSWorkspace({ onBack }) {
         <div className="sb-pos-receipt-sheet">
           <div className="sb-pos-receipt-top"><span className="sb-pos-tick" aria-hidden="true">✓</span><h2>Sale recorded</h2><p>{receipt.order.order_number}</p></div>
           <p className="sb-pos-receipt-meta">Super Bajaar{receipt.counter ? " · " + receipt.counter : ""}<br />{new Date(receipt.at).toLocaleString("en-IN")}<br />Customer: {receipt.customer.name}{receipt.customer.phone ? " · " + receipt.customer.phone : ""}</p>
-          <table><tbody>{receipt.lines.map(l => <tr key={l.id}><td>{l.name}{l.label ? <small>{l.label}</small> : null}<small>{l.quantity} × {money(l.price)}</small></td><td>{money(l.price * l.quantity)}</td></tr>)}</tbody></table>
+          <table><tbody>{receipt.lines.map(l => <tr key={l.id}><td>{l.name}{l.label ? <small>{l.label}</small> : null}<small>{l.quantity} × {money(l.price)}</small>{l.tax?.hsn_code ? <small>HSN {l.tax.hsn_code} · GST {l.tax.gst_rate}%</small> : null}</td><td>{money(l.price * l.quantity)}</td></tr>)}</tbody></table>
+          {Number(receipt.order.tax_total || 0) > 0 && <div className="sb-pos-receipt-tax"><span>GST included in total</span><strong>{money(receipt.order.tax_total)}</strong></div>}
           <div className="sb-pos-receipt-total"><span>Total</span><strong>{money(receiptTotal)}</strong></div>
           <p className="sb-pos-receipt-pay">{methodLabel(receipt.method)} · {cashPending ? "cash awaiting confirmation" : receipt.payment.status}{receipt.payment.payment_reference ? " · " + receipt.payment.payment_reference : ""}</p>
           {receipt.tendered != null && <p className="sb-pos-receipt-pay">Cash received {money(receipt.tendered)}{receiptChange != null ? " · Change " + money(receiptChange) : ""}</p>}
