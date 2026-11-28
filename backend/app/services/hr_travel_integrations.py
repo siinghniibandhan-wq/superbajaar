@@ -18,7 +18,7 @@ def create_provider_booking(*,travel:dict,booking:dict,record_id:int)->dict:
             "Travel booking integration is not configured; set SB_TRAVEL_BOOKING_API_URL, SB_TRAVEL_BOOKING_API_TOKEN and SB_TRAVEL_BOOKING_PROVIDER"
         )
     body={
-        "external_reference":f"superbajaar-hr-travel-{record_id}",
+        "external_reference":str(booking.get("client_reference") or f"superbajaar-hr-travel-{record_id}"),
         "destination":travel.get("destination"),
         "purpose":travel.get("purpose"),
         "start_date":travel.get("start_date"),
