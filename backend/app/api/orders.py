@@ -18,6 +18,7 @@ from app.services.loyalty_accounting import post_earning_accrual
 from app.services.pos_tender import checkout_payload_for_hash, validate_pos_tender
 from app.services.serviceability import blocked_product_ids, eligible_locations, lookup_pin
 from app.services.indian_gst import calculate_indian_gst_inclusive
+from app.services.promotions import calculate_promotion_discount
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 ORDER_STATUSES = {"draft", "placed", "confirmed", "processing", "ready_for_dispatch", "dispatched", "delivered", "cancelled"}
@@ -185,7 +186,18 @@ class OrderCreate(BaseModel):
     checkout_idempotency_key: str = Field(min_length=16, max_length=100)
     pos_payment_method: str | None = None
     pos_register_id: int | None = Field(default=None, gt=0)
+    coupon_code: str | None = Field(default=None, max_length=40)
     lines: list[OrderLineCreate] = Field(min_length=1, max_length=100)
+
+    @field_validator("coupon_code")
+    @classmethod
+    def normalize_coupon_code(cls, value):
+        if value is None:
+            return None
+        code = value.strip().upper()
+        if not code or not re.fullmatch(r"[A-Z0-9][A-Z0-9_-]{1,39}", code):
+            raise ValueError("Coupon code must contain 2-40 letters, numbers, hyphens or underscores")
+        return code
 
     @field_validator("checkout_idempotency_key")
     @classmethod
@@ -355,7 +367,7 @@ def create_order(payload: OrderCreate, request: Request):
                 ).hexdigest()
                 if payload.checkout_idempotency_key:
                     prior = conn.execute(
-                        "SELECT id,order_number,channel,customer_name,customer_phone,customer_email,delivery_pin,status,subtotal,total,notes,checkout_payload_hash "
+                        "SELECT id,order_number,channel,customer_name,customer_phone,customer_email,delivery_pin,status,subtotal,total,discount_total,promotion_code,notes,checkout_payload_hash "
                         "FROM orders WHERE checkout_idempotency_key=%s FOR UPDATE",
                         (payload.checkout_idempotency_key,),
                     ).fetchone()
@@ -387,6 +399,44 @@ def create_order(payload: OrderCreate, request: Request):
                 if payload.channel == "website":
                     _enforce_regional_availability(conn, payload.delivery_pin, variant_ids, delivery_type)
                 subtotal = sum((Decimal(str(by_id[line.variant_id]["selling_price"])) * line.quantity for line in payload.lines), Decimal("0"))
+                promotion = None
+                promotion_discount = Decimal("0.00")
+                if payload.coupon_code:
+                    promotion = conn.execute(
+                        "SELECT * FROM promotions WHERE upper(code)=upper(%s) FOR UPDATE",
+                        (payload.coupon_code,),
+                    ).fetchone()
+                    if promotion is None or not promotion["is_active"]:
+                        raise HTTPException(status_code=422, detail="Coupon code is invalid or inactive")
+                    if promotion["starts_at"] and promotion["starts_at"] > conn.execute("SELECT now() AS current_time").fetchone()["current_time"]:
+                        raise HTTPException(status_code=422, detail="Coupon is not active yet")
+                    if promotion["ends_at"] and promotion["ends_at"] <= conn.execute("SELECT now() AS current_time").fetchone()["current_time"]:
+                        raise HTTPException(status_code=422, detail="Coupon has expired")
+                    redeemed_count = conn.execute(
+                        "SELECT count(*) AS n FROM promotion_redemptions WHERE promotion_id=%s",
+                        (promotion["id"],),
+                    ).fetchone()["n"]
+                    if promotion["usage_limit"] is not None and redeemed_count >= promotion["usage_limit"]:
+                        raise HTTPException(status_code=409, detail="Coupon redemption limit has been reached")
+                    customer_identifier = str(payload.customer_email or "").strip().lower() or str(payload.customer_phone or "").strip()
+                    if promotion["per_customer_limit"] is not None:
+                        if not customer_identifier:
+                            raise HTTPException(status_code=422, detail="This coupon requires customer details to enforce its per-customer limit")
+                        customer_redemptions = conn.execute(
+                            "SELECT count(*) AS n FROM promotion_redemptions WHERE promotion_id=%s "
+                            "AND (lower(COALESCE(customer_email,''))=%s OR (COALESCE(customer_email,'')='' AND customer_phone=%s))",
+                            (promotion["id"], customer_identifier if payload.customer_email else "", customer_identifier if payload.customer_phone and not payload.customer_email else ""),
+                        ).fetchone()["n"]
+                        if customer_redemptions >= promotion["per_customer_limit"]:
+                            raise HTTPException(status_code=409, detail="This customer has already used the coupon the allowed number of times")
+                    try:
+                        promotion_discount = calculate_promotion_discount(
+                            subtotal=subtotal, discount_type=promotion["discount_type"],
+                            discount_value=promotion["discount_value"], minimum_subtotal=promotion["minimum_subtotal"],
+                            maximum_discount=promotion["maximum_discount"],
+                        )
+                    except ValueError as exc:
+                        raise HTTPException(status_code=422, detail=str(exc)) from exc
                 pos_shift_id = None
                 if payload.channel == "pos":
                     actor_id = getattr(request.state, "user_id", None)
@@ -402,16 +452,23 @@ def create_order(payload: OrderCreate, request: Request):
                     pos_shift_id = active_shift["id"]
                 order_number = "SB-" + __import__("uuid").uuid4().hex[:12].upper()
                 order = conn.execute(
-                    "INSERT INTO orders (order_number, channel, customer_name, customer_phone, customer_email, delivery_pin, delivery_type, status, subtotal, total, notes, checkout_idempotency_key, checkout_payload_hash, pos_register_shift_id) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s,'placed',%s,%s,%s,%s,%s,%s) "
-                    "RETURNING id, order_number, channel, customer_name, customer_phone, customer_email, delivery_pin, delivery_type, status, subtotal, total, notes, created_at, updated_at",
-                    (order_number, payload.channel, payload.customer_name, payload.customer_phone, str(payload.customer_email).lower() if payload.customer_email else None, payload.delivery_pin, delivery_type, subtotal, subtotal, payload.notes, payload.checkout_idempotency_key, payload_hash, pos_shift_id),
+                    "INSERT INTO orders (order_number, channel, customer_name, customer_phone, customer_email, delivery_pin, delivery_type, status, subtotal, total, discount_total, promotion_code, notes, checkout_idempotency_key, checkout_payload_hash, pos_register_shift_id) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,'placed',%s,%s,%s,%s,%s,%s,%s,%s) "
+                    "RETURNING id, order_number, channel, customer_name, customer_phone, customer_email, delivery_pin, delivery_type, status, subtotal, total, discount_total, promotion_code, notes, created_at, updated_at",
+                    (order_number, payload.channel, payload.customer_name, payload.customer_phone, str(payload.customer_email).lower() if payload.customer_email else None, payload.delivery_pin, delivery_type, subtotal, subtotal-promotion_discount, promotion_discount, promotion["code"] if promotion else None, payload.notes, payload.checkout_idempotency_key, payload_hash, pos_shift_id),
                 ).fetchone()
                 for line in payload.lines:
                     unit_price = Decimal(str(by_id[line.variant_id]["selling_price"]))
                     conn.execute(
                         "INSERT INTO order_lines (order_id, variant_id, quantity, unit_price, line_total) VALUES (%s,%s,%s,%s,%s)",
                         (order["id"], line.variant_id, line.quantity, unit_price, unit_price * line.quantity),
+                    )
+                if promotion:
+                    conn.execute(
+                        "INSERT INTO promotion_redemptions (promotion_id,order_id,customer_email,customer_phone,subtotal,discount_amount,code_snapshot) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                        (promotion["id"], order["id"], str(payload.customer_email).lower() if payload.customer_email else None,
+                         payload.customer_phone, subtotal, promotion_discount, promotion["code"]),
                     )
                 loyalty_discount = Decimal("0.00")
                 redeemed_coins = 0
@@ -421,14 +478,14 @@ def create_order(payload: OrderCreate, request: Request):
                         customer_email=str(payload.customer_email).strip().lower(),
                         order_id=int(order["id"]),
                         order_reference=order["order_number"],
-                        payable_amount=subtotal,
+                        payable_amount=subtotal-promotion_discount,
                         requested_coins=payload.redeem_coins,
                     )
                     loyalty_discount = redemption["discount_amount"]
                     redeemed_coins = redemption["coins"]
                     order = conn.execute(
-                        "UPDATE orders SET total=%s WHERE id=%s RETURNING id,order_number,channel,customer_name,customer_phone,customer_email,delivery_pin,status,subtotal,total,notes,created_at,updated_at",
-                        (subtotal - loyalty_discount, order["id"]),
+                        "UPDATE orders SET total=%s,discount_total=%s WHERE id=%s RETURNING id,order_number,channel,customer_name,customer_phone,customer_email,delivery_pin,status,subtotal,total,discount_total,promotion_code,notes,created_at,updated_at",
+                        (subtotal - promotion_discount - loyalty_discount, promotion_discount + loyalty_discount, order["id"]),
                     ).fetchone()
                 try:
                     inventory_location_id = reserve_order_stock(
@@ -442,7 +499,7 @@ def create_order(payload: OrderCreate, request: Request):
                     raise HTTPException(status_code=409, detail=str(exc)) from exc
                 tax_total, place_of_supply_state = _apply_order_gst(
                     conn, int(order["id"]), delivery_pin=payload.delivery_pin,
-                    discount_total=loyalty_discount,
+                    discount_total=promotion_discount + loyalty_discount,
                 )
                 order["tax_total"] = tax_total
                 order["place_of_supply_state"] = place_of_supply_state
@@ -463,7 +520,7 @@ def create_order(payload: OrderCreate, request: Request):
                         (payment_reference, order["id"], payload.pos_payment_method, order["total"],
                          "POS tender intent created atomically with order; awaiting cashier or provider confirmation"),
                     ).fetchone()
-        return {**order, "payment": payment, "loyalty_discount": loyalty_discount, "redeemed_coins": redeemed_coins,
+        return {**order, "payment": payment, "promotion_discount": promotion_discount, "loyalty_discount": loyalty_discount, "redeemed_coins": redeemed_coins,
                 "inventory_location_id": inventory_location_id, "stock_reserved": inventory_location_id is not None}
     except HTTPException:
         raise
