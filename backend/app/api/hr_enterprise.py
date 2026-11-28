@@ -235,6 +235,10 @@ def _validate_references(conn, domain, record_type, data):
         allowed={"interview":{"shortlisted","interview"},"offer":{"interview"}}
         if application["status"] not in allowed[record_type]:
             raise HTTPException(409,"The application must reach the required recruitment stage first")
+    if domain=="performance" and record_type=="review":
+        template=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["template_id"],)).fetchone()
+        if template["status"]!="active":
+            raise HTTPException(409,"The selected review template must be active")
     if domain=="performance" and record_type=="self_review":
         cycle=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["cycle_id"],)).fetchone()
         if cycle["status"]!="self_review":
@@ -705,7 +709,7 @@ def list_records(domain:str,request:Request,status:str|None=None,employee_id:int
               "AND (%s IS NULL OR r.status=%s) AND (%s IS NULL OR r.employee_id=%s "
               "OR (r.domain='learning' AND r.payload->>'record_type'='course' AND r.status='enrolled') "
               "OR (r.domain='travel' AND r.payload->>'record_type'='travel_policy' AND r.status='approved') "
-              "OR (r.domain='performance' AND r.payload->>'record_type'='review_cycle' AND r.status IN ('self_review','manager_review'))) "
+              "OR (r.domain='performance' AND r.payload->>'record_type'='review_cycle' AND r.status IN ('active','self_review','manager_review'))) "
               "AND (%s IS NULL OR r.payload->>'record_type'=%s) "
               "ORDER BY r.updated_at DESC,r.id DESC LIMIT %s",
               (domain,status,status,employee_id,employee_id,record_type,record_type,limit)
