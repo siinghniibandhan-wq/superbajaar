@@ -5,7 +5,7 @@ from fastapi import HTTPException
 
 from app.api.hr_enterprise import (
     DOMAINS, REQUIRED, STATUSES, TRANSITIONS,
-    _employee_transition_allowed, _initial_status, _validate, _ensure_offer_unexpired,
+    _employee_transition_allowed, _initial_status, _validate, _ensure_offer_unexpired, _allowed_record_transitions,
 )
 
 
@@ -576,4 +576,13 @@ def test_recruitment_hire_rejects_expired_or_invalid_offer():
     with pytest.raises(HTTPException) as malformed:
         _ensure_offer_unexpired("not-a-date", today=date(2026,12,1))
     assert malformed.value.status_code == 409
+
+def test_recruitment_record_types_have_distinct_transition_permissions():
+    assert _allowed_record_transitions("recruitment","job_opening","open") == {"closed","archived"}
+    assert _allowed_record_transitions("recruitment","candidate","draft") == {"withdrawn","archived"}
+    assert _allowed_record_transitions("recruitment","application","screening") == {"shortlisted","rejected","withdrawn"}
+    assert _allowed_record_transitions("recruitment","interview","interview") == {"completed"}
+    assert _allowed_record_transitions("recruitment","offer","offered") == {"rejected","withdrawn"}
+    assert _allowed_record_transitions("recruitment","communication","completed") == set()
+    assert _allowed_record_transitions("recruitment","application","screening") != TRANSITIONS["recruitment"]["screening"]
 
