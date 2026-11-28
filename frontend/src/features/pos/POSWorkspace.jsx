@@ -418,6 +418,7 @@ export default function POSWorkspace({ onBack }) {
   }
 
   async function checkout(event) {
+    let pendingSplitReceipt = null;
     event?.preventDefault?.();
     if (!cart.length) { setError("Add at least one item before checkout."); return; }
     const customerName = customer.name.trim() || WALK_IN.name;
@@ -428,7 +429,8 @@ export default function POSWorkspace({ onBack }) {
     const note = "Created at POS" + (reference.trim() ? " · Ref: " + reference.trim().slice(0, 100) : "");
     const checkoutPayload = {
       channel: "pos", customer_name: customerName, customer_phone: customer.phone.trim() || null,
-      delivery_pin: pin || null, location_id: Number(locationId), pos_register_id: Number(selectedRegisterId),\n      pos_payment_method: splitTender ? (splitCash === total ? "cod" : splitCash === 0 ? splitOnlineMethod : null) : method,\n      pos_tenders: splitIsTwoTenders ? splitTenders : null,
+      delivery_pin: pin || null, location_id: Number(locationId), pos_register_id: Number(selectedRegisterId),
+      pos_payment_method: splitTender ? (splitCash === total ? "cod" : splitCash === 0 ? splitOnlineMethod : null) : method,\n      pos_tenders: splitIsTwoTenders ? splitTenders : null,
       coupon_code: couponCode.trim() || null,
       notes: note, lines: cart.map(line => ({ variant_id: line.id, quantity: line.quantity })),
     };
@@ -454,6 +456,7 @@ export default function POSWorkspace({ onBack }) {
           payments = payments.map(p => p.id === cashPayment.id ? {...p,...confirmed} : p);
         }
         const partialReceipt = { order, payment: payments[0], payments, method:"split", at:new Date().toISOString(), counter:activeShift?.register_code||"", customer:{name:customerName,phone:customer.phone.trim()}, tendered:splitCash, lines:cart.map((line,index)=>({id:line.id,name:productTitle(line),label:variantLabel(line),sku:line.sku,quantity:line.quantity,price:Number(line.selling_price||0),tax:order.tax_lines?.[index]||null})) };
+        pendingSplitReceipt = partialReceipt;
         setReceipt(partialReceipt);
         if (onlinePayment) {
           const gatewayOrder = await apiRequest("/razorpay/orders", {method:"POST",body:JSON.stringify({order_id:order.id,payment_id:onlinePayment.id})});
@@ -466,6 +469,7 @@ export default function POSWorkspace({ onBack }) {
           });
           const verified=await apiRequest("/razorpay/verify",{method:"POST",body:JSON.stringify(result)});
           payments=payments.map(p=>p.id===onlinePayment.id?{...p,status:verified.status||"captured",provider_reference:result.razorpay_payment_id}:p);
+          pendingSplitReceipt = {...partialReceipt,payments,payment:payments[0]};
         }
       } else {
         let payment = payments[0];
@@ -494,6 +498,7 @@ export default function POSWorkspace({ onBack }) {
       resetSale(); setShowReceipt(true);
       void refreshAnalytics();
     } catch (e) {
+      if (pendingSplitReceipt) { setReceipt(pendingSplitReceipt); setShowReceipt(true); }
       setError(e.message || "POS checkout could not be completed. Retry the same sale to safely reuse its checkout key.");
     } finally { setSaving(false); }
   }
