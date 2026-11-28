@@ -1639,6 +1639,86 @@ def export_enterprise_analytics(
                     headers={"Content-Disposition":f'attachment; filename="{filename}.pdf"'})
 
 
+@router.post("/notifications/refresh")
+def refresh_expiry_notifications(request:Request):
+    actor=_manager(request)
+    created=0
+    try:
+        with _hr_connection() as conn:
+            with conn.transaction():
+                due=conn.execute(
+                    "SELECT id,employee_id,domain,title,due_date,payload->>'record_type' AS record_type "
+                    "FROM hr_enterprise_records WHERE domain IN ('documents','learning','assets') "
+                    "AND payload->>'record_type' IN ('employee_document','certificate','asset') "
+                    "AND employee_id IS NOT NULL AND due_date IS NOT NULL "
+                    "AND due_date<=CURRENT_DATE+INTERVAL '30 days' "
+                    "AND status NOT IN ('archived','rejected','written_off','cancelled') "
+                    "ORDER BY due_date,id"
+                ).fetchall()
+                for item in due:
+                    kind="overdue" if item["due_date"]<date.today() else "due_soon"
+                    label={"employee_document":"Employee document","certificate":"Learning certificate","asset":"Asset warranty"}.get(item["record_type"],"HR record")
+                    message=f"{label} '{item['title']}' is {'overdue' if kind=='overdue' else 'due soon'} on {item['due_date'].isoformat()}."
+                    result=conn.execute(
+                        "INSERT INTO hr_enterprise_notifications(employee_id,record_id,notification_type,title,message,due_date) "
+                        "VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT(employee_id,record_id,notification_type) "
+                        "DO UPDATE SET title=EXCLUDED.title,message=EXCLUDED.message,due_date=EXCLUDED.due_date "
+                        "RETURNING (xmax=0) AS inserted",
+                        (item["employee_id"],item["id"],kind,label,message,item["due_date"])
+                    ).fetchone()
+                    if result and result["inserted"]:
+                        created+=1
+        return {"created":created,"message":"Expiry notifications refreshed"}
+    except psycopg.Error as exc: raise _db_error(exc) from exc
+
+
+@router.get("/notifications")
+def list_expiry_notifications(request:Request,unread_only:bool=False,limit:int=Query(100,ge=1,le=500)):
+    actor=_actor(request)
+    try:
+        with _hr_connection() as conn:
+            if _role(request) in MANAGER_ROLES:
+                rows=conn.execute(
+                    "SELECT n.*,e.employee_code,e.first_name,e.last_name,r.domain,r.title AS record_title "
+                    "FROM hr_enterprise_notifications n JOIN hr_employees e ON e.id=n.employee_id "
+                    "JOIN hr_enterprise_records r ON r.id=n.record_id "
+                    "WHERE (%s=false OR n.status='unread') ORDER BY n.due_date,n.id LIMIT %s",
+                    (unread_only,limit)
+                ).fetchall()
+            else:
+                own=_employee(conn,actor)
+                rows=conn.execute(
+                    "SELECT n.*,r.domain,r.title AS record_title FROM hr_enterprise_notifications n "
+                    "JOIN hr_enterprise_records r ON r.id=n.record_id WHERE n.employee_id=%s "
+                    "AND (%s=false OR n.status='unread') ORDER BY n.due_date,n.id LIMIT %s",
+                    (own["id"],unread_only,limit)
+                ).fetchall()
+        return {"items":rows}
+    except psycopg.Error as exc: raise _db_error(exc) from exc
+
+
+@router.post("/notifications/{notification_id}/read")
+def mark_expiry_notification_read(notification_id:int,request:Request):
+    actor=_actor(request)
+    try:
+        with _hr_connection() as conn:
+            with conn.transaction():
+                row=conn.execute(
+                    "SELECT * FROM hr_enterprise_notifications WHERE id=%s FOR UPDATE",(notification_id,)
+                ).fetchone()
+                if not row: raise HTTPException(404,"HR notification not found")
+                if _role(request) not in MANAGER_ROLES:
+                    own=_employee(conn,actor)
+                    if int(row["employee_id"])!=int(own["id"]):
+                        raise HTTPException(403,"Employees may update only their own HR notifications")
+                return conn.execute(
+                    "UPDATE hr_enterprise_notifications SET status='read',read_at=now() WHERE id=%s RETURNING *",
+                    (notification_id,)
+                ).fetchone()
+    except HTTPException: raise
+    except psycopg.Error as exc: raise _db_error(exc) from exc
+
+
 @router.get("/{domain}/{record_id}")
 def get_record(domain:str,record_id:int,request:Request):
     if domain not in DOMAINS: raise HTTPException(404,"Unknown HR domain")
