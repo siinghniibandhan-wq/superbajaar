@@ -420,9 +420,15 @@ def test_coupon_discount_is_applied_once_and_enforces_customer_limit(api):
     payload["checkout_idempotency_key"] = "promo-checkout-" + api.suffix + "-two"
     blocked = api.post("/api/orders", json=payload)
     assert blocked.status_code == 409
+    cancelled = ok(api.patch(f"/api/orders/{order['id']}/status", json={"status":"cancelled"}))
+    assert cancelled["status"] == "cancelled"
+    payload["checkout_idempotency_key"] = "promo-checkout-" + api.suffix + "-three"
+    replacement = ok(api.post("/api/orders", json=payload), 201)
+    assert Decimal(str(replacement["discount_total"])) == Decimal("10.00")
     with psycopg.connect(TEST_DB) as conn:
         redemption = conn.execute(
-            "SELECT count(*),sum(discount_amount) FROM promotion_redemptions WHERE promotion_id=%s",
+            "SELECT count(*) FILTER (WHERE status='redeemed'),count(*) FILTER (WHERE status='reversed'),sum(discount_amount) FILTER (WHERE status='redeemed') "
+            "FROM promotion_redemptions WHERE promotion_id=%s",
             (promotion["id"],),
         ).fetchone()
-        assert redemption == (1, Decimal("10.00"))
+        assert redemption == (1, 1, Decimal("10.00"))
