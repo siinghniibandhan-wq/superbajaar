@@ -404,7 +404,7 @@ test("HR workspace adapts its navigation and employee form across desktop and mo
   await expect(navigation).toBeVisible();
   const desktopLayout = await navigation.evaluate(el => getComputedStyle(el).display);
   expect(desktopLayout).toBe("grid");
-  await expect(navigation.locator(".hr-nav-group")).toHaveCount(5);
+  await expect(navigation.locator(".hr-nav-group")).toHaveCount(6);
   await expect(navigation).toHaveCSS("overflow-x", "auto");
 
   await page.getByRole("button", { name: "Employee directory & departments" }).click();
@@ -682,7 +682,7 @@ test("inventory workspace separates locations, stock operations, approvals, valu
   await page.getByRole("button", { name: /Count stock/ }).click();
   await expect(page.getByRole("heading", { name: "Count stock", exact: true })).toBeVisible();
   await page.getByRole("button", { name: /Move stock/ }).click();
-  await expect(page.getByRole("heading", { name: "Move stock between locations" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Move stock", exact: true })).toBeVisible();
 
   await navigation.getByRole("button", { name: /^To-do/ }).click();
   await page.getByRole("button", { name: /^Approvals/ }).click();
