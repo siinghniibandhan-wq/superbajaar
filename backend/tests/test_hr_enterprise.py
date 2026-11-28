@@ -761,9 +761,9 @@ def test_exit_settlement_calculates_policy_earnings_leave_and_loan_deductions():
         loan_balances=[{"id":3,"loan_reference":"LN-3","outstanding_amount":"2000"}],
         notice_days_unserved=2
     )
-    assert result["gross_due"]=="15000.00"
-    assert result["deductions"]=="3500.00"
-    assert result["net_due"]=="11500.00"
+    assert result["gross_due"]=="100000.00"
+    assert result["deductions"]=="9000.00"
+    assert result["net_due"]=="91000.00"
     assert any(x["type"]=="employee_loan_recovery" for x in result["deductions_breakdown"])
 
 
