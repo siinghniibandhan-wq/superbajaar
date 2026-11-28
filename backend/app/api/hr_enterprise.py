@@ -614,6 +614,11 @@ def _validate(domain, record_type, payload):
         accepted=str(data["acknowledgement"]).strip().lower()
         if accepted not in {"true","false"}: raise HTTPException(422,"Acknowledgement must be true or false")
         data["acknowledgement"]=accepted=="true"
+    if domain=="learning" and record_type=="course" and data.get("max_attempts") not in (None,""):
+        try: maximum=int(data["max_attempts"])
+        except (ValueError,TypeError): raise HTTPException(422,"Maximum assessment attempts must be an integer")
+        if maximum<1 or maximum>20: raise HTTPException(422,"Maximum assessment attempts must be between 1 and 20")
+        data["max_attempts"]=maximum
     if domain=="learning" and record_type=="progress":
         try: progress=Decimal(str(data["progress_percent"]))
         except InvalidOperation: raise HTTPException(422,"Course progress must be numeric")
