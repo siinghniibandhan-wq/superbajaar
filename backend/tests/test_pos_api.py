@@ -109,10 +109,10 @@ def test_pos_sales_supports_date_register_cashier_tender_and_search_filters(monk
     assert "s.cashier_user_id=%s" in query
     assert "EXISTS (SELECT 1 FROM payments pm" in query
     assert "o.order_number ILIKE %s" in query
-    assert params == [
+    assert params == (
         date(2026, 11, 1), date(2026, 11, 28), 2, 9, "upi",
         "%POS-7%", "%POS-7%", "%POS-7%", 25, 0,
-    ]
+    )
     count_query, count_params = conn.queries[1]
     assert "LEFT JOIN pos_register_shifts" in count_query
     assert count_params == params[:-2]
