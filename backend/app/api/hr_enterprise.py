@@ -1068,6 +1068,44 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                     enrollment=conn.execute("SELECT employee_id FROM hr_enterprise_records WHERE id=%s",(int(data["enrollment_id"]),)).fetchone()
                     if employee_id is None or enrollment["employee_id"] is None or int(employee_id)!=int(enrollment["employee_id"]):
                         raise HTTPException(403,"Learning progress must be recorded by the enrolled employee")
+                if domain=="performance" and payload.record_type=="goal" and data.get("weight") not in (None,""):
+                    cycle_id=int(data["cycle_id"])
+                    cycle=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s AND domain='performance' AND payload->>'record_type'='review_cycle' FOR UPDATE",(cycle_id,)).fetchone()
+                    if not cycle or cycle["status"] not in {"draft","active","self_review"}:
+                        raise HTTPException(409,"Goals can be added only to an editable performance cycle")
+                    total=conn.execute(
+                        "SELECT COALESCE(sum((payload->>'weight')::numeric),0) AS weight FROM hr_enterprise_records "
+                        "WHERE domain='performance' AND payload->>'record_type'='goal' AND payload->>'cycle_id'=%s "
+                        "AND status NOT IN ('cancelled','archived')",(str(cycle_id),)
+                    ).fetchone()["weight"]
+                    if Decimal(str(total))+Decimal(str(data["weight"]))>Decimal("100"):
+                        raise HTTPException(422,"Active goal weights for a review cycle cannot exceed 100 percent")
+                if domain=="learning" and payload.record_type=="assessment":
+                    enrollment_id=int(data["enrollment_id"])
+                    enrollment=conn.execute(
+                        "SELECT status,payload FROM hr_enterprise_records WHERE id=%s AND domain='learning' "
+                        "AND payload->>'record_type'='enrollment' FOR UPDATE",(enrollment_id,)
+                    ).fetchone()
+                    if not enrollment or enrollment["status"]!="in_progress":
+                        raise HTTPException(409,"Assessment attempts are allowed only while the enrollment is in progress")
+                    course=conn.execute(
+                        "SELECT payload FROM hr_enterprise_records WHERE id=%s AND domain='learning' "
+                        "AND payload->>'record_type'='course'",(int(enrollment["payload"]["course_id"]),)
+                    ).fetchone()
+                    try:
+                        max_attempts=int(course["payload"].get("max_attempts",3))
+                    except (TypeError,ValueError):
+                        max_attempts=3
+                    if max_attempts<1 or max_attempts>20:
+                        raise HTTPException(409,"The course assessment attempt limit is misconfigured")
+                    attempts=conn.execute(
+                        "SELECT count(*)::int AS total FROM hr_enterprise_records WHERE domain='learning' "
+                        "AND payload->>'record_type'='assessment' AND payload->>'enrollment_id'=%s "
+                        "AND status NOT IN ('archived','cancelled')",(str(enrollment_id),)
+                    ).fetchone()["total"]
+                    if attempts>=max_attempts:
+                        raise HTTPException(409,f"Assessment attempt limit reached ({max_attempts})")
+                    data["attempt_number"]=attempts+1
                 if domain=="assets" and payload.record_type=="allocation":
                     allocation_employee_id=int(data["employee_id"])
                     if employee_id is None:
