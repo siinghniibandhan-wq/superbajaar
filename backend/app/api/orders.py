@@ -583,12 +583,22 @@ def create_order(payload: OrderCreate, request: Request):
                             raise HTTPException(status_code=422, detail="This coupon requires customer details to enforce its per-customer limit")
                         customer_email = str(payload.customer_email).strip().lower() if payload.customer_email else None
                         customer_phone = str(payload.customer_phone).strip() if payload.customer_phone else None
-                        customer_redemptions = conn.execute(
-                            "SELECT count(*) AS n FROM promotion_redemptions WHERE promotion_id=%s "
-                            "AND ((%s IS NOT NULL AND lower(COALESCE(customer_email,''))=lower(%s)) "
-                            "OR (%s IS NOT NULL AND customer_phone=%s))",
-                            (promotion["id"], customer_email, customer_email or "", customer_phone, customer_phone or ""),
-                        ).fetchone()["n"]
+                        if customer_email and customer_phone:
+                            customer_redemptions = conn.execute(
+                                "SELECT count(*) AS n FROM promotion_redemptions WHERE promotion_id=%s "
+                                "AND (lower(customer_email)=lower(%s) OR customer_phone=%s)",
+                                (promotion["id"], customer_email, customer_phone),
+                            ).fetchone()["n"]
+                        elif customer_email:
+                            customer_redemptions = conn.execute(
+                                "SELECT count(*) AS n FROM promotion_redemptions WHERE promotion_id=%s AND lower(customer_email)=lower(%s)",
+                                (promotion["id"], customer_email),
+                            ).fetchone()["n"]
+                        else:
+                            customer_redemptions = conn.execute(
+                                "SELECT count(*) AS n FROM promotion_redemptions WHERE promotion_id=%s AND customer_phone=%s",
+                                (promotion["id"], customer_phone),
+                            ).fetchone()["n"]
                         if customer_redemptions >= promotion["per_customer_limit"]:
                             raise HTTPException(status_code=409, detail="This customer has already used the coupon the allowed number of times")
                     try:
