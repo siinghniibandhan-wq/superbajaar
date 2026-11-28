@@ -190,6 +190,11 @@ class OrderLineCreate(BaseModel):
     quantity: int = Field(gt=0, le=100000)
 
 
+class PosTenderCreate(BaseModel):
+    method: str = Field(pattern=r"^(cod|upi|card|netbanking|wallet|bank_transfer|other)$")
+    amount: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
+
+
 class OrderCreate(BaseModel):
     channel: str = "manual"
     customer_name: str = Field(min_length=1, max_length=200)
@@ -205,6 +210,16 @@ class OrderCreate(BaseModel):
     pos_register_id: int | None = Field(default=None, gt=0)
     coupon_code: str | None = Field(default=None, max_length=40)
     lines: list[OrderLineCreate] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_pos_tenders(self):
+        if self.pos_tenders and self.channel != "pos":
+            raise ValueError("Split tenders are only supported for POS orders")
+        if self.pos_tenders and self.pos_payment_method:
+            raise ValueError("Use either one POS tender or split tenders, not both")
+        if self.pos_tenders and len({t.method for t in self.pos_tenders}) != len(self.pos_tenders):
+            raise ValueError("Each split tender method can be entered only once")
+        return self
 
     @field_validator("coupon_code")
     @classmethod
@@ -692,7 +707,23 @@ def create_order(payload: OrderCreate, request: Request):
                     (order["id"],),
                 ).fetchall()
                 payment = None
-                if payload.pos_payment_method:
+                payments = []
+                if payload.pos_tenders:
+                    tender_total = sum((t.amount for t in payload.pos_tenders), Decimal("0.00"))
+                    if tender_total != Decimal(str(order["total"])).quantize(Decimal("0.01")):
+                        raise HTTPException(status_code=422, detail="Split tender amounts must exactly equal the final order total")
+                    for tender in payload.pos_tenders:
+                        payment_reference = "PAY-" + uuid.uuid4().hex[:12].upper()
+                        created = conn.execute(
+                            "INSERT INTO payments(payment_reference,order_id,method,amount,status,note) "
+                            "VALUES(%s,%s,%s,%s,'pending',%s) "
+                            "RETURNING id,payment_reference,order_id,method,amount,status,provider_reference,note,created_at,updated_at",
+                            (payment_reference,order["id"],tender.method,tender.amount,
+                             "POS split tender created atomically; awaiting cashier or provider confirmation"),
+                        ).fetchone()
+                        payments.append(created)
+                    payment = payments[0]
+                elif payload.pos_payment_method:
                     payment_reference = "PAY-" + uuid.uuid4().hex[:12].upper()
                     payment = conn.execute(
                         "INSERT INTO payments(payment_reference,order_id,method,amount,status,note) "
@@ -701,7 +732,8 @@ def create_order(payload: OrderCreate, request: Request):
                         (payment_reference, order["id"], payload.pos_payment_method, order["total"],
                          "POS tender intent created atomically with order; awaiting cashier or provider confirmation"),
                     ).fetchone()
-        return {**order, "payment": payment, "promotion_discount": promotion_discount, "loyalty_discount": loyalty_discount, "redeemed_coins": redeemed_coins,
+                    payments = [payment]
+        return {**order, "payment": payment, "payments": payments, "promotion_discount": promotion_discount, "loyalty_discount": loyalty_discount, "redeemed_coins": redeemed_coins,
                 "inventory_location_id": inventory_location_id, "stock_reserved": inventory_location_id is not None}
     except HTTPException:
         raise
