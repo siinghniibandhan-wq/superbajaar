@@ -136,3 +136,21 @@ def test_promotion_quote_requires_database_configuration(monkeypatch):
     monkeypatch.setattr(orders.settings, "database_url", "")
     response = client.get("/api/orders/promotions/quote?code=SAVE10&subtotal=100")
     assert response.status_code == 503
+
+def test_order_model_accepts_pos_split_tenders_and_rejects_duplicate_methods():
+    from app.api.orders import OrderCreate
+    valid=OrderCreate(
+        channel="pos",customer_name="Split Test",location_id=1,
+        checkout_idempotency_key="split-model-test-key-01",
+        pos_tenders=[{"method":"cod","amount":"40.00"},{"method":"upi","amount":"60.00"}],
+        lines=[{"variant_id":1,"quantity":1}],
+    )
+    assert len(valid.pos_tenders)==2
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        OrderCreate(
+            channel="pos",customer_name="Split Test",location_id=1,
+            checkout_idempotency_key="split-model-test-key-02",
+            pos_tenders=[{"method":"cod","amount":"40.00"},{"method":"cod","amount":"60.00"}],
+            lines=[{"variant_id":1,"quantity":1}],
+        )
