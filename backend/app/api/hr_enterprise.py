@@ -184,6 +184,11 @@ class RecruitmentHireInput(BaseModel):
 def _role(request):
     return getattr(request.state,"role","")
 
+def _ensure_travel_claimable(status):
+    if status != "completed":
+        raise HTTPException(409,"Travel must be completed before a claim can be submitted")
+
+
 def _validate_references(conn, domain, record_type, data):
     references = {
         ("recruitment","application"): {
@@ -789,6 +794,14 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                     raise HTTPException(422,"Parent record must belong to the same HR domain")
                 data=_validate(domain,payload.record_type,payload.payload)
                 _validate_references(conn,domain,payload.record_type,data)
+                if domain=="travel" and payload.record_type=="claim":
+                    locked_travel=conn.execute(
+                        "SELECT status FROM hr_enterprise_records WHERE id=%s AND domain='travel' FOR UPDATE",
+                        (int(data["travel_record_id"]),),
+                    ).fetchone()
+                    if not locked_travel:
+                        raise HTTPException(404,"Travel request not found")
+                    _ensure_travel_claimable(locked_travel["status"])
                 if domain=="learning" and payload.record_type=="progress":
                     enrollment=conn.execute("SELECT employee_id FROM hr_enterprise_records WHERE id=%s",(int(data["enrollment_id"]),)).fetchone()
                     if employee_id is None or enrollment["employee_id"] is None or int(employee_id)!=int(enrollment["employee_id"]):
