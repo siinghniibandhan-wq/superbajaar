@@ -422,7 +422,7 @@ export default function POSWorkspace({ onBack }) {
   async function checkout(event) {
     let pendingSplitReceipt = null;
     event?.preventDefault?.();
-    if (!cart.length) { setError("Add at least one item before checkout."); return; }
+    if (!cart.length) { setError("Add at least one item before checkout."); return; }\n    if (couponCode.trim() && !validCouponQuote) { setError("Apply or reapply the coupon against the current cart subtotal."); return; }
     const customerName = customer.name.trim() || WALK_IN.name;
     const pin = customer.pin.trim();
     if (pin && !/^[0-9]{6}$/.test(pin)) { setError("Delivery PIN must be exactly 6 digits."); setShowCustomer(true); return; }
