@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS public.promotions (
 CREATE UNIQUE INDEX IF NOT EXISTS promotions_code_uq ON public.promotions (upper(code));
 CREATE INDEX IF NOT EXISTS promotions_active_window_idx ON public.promotions(is_active, starts_at, ends_at);
 
+ALTER TABLE public.payment_refunds ADD COLUMN IF NOT EXISTS pos_shift_id BIGINT REFERENCES public.pos_register_shifts(id) ON DELETE SET NULL;
+
 CREATE TABLE IF NOT EXISTS public.promotion_redemptions (
     id BIGSERIAL PRIMARY KEY,
     promotion_id BIGINT NOT NULL REFERENCES public.promotions(id) ON DELETE RESTRICT,
