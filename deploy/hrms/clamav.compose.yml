@@ -5,8 +5,8 @@ services:
     environment:
       CLAMAV_NO_FRESHCLAMD: "false"
       CLAMAV_NO_CLAMD: "false"
-    expose:
-      - "3310"
+    ports:
+      - "127.0.0.1:3310:3310"
     volumes:
       - clamav_database:/var/lib/clamav
     healthcheck:
