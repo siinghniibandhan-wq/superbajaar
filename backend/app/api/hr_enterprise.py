@@ -418,7 +418,7 @@ def hire_recruitment_candidate(offer_id:int,payload:RecruitmentHireInput,request
                     "SELECT * FROM hr_enterprise_records WHERE id=%s AND domain='recruitment' "
                     "AND payload->>'record_type'='application' FOR UPDATE",(payload.application_id,)
                 ).fetchone()
-                if not application or application["status"]!="interview":
+                if not application or application["status"] not in {"interview","offered"}:
                     raise HTTPException(409,"The application must be at the interview/offer stage before hiring")
                 candidate_id=int(application["payload"]["candidate_id"])
                 candidate=conn.execute(
@@ -509,15 +509,17 @@ def hire_recruitment_candidate(offer_id:int,payload:RecruitmentHireInput,request
                     (offer_id,json.dumps(dict(offer),default=str),json.dumps(dict(hired_offer),default=str),
                      payload.acceptance_reference,actor),
                 )
-                app_offered=conn.execute(
-                    "UPDATE hr_enterprise_records SET status='offered',version=version+1,updated_by_user_id=%s,updated_at=now() "
-                    "WHERE id=%s RETURNING *",(actor,payload.application_id),
-                ).fetchone()
-                conn.execute(
-                    "INSERT INTO hr_enterprise_events(record_id,event_type,from_status,to_status,before_state,after_state,actor_user_id) "
-                    "VALUES(%s,'offer_issued','interview','offered',%s::jsonb,%s::jsonb,%s)",
-                    (payload.application_id,json.dumps(dict(application),default=str),json.dumps(dict(app_offered),default=str),actor),
-                )
+                app_offered=application
+                if application["status"]=="interview":
+                    app_offered=conn.execute(
+                        "UPDATE hr_enterprise_records SET status='offered',version=version+1,updated_by_user_id=%s,updated_at=now() "
+                        "WHERE id=%s RETURNING *",(actor,payload.application_id),
+                    ).fetchone()
+                    conn.execute(
+                        "INSERT INTO hr_enterprise_events(record_id,event_type,from_status,to_status,before_state,after_state,actor_user_id) "
+                        "VALUES(%s,'offer_issued','interview','offered',%s::jsonb,%s::jsonb,%s)",
+                        (payload.application_id,json.dumps(dict(application),default=str),json.dumps(dict(app_offered),default=str),actor),
+                    )
                 app_hired=conn.execute(
                     "UPDATE hr_enterprise_records SET status='hired',employee_id=%s,version=version+1,updated_by_user_id=%s,updated_at=now() "
                     "WHERE id=%s RETURNING *",(row["id"],actor,payload.application_id),
