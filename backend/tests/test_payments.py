@@ -58,12 +58,15 @@ class _FakePaymentConnection:
             return _FakeResult(self.payment)
         if "FROM payments WHERE provider_order_id" in normalized_query:
             return _FakeResult(self.payment)
-        if "FROM payments WHERE order_id" in normalized_query and "provider_order_id IS NOT NULL" in normalized_query:
+        if "FROM payments WHERE order_id" in normalized_query and ("provider_order_id IS NOT NULL" in normalized_query or "method IN" in normalized_query):
             return _FakeResult(self.payment)
         if "FROM payments WHERE order_id" in normalized_query:
             return _FakeResult({"amount": Decimal("12.34")})
         if "FROM orders o LEFT JOIN pos_register_shifts" in normalized_query:
             return _FakeResult(self.order)
+        if "SELECT status FROM orders WHERE id=%s" in normalized_query:
+            status = self.payment.get("order_status", "confirmed") if self.payment else "confirmed"
+            return _FakeResult({"status": status})
         if "FROM orders WHERE id=%s FOR UPDATE" in normalized_query:
             return _FakeResult(self.order)
         return _FakeResult()
@@ -221,6 +224,7 @@ def test_razorpay_verify_confirms_captured_payment_with_provider_and_updates_ord
         "currency": "INR",
         "status": "pending",
         "order_status": "placed",
+        "order_total": Decimal("12.34"),
         "customer_email": "buyer@example.com",
         "order_number": "SB-ORDER-41",
     })
@@ -411,6 +415,7 @@ def test_razorpay_verify_reports_captured_payment_for_cancelled_order_without_cl
         "currency": "INR",
         "status": "pending",
         "order_status": "cancelled",
+        "order_total": Decimal("12.34"),
         "customer_email": "buyer@example.com",
         "order_number": "SB-ORDER-41",
     })
