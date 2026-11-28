@@ -325,8 +325,10 @@ def test_pos_order_reservation_dispatch_and_cogs_posting(api):
         "disposition":"quarantine","location_id":holding["id"],
     }))
     assert quarantined["status"]=="posted" and Decimal(str(quarantined["total_cost"]))==Decimal("10.00")
+    register=ok(api.post("/api/pos/registers",json={"location_id":api.location_id,"register_code":"QUAR-"+api.suffix,"name":"Quarantine Counter"}),201)
+    ok(api.post(f"/api/pos/registers/{register['id']}/open",json={"opening_float":"100"}),201)
     blocked_order=api.post("/api/orders",json={
-        "channel":"pos","customer_name":"Quarantine reservation must fail",
+        "channel":"pos","customer_name":"Quarantine reservation must fail","pos_register_id":register["id"],
         "checkout_idempotency_key":"integration-quarantine-order-key-01",
         "location_id":holding["id"],"lines":[{"variant_id":api.variant_id,"quantity":1}],
     })
