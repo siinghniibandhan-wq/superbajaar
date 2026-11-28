@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from app.api.hr_enterprise import (
     DOMAINS, REQUIRED, STATUSES, TRANSITIONS,
     _employee_transition_allowed, _initial_status, _validate, _ensure_offer_unexpired, _allowed_record_transitions,
-    _ensure_goal_weight_limit, _ensure_assessment_attempt_limit, _calculate_asset_book_value,
+    _ensure_goal_weight_limit, _ensure_assessment_attempt_limit, _calculate_asset_book_value, _ensure_performance_review_subject,
 )
 
 
@@ -841,3 +841,14 @@ def test_travel_booking_provider_rejects_confirmed_amount_above_policy(monkeypat
             booking={"client_reference":"HR-TRAVEL-123","booked_cost":"100","maximum_allowed_amount":"500"},
             record_id=9,
         )
+
+
+def test_performance_feedback_and_acknowledgement_are_scoped_to_review_subject():
+    assert _ensure_performance_review_subject(7,7) == 7
+    assert _ensure_performance_review_subject(None,7) == 7
+    with pytest.raises(HTTPException) as exc:
+        _ensure_performance_review_subject(8,7)
+    assert exc.value.status_code == 403
+    with pytest.raises(HTTPException) as exc:
+        _ensure_performance_review_subject(7,None)
+    assert exc.value.status_code == 409
