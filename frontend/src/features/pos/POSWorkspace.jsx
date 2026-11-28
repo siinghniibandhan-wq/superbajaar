@@ -340,6 +340,7 @@ export default function POSWorkspace({ onBack }) {
 
   const blocker = !cart.length ? "Tap an item on the left to start a sale."
     : couponCode.trim() && !validCouponQuote ? "Apply or reapply the coupon against the current cart subtotal."
+    : splitTender && (splitCash == null || !Number.isFinite(splitCash) || splitCash < 0 || splitCash > total) ? "Enter a valid cash portion for the split tender."
     : !selectedRegisterId ? "Choose a counter to sell from."
     : !activeShift ? "Open the cashier shift above to take payment."
     : !locationId ? "Choose a stock location."
@@ -426,6 +427,7 @@ export default function POSWorkspace({ onBack }) {
     const pin = customer.pin.trim();
     if (pin && !/^[0-9]{6}$/.test(pin)) { setError("Delivery PIN must be exactly 6 digits."); setShowCustomer(true); return; }
     if (shortBy != null) { setError("Cash received is less than the total."); return; }
+    if (splitTender && (splitCash == null || !Number.isFinite(splitCash) || splitCash < 0 || splitCash > total)) { setError("Enter a valid cash portion for the split tender."); return; }
     setSaving(true); setError(""); setNotice(""); setReceipt(null);
     const note = "Created at POS" + (reference.trim() ? " · Ref: " + reference.trim().slice(0, 100) : "");
     const checkoutPayload = {
@@ -453,7 +455,7 @@ export default function POSWorkspace({ onBack }) {
       if (splitIsTwoTenders) {
         const cashPayment = payments.find(p => p.method === "cod");
         const onlinePayment = payments.find(p => p.method !== "cod");
-        if (cashPayment) {
+        if (cashPayment && cashPayment.status === "pending") {
           const confirmed = await apiRequest("/pos/shifts/" + activeShift.id + "/payments/" + cashPayment.id + "/confirm-cash", {method:"POST"});
           payments = payments.map(p => p.id === cashPayment.id ? {...p,...confirmed} : p);
         }
