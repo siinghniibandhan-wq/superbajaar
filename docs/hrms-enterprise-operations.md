@@ -1,0 +1,83 @@
+# HR enterprise operations
+
+This guide covers the seven non-recruitment HR domains in the HR enterprise workspace. Recruitment remains separate.
+
+## Required document-storage controls
+
+Employee document uploads require all of the following:
+
+- `SB_PRIVATE_DOCUMENT_BUCKET`: private S3 bucket name.
+- `SB_S3_REGION` or `AWS_REGION`: bucket region.
+- `SB_DOCUMENT_CLAMAV_HOST`: reachable ClamAV daemon host.
+- Optional `SB_DOCUMENT_CLAMAV_PORT` (default `3310`).
+- Optional `SB_DOCUMENT_CLAMAV_TIMEOUT_SECONDS` (default `10`, maximum `60`).
+
+Uploads are blocked when the malware scanner is missing or unavailable. Files are checked by ClamAV before private S3 storage, and verification is blocked unless the stored scan result is clean. Downloads remain short-lived, employee-scoped and encryption-checked.
+
+Set a document expiry date separately from its retention deletion date. HR can place a legal hold by setting `payload.legal_hold=true` on the document record. After a document has been archived and its retention date has passed, an authorised HR manager can invoke:
+
+`POST /hr/enterprise/documents/retention/execute`
+
+This deletes the private S3 object and records an immutable audit event. The endpoint is designed to be invoked by an approved scheduler; no scheduler or email delivery service is configured by this feature branch.
+
+## Domain workflows
+
+### Performance management
+
+- Create an active review template and a review cycle.
+- Add weighted goals to the cycle. Active goal weights cannot exceed 100%.
+- A cycle cannot be activated until its goals total exactly 100%.
+- Goal edits re-check the total under a cycle row lock.
+- Self-review, manager review, calibration and acknowledgement remain role-separated workflow actions.
+
+### Learning and development
+
+- Publish a course before creating enrollments.
+- Employees record progress evidence against their own enrollment.
+- Assessment attempts are limited by the course's `max_attempts` (1–20); the default is three.
+- Certificates require a completed enrollment and at least one passing assessment.
+- Certificate validity dates feed the expiry queue.
+
+### Asset management
+
+- Create a procurement request with item lines containing `description`, `quantity` and `unit_cost`.
+- Approve procurement before receiving stock.
+- Stock receipts must match ordered item descriptions and cannot exceed the ordered quantities. Procurement status moves from approved to partially received or received.
+- Record physical reconciliations with a reason for any variance.
+- Asset loss records support an investigation lifecycle.
+- Asset register entries can calculate straight-line or reducing-balance depreciation from purchase value, salvage value, useful life and the selected as-of date.
+
+### Travel and expenses
+
+- Travel policies can constrain employment type and employee job grade.
+- A policy grade of `all` applies to every grade; otherwise it must match the employee's `job_grade`.
+- Requests are checked against trip and per-diem limits.
+- Bookings and advances are checked against the approved request and policy caps.
+- Claims create records in the existing HR expense approval and payroll reimbursement workflow. A claim cannot be marked reimbursed until the linked expense is reimbursed.
+
+### Resignation and exit
+
+- Exit cases require a linked employee and a future last working date.
+- Department clearance records must be completed before case closure.
+- Full-and-final settlement amounts must reconcile: net due = gross due − deductions.
+- A positive net settlement creates a pending `final_settlement` payroll earning adjustment for the payable month. It must pass the existing independent-review and payroll approval/payment controls before the settlement can be completed.
+- No jurisdiction-specific gratuity, leave-encashment or notice-pay formula is silently assumed; the approved component amounts must be supplied from the applicable policy and payroll calculation.
+
+### HR analytics
+
+The enterprise analytics endpoint supports date, domain, record-type, status and department filters:
+
+`GET /hr/enterprise/analytics/enterprise?from_date=YYYY-MM-DD&to_date=YYYY-MM-DD`
+
+The workspace includes CSV export. Automated scheduled delivery and XLSX/PDF exports require a reporting scheduler/delivery integration and are not represented as configured by this branch.
+
+## Database rollout
+
+The feature branch adds migrations 071–073 for enterprise workflow records, integrity indexes and employee job grades. They are additive and must be reviewed and applied in the target environment through the repository's normal controlled migration process. They have not been applied to production by this work.
+
+## Release checks still required
+
+- Configure and verify the private S3 bucket, IAM policy, encryption, backup and ClamAV service.
+- Configure an external scheduler to invoke document-retention execution and any approved reminder/report jobs.
+- Run migrations against a staging database and verify payroll, leave, identity and accounting integrations.
+- Complete manual browser QA at phone, tablet and desktop widths.
