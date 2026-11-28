@@ -662,7 +662,7 @@ def create_razorpay_order(payload: RazorpayOrderCreate, request: Request):
                         raise HTTPException(status_code=403, detail="POS payment can only be initiated by the cashier assigned to this sale")
                     if order["status"] != "placed":
                         raise HTTPException(status_code=409, detail="Only newly placed orders can start payment")
-                                        if payload.payment_id:
+                    if payload.payment_id:
                         existing = conn.execute(
                             "SELECT id,order_id,method,amount,status,provider_order_id FROM payments WHERE id=%s AND order_id=%s FOR UPDATE",
                             (payload.payment_id,payload.order_id),
