@@ -99,3 +99,30 @@ export async function apiRequest(path, options = {}) {
 export const healthApi = {
   check: () => apiRequest("/health"),
 };
+
+
+export async function apiDownload(path, filename) {
+  if (!API_BASE_URL) throw new Error("Backend URL is not configured in the production build.");
+  const requestUrl = `${API_BASE_URL}${normalizeRequestPath(path)}`;
+  const token = readStoredToken();
+  let response;
+  try {
+    response = await fetch(requestUrl, {headers: token ? {Authorization: `Bearer ${token}`} : {}});
+  } catch {
+    throw new Error(`Network request failed for ${requestUrl}`);
+  }
+  if (!response.ok) {
+    let message = `Download failed (${response.status})`;
+    try { const body = await response.json(); message = body.detail || body.message || message; } catch {}
+    throw new Error(message);
+  }
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+}
