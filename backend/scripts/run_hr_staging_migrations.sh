@@ -7,6 +7,7 @@ case "${db_name,,}" in *stage*|*staging*|*test*) ;; *) echo "Refusing HR migrati
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 schema="$repo_root/backend/schema"
 migrations=(
+  070_hr_employee_records.sql
   071_hr_enterprise_workflows.sql
   072_hr_enterprise_integrity.sql
   073_recruitment_integrity.sql
