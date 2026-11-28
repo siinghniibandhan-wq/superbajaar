@@ -1008,7 +1008,7 @@ def archive_record(domain:str,record_id:int,request:Request):
                 if old["status"]=="archived": return old
                 row=conn.execute("UPDATE hr_enterprise_records SET status='archived',version=version+1,updated_by_user_id=%s,updated_at=now() WHERE id=%s RETURNING *",(actor,record_id)).fetchone()
                 conn.execute("INSERT INTO hr_enterprise_events(record_id,event_type,from_status,to_status,before_state,after_state,actor_user_id) VALUES(%s,'archived',%s,'archived',%s::jsonb,%s::jsonb,%s)",
-                  (old["status"],json.dumps(dict(old),default=str),json.dumps(dict(row),default=str),actor))
+                  (record_id,old["status"],json.dumps(dict(old),default=str),json.dumps(dict(row),default=str),actor))
         return row
     except HTTPException: raise
     except psycopg.Error as exc: raise _db_error(exc) from exc
