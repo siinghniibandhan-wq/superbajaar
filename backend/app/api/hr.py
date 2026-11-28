@@ -3472,11 +3472,25 @@ def create_employee_emergency_contact(employee_id: int, payload: EmergencyContac
                 if not employee:
                     raise HTTPException(404, "Employee not found")
                 if payload.is_primary:
-                    conn.execute(
-                        "UPDATE hr_employee_emergency_contacts SET is_primary=false,updated_by_user_id=%s,updated_at=now() "
-                        "WHERE employee_id=%s AND is_active=true AND is_primary=true",
-                        (actor, employee_id),
-                    )
+                    previous_primary = conn.execute(
+                        "SELECT id,employee_id,contact_name,relationship,phone,alternate_phone,email,address,"
+                        "is_primary,is_active FROM hr_employee_emergency_contacts "
+                        "WHERE employee_id=%s AND is_active=true AND is_primary=true FOR UPDATE",
+                        (employee_id,),
+                    ).fetchone()
+                    if previous_primary:
+                        updated_primary = conn.execute(
+                            "UPDATE hr_employee_emergency_contacts SET is_primary=false,updated_by_user_id=%s,updated_at=now() "
+                            "WHERE id=%s RETURNING id,employee_id,contact_name,relationship,phone,alternate_phone,email,address,"
+                            "is_primary,is_active,created_at,updated_at",
+                            (actor, previous_primary["id"]),
+                        ).fetchone()
+                        conn.execute(
+                            "INSERT INTO hr_employee_record_events(employee_id,record_type,record_id,event_type,before_state,after_state,actor_user_id) "
+                            "VALUES(%s,'emergency_contact',%s,'updated',%s::jsonb,%s::jsonb,%s)",
+                            (employee_id,previous_primary["id"],json.dumps(dict(previous_primary),default=str),
+                             json.dumps(dict(updated_primary),default=str),actor),
+                        )
                 row = conn.execute(
                     "INSERT INTO hr_employee_emergency_contacts(employee_id,contact_name,relationship,phone,"
                     "alternate_phone,email,address,is_primary,created_by_user_id,updated_by_user_id) "
