@@ -4,14 +4,14 @@ All eight HR domains share audited, versioned records while retaining explicit
 domain validation and controlled state transitions. Employee self-service is
 bound to the authenticated user's linked employee record.
 """
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 import json
 
 import psycopg
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel, Field, field_validator
-from app.api.hr import _actor, _manager, _employee, _hr_connection, _db_error
+from app.api.hr import EmployeeInput, _actor, _manager, _employee, _hr_connection, _db_error, _link_employee_login_identity
 from app.services.hr_employee_documents import (
     EmployeeDocumentConfigurationError, EmployeeDocumentError,
     upload_employee_document, employee_document_download_url,
@@ -157,6 +157,12 @@ class TransitionInput(BaseModel):
     status: str
     note: str | None = Field(default=None,max_length=2000)
     expected_version: int | None = Field(default=None,ge=1)
+
+class RecruitmentHireInput(BaseModel):
+    application_id: int = Field(gt=0)
+    candidate_accepted: bool
+    acceptance_reference: str | None = Field(default=None,max_length=500)
+    employee: EmployeeInput
 
 def _role(request):
     return getattr(request.state,"role","")
@@ -390,6 +396,152 @@ def download_document(record_id:int,request:Request):
     except EmployeeDocumentConfigurationError as exc: raise HTTPException(503,str(exc)) from exc
     except EmployeeDocumentError as exc: raise HTTPException(422,str(exc)) from exc
     except psycopg.Error as exc: raise _db_error(exc) from exc
+
+@router.post("/recruitment/{offer_id}/hire",status_code=201)
+def hire_recruitment_candidate(offer_id:int,payload:RecruitmentHireInput,request:Request):
+    actor=_manager(request)
+    if not payload.candidate_accepted:
+        raise HTTPException(422,"Candidate acceptance must be confirmed before hiring")
+    try:
+        with _hr_connection() as conn:
+            with conn.transaction():
+                offer=conn.execute(
+                    "SELECT * FROM hr_enterprise_records WHERE id=%s AND domain='recruitment' "
+                    "AND payload->>'record_type'='offer' FOR UPDATE",(offer_id,)
+                ).fetchone()
+                if not offer: raise HTTPException(404,"Recruitment offer not found")
+                if offer["status"]!="offered": raise HTTPException(409,"Only an active offer can be converted into an employee")
+                offer_data=dict(offer["payload"])
+                if int(offer_data.get("application_id") or 0)!=payload.application_id:
+                    raise HTTPException(422,"Application does not match the selected offer")
+                application=conn.execute(
+                    "SELECT * FROM hr_enterprise_records WHERE id=%s AND domain='recruitment' "
+                    "AND payload->>'record_type'='application' FOR UPDATE",(payload.application_id,)
+                ).fetchone()
+                if not application or application["status"]!="interview":
+                    raise HTTPException(409,"The application must be at the interview/offer stage before hiring")
+                candidate_id=int(application["payload"]["candidate_id"])
+                candidate=conn.execute(
+                    "SELECT * FROM hr_enterprise_records WHERE id=%s AND domain='recruitment' "
+                    "AND payload->>'record_type'='candidate' FOR UPDATE",(candidate_id,)
+                ).fetchone()
+                if not candidate: raise HTTPException(409,"The linked candidate record is missing")
+                candidate_email=str(candidate["payload"].get("email","")).strip().lower()
+                if candidate_email!=payload.employee.email.strip().lower():
+                    raise HTTPException(422,"Employee email must match the accepted candidate's email")
+                employee=payload.employee
+                row=conn.execute(
+                    "INSERT INTO hr_employees(user_id,employee_code,first_name,last_name,email,phone,department_id,"
+                    "designation,reports_to_employee_id,employment_type,status,joining_date,exit_date,basic_salary,"
+                    "hra,special_allowance,other_allowance,created_by_user_id) "
+                    "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                    "RETURNING id,user_id,employee_code,first_name,last_name,email,phone,department_id,designation,"
+                    "employment_type,status,joining_date,basic_salary,hra,special_allowance,other_allowance,created_at",
+                    (employee.user_id,employee.employee_code.strip(),employee.first_name.strip(),employee.last_name.strip(),
+                     employee.email,employee.phone.strip(),employee.department_id,employee.designation.strip(),
+                     employee.reports_to_employee_id,employee.employment_type,employee.status,employee.joining_date,
+                     employee.exit_date,employee.basic_salary,employee.hra,employee.special_allowance,
+                     employee.other_allowance,actor),
+                ).fetchone()
+                conn.execute(
+                    "INSERT INTO hr_employee_salary_versions(employee_id,effective_from,basic_salary,hra,"
+                    "special_allowance,other_allowance,status,reason,created_by_user_id,reviewed_by_user_id,reviewed_at) "
+                    "VALUES(%s,%s,%s,%s,%s,%s,'approved','Opening salary profile created from accepted recruitment offer',%s,%s,now())",
+                    (row["id"],employee.joining_date,employee.basic_salary,employee.hra,
+                     employee.special_allowance,employee.other_allowance,actor,actor),
+                )
+                from app.services.identity import IdentityService
+                identity=IdentityService(conn)
+                party=identity.create_party(
+                    party_type="individual",
+                    display_name=(row["first_name"]+" "+row["last_name"]).strip(),
+                    actor_user_id=actor,reason="Candidate hired through recruitment workflow",
+                )
+                party_id=party["id"]
+                identity.link_profile(
+                    party_id=party_id,profile_type="employee",source_id=row["id"],
+                    link_method="admin_verified",actor_user_id=actor,
+                    reason="Candidate converted to employee",
+                )
+                for contact_type,value in (("email",row["email"]),("phone",row["phone"])):
+                    if value:
+                        try: identity.add_contact(party_id=party_id,contact_type=contact_type,value=value,source="hr_recruitment_hire")
+                        except ValueError: pass
+                if row["user_id"]:
+                    _link_employee_login_identity(conn,identity,party_id,row["user_id"],actor)
+                onboarding=conn.execute(
+                    "SELECT id FROM hr_employee_lifecycle_templates WHERE lifecycle_type='onboarding' "
+                    "AND is_active=true AND establishment_id IS NULL ORDER BY version DESC,id DESC LIMIT 1"
+                ).fetchone()
+                onboarding_count=0
+                if onboarding:
+                    items=conn.execute(
+                        "SELECT * FROM hr_employee_lifecycle_template_items WHERE template_id=%s ORDER BY sequence,id",
+                        (onboarding["id"],),
+                    ).fetchall()
+                    for item in items:
+                        due=employee.joining_date+timedelta(days=item["due_days_offset"] or 0)
+                        task=conn.execute(
+                            "INSERT INTO hr_employee_lifecycle_tasks(employee_id,template_id,template_item_id,task_key,label,"
+                            "description,owner_role,due_date,created_by_user_id) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                            "ON CONFLICT(employee_id,template_item_id) WHERE template_item_id IS NOT NULL DO NOTHING RETURNING *",
+                            (row["id"],onboarding["id"],item["id"],item["task_key"],item["label"],item["description"],
+                             item["owner_role"],due,actor),
+                        ).fetchone()
+                        if task:
+                            onboarding_count+=1
+                            conn.execute(
+                                "INSERT INTO hr_employee_lifecycle_task_events(task_id,event_type,after_state,actor_user_id) "
+                                "VALUES(%s,'created',%s::jsonb,%s)",
+                                (task["id"],json.dumps({"status":"pending","label":task["label"]}),actor),
+                            )
+                hired_offer=conn.execute(
+                    "UPDATE hr_enterprise_records SET status='hired',employee_id=%s,payload=%s::jsonb,"
+                    "version=version+1,updated_by_user_id=%s,updated_at=now() WHERE id=%s RETURNING *",
+                    (row["id"],json.dumps({**offer_data,"employee_id":row["id"],"candidate_accepted":True,
+                     "acceptance_reference":payload.acceptance_reference},default=str),actor,offer_id),
+                ).fetchone()
+                conn.execute(
+                    "INSERT INTO hr_enterprise_events(record_id,event_type,from_status,to_status,before_state,after_state,note,actor_user_id) "
+                    "VALUES(%s,'candidate_hired','offered','hired',%s::jsonb,%s::jsonb,%s,%s)",
+                    (offer_id,json.dumps(dict(offer),default=str),json.dumps(dict(hired_offer),default=str),
+                     payload.acceptance_reference,actor),
+                )
+                app_offered=conn.execute(
+                    "UPDATE hr_enterprise_records SET status='offered',version=version+1,updated_by_user_id=%s,updated_at=now() "
+                    "WHERE id=%s RETURNING *",(actor,payload.application_id),
+                ).fetchone()
+                conn.execute(
+                    "INSERT INTO hr_enterprise_events(record_id,event_type,from_status,to_status,before_state,after_state,actor_user_id) "
+                    "VALUES(%s,'offer_issued','interview','offered',%s::jsonb,%s::jsonb,%s)",
+                    (payload.application_id,json.dumps(dict(application),default=str),json.dumps(dict(app_offered),default=str),actor),
+                )
+                app_hired=conn.execute(
+                    "UPDATE hr_enterprise_records SET status='hired',employee_id=%s,version=version+1,updated_by_user_id=%s,updated_at=now() "
+                    "WHERE id=%s RETURNING *",(row["id"],actor,payload.application_id),
+                ).fetchone()
+                conn.execute(
+                    "INSERT INTO hr_enterprise_events(record_id,event_type,from_status,to_status,before_state,after_state,actor_user_id) "
+                    "VALUES(%s,'candidate_hired','offered','hired',%s::jsonb,%s::jsonb,%s)",
+                    (payload.application_id,json.dumps(dict(app_offered),default=str),json.dumps(dict(app_hired),default=str),actor),
+                )
+                hired_candidate=conn.execute(
+                    "UPDATE hr_enterprise_records SET status='hired',employee_id=%s,version=version+1,updated_by_user_id=%s,updated_at=now() "
+                    "WHERE id=%s RETURNING *",(row["id"],actor,candidate_id),
+                ).fetchone()
+                conn.execute(
+                    "INSERT INTO hr_enterprise_events(record_id,event_type,from_status,to_status,before_state,after_state,actor_user_id) "
+                    "VALUES(%s,'candidate_hired',%s,'hired',%s::jsonb,%s::jsonb,%s)",
+                    (candidate_id,candidate["status"],json.dumps(dict(candidate),default=str),json.dumps(dict(hired_candidate),default=str),actor),
+                )
+                result=dict(row)
+                result["sbid"]=conn.execute("SELECT sbid FROM identity_parties WHERE id=%s",(party_id,)).fetchone()["sbid"]
+                result["onboarding_tasks_created"]=onboarding_count
+                result["onboarding_template_applied"]=bool(onboarding)
+                return result
+    except HTTPException: raise
+    except psycopg.Error as exc: raise _db_error(exc) from exc
+
 
 @router.get("/{domain}")
 def list_records(domain:str,request:Request,status:str|None=None,employee_id:int|None=None,record_type:str|None=None,limit:int=Query(100,ge=1,le=500)):
