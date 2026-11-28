@@ -468,3 +468,37 @@ def test_manual_pos_cash_refund_is_idempotent_and_reconciles_drawer(api):
         assert conn.execute(
             "SELECT pos_shift_id FROM payment_refunds WHERE id=%s",(refund["id"],)
         ).fetchone()[0]==shift["id"]
+
+def test_order_gst_uses_specific_category_attribute_rule_and_persists_tax_snapshot(api, monkeypatch):
+    from app.api import orders
+    monkeypatch.setattr(orders.settings, "company_gstin", "20ABCDE1234F1Z5")
+    with psycopg.connect(TEST_DB) as conn:
+        attribute_id=conn.execute(
+            "INSERT INTO product_attributes(name,code,value_type,is_variant_attribute) VALUES('Packaging','packaging','text',false) RETURNING id",
+        ).fetchone()[0]
+        conn.execute(
+            "INSERT INTO product_attribute_values(product_id,attribute_id,value) VALUES((SELECT product_id FROM product_variants WHERE id=%s),%s,%s::jsonb)",
+            (api.variant_id,attribute_id,json.dumps("Loose")),
+        )
+        category_id=conn.execute("SELECT category_id FROM products WHERE id=(SELECT product_id FROM product_variants WHERE id=%s)",(api.variant_id,)).fetchone()[0]
+        general=conn.execute(
+            "INSERT INTO hsn_rules(category_id,conditions,hsn_code,gst_rate,note) VALUES(%s,'{}'::jsonb,'11111111',18,'General category rate') RETURNING id",
+            (category_id,),
+        ).fetchone()[0]
+        specific=conn.execute(
+            "INSERT INTO hsn_rules(category_id,conditions,hsn_code,gst_rate,note) VALUES(%s,%s::jsonb,'22222222',5,'Loose packaging rate') RETURNING id",
+            (category_id,json.dumps({"packaging":"Loose"})),
+        ).fetchone()[0]
+    order=ok(api.post("/api/orders",json={
+        "channel":"pos","customer_name":"GST Snapshot Customer","location_id":api.location_id,
+        "checkout_idempotency_key":"gst-rule-snapshot-"+api.suffix,
+        "lines":[{"variant_id":api.variant_id,"quantity":1}],
+    }),201)
+    assert Decimal(str(order["tax_total"]))==Decimal("4.76")
+    assert order["place_of_supply_state"]=="Jharkhand"
+    with psycopg.connect(TEST_DB) as conn:
+        snapshot=conn.execute(
+            "SELECT gst_rule_id,hsn_code,gst_rate,taxable_value,cgst_amount,sgst_amount,igst_amount,tax_total FROM order_lines WHERE order_id=%s",
+            (order["id"],),
+        ).fetchone()
+        assert snapshot==(specific,"22222222",Decimal("5.00"),Decimal("95.24"),Decimal("2.38"),Decimal("2.38"),Decimal("0.00"),Decimal("4.76"))
