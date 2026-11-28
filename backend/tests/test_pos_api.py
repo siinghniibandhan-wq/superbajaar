@@ -123,3 +123,23 @@ def test_pos_sales_rejects_inverted_date_range():
     with pytest.raises(HTTPException) as exc:
         pos.list_pos_sales(date_from=date(2026, 11, 29), date_to=date(2026, 11, 1))
     assert exc.value.status_code == 422
+
+
+def test_pos_sale_details_include_register_and_cashier_context(monkeypatch):
+    conn = FakeConnection(row={
+        "id": 7, "order_number": "POS-7", "register_id": 2,
+        "register_code": "COUNTER-02", "register_name": "Main Counter",
+        "cashier_user_id": 9,
+    })
+
+    @contextmanager
+    def connect():
+        yield conn
+
+    monkeypatch.setattr(pos, "_connect", connect)
+    result = pos.get_pos_sale(7)
+
+    assert result["register_id"] == 2
+    assert result["register_code"] == "COUNTER-02"
+    assert result["cashier_user_id"] == 9
+    assert "LEFT JOIN pos_registers r" in conn.queries[0][0]
