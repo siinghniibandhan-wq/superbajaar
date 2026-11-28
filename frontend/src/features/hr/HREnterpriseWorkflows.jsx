@@ -94,7 +94,7 @@ export default function HREnterpriseWorkflows({manager,employees=[]}) {
  async function transition(item,status){
    const note=window.prompt("Add a note for this workflow change (optional):")||null;
    setBusy(true);setError("");setNotice("");
-   try{await apiRequest("/hr/enterprise/"+domain+"/"+item.id+"/transition",{method:"POST",body:JSON.stringify({status,note})});setNotice("Workflow updated.");await load();}
+   try{await apiRequest("/hr/enterprise/"+domain+"/"+item.id+"/transition",{method:"POST",body:JSON.stringify({status,note,expected_version:item.version})});setNotice("Workflow updated.");await load();}
    catch(e){setError(e.message||"Unable to update workflow.");}
    finally{setBusy(false);}
  }
