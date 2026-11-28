@@ -7,6 +7,7 @@ bound to the authenticated user's linked employee record.
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 import json
+import re
 
 import psycopg
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
@@ -376,11 +377,24 @@ def _validate(domain, record_type, payload):
     missing=[key for key in REQUIRED[domain][record_type] if data.get(key) in (None,"")]
     if missing: raise HTTPException(422,"Missing required fields: "+", ".join(missing))
     if domain=="recruitment" and record_type=="candidate":
-        if len(str(data.get("first_name","")).strip())<1:
-            raise HTTPException(422,"Candidate first name is required")
+        for field in ("first_name","last_name"):
+            value=str(data.get(field,"")).strip()
+            if field=="first_name" and not value:
+                raise HTTPException(422,"Candidate first name is required")
+            if value:
+                data[field]=value
         email=str(data["email"]).strip().lower()
-        if "@" not in email or email.startswith("@") or email.endswith("@"): raise HTTPException(422,"Candidate email is invalid")
+        if len(email)>254 or not re.fullmatch(r"[^@\\s]+@[^@\\s]+\\.[^@\\s]+",email):
+            raise HTTPException(422,"Candidate email is invalid")
         data["email"]=email
+        if data.get("phone") not in (None,""):
+            phone=str(data["phone"]).strip()
+            if len(phone)<5 or len(phone)>32:
+                raise HTTPException(422,"Candidate phone number must contain 5 to 32 characters")
+            data["phone"]=phone
+        for field in ("source","resume_reference"):
+            if data.get(field) is not None:
+                data[field]=str(data[field]).strip() or None
     if domain=="travel" and record_type=="travel_policy":
         try: trip_cap=Decimal(str(data["max_trip_cost"])); per_diem=Decimal(str(data["per_diem_limit"]))
         except InvalidOperation: raise HTTPException(422,"Travel policy limits must be numeric")
@@ -410,33 +424,51 @@ def _validate(domain, record_type, payload):
         except ValueError: raise HTTPException(422,"Last working date must be an ISO date")
         if last<date.today(): raise HTTPException(422,"Last working date cannot be in the past when initiating an exit case")
     if domain=="recruitment" and record_type=="job_opening":
+        for field in ("department","employment_type","location"):
+            data[field]=str(data[field]).strip()
+            if not data[field]:
+                raise HTTPException(422,f"Job {field.replace('_',' ')} is required")
+        if data["employment_type"] not in {"full_time","part_time","contract","intern","temporary","shift_worker"}:
+            raise HTTPException(422,"Job employment type is invalid")
         try: headcount=int(data["headcount"])
         except (ValueError,TypeError): raise HTTPException(422,"Job headcount must be a positive integer")
-        if headcount<=0: raise HTTPException(422,"Job headcount must be a positive integer")
+        if headcount<=0 or str(data["headcount"]).strip() not in {str(headcount),f"+{headcount}"}:
+            raise HTTPException(422,"Job headcount must be a positive integer")
         data["headcount"]=headcount;data["filled_headcount"]=0
     if domain=="recruitment" and record_type=="interview":
         try:
             application_id=int(data["application_id"]); interviewer_id=int(data["interviewer_employee_id"])
-            date.fromisoformat(str(data["scheduled_at"])[:10])
-        except (ValueError,TypeError): raise HTTPException(422,"Interview IDs and scheduled date are invalid")
+            scheduled=datetime.fromisoformat(str(data["scheduled_at"]).replace("Z","+00:00"))
+        except (ValueError,TypeError): raise HTTPException(422,"Interview IDs and scheduled date/time are invalid")
         if application_id<=0 or interviewer_id<=0: raise HTTPException(422,"Interview application and interviewer IDs must be positive")
+        data["application_id"]=application_id;data["interviewer_employee_id"]=interviewer_id
+        data["scheduled_at"]=scheduled.isoformat()
+        data["interview_type"]=str(data["interview_type"]).strip()
+        if not data["interview_type"]: raise HTTPException(422,"Interview type is required")
     if domain=="recruitment" and record_type=="interview_feedback":
         try: rating=Decimal(str(data["rating"])); interviewer_id=int(data["interviewer_employee_id"])
         except (InvalidOperation,ValueError,TypeError): raise HTTPException(422,"Interview rating and interviewer ID are invalid")
         if rating<1 or rating>5 or interviewer_id<=0: raise HTTPException(422,"Interview rating must be 1–5 and interviewer ID positive")
         if data["decision"] not in {"pass","hold","reject"}: raise HTTPException(422,"Interview decision must be pass, hold or reject")
-        data["rating"]=str(rating);data["interviewer_employee_id"]=interviewer_id
+        feedback=str(data["feedback"]).strip()
+        if len(feedback)<2: raise HTTPException(422,"Interview feedback must contain at least two characters")
+        data["feedback"]=feedback;data["rating"]=str(rating);data["interviewer_employee_id"]=interviewer_id
     if domain=="recruitment" and record_type=="communication":
         if data["channel"] not in {"email","phone","sms","in_person","other"}: raise HTTPException(422,"Communication channel is invalid")
         if data["direction"] not in {"inbound","outbound"}: raise HTTPException(422,"Communication direction is invalid")
-        if len(str(data["message"]).strip())<2: raise HTTPException(422,"Communication message is required")
-        try: data["occurred_at"]=datetime.fromisoformat(str(data["occurred_at"])).isoformat()
+        subject=str(data["subject"]).strip(); message=str(data["message"]).strip()
+        if len(subject)<2 or len(message)<2: raise HTTPException(422,"Communication subject and message are required")
+        data["subject"]=subject;data["message"]=message
+        try: data["occurred_at"]=datetime.fromisoformat(str(data["occurred_at"]).replace("Z","+00:00")).isoformat()
         except ValueError: raise HTTPException(422,"Communication date and time must be ISO formatted")
     if domain=="recruitment" and record_type=="offer":
         try: salary=Decimal(str(data["offered_salary"])); expiry=date.fromisoformat(str(data["expires_on"])); application_id=int(data["application_id"])
         except (ValueError,InvalidOperation,TypeError): raise HTTPException(422,"Offer application, salary or expiry date is invalid")
-        if application_id<=0 or salary<=0 or len(str(data["currency"]))!=3: raise HTTPException(422,"Offer application and salary must be positive and currency must be a 3-letter code")
-        data["application_id"]=application_id; data["offered_salary"]=str(salary); data["currency"]=str(data["currency"]).upper(); data["expires_on"]=expiry.isoformat()
+        currency=str(data["currency"]).strip().upper()
+        if application_id<=0 or salary<=0 or not re.fullmatch(r"[A-Z]{3}",currency):
+            raise HTTPException(422,"Offer application and salary must be positive and currency must be a 3-letter code")
+        if expiry<date.today(): raise HTTPException(422,"Offer expiry date cannot be in the past")
+        data["application_id"]=application_id; data["offered_salary"]=str(salary); data["currency"]=currency; data["expires_on"]=expiry.isoformat()
     if domain=="performance" and record_type=="review_cycle":
         try: start=date.fromisoformat(str(data["period_start"])); end=date.fromisoformat(str(data["period_end"]))
         except ValueError: raise HTTPException(422,"Performance cycle dates are invalid")
