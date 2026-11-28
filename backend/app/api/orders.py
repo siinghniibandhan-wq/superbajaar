@@ -771,7 +771,7 @@ def update_order_status(order_id: int, payload: OrderStatusUpdate, request: Requ
                         ensure_order_can_be_cancelled(conn, order_id)
                         release_order_stock(conn, order_id)
                         restore_order_redemption(conn, order_id=order_id, reason="Restored after eligible pre-dispatch cancellation")
-                        conn.execute("UPDATE promotion_redemptions SET status='reversed',reversed_at=now(),reversal_reason='Order cancelled before dispatch' WHERE order_id=%s AND status='redeemed'", (order_id,)))
+                        conn.execute("UPDATE promotion_redemptions SET status='reversed',reversed_at=now(),reversal_reason='Order cancelled before dispatch' WHERE order_id=%s AND status='redeemed'", (order_id,))
                     except ValueError as exc:
                         raise HTTPException(status_code=409, detail=str(exc)) from exc
                 elif payload.status == "delivered":
