@@ -276,3 +276,18 @@ def test_performance_goal_requires_cycle_and_valid_weight():
             "cycle_id":8, "description":"Reduce picking errors",
             "measure":"Error rate", "target":"Below 1%", "weight":"110"
         })
+
+
+
+def test_job_opening_requires_positive_headcount():
+    result = _validate("recruitment", "job_opening", {
+        "department":"Operations", "employment_type":"full_time",
+        "location":"Patna", "headcount":"3"
+    })
+    assert result["headcount"] == 3
+    assert result["filled_headcount"] == 0
+    with pytest.raises(HTTPException):
+        _validate("recruitment", "job_opening", {
+            "department":"Operations", "employment_type":"full_time",
+            "location":"Patna", "headcount":"0"
+        })
