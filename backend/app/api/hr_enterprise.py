@@ -206,6 +206,8 @@ def list_records(domain:str,request:Request,status:str|None=None,employee_id:int
 @router.post("/{domain}",status_code=201)
 def create_record(domain:str,payload:RecordInput,request:Request):
     if domain not in DOMAINS: raise HTTPException(404,"Unknown HR domain")
+    if domain=="documents":
+        raise HTTPException(422,"Employee documents must be uploaded through the private document upload endpoint")
     if record_type := payload.record_type:
         if record_type in MANAGER_ONLY_TYPES.get(domain,set()) and _role(request) not in MANAGER_ROLES:
             raise HTTPException(403,"This HR record type requires HR manager permission")
@@ -273,14 +275,29 @@ def update_record(domain:str,record_id:int,payload:RecordUpdate,request:Request)
 
 @router.post("/{domain}/{record_id}/transition")
 def transition_record(domain:str,record_id:int,payload:TransitionInput,request:Request):
-    actor=_manager(request)
     if domain not in DOMAINS: raise HTTPException(404,"Unknown HR domain")
     if payload.status not in STATUSES[domain]: raise HTTPException(422,"Invalid status for this HR domain")
+    actor=_actor(request)
+    manager=_role(request) in MANAGER_ROLES
     try:
         with _hr_connection() as conn:
             with conn.transaction():
                 old=conn.execute("SELECT * FROM hr_enterprise_records WHERE id=%s AND domain=%s FOR UPDATE",(record_id,domain)).fetchone()
                 if not old: raise HTTPException(404,"HR record not found")
+                if not manager:
+                    own=_employee(conn,actor)
+                    if old["employee_id"] is None or int(old["employee_id"])!=int(own["id"]):
+                        raise HTTPException(403,"Employees may change only their own HR records")
+                    employee_actions={
+                        ("travel","draft","submitted"),
+                        ("travel","draft","cancelled"),
+                        ("performance","active","self_review"),
+                        ("learning","enrolled","in_progress"),
+                        ("learning","in_progress","completed"),
+                        ("exit","initiated","withdrawn"),
+                    }
+                    if (domain,old["status"],payload.status) not in employee_actions:
+                        raise HTTPException(403,"This workflow action requires HR manager permission")
                 if payload.status not in TRANSITIONS[domain].get(old["status"],set()):
                     raise HTTPException(409,f"Transition from {old['status']} to {payload.status} is not allowed")
                 row=conn.execute("UPDATE hr_enterprise_records SET status=%s,version=version+1,updated_by_user_id=%s,updated_at=now() WHERE id=%s RETURNING *",
