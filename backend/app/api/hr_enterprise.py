@@ -42,7 +42,14 @@ TRANSITIONS = {
  "exit":{"initiated":{"notice_period","withdrawn"},"notice_period":{"handover","withdrawn"},"handover":{"clearance"},"clearance":{"settlement_review"},"settlement_review":{"completed"}},
  "analytics":{"saved":{"scheduled","archived"},"scheduled":{"saved","archived"}}
 }
-MANAGER_ONLY_TYPES = {"recruitment":{"job_opening","candidate","application"},"assets":{"asset","allocation"},"learning":{"course"},"analytics":{"report"}}
+MANAGER_ONLY_TYPES = {
+ "recruitment":{"job_opening","candidate","application","interview","offer"},
+ "assets":{"asset","allocation","maintenance"},
+ "learning":{"course","assessment","certificate"},
+ "travel":{"booking","advance"},
+ "exit":{"clearance","settlement"},
+ "analytics":{"report"}
+}
 EMPLOYEE_TRANSITIONS = {
     ("travel", "draft", "submitted"),
     ("travel", "draft", "cancelled"),
@@ -56,13 +63,42 @@ def _employee_transition_allowed(domain, from_status, to_status):
     return (domain, from_status, to_status) in EMPLOYEE_TRANSITIONS
 
 REQUIRED = {
- "recruitment":{"job_opening":["department","employment_type","location"],"candidate":["email"],"application":["candidate_id","job_id"]},
+ "recruitment":{
+  "job_opening":["department","employment_type","location"],
+  "candidate":["email"],
+  "application":["candidate_id","job_id"],
+  "interview":["application_id","scheduled_at","interviewer_employee_id","interview_type"],
+  "offer":["application_id","offered_salary","currency","expires_on"]
+ },
  "documents":{"employee_document":["document_type","file_name","object_key","content_type","sha256"]},
- "performance":{"review":["cycle","reviewer_employee_id"],"goal":["description","measure","target"]},
- "learning":{"course":["provider","course_type"],"enrollment":["course_id"]},
- "assets":{"asset":["asset_type","asset_tag"],"allocation":["asset_id","employee_id","condition_out"]},
- "travel":{"request":["destination","purpose","start_date","end_date","estimated_cost"],"claim":["travel_record_id","actual_cost"]},
- "exit":{"case":["reason","last_working_date"]},
+ "performance":{
+  "review_cycle":["period_start","period_end"],
+  "review":["cycle","reviewer_employee_id"],
+  "goal":["description","measure","target"],
+  "feedback":["review_id","feedback"]
+ },
+ "learning":{
+  "course":["provider","course_type"],
+  "enrollment":["course_id"],
+  "assessment":["enrollment_id","score","pass_score"],
+  "certificate":["enrollment_id","certificate_number","valid_until"]
+ },
+ "assets":{
+  "asset":["asset_type","asset_tag"],
+  "allocation":["asset_id","employee_id","condition_out"],
+  "maintenance":["asset_id","maintenance_type","reported_at","description"]
+ },
+ "travel":{
+  "request":["destination","purpose","start_date","end_date","estimated_cost"],
+  "booking":["travel_record_id","booking_reference","provider","booked_cost"],
+  "advance":["travel_record_id","requested_amount"],
+  "claim":["travel_record_id","actual_cost"]
+ },
+ "exit":{
+  "case":["reason","last_working_date"],
+  "clearance":["exit_record_id","department","owner_employee_id"],
+  "settlement":["exit_record_id","gross_due","deductions","net_due","payable_on"]
+ },
  "analytics":{"report":["report_type","filters"]}
 }
 
@@ -124,6 +160,40 @@ def _validate(domain, record_type, payload):
     if domain=="exit" and record_type=="case":
         last=date.fromisoformat(str(data["last_working_date"]))
         if last<date.today(): raise HTTPException(422,"Last working date cannot be in the past when initiating an exit case")
+    if domain=="recruitment" and record_type=="interview":
+        if int(data["application_id"])<=0 or int(data["interviewer_employee_id"])<=0:
+            raise HTTPException(422,"Interview application and interviewer IDs must be positive")
+        try: date.fromisoformat(str(data["scheduled_at"])[:10])
+        except ValueError: raise HTTPException(422,"Interview scheduled_at must be an ISO date or datetime")
+    if domain=="recruitment" and record_type=="offer":
+        try: salary=Decimal(str(data["offered_salary"])); expiry=date.fromisoformat(str(data["expires_on"]))
+        except (ValueError,InvalidOperation): raise HTTPException(422,"Offer salary or expiry date is invalid")
+        if salary<=0 or len(str(data["currency"]))!=3: raise HTTPException(422,"Offer salary must be positive and currency must be a 3-letter code")
+        data["offered_salary"]=str(salary); data["currency"]=str(data["currency"]).upper(); data["expires_on"]=expiry.isoformat()
+    if domain=="performance" and record_type=="review_cycle":
+        try: start=date.fromisoformat(str(data["period_start"])); end=date.fromisoformat(str(data["period_end"]))
+        except ValueError: raise HTTPException(422,"Performance cycle dates are invalid")
+        if end<start: raise HTTPException(422,"Performance cycle end cannot precede start")
+    if domain=="learning" and record_type=="assessment":
+        try: score=Decimal(str(data["score"])); passing=Decimal(str(data["pass_score"]))
+        except InvalidOperation: raise HTTPException(422,"Assessment scores must be numeric")
+        if score<0 or passing<0 or score>100 or passing>100: raise HTTPException(422,"Assessment scores must be between 0 and 100")
+        data["score"]=str(score); data["pass_score"]=str(passing)
+    if domain=="assets" and record_type=="maintenance":
+        if int(data["asset_id"])<=0: raise HTTPException(422,"Asset ID must be positive")
+        try: date.fromisoformat(str(data["reported_at"])[:10])
+        except ValueError: raise HTTPException(422,"Maintenance reported_at date is invalid")
+    if domain=="travel" and record_type in {"booking","advance","claim"}:
+        amount_key={"booking":"booked_cost","advance":"requested_amount","claim":"actual_cost"}[record_type]
+        try: amount=Decimal(str(data[amount_key]))
+        except InvalidOperation: raise HTTPException(422,"Travel amount must be numeric")
+        if amount<=0: raise HTTPException(422,"Travel amount must be greater than zero")
+        data[amount_key]=str(amount)
+    if domain=="exit" and record_type=="settlement":
+        try: gross=Decimal(str(data["gross_due"])); deductions=Decimal(str(data["deductions"])); net=Decimal(str(data["net_due"])); payable=date.fromisoformat(str(data["payable_on"]))
+        except (ValueError,InvalidOperation): raise HTTPException(422,"Exit settlement amounts or payable date are invalid")
+        if min(gross,deductions,net)<0 or gross-deductions!=net: raise HTTPException(422,"Exit settlement net due must equal gross due less deductions")
+        data.update({"gross_due":str(gross),"deductions":str(deductions),"net_due":str(net),"payable_on":payable.isoformat()})
     return data
 
 def _visible_employee(conn,request,employee_id):
