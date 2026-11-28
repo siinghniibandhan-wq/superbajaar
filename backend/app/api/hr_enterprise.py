@@ -281,7 +281,9 @@ def _validate_references(conn, domain, record_type, data):
         if asset["status"] not in {"available","approved"}:
             raise HTTPException(409,"Only available or approved assets can be allocated")
     if domain=="travel" and record_type=="request":
-        policy=conn.execute("SELECT payload FROM hr_enterprise_records WHERE id=%s",(data["policy_id"],)).fetchone()
+        policy=conn.execute("SELECT status,payload FROM hr_enterprise_records WHERE id=%s",(data["policy_id"],)).fetchone()
+        if policy["status"]!="approved":
+            raise HTTPException(409,"The selected travel policy is not active")
         days=(date.fromisoformat(str(data["end_date"]))-date.fromisoformat(str(data["start_date"]))).days+1
         if Decimal(data["estimated_cost"])>Decimal(policy["payload"]["max_trip_cost"]):
             raise HTTPException(422,"Estimated trip cost exceeds the selected travel policy limit")
@@ -713,7 +715,9 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                     if employee_id is None:
                         raise HTTPException(422,"A travel request must be linked to an employee")
                     employee_row=conn.execute("SELECT employment_type FROM hr_employees WHERE id=%s",(employee_id,)).fetchone()
-                    policy=conn.execute("SELECT payload FROM hr_enterprise_records WHERE id=%s",(int(data["policy_id"]),)).fetchone()
+                    policy=conn.execute("SELECT status,payload FROM hr_enterprise_records WHERE id=%s",(int(data["policy_id"]),)).fetchone()
+                    if policy["status"]!="approved":
+                        raise HTTPException(409,"The selected travel policy is not active")
                     if policy["payload"]["employment_type"] not in {"all",employee_row["employment_type"]}:
                         raise HTTPException(403,"The selected travel policy does not apply to this employee type")
                 if domain=="travel" and payload.record_type=="claim":
@@ -825,6 +829,8 @@ def transition_record(domain:str,record_id:int,payload:TransitionInput,request:R
                 if payload.status not in TRANSITIONS[domain].get(old["status"],set()):
                     raise HTTPException(409,f"Transition from {old['status']} to {payload.status} is not allowed")
                 record_type=old["payload"].get("record_type")
+                if domain=="travel" and record_type=="travel_policy":
+                    raise HTTPException(409,"Travel policies are managed by archiving the old version and creating a new version")
                 if domain=="documents" and payload.status in {"verified","rejected"} and not (payload.note and payload.note.strip()):
                     raise HTTPException(422,"A verification or rejection note is required for employee documents")
                 if domain=="recruitment" and payload.status=="rejected" and not (payload.note and payload.note.strip()):
