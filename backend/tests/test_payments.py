@@ -20,6 +20,9 @@ class _FakeResult:
     def fetchone(self):
         return self.row
 
+    def fetchall(self):
+        return self.row or []
+
 
 class _FakePaymentConnection:
     def __init__(
