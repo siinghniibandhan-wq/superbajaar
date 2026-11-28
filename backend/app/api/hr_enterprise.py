@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, field_validator
 from app.api.hr import EmployeeInput, _actor, _manager, _employee, _hr_connection, _db_error, _link_employee_login_identity
 from app.services.hr_employee_documents import (
     EmployeeDocumentConfigurationError, EmployeeDocumentError,
-    upload_employee_document, employee_document_download_url,
+    upload_employee_document, employee_document_download_url, delete_employee_document,
 )
 from app.services.hr_candidate_email import (
     CandidateEmailConfigurationError, CandidateEmailDeliveryError, send_candidate_email,
@@ -731,6 +731,8 @@ async def upload_document(
     document_type:str=Form(...),
     employee_id:int|None=Form(default=None),
     expiry_date:date|None=Form(default=None),
+    retention_until:date|None=Form(default=None),
+    legal_hold:bool=Form(default=False),
 ):
     actor=_actor(request)
     manager=_role(request) in MANAGER_ROLES
@@ -753,7 +755,7 @@ async def upload_document(
                 row=conn.execute(
                   "INSERT INTO hr_enterprise_records(domain,employee_id,title,status,payload,due_date,created_by_user_id,updated_by_user_id) "
                   "VALUES('documents',%s,%s,'pending',%s::jsonb,%s,%s,%s) RETURNING *",
-                  (employee_id,stored["file_name"],json.dumps({**payload,"expiry_date":expiry_date.isoformat() if expiry_date else None}),expiry_date,actor,actor)
+                  (employee_id,stored["file_name"],json.dumps({**payload,"expiry_date":expiry_date.isoformat() if expiry_date else None,"retention_until":retention_until.isoformat() if retention_until else None,"legal_hold":legal_hold}),expiry_date,actor,actor)
                 ).fetchone()
                 conn.execute("INSERT INTO hr_enterprise_events(record_id,event_type,to_status,after_state,actor_user_id) "
                   "VALUES(%s,'document_uploaded','pending',%s::jsonb,%s)",
@@ -765,6 +767,43 @@ async def upload_document(
     except psycopg.Error as exc: raise _db_error(exc) from exc
     finally:
         await file.close()
+
+@router.post("/documents/retention/execute")
+def execute_document_retention(request:Request):
+    actor=_manager(request)
+    deleted=0
+    try:
+        with _hr_connection() as conn:
+            with conn.transaction():
+                rows=conn.execute(
+                    "SELECT * FROM hr_enterprise_records WHERE domain='documents' AND status='archived' "
+                    "AND due_date IS NOT NULL AND due_date<=CURRENT_DATE "
+                    "AND COALESCE((payload->>'legal_hold')::boolean,false)=false "
+                    "AND payload->>'storage_deleted_at' IS NULL FOR UPDATE"
+                ).fetchall()
+                for row in rows:
+                    payload=dict(row["payload"])
+                    try:
+                        delete_employee_document(employee_id=int(row["employee_id"]),object_key=payload["object_key"])
+                    except EmployeeDocumentError as exc:
+                        raise HTTPException(409,f"Retention blocked for document #{row['id']}: {exc}") from exc
+                    payload["storage_deleted_at"]=datetime.utcnow().isoformat()+"Z"
+                    payload["retention_action"]="private_object_deleted_after_retention"
+                    updated=conn.execute(
+                        "UPDATE hr_enterprise_records SET payload=%s::jsonb,version=version+1,updated_by_user_id=%s,updated_at=now() "
+                        "WHERE id=%s RETURNING *",(json.dumps(payload,default=str),actor,row["id"])
+                    ).fetchone()
+                    conn.execute(
+                        "INSERT INTO hr_enterprise_events(record_id,event_type,before_state,after_state,actor_user_id) "
+                        "VALUES(%s,'retention_deleted',%s::jsonb,%s::jsonb,%s)",
+                        (row["id"],json.dumps(dict(row),default=str),json.dumps(dict(updated),default=str),actor)
+                    )
+                    deleted+=1
+        return {"deleted":deleted,"message":"Expired archived documents were permanently removed from private object storage"}
+    except HTTPException: raise
+    except EmployeeDocumentConfigurationError as exc: raise HTTPException(503,str(exc)) from exc
+    except psycopg.Error as exc: raise _db_error(exc) from exc
+
 
 @router.post("/documents/{record_id}/download")
 def download_document(record_id:int,request:Request):
