@@ -42,6 +42,19 @@ def is_self_service_auth_route(method: str, path: str, prefix: str = "/api") -> 
     }
 
 
+def is_customer_address_route(method: str, path: str, prefix: str = "/api") -> bool:
+    """Allow signed-in customers to manage only their own saved delivery addresses.
+
+    Handlers scope every query by the authenticated customer id, so a customer can
+    never read or change another customer's address.
+    """
+    route = prefix.rstrip("/") + "/customer-auth/addresses"
+    if (method, path) in {("GET", route), ("POST", route)}:
+        return True
+    suffix = path[len(route) + 1:] if path.startswith(route + "/") else ""
+    return method in {"PATCH", "DELETE"} and suffix.isdigit()
+
+
 def is_customer_identity_claim_route(method: str, path: str, prefix: str = "/api") -> bool:
     """Allow signed-in customers to submit, view and cancel only their own identity claims."""
     route = prefix.rstrip("/") + "/customer-auth/identity-claims"
@@ -245,7 +258,7 @@ async def require_active_session(request: Request) -> None:
             and path.count("/") == 4
         )
         is_website_order = request.method == "POST" and path == prefix + "/orders"
-        if (request.method, path) not in customer_routes and not is_customer_identity_claim_route(request.method, path, prefix) and not is_customer_identity_verification_claim_route(request.method, path, prefix) and not is_customer_identity_document_download and not is_customer_support_detail and not is_customer_support_reply and not is_customer_support_attachment_upload and not is_customer_support_attachment_download and not is_customer_order_detail and not is_website_order:
+        if (request.method, path) not in customer_routes and not is_customer_address_route(request.method, path, prefix) and not is_customer_identity_claim_route(request.method, path, prefix) and not is_customer_identity_verification_claim_route(request.method, path, prefix) and not is_customer_identity_document_download and not is_customer_support_detail and not is_customer_support_reply and not is_customer_support_attachment_upload and not is_customer_support_attachment_download and not is_customer_order_detail and not is_website_order:
             raise HTTPException(status_code=403, detail="Customer session cannot access staff resources")
         try:
             with psycopg.connect(settings.database_url, row_factory=dict_row, connect_timeout=3) as conn:
