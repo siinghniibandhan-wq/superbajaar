@@ -267,11 +267,11 @@ async def upload_document(
             with conn.transaction():
                 row=conn.execute(
                   "INSERT INTO hr_enterprise_records(domain,employee_id,title,status,payload,created_by_user_id,updated_by_user_id) "
-                  "VALUES('documents',%s,%s,'uploaded',%s::jsonb,%s,%s) RETURNING *",
+                  "VALUES('documents',%s,%s,'pending',%s::jsonb,%s,%s) RETURNING *",
                   (employee_id,stored["file_name"],json.dumps(payload),actor,actor)
                 ).fetchone()
                 conn.execute("INSERT INTO hr_enterprise_events(record_id,event_type,to_status,after_state,actor_user_id) "
-                  "VALUES(%s,'document_uploaded','uploaded',%s::jsonb,%s)",
+                  "VALUES(%s,'document_uploaded','pending',%s::jsonb,%s)",
                   (row["id"],json.dumps(dict(row),default=str),actor))
         return row
     except HTTPException: raise
