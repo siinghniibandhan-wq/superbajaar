@@ -23,7 +23,7 @@ DOMAINS = {"recruitment","documents","performance","learning","assets","travel",
 MANAGER_ROLES = {"super_admin","owner","admin","manager"}
 EMPLOYEE_DOMAINS = {"documents","performance","learning","assets","travel","exit"}
 STATUSES = {
- "recruitment":{"draft","open","screening","shortlisted","interview","offered","hired","rejected","withdrawn","archived"},
+ "recruitment":{"draft","open","screening","shortlisted","interview","offered","hired","rejected","withdrawn","completed","archived"},
  "documents":{"pending","uploaded","under_review","verified","rejected","expired","archived"},
  "performance":{"draft","active","self_review","manager_review","calibration","acknowledged","closed","cancelled"},
  "learning":{"planned","enrolled","in_progress","completed","failed","cancelled"},
