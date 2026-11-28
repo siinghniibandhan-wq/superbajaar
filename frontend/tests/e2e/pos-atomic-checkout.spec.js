@@ -50,7 +50,10 @@ test("POS creates order and pending tender atomically with a retry-safe checkout
   await page.getByRole("button", { name: "POS & Stores", exact: true }).click();
   await page.getByRole("button", { name: /^Add to sale:/ }).click();
   await expect(page.getByLabel("Counter", { exact: true })).toHaveValue("31");
-  await page.getByRole("button", { name: "Create sale & pending tender" }).click();
+  await page.getByRole("radio", { name: "UPI", exact: true }).click();
+  const chargeButton = page.locator(".sb-pos-charge");
+  await expect(chargeButton).toBeEnabled();
+  await chargeButton.click();
   await expect(page.getByText("SB-POS-101", { exact: true })).toBeVisible();
   await expect(page.getByText(/PAY-POS-201 · pending/)).toBeVisible();
   expect(orderCreated).toBeTruthy();
