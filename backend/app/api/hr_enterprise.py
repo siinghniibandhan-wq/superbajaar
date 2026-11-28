@@ -104,8 +104,8 @@ def _allowed_record_transitions(domain, record_type, status):
             "maintenance": {},
         },
         "travel": {
-            "travel_policy": {}, "request": {"draft":{"submitted","cancelled"},"submitted":{"approved","rejected"},"approved":{"booked","cancelled"},"booked":{"in_progress","cancelled"},"in_progress":{"completed"},"completed":{"claimed"},"claimed":{"reimbursed"}},
-            "booking": {}, "advance": {}, "claim": {},
+            "travel_policy": {}, "request": {"draft":{"submitted","cancelled"},"submitted":{"approved","rejected"},"approved":{"booked","cancelled"},"booked":{"in_progress","cancelled"},"in_progress":{"completed"},"completed":{"claimed"}},
+            "booking": {}, "advance": {}, "claim": {"claimed":{"reimbursed"}},
         },
         "exit": {
             "case": {"initiated":{"notice_period","withdrawn"},"notice_period":{"handover","withdrawn"},"handover":{"clearance"},"clearance":{"settlement_review"},"settlement_review":{"completed"}},
