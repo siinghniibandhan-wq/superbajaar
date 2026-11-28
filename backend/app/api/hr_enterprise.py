@@ -1119,6 +1119,33 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                             (str(travel_id),),
                         ).fetchone()["total"]
                         _ensure_travel_amount_budget(advances,data["requested_amount"],travel["payload"]["estimated_cost"],"travel advances")
+                if domain=="assets" and payload.record_type=="stock_receipt":
+                    procurement_id=int(data["procurement_id"])
+                    procurement=conn.execute(
+                        "SELECT status,payload FROM hr_enterprise_records WHERE id=%s AND domain='assets' "
+                        "AND payload->>'record_type'='procurement' FOR UPDATE",(procurement_id,)
+                    ).fetchone()
+                    if not procurement or procurement["status"] not in {"approved","partially_received"}:
+                        raise HTTPException(409,"Stock can be received only against an approved, open procurement")
+                    ordered={str(x["description"]).strip():Decimal(str(x["quantity"])) for x in procurement["payload"]["items"]}
+                    received={}
+                    previous=conn.execute(
+                        "SELECT payload FROM hr_enterprise_records WHERE domain='assets' AND payload->>'record_type'='stock_receipt' "
+                        "AND payload->>'procurement_id'=%s AND status NOT IN ('archived','rejected') FOR UPDATE",
+                        (str(procurement_id),)
+                    ).fetchall()
+                    for prior in previous:
+                        for line in prior["payload"].get("items",[]):
+                            key=str(line["description"]).strip()
+                            received[key]=received.get(key,Decimal("0"))+Decimal(str(line["quantity"]))
+                    for line in data["items"]:
+                        key=str(line["description"]).strip()
+                        if key not in ordered:
+                            raise HTTPException(422,f"Received item '{key}' is not part of the approved procurement")
+                        quantity=Decimal(str(line["quantity"]))
+                        if received.get(key,Decimal("0"))+quantity>ordered[key]:
+                            raise HTTPException(422,f"Received quantity for '{key}' exceeds the ordered quantity")
+                        received[key]=received.get(key,Decimal("0"))+quantity
                 if domain=="assets" and payload.record_type=="allocation":
                     asset=conn.execute(
                         "SELECT status FROM hr_enterprise_records WHERE id=%s AND domain='assets' "
@@ -1229,6 +1256,30 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                 ).fetchone()
                 conn.execute("INSERT INTO hr_enterprise_events(record_id,event_type,to_status,after_state,actor_user_id) VALUES(%s,'created',%s,%s::jsonb,%s)",
                   (row["id"],status,json.dumps(dict(row),default=str),actor))
+                if domain=="assets" and payload.record_type=="stock_receipt":
+                    procurement_id=int(data["procurement_id"])
+                    procurement=conn.execute("SELECT * FROM hr_enterprise_records WHERE id=%s AND domain='assets' FOR UPDATE",(procurement_id,)).fetchone()
+                    received_rows=conn.execute(
+                        "SELECT payload FROM hr_enterprise_records WHERE domain='assets' AND payload->>'record_type'='stock_receipt' "
+                        "AND payload->>'procurement_id'=%s AND status NOT IN ('archived','rejected')",(str(procurement_id),)
+                    ).fetchall()
+                    received_totals={}
+                    for receipt in received_rows:
+                        for line in receipt["payload"].get("items",[]):
+                            key=str(line["description"]).strip()
+                            received_totals[key]=received_totals.get(key,Decimal("0"))+Decimal(str(line["quantity"]))
+                    fully_received=all(received_totals.get(str(line["description"]).strip(),Decimal("0"))>=Decimal(str(line["quantity"])) for line in procurement["payload"]["items"])
+                    next_status="received" if fully_received else "partially_received"
+                    if procurement["status"]!=next_status:
+                        updated_procurement=conn.execute(
+                            "UPDATE hr_enterprise_records SET status=%s,version=version+1,updated_by_user_id=%s,updated_at=now() WHERE id=%s RETURNING *",
+                            (next_status,actor,procurement_id)
+                        ).fetchone()
+                        conn.execute(
+                            "INSERT INTO hr_enterprise_events(record_id,event_type,from_status,to_status,before_state,after_state,actor_user_id) "
+                            "VALUES(%s,'stock_received',%s,%s,%s::jsonb,%s::jsonb,%s)",
+                            (procurement_id,procurement["status"],next_status,json.dumps(dict(procurement),default=str),json.dumps(dict(updated_procurement),default=str),actor)
+                        )
                 if domain=="travel" and payload.record_type=="claim":
                     travel_id=int(data["travel_record_id"])
                     travel=conn.execute("SELECT * FROM hr_enterprise_records WHERE id=%s AND domain='travel' FOR UPDATE",(travel_id,)).fetchone()
