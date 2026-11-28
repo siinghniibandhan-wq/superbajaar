@@ -512,6 +512,9 @@ def _validate(domain, record_type, payload):
         if data["employment_type"] not in {"all","full_time","part_time","contract","intern","shift_worker"}:
             raise HTTPException(422,"Travel policy employment type is invalid")
         if len(str(data["currency"]))!=3: raise HTTPException(422,"Travel policy currency must be a 3-letter code")
+        grade=str(data.get("job_grade","all")).strip() or "all"
+        if len(grade)>32: raise HTTPException(422,"Travel policy job grade cannot exceed 32 characters")
+        data["job_grade"]=grade
         data["max_trip_cost"]=str(trip_cap);data["per_diem_limit"]=str(per_diem);data["currency"]=str(data["currency"]).upper()
     if domain=="travel" and record_type=="request":
         try:
@@ -1245,12 +1248,15 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                 if domain=="travel" and payload.record_type=="request":
                     if employee_id is None:
                         raise HTTPException(422,"A travel request must be linked to an employee")
-                    employee_row=conn.execute("SELECT employment_type FROM hr_employees WHERE id=%s",(employee_id,)).fetchone()
+                    employee_row=conn.execute("SELECT employment_type,job_grade FROM hr_employees WHERE id=%s",(employee_id,)).fetchone()
                     policy=conn.execute("SELECT status,payload FROM hr_enterprise_records WHERE id=%s",(int(data["policy_id"]),)).fetchone()
                     if policy["status"]!="approved":
                         raise HTTPException(409,"The selected travel policy is not active")
                     if policy["payload"]["employment_type"] not in {"all",employee_row["employment_type"]}:
                         raise HTTPException(403,"The selected travel policy does not apply to this employee type")
+                    required_grade=policy["payload"].get("job_grade","all")
+                    if required_grade not in {"all",employee_row["job_grade"]}:
+                        raise HTTPException(403,"The selected travel policy does not apply to this employee job grade")
                 if domain=="travel" and payload.record_type=="claim":
                     travel=conn.execute("SELECT employee_id,payload FROM hr_enterprise_records WHERE id=%s AND domain='travel'",(int(data["travel_record_id"]),)).fetchone()
                     if not travel or travel["employee_id"] is None:
