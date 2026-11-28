@@ -490,3 +490,72 @@ def test_recruitment_email_uses_authenticated_starttls_smtp(monkeypatch):
     assert ("starttls",) in sent
     assert ("login","hr@example.com","test-secret") in sent
     assert ("send","candidate@example.com","Interview") in sent
+
+@pytest.mark.parametrize("email", [
+    "candidate", "candidate@", "@example.com", "candidate@example",
+    "candidate name@example.com", "candidate@example.com extra",
+])
+def test_recruitment_candidate_rejects_malformed_email_addresses(email):
+    with pytest.raises(HTTPException) as exc:
+        _validate("recruitment", "candidate", {"first_name":"Candidate","email":email})
+    assert exc.value.status_code == 422
+
+
+def test_recruitment_candidate_trims_names_and_phone():
+    result = _validate("recruitment", "candidate", {
+        "first_name":"  Asha ", "last_name":" Singh  ",
+        "email":" ASHA@EXAMPLE.COM ", "phone":" +91 98765 43210 ",
+        "source":" Referral "
+    })
+    assert result["first_name"] == "Asha"
+    assert result["last_name"] == "Singh"
+    assert result["email"] == "asha@example.com"
+    assert result["phone"] == "+91 98765 43210"
+    assert result["source"] == "Referral"
+
+
+def test_recruitment_job_rejects_unknown_employment_type_and_fractional_headcount():
+    with pytest.raises(HTTPException) as employment_error:
+        _validate("recruitment", "job_opening", {
+            "department":"Operations", "employment_type":"unknown",
+            "location":"Patna", "headcount":2
+        })
+    assert employment_error.value.status_code == 422
+    with pytest.raises(HTTPException) as headcount_error:
+        _validate("recruitment", "job_opening", {
+            "department":"Operations", "employment_type":"full_time",
+            "location":"Patna", "headcount":1.5
+        })
+    assert headcount_error.value.status_code == 422
+
+
+def test_recruitment_interview_requires_valid_datetime_and_normalises_it():
+    result = _validate("recruitment", "interview", {
+        "application_id":"12", "interviewer_employee_id":"7",
+        "scheduled_at":"2026-12-03T10:30", "interview_type":"  Technical "
+    })
+    assert result["application_id"] == 12
+    assert result["interviewer_employee_id"] == 7
+    assert result["scheduled_at"] == "2026-12-03T10:30:00"
+    assert result["interview_type"] == "Technical"
+    with pytest.raises(HTTPException):
+        _validate("recruitment", "interview", {
+            "application_id":12, "interviewer_employee_id":7,
+            "scheduled_at":"not-a-date", "interview_type":"Technical"
+        })
+
+
+def test_recruitment_offer_rejects_non_iso_currency_and_past_expiry():
+    with pytest.raises(HTTPException) as currency_error:
+        _validate("recruitment", "offer", {
+            "application_id":15, "offered_salary":"45000",
+            "currency":"INR1", "expires_on":"2026-12-31"
+        })
+    assert currency_error.value.status_code == 422
+    with pytest.raises(HTTPException) as expiry_error:
+        _validate("recruitment", "offer", {
+            "application_id":15, "offered_salary":"45000",
+            "currency":"INR", "expires_on":"2026-01-01"
+        })
+    assert expiry_error.value.status_code == 422
+
