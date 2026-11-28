@@ -96,7 +96,7 @@ def _initial_status(domain, record_type):
 
 REQUIRED = {
  "recruitment":{
-  "job_opening":["department","employment_type","location"],
+  "job_opening":["department","employment_type","location","headcount"],
   "candidate":["email"],
   "application":["candidate_id","job_id"],
   "interview":["application_id","scheduled_at","interviewer_employee_id","interview_type"],
