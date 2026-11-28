@@ -132,6 +132,7 @@ class EmployeeInput(BaseModel):
     phone: str = Field(default="", max_length=32)
     department_id: int | None = Field(default=None, gt=0)
     designation: str = Field(min_length=2, max_length=128)
+    job_grade: str = Field(default="ungraded", min_length=1, max_length=32)
     reports_to_employee_id: int | None = Field(default=None, gt=0)
     employment_type: str = Field(default="full_time", pattern="^(full_time|part_time|contract|intern|shift_worker)$")
     status: str = Field(default="active", pattern="^(active|probation|on_leave|notice_period|terminated)$")
@@ -668,7 +669,7 @@ def list_employees(request: Request, limit: int = Query(100, ge=1, le=500), offs
             if role in {"super_admin", "owner", "admin", "manager"}:
                 rows = conn.execute(
                     "SELECT e.id,e.user_id,e.employee_code,e.first_name,e.last_name,e.email,e.phone,"
-                    "e.department_id,d.name AS department_name,e.designation,e.reports_to_employee_id,"
+                    "e.department_id,d.name AS department_name,e.designation,e.job_grade,e.reports_to_employee_id,"
                     "e.employment_type,e.status,e.joining_date,e.exit_date,iparty.sbid,"
                     "COALESCE(sv.basic_salary,e.basic_salary) AS basic_salary,"
                     "COALESCE(sv.hra,e.hra) AS hra,"
@@ -721,14 +722,14 @@ def create_employee(payload: EmployeeInput, request: Request):
         with _hr_connection() as conn:
             row = conn.execute(
                 "INSERT INTO hr_employees(user_id,employee_code,first_name,last_name,email,phone,department_id,"
-                "designation,reports_to_employee_id,employment_type,status,joining_date,exit_date,basic_salary,"
+                "designation,job_grade,reports_to_employee_id,employment_type,status,joining_date,exit_date,basic_salary,"
                 "hra,special_allowance,other_allowance,created_by_user_id) "
-                "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
-                "RETURNING id,user_id,employee_code,first_name,last_name,email,phone,department_id,designation,"
+                "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                "RETURNING id,user_id,employee_code,first_name,last_name,email,phone,department_id,designation,job_grade,"
                 "employment_type,status,joining_date,basic_salary,hra,special_allowance,other_allowance,created_at",
                 (payload.user_id,payload.employee_code.strip(),payload.first_name.strip(),payload.last_name.strip(),
                  payload.email,payload.phone.strip(),payload.department_id,payload.designation.strip(),
-                 payload.reports_to_employee_id,payload.employment_type,payload.status,payload.joining_date,
+                 payload.job_grade.strip(),payload.reports_to_employee_id,payload.employment_type,payload.status,payload.joining_date,
                  payload.exit_date,payload.basic_salary,payload.hra,payload.special_allowance,
                  payload.other_allowance,actor),
             ).fetchone()
@@ -806,12 +807,12 @@ def update_employee(employee_id: int, payload: EmployeeInput, request: Request):
                     raise HTTPException(404, "Employee not found")
                 row = conn.execute(
                     "UPDATE hr_employees SET user_id=%s,employee_code=%s,first_name=%s,last_name=%s,email=%s,phone=%s,"
-                    "department_id=%s,designation=%s,reports_to_employee_id=%s,employment_type=%s,status=%s,"
+                    "department_id=%s,designation=%s,job_grade=%s,reports_to_employee_id=%s,employment_type=%s,status=%s,"
                     "joining_date=%s,exit_date=%s,updated_at=now() "
                     "WHERE id=%s RETURNING id,user_id,employee_code,first_name,last_name,email,status,updated_at",
                     (payload.user_id,payload.employee_code.strip(),payload.first_name.strip(),payload.last_name.strip(),
                      payload.email,payload.phone.strip(),payload.department_id,payload.designation.strip(),
-                     payload.reports_to_employee_id,payload.employment_type,payload.status,payload.joining_date,
+                     payload.job_grade.strip(),payload.reports_to_employee_id,payload.employment_type,payload.status,payload.joining_date,
                      payload.exit_date,employee_id),
                 ).fetchone()
                 if row is None:
