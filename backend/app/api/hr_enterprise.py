@@ -816,6 +816,12 @@ def _validate(domain, record_type, payload):
             try: policy_id=int(policy_id)
             except (TypeError,ValueError): raise HTTPException(422,"Automatic settlement requires statutory_policy_id")
             if policy_id<=0: raise HTTPException(422,"Automatic settlement requires a valid statutory_policy_id")
+            additional=data.get("additional_earnings",[])
+            if isinstance(additional,str):
+                try: additional=json.loads(additional)
+                except (ValueError,TypeError): raise HTTPException(422,"Additional settlement earnings must be valid JSON")
+            if not isinstance(additional,list): raise HTTPException(422,"Additional settlement earnings must be a JSON list")
+            data["additional_earnings"]=additional
             data["statutory_policy_id"]=policy_id
 
     return data
@@ -1459,9 +1465,9 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                         leave_rows=conn.execute(
                             "SELECT DISTINCT ON (b.leave_type) b.leave_type,GREATEST(0,b.closing_days+COALESCE((SELECT sum(l.quantity_days) "
                             "FROM hr_leave_ledger l WHERE l.employee_id=b.employee_id AND l.leave_type=b.leave_type "
-                            "AND l.created_at>b.calculated_at),0)) AS balance FROM hr_leave_balances b "
-                            "WHERE b.employee_id=%s AND b.period_start<=%s ORDER BY b.leave_type,b.period_end DESC",
-                            (int(exit_case["employee_id"]),payable)
+                            "AND l.created_at>b.calculated_at AND l.effective_date<=%s),0)) AS balance FROM hr_leave_balances b "
+                            "WHERE b.employee_id=%s AND b.period_end<=%s ORDER BY b.leave_type,b.period_end DESC",
+                            (payable,int(exit_case["employee_id"]),payable)
                         ).fetchall()
                         leave_balances={r["leave_type"]:Decimal(str(r["balance"])) for r in leave_rows}
                         loans=conn.execute(
@@ -1478,7 +1484,8 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                         calculated=calculate_exit_settlement(
                             config=policy["policy_config"],monthly_basic=basic,monthly_gross=gross_monthly,
                             service_years=service_years,leave_balances=leave_balances,
-                            loan_balances=[dict(x) for x in loans],notice_days_unserved=notice_unserved
+                            loan_balances=[dict(x) for x in loans],notice_days_unserved=notice_unserved,
+                            additional_earnings=data.get("additional_earnings",[])
                         )
                         if Decimal(calculated["net_due"])<0:
                             raise HTTPException(409,"Configured exit deductions exceed payable earnings; review statutory and loan recovery policy before settlement")
