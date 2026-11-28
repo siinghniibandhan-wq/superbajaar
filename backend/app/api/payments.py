@@ -667,7 +667,7 @@ def create_razorpay_order(payload: RazorpayOrderCreate, request: Request):
                             "SELECT id,order_id,method,amount,status,provider_order_id FROM payments WHERE id=%s AND order_id=%s FOR UPDATE",
                             (payload.payment_id,payload.order_id),
                         ).fetchone()
-                        if not existing or existing["method"] not in {"other","upi","card","wallet","netbanking"} or existing["status"] not in {"pending","authorized"}:
+                        if not existing or existing["method"] not in {"other","upi","card","wallet","netbanking"} or existing["status"] not in {"pending","authorized","failed"}:
                             raise HTTPException(status_code=409,detail="Selected online tender is not payable")
                         amount_paise = int((Decimal(str(existing["amount"])) * 100).quantize(Decimal("1")))
                     else:
@@ -734,9 +734,9 @@ def create_razorpay_order(payload: RazorpayOrderCreate, request: Request):
                     payment_reference = "PAY-" + uuid.uuid4().hex[:12].upper()
                     if existing_payment_id:
                         payment = conn.execute(
-                            """UPDATE payments SET provider_order_id=%s,currency='INR',
+                            """UPDATE payments SET provider_order_id=%s,status='pending',currency='INR',
                                       note='Razorpay Standard Checkout',updated_at=now()
-                               WHERE id=%s AND status IN ('pending','authorized') RETURNING id""",
+                               WHERE id=%s AND status IN ('pending','authorized','failed') RETURNING id""",
                             (provider_order_id, existing_payment_id),
                         ).fetchone()
                         if payment is None:
