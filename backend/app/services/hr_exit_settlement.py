@@ -24,6 +24,11 @@ def validate_exit_policy(config):
                 if field not in rule: raise HTTPException(422,f"Enabled {key} policy requires {field}")
             if key=="notice_pay" and rule["treatment"] not in {"earning","deduction"}:
                 raise HTTPException(422,"Notice pay treatment must be earning or deduction")
+    rounding=config.get("service_year_rounding","completed")
+    if rounding not in {"completed","round_up_after_half","fractional"}:
+        raise HTTPException(422,"service_year_rounding must be completed, round_up_after_half or fractional")
+    if config.get("leave_encashment",{}).get("wage_basis","basic") not in {"basic","gross"}:
+        raise HTTPException(422,"Leave encashment wage_basis must be basic or gross")
     deductions=config.get("statutory_deductions",[])
     if not isinstance(deductions,list): raise HTTPException(422,"statutory_deductions must be a list")
     for item in deductions:
@@ -36,14 +41,27 @@ def validate_exit_policy(config):
             raise HTTPException(422,"Unsupported statutory deduction basis")
     return config
 
-def calculate_exit_settlement(*,config,monthly_basic,monthly_gross,service_years,leave_balances,loan_balances,notice_days_unserved):
+def calculate_exit_settlement(*,config,monthly_basic,monthly_gross,service_years,leave_balances,loan_balances,notice_days_unserved,additional_earnings=None):
     config=validate_exit_policy(config)
     wage=Decimal(str(monthly_basic if config["daily_wage_basis"]=="basic" else monthly_gross))
     daily=wage/Decimal(str(config["working_days_divisor"]))
     earnings=[]; deductions=[]
+    for item in additional_earnings or []:
+        if not isinstance(item,dict) or len(str(item.get("type","")).strip())<2:
+            raise HTTPException(422,"Every additional settlement earning requires a type")
+        try: amount=money(item.get("amount"))
+        except Exception as exc: raise HTTPException(422,"Additional settlement earnings must have numeric amounts") from exc
+        if amount<=0: raise HTTPException(422,"Additional settlement earnings must be greater than zero")
+        earnings.append({"type":str(item["type"]).strip(),"amount":str(amount),"source":"manager-supplied payroll component"})
     gratuity=config.get("gratuity",{})
-    if gratuity.get("enabled") and Decimal(str(service_years))>=Decimal(str(gratuity["minimum_service_years"])):
-        amount=money(Decimal(str(monthly_basic))*Decimal(str(gratuity["days_per_service_year"]))*Decimal(str(service_years))/Decimal(str(gratuity["divisor"])))
+    years=Decimal(str(service_years))
+    if config.get("service_year_rounding","completed")=="completed":
+        years=years.to_integral_value(rounding="ROUND_FLOOR")
+    elif config.get("service_year_rounding")=="round_up_after_half":
+        whole=years.to_integral_value(rounding="ROUND_FLOOR")
+        years=whole+(Decimal("1") if years-whole>=Decimal("0.5") else Decimal("0"))
+    if gratuity.get("enabled") and years>=Decimal(str(gratuity["minimum_service_years"])):
+        amount=money(Decimal(str(monthly_basic))*Decimal(str(gratuity["days_per_service_year"]))*years/Decimal(str(gratuity["divisor"])))
         if gratuity.get("maximum_amount") is not None: amount=min(amount,money(gratuity["maximum_amount"]))
         if amount: earnings.append({"type":"gratuity","amount":str(amount),"basis":"approved policy; service years and basic wage"})
     leave_rule=config.get("leave_encashment",{})
