@@ -17,3 +17,8 @@ BEGIN
  END IF;
 END
 $grants$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS hr_enterprise_travel_booking_client_reference_uq
+ ON public.hr_enterprise_records((payload->>'client_reference'))
+ WHERE domain='travel' AND payload->>'record_type'='booking'
+   AND payload->>'client_reference' IS NOT NULL;
