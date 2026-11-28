@@ -150,7 +150,7 @@ def create_payment_refund(
         raise HTTPException(status_code=403, detail="A manager or administrator session is required to refund a payment")
     if not settings.razorpay_key_id or not settings.razorpay_key_secret:
         raise HTTPException(status_code=503, detail="Razorpay refunds are not configured")
-    lock_key = "razorpay-order:" + str(payload.order_id) + ":" + str(payload.payment_id or "full")
+    lock_key = str((payload.order_id, payload.payment_id))
     try:
         with _connect() as conn:
             conn.execute("SELECT pg_advisory_lock(hashtextextended(%s,0))", (lock_key,))
