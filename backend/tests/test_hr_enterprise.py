@@ -212,3 +212,16 @@ def test_performance_calibration_and_acknowledgement_are_validated():
 def test_manager_review_starts_at_manager_review_stage():
     assert _initial_status("performance", "review") == "manager_review"
     assert _initial_status("performance", "self_review") == "self_review"
+
+
+
+def test_learning_progress_evidence_is_bounded():
+    result = _validate("learning", "progress", {
+        "enrollment_id":5, "progress_percent":"75"
+    })
+    assert result["progress_percent"] == "75"
+    assert _initial_status("learning", "progress") == "in_progress"
+    with pytest.raises(HTTPException):
+        _validate("learning", "progress", {
+            "enrollment_id":5, "progress_percent":"101"
+        })
