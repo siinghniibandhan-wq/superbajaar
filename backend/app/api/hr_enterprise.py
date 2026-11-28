@@ -384,7 +384,7 @@ def _validate(domain, record_type, payload):
             if value:
                 data[field]=value
         email=str(data["email"]).strip().lower()
-        if len(email)>254 or not re.fullmatch(r"[^@\\s]+@[^@\\s]+\\.[^@\\s]+",email):
+        if len(email)>254 or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+",email):
             raise HTTPException(422,"Candidate email is invalid")
         data["email"]=email
         if data.get("phone") not in (None,""):
