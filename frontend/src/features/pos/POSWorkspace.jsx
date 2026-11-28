@@ -35,6 +35,9 @@ export default function POSWorkspace({ onBack }) {
   const [variants, setVariants] = useState([]);
   const [posSummary, setPosSummary] = useState(null);
   const [recentSales, setRecentSales] = useState([]);
+  const [salesTotal, setSalesTotal] = useState(0);
+  const [salesFilters, setSalesFilters] = useState({ search: "", date_from: "", date_to: "", payment_method: "", register_id: "" });
+  const [salesBusy, setSalesBusy] = useState(false);
   const [analyticsError, setAnalyticsError] = useState("");
   const [locations, setLocations] = useState([]);
   const [registers, setRegisters] = useState([]);
@@ -71,6 +74,22 @@ export default function POSWorkspace({ onBack }) {
   const [showHeld, setShowHeld] = useState(false);
   const [pickerId, setPickerId] = useState(null);
   const [held, setHeld] = useState(() => { try { return JSON.parse(window.localStorage.getItem("superbajaar.pos_held") || "[]"); } catch { return []; } });
+
+  async function loadSales(filters = salesFilters) {
+    setSalesBusy(true);
+    try {
+      const query = new URLSearchParams({ limit: "50" });
+      for (const [key, value] of Object.entries(filters)) if (String(value || "").trim()) query.set(key, String(value).trim());
+      const result = await apiRequest("/pos/sales?" + query.toString());
+      setRecentSales(result.items || []);
+      setSalesTotal(Number(result.total || 0));
+      setAnalyticsError("");
+    } catch (e) {
+      setAnalyticsError(e.message || "Unable to load POS sales history.");
+    } finally {
+      setSalesBusy(false);
+    }
+  }
 
   async function refreshAnalytics() {
     const analytics = await Promise.allSettled([
@@ -361,7 +380,7 @@ export default function POSWorkspace({ onBack }) {
     <button className="sb-back" type="button" onClick={onBack}>← All workspaces</button>
     <div className="sb-pos-head">
       <div><p className="sb-eyebrow">OPERATIONS · STORES</p><h1>POS & Stores</h1></div>
-      <nav className="sb-pos-nav" aria-label="POS modules"><button type="button" className={activeView === "checkout" ? "is-active" : ""} onClick={() => setActiveView("checkout")}>Checkout</button><button type="button" className={activeView === "sales" ? "is-active" : ""} onClick={() => setActiveView("sales")}>Sales history</button><button type="button" className={activeView === "registers" ? "is-active" : ""} onClick={() => setActiveView("registers")}>Registers & cash</button><span>{activeShift ? "Counter active" : "No active shift"}</span></nav>
+      <nav className="sb-pos-nav" aria-label="POS modules"><button type="button" className={activeView === "checkout" ? "is-active" : ""} onClick={() => setActiveView("checkout")}>Checkout</button><button type="button" className={activeView === "sales" ? "is-active" : ""} onClick={() => { setActiveView("sales"); loadSales(); }}>Sales history</button><button type="button" className={activeView === "registers" ? "is-active" : ""} onClick={() => setActiveView("registers")}>Registers & cash</button><span>{activeShift ? "Counter active" : "No active shift"}</span></nav>
     </div>
     {activeView !== "checkout" && <p className="sb-pos-sub">Retail checkout, independent counters, cashier shifts and auditable cash-drawer controls.</p>}
     {error && <p className="sb-alert" role="alert">{error}</p>}
@@ -387,8 +406,18 @@ export default function POSWorkspace({ onBack }) {
     </div>}
     {receipt && <div className="sb-data-card" style={{ display: activeView === "sales" ? "block" : "none" }}><h2>Latest order</h2><p><strong>{receipt.order.order_number}</strong> · {money(receipt.order.total)} · {receipt.order.status}</p><p>Payment record: {receipt.payment ? receipt.payment.payment_reference + " · " + receipt.payment.status : "Not returned — reconcile before retrying."}</p>{receipt.payment?.method === "cod" && receipt.payment.status === "pending" && activeShift && <button type="button" className="sb-primary" onClick={confirmCashTender} disabled={registerBusy}>Confirm cash received</button>}</div>}
     <div className="sb-data-card" style={{ display: activeView === "sales" ? "block" : "none" }}>
-      <div className="sb-data-heading"><h2>Recent POS sales</h2><button type="button" onClick={load} disabled={loading}>Refresh sales</button></div>
-      {recentSales.length ? <div className="sb-table-wrap"><table><thead><tr><th>Order</th><th>Customer</th><th>Status</th><th>Total</th><th>Captured</th><th>Payment state</th></tr></thead><tbody>{recentSales.map(sale => <tr key={sale.id}><td>{sale.order_number}</td><td>{sale.customer_name}</td><td>{sale.status}</td><td>{money(sale.total)}</td><td>{money(sale.captured_amount)}</td><td>{sale.payment_statuses || "No payment record"}</td></tr>)}</tbody></table></div> : <p className="sb-empty">No POS sales recorded yet.</p>}
+      <div className="sb-data-heading"><h2>POS sales history</h2><span>{salesTotal.toLocaleString("en-IN")} matching sales</span></div>
+      <form className="sb-pos-inline-form" onSubmit={event => { event.preventDefault(); loadSales(); }}>
+        <label>Search order / customer / phone<input type="search" maxLength="200" value={salesFilters.search} onChange={event => setSalesFilters(old => ({ ...old, search: event.target.value }))} placeholder="Order number, name or phone" /></label>
+        <label>From date<input type="date" value={salesFilters.date_from} onChange={event => setSalesFilters(old => ({ ...old, date_from: event.target.value }))} /></label>
+        <label>To date<input type="date" value={salesFilters.date_to} onChange={event => setSalesFilters(old => ({ ...old, date_to: event.target.value }))} /></label>
+        <label>Register<select value={salesFilters.register_id} onChange={event => setSalesFilters(old => ({ ...old, register_id: event.target.value }))}><option value="">All registers</option>{registers.map(register => <option key={register.id} value={register.id}>{register.register_code} — {register.name}</option>)}</select></label>
+        <label>Payment method<select value={salesFilters.payment_method} onChange={event => setSalesFilters(old => ({ ...old, payment_method: event.target.value }))}><option value="">All methods</option><option value="cod">Cash / COD</option><option value="upi">UPI</option><option value="card">Card</option><option value="wallet">Wallet</option><option value="netbanking">Net banking</option><option value="bank_transfer">Bank transfer</option><option value="other">Other</option></select></label>
+        <button type="submit" disabled={salesBusy}>{salesBusy ? "Searching…" : "Apply filters"}</button>
+        <button type="button" onClick={() => { const cleared = { search: "", date_from: "", date_to: "", payment_method: "", register_id: "" }; setSalesFilters(cleared); loadSales(cleared); }} disabled={salesBusy}>Clear</button>
+      </form>
+      <div className="sb-data-heading"><span>Showing {recentSales.length} of {salesTotal}</span><button type="button" onClick={() => loadSales()} disabled={salesBusy}>Refresh sales</button></div>
+      {recentSales.length ? <div className="sb-table-wrap"><table><thead><tr><th>Order</th><th>Customer</th><th>Register / cashier</th><th>Status</th><th>Total</th><th>Captured</th><th>Payment state</th></tr></thead><tbody>{recentSales.map(sale => <tr key={sale.id}><td>{sale.order_number}</td><td>{sale.customer_name}<br/><small>{sale.customer_phone || "—"}</small></td><td>{sale.register_id ? "#" + sale.register_id : "—"} / {sale.cashier_user_id || "—"}</td><td>{sale.status}</td><td>{money(sale.total)}</td><td>{money(sale.captured_amount)}</td><td>{sale.payment_statuses || "No payment record"}</td></tr>)}</tbody></table></div> : <p className="sb-empty">{salesBusy ? "Loading sales…" : "No POS sales match these filters."}</p>}
     </div>
     <div className="sb-pos-terminal" style={{ display: activeView === "checkout" ? "block" : "none" }}>
       <div className={"sb-pos-statusbar" + (activeShift ? " is-open" : "")}>
