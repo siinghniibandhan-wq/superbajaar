@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.core.config import settings
 from app.services.pos_tender import order_is_fully_paid
+from app.services.order_inventory import consume_pos_order_stock
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 razorpay_router = APIRouter(prefix="/razorpay", tags=["payments"])
@@ -556,7 +557,7 @@ async def verify_razorpay_payment(payload: RazorpayPaymentVerify, request: Reque
             with conn.transaction():
                 payment = conn.execute(
                     """SELECT p.id, p.order_id, p.amount, p.currency, p.status, o.customer_email, o.order_number,
-                              o.status AS order_status, o.channel, s.cashier_user_id
+                              o.status AS order_status, o.channel, o.total AS order_total, s.cashier_user_id
                        FROM payments p JOIN orders o ON o.id=p.order_id
                        LEFT JOIN pos_register_shifts s ON s.id=o.pos_register_shift_id
                        WHERE p.provider_order_id=%s FOR UPDATE OF p, o""",
@@ -579,9 +580,12 @@ async def verify_razorpay_payment(payload: RazorpayPaymentVerify, request: Reque
                        WHERE id=%s AND status <> 'refunded'""",
                     (payload.razorpay_payment_id, payment["id"]),
                 )
-                # A late capture must be recorded as money received, but it must
-                # never resurrect an order that was already cancelled.
-                if payment["order_status"] == "placed":
+                captured_total = conn.execute(
+                    "SELECT COALESCE(sum(amount),0) AS amount FROM payments WHERE order_id=%s AND status='captured'",
+                    (payment["order_id"],),
+                ).fetchone()["amount"]
+                # A late capture is recorded but never resurrects a cancelled order.
+                if payment["order_status"] == "placed" and order_is_fully_paid(payment["order_total"], captured_total):
                     conn.execute(
                         """UPDATE orders SET status='confirmed', updated_at=now()
                            WHERE id=%s AND status='placed'""",
@@ -595,7 +599,50 @@ async def verify_razorpay_payment(payload: RazorpayPaymentVerify, request: Reque
                                              WHERE order_id=%s AND from_status='placed' AND to_status='confirmed')""",
                         (payment["order_id"], payment["order_id"], payment["order_id"]),
                     )
-                final_order_status = "confirmed" if payment["order_status"] == "placed" else payment["order_status"]
+                    if payment["channel"] == "pos":
+                        try:
+                            consume_pos_order_stock(conn, int(payment["order_id"]))
+                        except ValueError as exc:
+                            raise HTTPException(status_code=409, detail=str(exc)) from exc
+                        cost_row = conn.execute(
+                            "SELECT COALESCE(sum(total_cost),0) AS total_cost FROM inventory_order_issues WHERE order_id=%s",
+                            (payment["order_id"],),
+                        ).fetchone()
+                        total_cost = Decimal(str(cost_row["total_cost"] or 0))
+                        if total_cost > 0:
+                            actor_email = getattr(request.state, "user_email", None)
+                            if not actor_email:
+                                raise HTTPException(status_code=401, detail="A valid cashier session is required to post POS cost of goods sold")
+                            from app.api import accounting
+                            accounts = accounting._accounts_by_code(conn, ["1200", "5000"])
+                            accounting._post_voucher(
+                                conn,
+                                {"voucher_type": "journal", "voucher_date": accounting._today(),
+                                 "narration": f"Cost of goods sold for POS order {payment['order_number']}",
+                                 "reference": payment["order_number"], "party_type": "customer",
+                                 "party_name": "POS walk-in customer", "taxable_total": total_cost,
+                                 "total_amount": total_cost, "source_type": "order_fulfilment",
+                                 "source_id": str(payment["order_id"]),
+                                 "idempotency_key": f"order-fulfilment-cogs:{payment['order_id']}"},
+                                [{"account_id": accounts["5000"]["id"], "debit": total_cost, "credit": 0,
+                                  "narration": "Cost of goods sold"},
+                                 {"account_id": accounts["1200"]["id"], "debit": 0, "credit": total_cost,
+                                  "narration": "Inventory issued"}],
+                                (actor_id, actor_email),
+                            )
+                        conn.execute(
+                            "UPDATE orders SET status='delivered',updated_at=now() WHERE id=%s AND status='confirmed' AND channel='pos'",
+                            (payment["order_id"],),
+                        )
+                        conn.execute(
+                            """INSERT INTO order_status_history(order_id,from_status,to_status)
+                               SELECT %s,'confirmed','delivered'
+                               WHERE EXISTS (SELECT 1 FROM orders WHERE id=%s AND status='delivered')
+                                 AND NOT EXISTS (SELECT 1 FROM order_status_history
+                                                 WHERE order_id=%s AND from_status='confirmed' AND to_status='delivered')""",
+                            (payment["order_id"], payment["order_id"], payment["order_id"]),
+                        )
+                final_order_status = conn.execute("SELECT status FROM orders WHERE id=%s", (payment["order_id"],)).fetchone()["status"]
         return {
             "status": "captured",
             "order_number": payment["order_number"],
