@@ -423,7 +423,7 @@ def list_orders(
         with _connect() as conn:
             items = conn.execute(
                 "SELECT o.id, o.order_number, o.channel, o.customer_name, o.customer_phone, o.delivery_pin, o.delivery_type, "
-                "o.status, o.subtotal, o.total, o.notes, o.created_at, o.updated_at, "
+                "o.status, o.subtotal, o.total, o.discount_total, o.promotion_code, o.tax_total, o.place_of_supply_state, o.notes, o.created_at, o.updated_at, "
                 "assigned_location.id AS inventory_location_id, assigned_location.name AS inventory_location_name, "
                 "(SELECT count(*) FROM order_lines l WHERE l.order_id=o.id) AS line_count "
                 "FROM orders o LEFT JOIN stock_locations assigned_location ON assigned_location.id=COALESCE("
@@ -470,7 +470,7 @@ def get_order(order_id: int):
             if order is None:
                 raise HTTPException(status_code=404, detail="Order not found")
             lines = conn.execute(
-                "SELECT l.id, l.variant_id, v.sku, p.name AS product_name, l.quantity, l.unit_price, l.line_total "
+                "SELECT l.id, l.variant_id, v.sku, p.name AS product_name, l.quantity, l.unit_price, l.line_total, l.hsn_code, l.gst_rule_id, l.gst_rate, l.taxable_value, l.cgst_amount, l.sgst_amount, l.igst_amount, l.tax_total "
                 "FROM order_lines l JOIN product_variants v ON v.id=l.variant_id JOIN products p ON p.id=v.product_id "
                 "WHERE l.order_id=%s ORDER BY l.id", (order_id,)
             ).fetchall()
