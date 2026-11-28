@@ -43,6 +43,18 @@ TRANSITIONS = {
  "analytics":{"saved":{"scheduled","archived"},"scheduled":{"saved","archived"}}
 }
 MANAGER_ONLY_TYPES = {"recruitment":{"job_opening","candidate","application"},"assets":{"asset","allocation"},"learning":{"course"},"analytics":{"report"}}
+EMPLOYEE_TRANSITIONS = {
+    ("travel", "draft", "submitted"),
+    ("travel", "draft", "cancelled"),
+    ("performance", "active", "self_review"),
+    ("learning", "enrolled", "in_progress"),
+    ("learning", "in_progress", "completed"),
+    ("exit", "initiated", "withdrawn"),
+}
+
+def _employee_transition_allowed(domain, from_status, to_status):
+    return (domain, from_status, to_status) in EMPLOYEE_TRANSITIONS
+
 REQUIRED = {
  "recruitment":{"job_opening":["department","employment_type","location"],"candidate":["email"],"application":["candidate_id","job_id"]},
  "documents":{"employee_document":["document_type","file_name","object_key","content_type","sha256"]},
@@ -288,15 +300,7 @@ def transition_record(domain:str,record_id:int,payload:TransitionInput,request:R
                     own=_employee(conn,actor)
                     if old["employee_id"] is None or int(old["employee_id"])!=int(own["id"]):
                         raise HTTPException(403,"Employees may change only their own HR records")
-                    employee_actions={
-                        ("travel","draft","submitted"),
-                        ("travel","draft","cancelled"),
-                        ("performance","active","self_review"),
-                        ("learning","enrolled","in_progress"),
-                        ("learning","in_progress","completed"),
-                        ("exit","initiated","withdrawn"),
-                    }
-                    if (domain,old["status"],payload.status) not in employee_actions:
+                    if not _employee_transition_allowed(domain,old["status"],payload.status):
                         raise HTTPException(403,"This workflow action requires HR manager permission")
                 if payload.status not in TRANSITIONS[domain].get(old["status"],set()):
                     raise HTTPException(409,f"Transition from {old['status']} to {payload.status} is not allowed")
