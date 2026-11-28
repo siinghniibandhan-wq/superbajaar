@@ -25,6 +25,7 @@ def test_pos_summary_separates_captured_and_pending(monkeypatch):
     conn = FakeConnection(rows=[
         {"order_count": 4, "active_order_count": 3, "order_value": 900, "today_order_count": 1, "today_order_value": 300},
         {"payment_count": 3, "captured_count": 1, "captured_amount": 200, "pending_count": 2, "pending_amount": 700},
+        {"processed_count": 1, "processed_amount": 25, "pending_count": 0, "pending_amount": 0},
     ])
     class Cursor:
         def __init__(self, row): self.row = row
@@ -42,6 +43,7 @@ def test_pos_summary_separates_captured_and_pending(monkeypatch):
     assert result["orders"]["order_value"] == 900
     assert result["payments"]["captured_amount"] == 200
     assert result["payments"]["pending_amount"] == 700
+    assert result["refunds"]["processed_amount"] == 25
     assert "p.status IN ('captured','refunded')" in conn.queries[1][0]
     assert "p.status IN ('pending','authorized')" in conn.queries[1][0]
 
