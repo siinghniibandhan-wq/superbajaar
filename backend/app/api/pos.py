@@ -36,10 +36,6 @@ def pos_summary():
                           COALESCE(sum(total) FILTER (WHERE (created_at AT TIME ZONE 'Asia/Kolkata')::date = (now() AT TIME ZONE 'Asia/Kolkata')::date AND status <> 'cancelled'), 0) AS today_order_value
                    FROM orders WHERE channel='pos'"""
             ).fetchone()
-            refunds = conn.execute(
-                "SELECT id,payment_id,amount,status,provider,provider_refund_id,idempotency_key,note,created_at FROM payment_refunds WHERE order_id=%s ORDER BY created_at,id",
-                (order_id,),
-            ).fetchall()
             payments = conn.execute(
                 """SELECT count(*) AS payment_count,
                           count(*) FILTER (WHERE p.status='captured') AS captured_count,
@@ -100,7 +96,7 @@ def list_pos_sales(
                            COALESCE(l.line_count, 0) AS line_count,
                            COALESCE(p.captured_amount, 0) AS captured_amount,
                            COALESCE(p.pending_amount, 0) AS pending_amount,
-                           COALESCE(p.refunded_amount, 0) AS refunded_amount,
+                           COALESCE(r.refunded_amount, 0) AS refunded_amount,
                            COALESCE(p.payment_statuses, '') AS payment_statuses
                     FROM orders o
                     LEFT JOIN pos_register_shifts s ON s.id=o.pos_register_shift_id
@@ -112,10 +108,13 @@ def list_pos_sales(
                       SELECT order_id,
                              sum(amount) FILTER (WHERE p.status='captured') AS captured_amount,
                              sum(amount) FILTER (WHERE p.status IN ('pending','authorized')) AS pending_amount,
-                             (SELECT COALESCE(sum(r.amount),0) FROM payment_refunds r WHERE r.order_id=p.order_id AND r.status='processed') AS refunded_amount,
                              string_agg(DISTINCT p.status, ', ') AS payment_statuses
                       FROM payments p GROUP BY order_id
                     ) p ON p.order_id=o.id
+                    LEFT JOIN (
+                      SELECT order_id,COALESCE(sum(amount) FILTER (WHERE status='processed'),0) AS refunded_amount
+                      FROM payment_refunds GROUP BY order_id
+                    ) r ON r.order_id=o.id
                     WHERE {where}
                     ORDER BY o.created_at DESC
                     LIMIT %s OFFSET %s""",
@@ -159,6 +158,10 @@ def get_pos_sale(order_id: int):
             payments = conn.execute(
                 """SELECT id, payment_reference, method, amount, status, provider_reference, created_at
                    FROM payments WHERE order_id=%s ORDER BY created_at""",
+                (order_id,),
+            ).fetchall()
+            refunds = conn.execute(
+                "SELECT id,payment_id,amount,status,provider,provider_refund_id,idempotency_key,note,created_at FROM payment_refunds WHERE order_id=%s ORDER BY created_at,id",
                 (order_id,),
             ).fetchall()
         return {**order, "lines": lines, "payments": payments, "refunds": refunds, "source": "postgresql"}
