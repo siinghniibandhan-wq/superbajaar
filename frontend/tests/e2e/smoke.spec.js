@@ -875,3 +875,56 @@ test("HR payroll calculation sends employee-specific manual deduction reasons", 
     deduction_notes: { "123": "Approved salary advance recovery" },
   });
 });
+
+
+test("HR enterprise workflows expose travel integrations and policy-driven exit settlement responsively", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("superbajaar.access_token", "manager-test-token"));
+  await page.route("**/api/**", async route => {
+    const url = new URL(route.request().url());
+    if (url.pathname.includes("/auth/my-permissions")) {
+      return route.fulfill({ json: { permissions: { hr_payroll: { read: true, write: true } } } });
+    }
+    if (url.pathname === "/api/auth/me") {
+      return route.fulfill({ json: { user: { id: 77, full_name: "HR Manager", role: "manager" } } });
+    }
+    if (url.pathname === "/api/health") return route.fulfill({ json: { status: "ok", database: "connected" } });
+    if (url.pathname === "/api/hr/employees") return route.fulfill({ json: { items: [
+      { id: 11, employee_code: "SB-0011", first_name: "Asha", last_name: "Singh", status: "active" }
+    ] } });
+    return route.fulfill({ json: { items: [] } });
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/admin");
+  await page.getByRole("button", { name: "Recruitment & employee lifecycle" }).click();
+  await expect(page.getByRole("heading", { name: "Integrated HR operations" })).toBeVisible();
+  const domains = page.getByRole("navigation", { name: "HR enterprise domains" });
+  for (const name of ["Employee documents", "Performance", "Learning & development", "Asset management", "Travel & expenses", "Resignation & exit", "HR analytics"]) {
+    await expect(domains.getByRole("button", { name, exact: true })).toBeVisible();
+  }
+
+  await domains.getByRole("button", { name: "Travel & expenses" }).click();
+  await page.getByLabel("Record type").selectOption("booking");
+  await expect(page.getByLabel("Quoted booking cost")).toBeVisible();
+  await expect(page.getByLabel("Provider booking details (JSON)")).toBeVisible();
+  await page.getByLabel("Record type").selectOption("advance");
+  await expect(page.getByLabel("Requested amount")).toBeVisible();
+
+  await domains.getByRole("button", { name: "Resignation & exit" }).click();
+  await page.getByLabel("Record type").selectOption("settlement");
+  await page.getByLabel("Calculate automatically from approved jurisdiction policy").check();
+  await expect(page.getByLabel("Approved exit statutory policy ID")).toBeVisible();
+
+  for (const width of [390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(page.getByRole("heading", { name: "Integrated HR operations" })).toBeVisible();
+    const navMetrics = await domains.evaluate(el => ({
+      clientWidth: el.clientWidth, scrollWidth: el.scrollWidth,
+      overflowX: getComputedStyle(el).overflowX,
+    }));
+    if (width === 390) {
+      expect(navMetrics.overflowX).toMatch(/auto|scroll/);
+      expect(navMetrics.scrollWidth).toBeGreaterThanOrEqual(navMetrics.clientWidth);
+    }
+  }
+});
