@@ -225,3 +225,5 @@
 .sb-pos-coupon input { min-width:0; width:100%; }
 .sb-pos-coupon button { min-height:38px; }
 .sb-pos-discount { color:var(--sb-success,#18794e); }
+
+.sb-pos-refund-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;align-items:end;padding:14px;margin:12px 0;border:1px solid var(--sb-border,#d0d5dd);border-radius:10px}.sb-pos-refund-form h4,.sb-pos-refund-form small{grid-column:1/-1}.sb-pos-refund-form label{display:grid;gap:5px;font-size:12px}.sb-pos-refund-form button{min-height:36px}.sb-pos-refund-form small{color:var(--sb-muted,#667085)}
