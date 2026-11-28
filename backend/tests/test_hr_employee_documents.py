@@ -61,3 +61,8 @@ def test_employee_document_download_checks_owner_and_encryption(monkeypatch):
     assert url=="https://private.example.test/short-lived"
     with pytest.raises(docs.EmployeeDocumentError,match="outside"):
         docs.employee_document_download_url(employee_id=43,object_key=result["object_key"])
+
+def test_document_upload_fails_closed_when_malware_scanner_is_not_configured(monkeypatch):
+    monkeypatch.delenv("SB_DOCUMENT_CLAMAV_HOST",raising=False)
+    with pytest.raises(docs.EmployeeDocumentConfigurationError,match="malware scanning is not configured"):
+        docs.scan_employee_document(b"%PDF-1.7 safe test")
