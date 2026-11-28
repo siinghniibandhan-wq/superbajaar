@@ -2271,8 +2271,8 @@ def create_employee_loan(payload:EmployeeLoanInput,request:Request):
                     raise HTTPException(404,"Employee not found")
                 return conn.execute(
                     "INSERT INTO hr_employee_loans(employee_id,loan_reference,principal_amount,outstanding_amount,currency,created_by_user_id) "
-                    "VALUES(%s,%s,%s,%s,%s,%s) RETURNING *",
-                    (payload.employee_id,payload.loan_reference.strip(),payload.principal_amount,payload.principal_amount,"INR",actor)
+                    "VALUES(%s,%s,%s,0,%s,%s) RETURNING *",
+                    (payload.employee_id,payload.loan_reference.strip(),payload.principal_amount,"INR",actor)
                 ).fetchone()
     except HTTPException: raise
     except psycopg.Error as exc: raise _db_error(exc) from exc
@@ -2382,7 +2382,7 @@ def disburse_employee_loan(loan_id:int,request:Request):
                     (loan_id,amount,date.today(),loan["loan_reference"],voucher_id,actor)
                 ).fetchone()
                 updated=conn.execute(
-                    "UPDATE hr_employee_loans SET status='active',disbursement_voucher_id=%s,disbursed_by_user_id=%s,"
+                    "UPDATE hr_employee_loans SET status='active',outstanding_amount=principal_amount,disbursement_voucher_id=%s,disbursed_by_user_id=%s,"
                     "disbursed_at=now(),updated_at=now() WHERE id=%s RETURNING *",
                     (voucher_id,actor,loan_id)
                 ).fetchone()
