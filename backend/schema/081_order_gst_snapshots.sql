@@ -3,6 +3,7 @@ ALTER TABLE public.orders
     ADD COLUMN IF NOT EXISTS tax_total NUMERIC(14,2) NOT NULL DEFAULT 0 CHECK (tax_total >= 0),
     ADD COLUMN IF NOT EXISTS place_of_supply_state TEXT;
 ALTER TABLE public.order_lines
+    ADD COLUMN IF NOT EXISTS gst_rule_id BIGINT REFERENCES public.hsn_rules(id) ON DELETE SET NULL,
     ADD COLUMN IF NOT EXISTS hsn_code VARCHAR(8),
     ADD COLUMN IF NOT EXISTS gst_rate NUMERIC(5,2) NOT NULL DEFAULT 0 CHECK (gst_rate >= 0 AND gst_rate <= 100),
     ADD COLUMN IF NOT EXISTS taxable_value NUMERIC(14,2) NOT NULL DEFAULT 0 CHECK (taxable_value >= 0),
