@@ -23,7 +23,7 @@ STATUSES = {
  "documents":{"pending","uploaded","under_review","verified","rejected","expired","archived"},
  "performance":{"draft","active","self_review","manager_review","calibration","acknowledged","closed","cancelled"},
  "learning":{"planned","enrolled","in_progress","completed","failed","cancelled"},
- "assets":{"requested","approved","assigned","returned","maintenance","written_off","rejected"},
+ "assets":{"available","requested","approved","assigned","returned","maintenance","written_off","rejected"},
  "travel":{"draft","submitted","approved","rejected","booked","in_progress","completed","claimed","reimbursed","cancelled"},
  "exit":{"initiated","notice_period","handover","clearance","settlement_review","completed","withdrawn"},
  "analytics":{"saved","scheduled","archived"}
@@ -33,12 +33,12 @@ TRANSITIONS = {
  "documents":{"pending":{"uploaded","archived"},"uploaded":{"under_review","rejected"},"under_review":{"verified","rejected","expired"},"verified":{"expired","archived"},"rejected":{"uploaded","archived"},"expired":{"uploaded","archived"}},
  "performance":{"draft":{"active","cancelled"},"active":{"self_review","cancelled"},"self_review":{"manager_review"},"manager_review":{"calibration","acknowledged"},"calibration":{"acknowledged"},"acknowledged":{"closed"}},
  "learning":{"planned":{"enrolled","cancelled"},"enrolled":{"in_progress","cancelled"},"in_progress":{"completed","failed"},"failed":{"enrolled"}},
- "assets":{"requested":{"approved","rejected"},"approved":{"assigned","rejected"},"assigned":{"returned","maintenance","written_off"},"maintenance":{"assigned","written_off"},"returned":{"maintenance","written_off"}},
+ "assets":{"available":{"assigned","maintenance","written_off"},"requested":{"approved","rejected"},"approved":{"assigned","rejected"},"assigned":{"returned","maintenance","written_off"},"maintenance":{"assigned","written_off"},"returned":{"maintenance","written_off"}},
  "travel":{"draft":{"submitted","cancelled"},"submitted":{"approved","rejected"},"approved":{"booked","cancelled"},"booked":{"in_progress","cancelled"},"in_progress":{"completed"},"completed":{"claimed"},"claimed":{"reimbursed"}},
  "exit":{"initiated":{"notice_period","withdrawn"},"notice_period":{"handover","withdrawn"},"handover":{"clearance"},"clearance":{"settlement_review"},"settlement_review":{"completed"}},
  "analytics":{"saved":{"scheduled","archived"},"scheduled":{"saved","archived"}}
 }
-MANAGER_ONLY_TYPES = {"recruitment":{"job_opening","candidate","application"},"assets":{"asset","allocation"},"analytics":{"report"}}
+MANAGER_ONLY_TYPES = {"recruitment":{"job_opening","candidate","application"},"assets":{"asset","allocation"},"learning":{"course"},"analytics":{"report"}}
 REQUIRED = {
  "recruitment":{"job_opening":["department","employment_type","location"],"candidate":["email"],"application":["candidate_id","job_id"]},
  "documents":{"employee_document":["document_type","file_name","object_key","content_type","sha256"]},
@@ -218,7 +218,7 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                     raise HTTPException(422,"Parent record must belong to the same HR domain")
                 data=_validate(domain,payload.record_type,payload.payload)
                 data["record_type"]=payload.record_type
-                status="draft" if domain in {"recruitment","performance","travel","analytics"} else ("pending" if domain=="documents" else ("requested" if domain=="assets" else ("planned" if domain=="learning" else "initiated")))
+                status=("available" if domain=="assets" and payload.record_type=="asset" else ("draft" if domain in {"recruitment","performance","travel"} else ("saved" if domain=="analytics" else ("pending" if domain=="documents" else ("requested" if domain=="assets" else ("planned" if domain=="learning" else "initiated"))))))
                 row=conn.execute(
                   "INSERT INTO hr_enterprise_records(domain,employee_id,parent_id,title,status,payload,effective_date,due_date,created_by_user_id,updated_by_user_id) "
                   "VALUES(%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s) RETURNING *",
