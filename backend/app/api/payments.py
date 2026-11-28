@@ -289,8 +289,8 @@ def create_manual_payment_refund(
                 refund = conn.execute(
                     "INSERT INTO payment_refunds(payment_id,order_id,amount,status,provider,pos_shift_id,idempotency_key,note,created_by_user_id,created_by_email) "
                     "VALUES(%s,%s,%s,'processed','manual',%s,%s,%s,%s,%s) "
-                    "RETURNING id,payment_id,order_id,amount,status,provider,provider_refund_id,idempotency_key,note,created_at",
-                    (payment_id,payment["order_id"],payload.amount,idempotency_key,payload.note,int(actor_id),str(actor_email)),
+                    "RETURNING id,payment_id,order_id,amount,status,provider,pos_shift_id,provider_refund_id,idempotency_key,note,created_at",
+                    (payment_id,payment["order_id"],payload.amount,shift_id,idempotency_key,payload.note,int(actor_id),str(actor_email)),
                 ).fetchone()
                 total_refunded = Decimal(str(refunded)) + payload.amount
                 if total_refunded >= Decimal(str(payment["amount"])):
