@@ -201,7 +201,7 @@ test("HR manager can access the HR workspace without admin-wide module access", 
   await expect(page.getByRole("heading", { name: "Expense claims" })).toBeVisible();
   await expect(page.getByText("No expense claims submitted for this period.")).toBeVisible();
   await page.getByRole("button", { name: "Payroll processing", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Payroll processing", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Payroll", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Workforce planning" }).click();
   await expect(page.getByRole("heading", { name: "Shift definitions & roster" })).toBeVisible();
   await page.getByRole("button", { name: "Holiday calendar" }).click();
