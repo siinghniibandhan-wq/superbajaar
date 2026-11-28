@@ -27,6 +27,15 @@ const employeeTransitions={
  learning:{enrolled:["in_progress"],in_progress:["completed"]},
  exit:{initiated:["withdrawn"]}
 };
+const managerOnlyTypes={
+ recruitment:["job_opening","candidate","application","interview","offer"],
+ performance:["review_cycle","review"],
+ learning:["course","assessment","certificate"],
+ assets:["asset","allocation","maintenance"],
+ travel:["booking","advance"],
+ exit:["clearance","settlement"],
+ analytics:["report"]
+};
 const blank={};
 
 export default function HREnterpriseWorkflows({manager,employees=[]}) {
@@ -34,14 +43,15 @@ export default function HREnterpriseWorkflows({manager,employees=[]}) {
  const [title,setTitle]=useState(""),[employeeId,setEmployeeId]=useState(""),[fields,setFields]=useState(blank),[documentFile,setDocumentFile]=useState(null);
  const [busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("");
  const current=domains.find(x=>x.id===domain);
- const type=current.types.find(x=>x[0]===recordType)||current.types[0];
+ const availableTypes=current.types.filter(x=>manager||!managerOnlyTypes[domain]?.includes(x[0]));
+ const type=availableTypes.find(x=>x[0]===recordType)||availableTypes[0]||current.types[0];
  const load=useCallback(async()=>{
    setBusy(true);setError("");
    try{const result=await apiRequest("/hr/enterprise/"+domain);setItems(result.items||[]);}
    catch(e){setError(e.message||"Unable to load HR records.");}
    finally{setBusy(false);}
  },[domain]);
- useEffect(()=>{setRecordType(domains.find(x=>x.id===domain).types[0][0]);setFields({});setTitle("");setDocumentFile(null);},[domain]);
+ useEffect(()=>{const selected=domains.find(x=>x.id===domain);const first=selected.types.find(x=>manager||!managerOnlyTypes[domain]?.includes(x[0]));setRecordType(first?.[0]||selected.types[0][0]);setFields({});setTitle("");setDocumentFile(null);},[domain,manager]);
  useEffect(()=>{load();},[load]);
  const update=(key,value)=>setFields(old=>({...old,[key]:value}));
  async function create(e){
@@ -78,11 +88,11 @@ export default function HREnterpriseWorkflows({manager,employees=[]}) {
  return <section className="hr-enterprise">
   <div className="hr-panel">
    <div className="hr-directory-heading"><div><h2>Integrated HR operations</h2><p>Recruitment, employee records, performance, training, assets, travel, exits and workforce reporting.</p></div><span className="hr-directory-count">8 domains</span></div>
-   <nav className="hr-advanced-nav" aria-label="HR enterprise domains">{domains.map(x=><button type="button" key={x.id} className={domain===x.id?"active":""} aria-pressed={domain===x.id} onClick={()=>setDomain(x.id)}>{x.label}</button>)}</nav>
+   <nav className="hr-advanced-nav" aria-label="HR enterprise domains">{domains.filter(x=>manager||!["recruitment","analytics"].includes(x.id)).map(x=><button type="button" key={x.id} className={domain===x.id?"active":""} aria-pressed={domain===x.id} onClick={()=>setDomain(x.id)}>{x.label}</button>)}</nav>
    {error&&<p className="sb-alert" role="alert">{error}</p>}{notice&&<p className="sb-success" role="status">{notice}</p>}
    <h3>{current.label}</h3>
    <form className="hr-form hr-grid" onSubmit={create}>
-    <label>Record type<select value={recordType} onChange={e=>{setRecordType(e.target.value);setFields({});}}>{current.types.map(x=><option key={x[0]} value={x[0]}>{x[1]}</option>)}</select></label>
+    <label>Record type<select value={recordType} onChange={e=>{setRecordType(e.target.value);setFields({});}}>{availableTypes.map(x=><option key={x[0]} value={x[0]}>{x[1]}</option>)}</select></label>
     {domain!=="documents"&&<label>Title<input required maxLength="200" value={title} onChange={e=>setTitle(e.target.value)}/></label>}
     {manager&&<label>Employee (optional)<select value={employeeId} onChange={e=>setEmployeeId(e.target.value)}><option value="">Not employee-linked</option>{employees.map(x=><option key={x.id} value={x.id}>{employeeNames[x.id]}</option>)}</select></label>}
     {type[2].map(([key,label,inputType])=><label key={key}>{label}{inputType==="select"?<select required value={fields[key]||"identity"} onChange={e=>update(key,e.target.value)}><option value="identity">Identity</option><option value="address">Address</option><option value="qualification">Qualification</option><option value="employment">Employment</option><option value="contract">Contract</option><option value="policy_acknowledgement">Policy acknowledgement</option><option value="other">Other</option></select>:inputType==="textarea"?<textarea rows="2" value={fields[key]||""} onChange={e=>update(key,e.target.value)}/>:<input type={inputType||"text"} required value={fields[key]||""} onChange={e=>update(key,e.target.value)}/>}</label>)}\n    {domain==="documents"&&<label>Document file<input type="file" accept="application/pdf,image/jpeg,image/png" required onChange={e=>setDocumentFile(e.target.files?.[0]||null)}/><small>Private encrypted storage · PDF/JPEG/PNG · maximum 10 MB</small></label>}
