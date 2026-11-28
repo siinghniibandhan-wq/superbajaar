@@ -495,7 +495,7 @@ def test_order_gst_uses_specific_category_attribute_rule_and_persists_tax_snapsh
         "lines":[{"variant_id":api.variant_id,"quantity":1}],
     }),201)
     assert Decimal(str(order["tax_total"]))==Decimal("4.76")
-    assert order["place_of_supply_state"]=="Jharkhand"
+    assert order["place_of_supply_state"]=="20"
     with psycopg.connect(TEST_DB) as conn:
         snapshot=conn.execute(
             "SELECT gst_rule_id,hsn_code,gst_rate,taxable_value,cgst_amount,sgst_amount,igst_amount,tax_total FROM order_lines WHERE order_id=%s",
