@@ -382,3 +382,16 @@ def test_asset_allocation_guard(status, active):
         with pytest.raises(HTTPException) as exc:
             _ensure_asset_allocatable(status, active)
         assert exc.value.status_code == 409
+
+
+@pytest.mark.parametrize("status", ["draft", "screening", "shortlisted", "interview", "offered", "rejected", "withdrawn"])
+def test_candidate_hireable_until_hired(status):
+    from app.api.hr_enterprise import _ensure_candidate_hireable
+    _ensure_candidate_hireable(status)
+
+
+def test_candidate_cannot_be_hired_twice():
+    from app.api.hr_enterprise import _ensure_candidate_hireable
+    with pytest.raises(HTTPException) as exc:
+        _ensure_candidate_hireable("hired")
+    assert exc.value.status_code == 409
