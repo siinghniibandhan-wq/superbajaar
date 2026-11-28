@@ -96,6 +96,7 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
  const [hireOffer,setHireOffer]=useState(null),[hireAccepted,setHireAccepted]=useState(false);
  const [emailCandidate,setEmailCandidate]=useState(null),[emailForm,setEmailForm]=useState({subject:"",message:""});
  const [expiringItems,setExpiringItems]=useState([]),[expiringLoading,setExpiringLoading]=useState(false),[expiringError,setExpiringError]=useState("");
+ const [expiryNotifications,setExpiryNotifications]=useState([]);
  const [hireForm,setHireForm]=useState({employee_code:"",first_name:"",last_name:"",email:"",phone:"",department_id:"",designation:"",job_grade:"ungraded",employment_type:"full_time",status:"active",joining_date:new Date().toISOString().slice(0,10),reports_to_employee_id:"",basic_salary:"0",hra:"0",special_allowance:"0",other_allowance:"0",acceptance_reference:""});
  const current=domains.find(x=>x.id===domain);
  const availableTypes=current.types.filter(x=>manager||!managerOnlyTypes[domain]?.includes(x[0]));
@@ -108,6 +109,13 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
  },[domain]);
  useEffect(()=>{const selected=domains.find(x=>x.id===domain);const first=selected.types.find(x=>manager||!managerOnlyTypes[domain]?.includes(x[0]));setRecordType(first?.[0]||selected.types[0][0]);setFields({});setTitle("");setDocumentFile(null);},[domain,manager]);
  useEffect(()=>{load();},[load]);
+ useEffect(()=>{
+   let active=true;
+   apiRequest("/hr/enterprise/notifications?unread_only=true")
+     .then(result=>{if(active)setExpiryNotifications(result.items||[]);})
+     .catch(()=>{if(active)setExpiryNotifications([]);});
+   return()=>{active=false;};
+ },[domain,manager]);
  useEffect(()=>{
    if(domain!=="documents"||!manager)return;
    let active=true;setExpiringLoading(true);setExpiringError("");
@@ -169,6 +177,22 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
      setTitle("");setFields({});await load();
    }catch(e){setError(e.message||"Unable to create HR record.");}
    finally{setBusy(false);}
+ }
+ async function refreshExpiryNotifications(){
+   setBusy(true);setError("");
+   try{
+     await apiRequest("/hr/enterprise/notifications/refresh",{method:"POST",body:"{}"});
+     const result=await apiRequest("/hr/enterprise/notifications?unread_only=true");
+     setExpiryNotifications(result.items||[]);
+     setNotice("Employee expiry notifications refreshed.");
+   }catch(e){setError(e.message||"Unable to refresh expiry notifications.");}
+   finally{setBusy(false);}
+ }
+ async function markExpiryNotificationRead(id){
+   try{
+     await apiRequest("/hr/enterprise/notifications/"+id+"/read",{method:"POST",body:"{}"});
+     setExpiryNotifications(old=>old.filter(item=>item.id!==id));
+   }catch(e){setError(e.message||"Unable to update notification.");}
  }
  async function transition(item,status){
    const note=window.prompt("Add a note for this workflow change (optional):")||null;
@@ -307,6 +331,11 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
    <nav className="hr-advanced-nav" aria-label="HR enterprise domains">{domains.filter(x=>manager||!["recruitment","analytics"].includes(x.id)).map(x=><button type="button" key={x.id} className={domain===x.id?"active":""} aria-pressed={domain===x.id} onClick={()=>setDomain(x.id)}>{x.label}</button>)}</nav>
    {error&&<p className="sb-alert" role="alert">{error}</p>}{notice&&<p className="sb-success" role="status">{notice}</p>}
    <h3>{current.label}</h3>
+   {expiryNotifications.length>0&&<section className="hr-panel" aria-label="Employee expiry notifications">
+    <div className="hr-directory-heading"><div><h3>Expiry notifications</h3><p>{expiryNotifications.length} unread document, certificate or warranty reminders</p></div>{manager&&<button type="button" className="hr-secondary" disabled={busy} onClick={refreshExpiryNotifications}>Refresh reminders</button>}</div>
+    <ul>{expiryNotifications.map(item=><li key={item.id}><strong>{item.title}</strong> · {item.message}{item.employee_code&&<small> {item.employee_code} — {item.first_name} {item.last_name}</small>} <button type="button" className="hr-secondary" onClick={()=>markExpiryNotificationRead(item.id)}>Mark read</button></li>)}</ul>
+   </section>}
+   {expiryNotifications.length===0&&manager&&<button type="button" className="hr-secondary" disabled={busy} onClick={refreshExpiryNotifications}>Refresh expiry reminders</button>}
    {domain==="recruitment"&&manager&&<section className="hr-panel" aria-label="Recruitment pipeline">
     <div className="hr-directory-heading"><div><h3>Recruitment pipeline</h3><p>Live hiring funnel from open roles through candidate applications, interviews, offers and completed hires.</p></div><span className="hr-directory-count">{recruitmentView.jobs.filter(x=>x.status==="open").length} open roles</span></div>
     <div className="hr-overview">
