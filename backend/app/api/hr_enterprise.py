@@ -184,27 +184,38 @@ def _validate(domain, record_type, payload):
         if data.get("content_type") not in {"application/pdf","image/jpeg","image/png"}:
             raise HTTPException(422,"Only PDF, JPEG and PNG employee documents are supported")
     if domain=="exit" and record_type=="case":
-        last=date.fromisoformat(str(data["last_working_date"]))
+        try: last=date.fromisoformat(str(data["last_working_date"]))
+        except ValueError: raise HTTPException(422,"Last working date must be an ISO date")
         if last<date.today(): raise HTTPException(422,"Last working date cannot be in the past when initiating an exit case")
     if domain=="recruitment" and record_type=="interview":
-        if int(data["application_id"])<=0 or int(data["interviewer_employee_id"])<=0:
-            raise HTTPException(422,"Interview application and interviewer IDs must be positive")
-        try: date.fromisoformat(str(data["scheduled_at"])[:10])
-        except ValueError: raise HTTPException(422,"Interview scheduled_at must be an ISO date or datetime")
+        try:
+            application_id=int(data["application_id"]); interviewer_id=int(data["interviewer_employee_id"])
+            date.fromisoformat(str(data["scheduled_at"])[:10])
+        except (ValueError,TypeError): raise HTTPException(422,"Interview IDs and scheduled date are invalid")
+        if application_id<=0 or interviewer_id<=0: raise HTTPException(422,"Interview application and interviewer IDs must be positive")
     if domain=="recruitment" and record_type=="offer":
-        try: salary=Decimal(str(data["offered_salary"])); expiry=date.fromisoformat(str(data["expires_on"]))
-        except (ValueError,InvalidOperation): raise HTTPException(422,"Offer salary or expiry date is invalid")
-        if salary<=0 or len(str(data["currency"]))!=3: raise HTTPException(422,"Offer salary must be positive and currency must be a 3-letter code")
-        data["offered_salary"]=str(salary); data["currency"]=str(data["currency"]).upper(); data["expires_on"]=expiry.isoformat()
+        try: salary=Decimal(str(data["offered_salary"])); expiry=date.fromisoformat(str(data["expires_on"])); application_id=int(data["application_id"])
+        except (ValueError,InvalidOperation,TypeError): raise HTTPException(422,"Offer application, salary or expiry date is invalid")
+        if application_id<=0 or salary<=0 or len(str(data["currency"]))!=3: raise HTTPException(422,"Offer application and salary must be positive and currency must be a 3-letter code")
+        data["application_id"]=application_id; data["offered_salary"]=str(salary); data["currency"]=str(data["currency"]).upper(); data["expires_on"]=expiry.isoformat()
     if domain=="performance" and record_type=="review_cycle":
         try: start=date.fromisoformat(str(data["period_start"])); end=date.fromisoformat(str(data["period_end"]))
         except ValueError: raise HTTPException(422,"Performance cycle dates are invalid")
         if end<start: raise HTTPException(422,"Performance cycle end cannot precede start")
     if domain=="learning" and record_type=="assessment":
-        try: score=Decimal(str(data["score"])); passing=Decimal(str(data["pass_score"]))
-        except InvalidOperation: raise HTTPException(422,"Assessment scores must be numeric")
-        if score<0 or passing<0 or score>100 or passing>100: raise HTTPException(422,"Assessment scores must be between 0 and 100")
-        data["score"]=str(score); data["pass_score"]=str(passing)
+        try: score=Decimal(str(data["score"])); passing=Decimal(str(data["pass_score"])); enrollment_id=int(data["enrollment_id"])
+        except (InvalidOperation,ValueError,TypeError): raise HTTPException(422,"Assessment enrollment and scores must be valid")
+        if enrollment_id<=0 or score<0 or passing<0 or score>100 or passing>100: raise HTTPException(422,"Enrollment ID must be positive and scores must be between 0 and 100")
+        data["enrollment_id"]=enrollment_id; data["score"]=str(score); data["pass_score"]=str(passing)
+    if domain=="learning" and record_type=="certificate":
+        try: enrollment_id=int(data["enrollment_id"]); valid_until=date.fromisoformat(str(data["valid_until"]))
+        except (ValueError,TypeError): raise HTTPException(422,"Certificate enrollment ID or validity date is invalid")
+        if enrollment_id<=0: raise HTTPException(422,"Certificate enrollment ID must be positive")
+        data["enrollment_id"]=enrollment_id; data["valid_until"]=valid_until.isoformat()
+    if domain=="assets" and record_type=="asset_request":
+        try: needed_by=date.fromisoformat(str(data["needed_by"]))
+        except ValueError: raise HTTPException(422,"Asset needed-by date is invalid")
+        data["needed_by"]=needed_by.isoformat()
     if domain=="assets" and record_type=="maintenance":
         if int(data["asset_id"])<=0: raise HTTPException(422,"Asset ID must be positive")
         try: date.fromisoformat(str(data["reported_at"])[:10])
