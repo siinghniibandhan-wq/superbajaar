@@ -49,7 +49,8 @@ test("POS creates order and pending tender atomically with a retry-safe checkout
   await page.goto("/admin");
   await page.getByRole("button", { name: "POS & Stores", exact: true }).click();
   await page.getByRole("button", { name: /^Add to sale:/ }).click();
-  await page.getByLabel("Stock location").selectOption("9");
+  await expect(page.getByLabel("Counter")).toHaveValue("31");
+  await expect(page.getByText(/Stock: Patna Main Store/)).toBeVisible();
   await page.getByRole("button", { name: "Create sale & pending tender" }).click();
   await expect(page.getByText("SB-POS-101", { exact: true })).toBeVisible();
   await expect(page.getByText(/PAY-POS-201 · pending/)).toBeVisible();
