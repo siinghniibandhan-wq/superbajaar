@@ -30,7 +30,7 @@ def test_travel_request_rejects_reversed_dates():
         _validate("travel", "request", {
             "destination":"Delhi", "purpose":"Supplier visit",
             "start_date":"2026-12-10", "end_date":"2026-12-09",
-            "estimated_cost":"5000"
+            "estimated_cost":"5000", "estimated_per_diem":"1000", "policy_id":1
         })
     assert exc.value.status_code == 422
 
@@ -40,7 +40,7 @@ def test_travel_request_rejects_non_positive_cost():
         _validate("travel", "request", {
             "destination":"Delhi", "purpose":"Supplier visit",
             "start_date":"2026-12-09", "end_date":"2026-12-10",
-            "estimated_cost":"0"
+            "estimated_cost":"0", "estimated_per_diem":"1000", "policy_id":1
         })
     assert exc.value.status_code == 422
 
