@@ -911,6 +911,10 @@ test("HR enterprise workflows expose travel integrations and policy-driven exit 
   await expect(page.getByLabel("Requested amount")).toBeVisible();
 
   await domains.getByRole("button", { name: "Resignation & exit" }).click();
+  await expect(page.getByRole("heading", { name: "Jurisdictional exit statutory policies" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Employee loan register" })).toBeVisible();
+  await expect(page.getByLabel("Policy calculation rules (JSON)")).toBeVisible();
+  await expect(page.getByLabel("Loan reference")).toBeVisible();
   await page.getByLabel("Record type").selectOption("settlement");
   await page.getByLabel("Calculate automatically from approved jurisdiction policy").check();
   await expect(page.getByLabel("Approved exit statutory policy ID")).toBeVisible();
