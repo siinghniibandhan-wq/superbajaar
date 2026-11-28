@@ -62,6 +62,30 @@ EMPLOYEE_TRANSITIONS = {
 def _employee_transition_allowed(domain, from_status, to_status):
     return (domain, from_status, to_status) in EMPLOYEE_TRANSITIONS
 
+def _initial_status(domain, record_type):
+    typed = {
+        ("recruitment", "interview"): "interview",
+        ("recruitment", "offer"): "offered",
+        ("documents", "employee_document"): "pending",
+        ("performance", "feedback"): "acknowledged",
+        ("learning", "assessment"): "completed",
+        ("learning", "certificate"): "completed",
+        ("assets", "maintenance"): "maintenance",
+        ("travel", "booking"): "booked",
+        ("travel", "advance"): "approved",
+        ("travel", "claim"): "claimed",
+        ("exit", "clearance"): "clearance",
+        ("exit", "settlement"): "settlement_review",
+    }
+    if (domain, record_type) in typed:
+        return typed[(domain, record_type)]
+    defaults = {
+        "recruitment": "draft", "documents": "pending", "performance": "draft",
+        "learning": "planned", "assets": "available" if record_type == "asset" else "requested",
+        "travel": "draft", "exit": "initiated", "analytics": "saved",
+    }
+    return defaults[domain]
+
 REQUIRED = {
  "recruitment":{
   "job_opening":["department","employment_type","location"],
@@ -306,7 +330,7 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                     raise HTTPException(422,"Parent record must belong to the same HR domain")
                 data=_validate(domain,payload.record_type,payload.payload)
                 data["record_type"]=payload.record_type
-                status=("available" if domain=="assets" and payload.record_type=="asset" else ("draft" if domain in {"recruitment","performance","travel"} else ("saved" if domain=="analytics" else ("pending" if domain=="documents" else ("requested" if domain=="assets" else ("planned" if domain=="learning" else "initiated"))))))
+                status=_initial_status(domain,payload.record_type)
                 row=conn.execute(
                   "INSERT INTO hr_enterprise_records(domain,employee_id,parent_id,title,status,payload,effective_date,due_date,created_by_user_id,updated_by_user_id) "
                   "VALUES(%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s) RETURNING *",
