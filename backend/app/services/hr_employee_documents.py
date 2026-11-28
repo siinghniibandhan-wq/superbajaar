@@ -62,6 +62,17 @@ def upload_employee_document(*,employee_id:int,uploader_id:int,document_type:str
   ServerSideEncryption="AES256",Metadata={"employee-id":str(employee_id),"uploaded-by-user-id":str(uploader_id),"sha256":digest,"document-type":document_type,"file-name":safe_name,"malware-scan":scan_status})
  return {"object_key":key,"file_name":safe_name,"content_type":content_type,"file_size_bytes":len(content),"sha256":digest,"document_type":document_type,"malware_scan_status":scan_status}
 
+def delete_employee_document(*,employee_id:int,object_key:str)->None:
+ if employee_id<=0 or not re.fullmatch(r"hr-employee-documents/\\d+/[0-9a-f]{32}\\.(pdf|jpg|png)",object_key or "") or not object_key.startswith(f"hr-employee-documents/{employee_id}/"):
+  raise EmployeeDocumentError("Document is outside this employee's private storage area")
+ bucket,client=_storage()
+ head=client.head_object(Bucket=bucket,Key=object_key)
+ metadata=head.get("Metadata",{})
+ if metadata.get("employee-id")!=str(employee_id) or head.get("ServerSideEncryption")!="AES256":
+  raise EmployeeDocumentError("Document ownership or encryption validation failed")
+ client.delete_object(Bucket=bucket,Key=object_key)
+
+
 def employee_document_download_url(*,employee_id:int,object_key:str,expires_in:int=300)->str:
  if employee_id<=0 or not 60<=expires_in<=600: raise EmployeeDocumentError("Invalid employee document download request")
  if not re.fullmatch(r"hr-employee-documents/\d+/[0-9a-f]{32}\.(pdf|jpg|png)",object_key or "") or not object_key.startswith(f"hr-employee-documents/{employee_id}/"):
