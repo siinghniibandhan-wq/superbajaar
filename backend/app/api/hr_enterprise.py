@@ -1575,6 +1575,7 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                         raise HTTPException(409,"Travel booking requires an employee-linked travel request")
                     policy=conn.execute("SELECT payload FROM hr_enterprise_records WHERE id=%s",(int(travel["payload"]["policy_id"]),)).fetchone()
                     data["currency"]=str(data.get("currency") or policy["payload"].get("currency","INR")).upper()
+                    data["maximum_allowed_amount"]=str(policy["payload"]["max_trip_cost"])
                     provider_result=create_provider_booking(travel={**travel["payload"],"employee_id":travel["employee_id"]},
                         booking=data,record_id=row["id"])
                     if Decimal(provider_result["booked_cost"])>Decimal(str(policy["payload"]["max_trip_cost"])):
@@ -1588,6 +1589,16 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                         "INSERT INTO hr_enterprise_events(record_id,event_type,after_state,actor_user_id) VALUES(%s,'travel_provider_booking_confirmed',%s::jsonb,%s)",
                         (row["id"],json.dumps(dict(row),default=str),actor)
                     )
+                    if travel["status"]=="approved":
+                        updated_travel=conn.execute(
+                            "UPDATE hr_enterprise_records SET status='booked',version=version+1,updated_by_user_id=%s,updated_at=now() WHERE id=%s RETURNING *",
+                            (actor,int(data["travel_record_id"]))
+                        ).fetchone()
+                        conn.execute(
+                            "INSERT INTO hr_enterprise_events(record_id,event_type,from_status,to_status,before_state,after_state,actor_user_id) "
+                            "VALUES(%s,'provider_booking_linked','approved','booked',%s::jsonb,%s::jsonb,%s)",
+                            (int(data["travel_record_id"]),json.dumps(dict(travel),default=str),json.dumps(dict(updated_travel),default=str),actor)
+                        )
                 if domain=="travel" and payload.record_type=="advance":
                     travel=conn.execute("SELECT employee_id FROM hr_enterprise_records WHERE id=%s",(int(data["travel_record_id"]),)).fetchone()
                     if not travel or travel["employee_id"] is None:
@@ -2026,13 +2037,16 @@ def transition_record(domain:str,record_id:int,payload:TransitionInput,request:R
                     travel=conn.execute("SELECT payload FROM hr_enterprise_records WHERE id=%s AND domain='travel'",(int(old["payload"]["travel_record_id"]),)).fetchone()
                     if not travel:
                         raise HTTPException(409,"Linked travel request no longer exists")
+                    policy=conn.execute("SELECT payload FROM hr_enterprise_records WHERE id=%s",(int(travel["payload"]["policy_id"]),)).fetchone()
+                    if not policy:
+                        raise HTTPException(409,"Travel policy for this advance no longer exists")
                     already=conn.execute("SELECT accounting_voucher_id FROM hr_travel_advance_disbursements WHERE enterprise_record_id=%s",(record_id,)).fetchone()
                     if already:
                         raise HTTPException(409,"This travel advance has already been disbursed")
                     try:
                         voucher_id=disburse_travel_advance(conn,record_id=record_id,employee_id=int(old["employee_id"]),
                             amount=Decimal(str(old["payload"]["requested_amount"])),
-                            currency=str(travel["payload"].get("currency","INR")),actor_user_id=actor)
+                            currency=str(policy["payload"].get("currency","INR")),actor_user_id=actor)
                     except TravelIntegrationConfigurationError as exc:
                         raise HTTPException(503,str(exc)) from exc
                     advance_payload=dict(old["payload"])
@@ -2040,7 +2054,7 @@ def transition_record(domain:str,record_id:int,payload:TransitionInput,request:R
                     old=conn.execute("UPDATE hr_enterprise_records SET payload=%s::jsonb,version=version+1,updated_by_user_id=%s,updated_at=now() WHERE id=%s RETURNING *",
                         (json.dumps(advance_payload,default=str),actor,record_id)).fetchone()
                     conn.execute("INSERT INTO hr_travel_advance_disbursements(enterprise_record_id,employee_id,accounting_voucher_id,amount,currency,disbursed_by_user_id) VALUES(%s,%s,%s,%s,%s,%s)",
-                        (record_id,int(old["employee_id"]),voucher_id,advance_payload["requested_amount"],str(travel["payload"].get("currency","INR")).upper(),actor))
+                        (record_id,int(old["employee_id"]),voucher_id,advance_payload["requested_amount"],str(policy["payload"].get("currency","INR")).upper(),actor))
                 row=conn.execute("UPDATE hr_enterprise_records SET status=%s,version=version+1,updated_by_user_id=%s,updated_at=now() WHERE id=%s RETURNING *",
                   (payload.status,actor,record_id)).fetchone()
                 if domain=="assets" and record_type=="allocation":
