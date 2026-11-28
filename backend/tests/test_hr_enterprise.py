@@ -674,7 +674,7 @@ def test_asset_straight_line_depreciation_respects_salvage_floor():
     result=_calculate_asset_book_value("12000","2000",60,"2024-01-01","2026-01-01","straight_line")
     assert result["elapsed_months"]==24
     assert result["accumulated_depreciation"]=="4000.00"
-    assert result["book_value"]=="8000"
+    assert result["book_value"]=="8000.00"
 
 
 def test_asset_reducing_balance_depreciation_and_invalid_inputs():
