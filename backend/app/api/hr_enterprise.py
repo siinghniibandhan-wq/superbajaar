@@ -98,10 +98,10 @@ def _allowed_record_transitions(domain, record_type, status):
             "progress": {}, "assessment": {}, "certificate": {"completed":{"expired","archived"},"expired":{"archived"}},
         },
         "assets": {
-            "asset": {"available":{"assigned","maintenance","written_off"},"assigned":{"available","maintenance","written_off"},"maintenance":{"available","written_off"},"written_off":{}},
+            "asset": {"available":{"assigned","maintenance","written_off"},"assigned":{"acknowledged","returned","maintenance","written_off"},"acknowledged":{"returned","maintenance","written_off"},"maintenance":{"assigned","written_off"},"returned":{"available","maintenance","written_off"},"written_off":{}},
             "asset_request": {"requested":{"approved","rejected"},"approved":{"assigned","rejected"}},
             "allocation": {"requested":{"approved","rejected"},"approved":{"assigned","rejected"},"assigned":{"acknowledged","returned","maintenance","written_off"},"acknowledged":{"returned","maintenance","written_off"}},
-            "maintenance": {"maintenance":{"completed","written_off"}},
+            "maintenance": {},
         },
         "travel": {
             "travel_policy": {}, "request": {"draft":{"submitted","cancelled"},"submitted":{"approved","rejected"},"approved":{"booked","cancelled"},"booked":{"in_progress","cancelled"},"in_progress":{"completed"},"completed":{"claimed"},"claimed":{"reimbursed"}},
