@@ -5,7 +5,7 @@ from fastapi import HTTPException
 
 from app.api.hr_enterprise import (
     DOMAINS, REQUIRED, STATUSES, TRANSITIONS,
-    _employee_transition_allowed, _initial_status, _validate, _ensure_offer_unexpired, _allowed_record_transitions,\n    _ensure_goal_weight_limit, _ensure_assessment_attempt_limit,
+    _employee_transition_allowed, _initial_status, _validate, _ensure_offer_unexpired, _allowed_record_transitions,\n    _ensure_goal_weight_limit, _ensure_assessment_attempt_limit, _calculate_asset_book_value,
 )
 
 
@@ -668,3 +668,16 @@ def test_asset_stock_reconciliation_requires_reason_for_variance():
             "location":"Warehouse A","counted_at":"2026-11-28",
             "expected_count":"10","physical_count":"8","variance_reason":"No"
         })
+
+def test_asset_straight_line_depreciation_respects_salvage_floor():
+    result=_calculate_asset_book_value("12000","2000",60,"2024-01-01","2026-01-01","straight_line")
+    assert result["elapsed_months"]==24
+    assert result["accumulated_depreciation"]=="4000"
+    assert result["book_value"]=="8000"
+
+
+def test_asset_reducing_balance_depreciation_and_invalid_inputs():
+    result=_calculate_asset_book_value("10000","1000",60,"2024-01-01","2026-01-01","reducing_balance","20")
+    assert result["book_value"]=="6400.00"
+    with pytest.raises(HTTPException):
+        _calculate_asset_book_value("10000","11000",60,"2024-01-01","2026-01-01")
