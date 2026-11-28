@@ -49,13 +49,13 @@ test("inventory manager can create and edit internal warehouse addresses without
   await page.getByLabel("Location code").fill("A-01");
   await page.getByLabel("Location name").last().fill("Receiving Bay A");
   await page.getByLabel("Location type").selectOption("receiving");
-  await page.getByRole("button", { name: "Create internal location" }).click();
+  await page.getByRole("button", { name: "Create storage location" }).click();
   await expect(page.getByText("Receiving Bay A", { exact: true })).toBeVisible();
   expect(writes.find(write => write.method === "POST")?.body).toMatchObject({ facility_id: 9, parent_id: null, code: "A-01", name: "Receiving Bay A", location_type: "receiving" });
 
   await page.getByRole("button", { name: "Edit", exact: true }).click();
   await page.getByLabel("Location name").last().fill("Receiving Bay A1");
-  await page.getByRole("button", { name: "Save internal location" }).click();
+  await page.getByRole("button", { name: "Save storage location" }).click();
   await expect(page.getByText("Receiving Bay A1", { exact: true })).toBeVisible();
   expect(writes.find(write => write.method === "PUT")?.body).toMatchObject({ code: "A-01", name: "Receiving Bay A1", location_type: "receiving", is_active: true });
 });
