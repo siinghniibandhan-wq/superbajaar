@@ -30,7 +30,7 @@ const employeeTransitions={
 };
 const managerOnlyTypes={
  recruitment:["job_opening","candidate","application","interview","offer"],
- performance:["review_cycle","review"],
+ performance:["review_template","review_cycle","review","calibration"],
  learning:["course","assessment","certificate"],
  assets:["asset","allocation","maintenance"],
  travel:["booking","advance"],
