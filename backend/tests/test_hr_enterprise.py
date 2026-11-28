@@ -15,13 +15,13 @@ def test_every_enterprise_hr_domain_has_record_types_and_workflow_states(domain)
 
 
 def test_recruitment_candidate_email_is_normalised():
-    result = _validate("recruitment", "candidate", {"email":"  CANDIDATE@EXAMPLE.COM "})
+    result = _validate("recruitment", "candidate", {"first_name":"Candidate","email":"  CANDIDATE@EXAMPLE.COM "})
     assert result["email"] == "candidate@example.com"
 
 
 def test_recruitment_candidate_rejects_invalid_email():
     with pytest.raises(HTTPException) as exc:
-        _validate("recruitment", "candidate", {"email":"not-an-email"})
+        _validate("recruitment", "candidate", {"first_name":"Candidate","email":"not-an-email"})
     assert exc.value.status_code == 422
 
 
@@ -437,3 +437,23 @@ def test_recruitment_duplicate_guard_reports_existing_application():
 def test_recruitment_job_can_close_when_headcount_is_filled():
     assert "closed" in STATUSES["recruitment"]
     assert "closed" in TRANSITIONS["recruitment"]["open"]
+
+
+def test_recruitment_candidate_requires_first_name():
+    with pytest.raises(HTTPException) as exc:
+        _validate("recruitment", "candidate", {"email":"candidate@example.com"})
+    assert exc.value.status_code == 422
+    assert "first name" in exc.value.detail.lower()
+
+
+@pytest.mark.parametrize("filled,capacity", [(0,1),(1,3),(2,3)])
+def test_recruitment_job_cannot_close_before_headcount_is_filled(filled,capacity):
+    from app.api.hr_enterprise import _ensure_job_opening_closable
+    with pytest.raises(HTTPException) as exc:
+        _ensure_job_opening_closable(filled,capacity)
+    assert exc.value.status_code == 409
+
+
+def test_recruitment_job_can_close_at_approved_headcount():
+    from app.api.hr_enterprise import _ensure_job_opening_closable
+    _ensure_job_opening_closable(3,3)
