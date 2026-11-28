@@ -681,7 +681,7 @@ def create_razorpay_order(payload: RazorpayOrderCreate, request: Request):
                         ).fetchone()
                     if amount_paise <= 0:
                         raise HTTPException(status_code=422, detail="Tender amount must be greater than zero")
-                    if existing and existing["provider_order_id"]:
+                    if existing and existing["provider_order_id"] and existing["status"] in {"pending","authorized"}:
                         return {
                             "key_id": settings.razorpay_key_id,
                             "razorpay_order_id": existing["provider_order_id"],
