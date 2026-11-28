@@ -2,7 +2,7 @@ import { useCallback,useEffect,useMemo,useState } from "react";
 import { apiRequest } from "../../services/api.js";
 
 const domains=[
- {id:"recruitment",label:"Recruitment",types:[["job_opening","Job opening",[["department","Department"],["employment_type","Employment type"],["location","Location"],["headcount","Headcount","number"],["description","Job description","textarea"]]],["candidate","Candidate",[["email","Email","email"],["phone","Phone"],["source","Source"],["resume_reference","Resume reference"]]],["application","Application",[["candidate_id","Candidate record ID","number"],["job_id","Job opening record ID","number"],["cover_note","Cover note","textarea"]]],["interview","Interview",[["application_id","Application record ID","number"],["scheduled_at","Scheduled date","date"],["interviewer_employee_id","Interviewer employee ID","number"],["interview_type","Interview type"]]],["offer","Offer",[["application_id","Application record ID","number"],["offered_salary","Offered salary","number"],["currency","Currency (e.g. INR)"],["expires_on","Offer expiry","date"]]]]},
+ {id:"recruitment",label:"Recruitment",types:[["job_opening","Job opening",[["department","Department"],["employment_type","Employment type"],["location","Location"],["headcount","Headcount","number"],["description","Job description","textarea"]]],["candidate","Candidate",[["first_name","First name"],["last_name","Last name"],["email","Email","email"],["phone","Phone"],["source","Source"],["resume_reference","Resume reference"]]],["application","Application",[["candidate_id","Candidate record ID","number"],["job_id","Job opening record ID","number"],["cover_note","Cover note","textarea"]]],["interview","Interview",[["application_id","Application record ID","number"],["scheduled_at","Scheduled date","date"],["interviewer_employee_id","Interviewer employee ID","number"],["interview_type","Interview type"]]],["offer","Offer",[["application_id","Application record ID","number"],["offered_salary","Offered salary","number"],["currency","Currency (e.g. INR)"],["expires_on","Offer expiry","date"]]]]},
  {id:"documents",label:"Employee documents",types:[["employee_document","Employee document",[["document_type","Document type","select"],["expiry_date","Expiry date (optional)","date"]]]]},
  {id:"performance",label:"Performance",types:[["review","Performance review",[["cycle","Review cycle"],["reviewer_employee_id","Reviewer employee ID","number"],["summary","Summary","textarea"],["rating","Rating","number"]]],["goal","Performance goal",[["description","Description","textarea"],["measure","Measurement"],["target","Target"],["due_date","Due date","date"]]],["review_cycle","Review cycle",[["period_start","Period start","date"],["period_end","Period end","date"]]],["feedback","Review feedback",[["review_id","Review record ID","number"],["feedback","Feedback","textarea"]]]]},
  {id:"learning",label:"Learning & development",types:[["course","Course",[["provider","Provider"],["course_type","Course type"],["description","Description","textarea"],["duration_hours","Duration (hours)","number"]]],["enrollment","Course enrollment",[["course_id","Course record ID","number"],["completion_due","Completion due","date"]]],["assessment","Course assessment",[["enrollment_id","Enrollment record ID","number"],["score","Score (0–100)","number"],["pass_score","Pass score (0–100)","number"]]],["certificate","Certificate",[["enrollment_id","Enrollment record ID","number"],["certificate_number","Certificate number"],["valid_until","Valid until","date"]]]]},
@@ -12,7 +12,7 @@ const domains=[
  {id:"analytics",label:"HR analytics",types:[["report","Saved report",[["report_type","Report type"],["filters","Filters (JSON)","textarea"],["description","Description","textarea"]]]]}
 ];
 const transitions={
- recruitment:{draft:["open","archived"],open:["screening","archived"],screening:["shortlisted","rejected","withdrawn"],shortlisted:["interview","rejected","withdrawn"],interview:["offered","rejected","withdrawn"],offered:["hired","rejected","withdrawn"]},
+ recruitment:{draft:["open","archived"],open:["screening","archived"],screening:["shortlisted","rejected","withdrawn"],shortlisted:["interview","rejected","withdrawn"],interview:["offered","rejected","withdrawn"],offered:["rejected","withdrawn"]},
  documents:{pending:["uploaded","archived"],uploaded:["under_review","rejected"],under_review:["verified","rejected","expired"],verified:["expired","archived"],rejected:["uploaded","archived"],expired:["uploaded","archived"]},
  performance:{draft:["active","cancelled"],active:["self_review","cancelled"],self_review:["manager_review"],manager_review:["calibration","acknowledged"],calibration:["acknowledged"],acknowledged:["closed"]},
  learning:{planned:["enrolled","cancelled"],enrolled:["in_progress","cancelled"],in_progress:["completed","failed"],failed:["enrolled"]},
@@ -46,6 +46,8 @@ export default function HREnterpriseWorkflows({manager,employees=[]}) {
  const [analyticsData,setAnalyticsData]=useState(null),[analyticsError,setAnalyticsError]=useState(""),[analyticsLoading,setAnalyticsLoading]=useState(false);
  const [eventRecord,setEventRecord]=useState(null),[recordEvents,setRecordEvents]=useState([]),[eventsBusy,setEventsBusy]=useState(false);
  const [recordSearch,setRecordSearch]=useState(""),[statusFilter,setStatusFilter]=useState("");
+ const [hireOffer,setHireOffer]=useState(null),[hireAccepted,setHireAccepted]=useState(false);
+ const [hireForm,setHireForm]=useState({employee_code:"",first_name:"",last_name:"",email:"",phone:"",department_id:"",designation:"",employment_type:"full_time",status:"active",joining_date:new Date().toISOString().slice(0,10),reports_to_employee_id:"",basic_salary:"0",hra:"0",special_allowance:"0",other_allowance:"0",acceptance_reference:""});
  const current=domains.find(x=>x.id===domain);
  const availableTypes=current.types.filter(x=>manager||!managerOnlyTypes[domain]?.includes(x[0]));
  const type=availableTypes.find(x=>x[0]===recordType)||availableTypes[0]||current.types[0];
@@ -104,6 +106,30 @@ export default function HREnterpriseWorkflows({manager,employees=[]}) {
    catch(e){setError(e.message||"Unable to load audit history.");}
    finally{setEventsBusy(false);}
  }
+ function startHire(item){
+   const application=items.find(x=>x.id===item.payload?.application_id&&x.payload?.record_type==="application");
+   const candidate=items.find(x=>x.id===application?.payload?.candidate_id&&x.payload?.record_type==="candidate");
+   const data=candidate?.payload||{};
+   setHireOffer(item);setHireAccepted(false);
+   setHireForm(old=>({...old,first_name:data.first_name||"",last_name:data.last_name||"",email:data.email||"",phone:data.phone||"",acceptance_reference:""}));
+ }
+ async function submitHire(e){
+   e.preventDefault();if(!hireOffer)return;
+   if(!hireAccepted){setError("Confirm that the candidate accepted this offer.");return;}
+   setBusy(true);setError("");setNotice("");
+   try{
+     const employee={...hireForm,user_id:null,department_id:hireForm.department_id?Number(hireForm.department_id):null,
+       reports_to_employee_id:hireForm.reports_to_employee_id?Number(hireForm.reports_to_employee_id):null};
+     delete employee.acceptance_reference;
+     const result=await apiRequest("/hr/enterprise/recruitment/"+hireOffer.id+"/hire",{method:"POST",body:JSON.stringify({
+       application_id:Number(hireOffer.payload.application_id),candidate_accepted:true,
+       acceptance_reference:hireForm.acceptance_reference||null,employee
+     })});
+     setNotice("Candidate hired as "+result.employee_code+". Onboarding tasks created: "+(result.onboarding_tasks_created||0)+".");
+     setHireOffer(null);setHireAccepted(false);await load();
+   }catch(e){setError(e.message||"Unable to convert candidate into an employee.");}
+   finally{setBusy(false);}
+ }
  const employeeNames=useMemo(()=>Object.fromEntries(employees.map(x=>[x.id,x.employee_code+" — "+x.first_name+" "+(x.last_name||"")])),[employees]);
  return <section className="hr-enterprise">
   <div className="hr-panel">
@@ -133,10 +159,32 @@ export default function HREnterpriseWorkflows({manager,employees=[]}) {
     {type[2].map(([key,label,inputType])=><label key={key}>{label}{inputType==="select"?<select required value={fields[key]||"identity"} onChange={e=>update(key,e.target.value)}><option value="identity">Identity</option><option value="address">Address</option><option value="qualification">Qualification</option><option value="employment">Employment</option><option value="contract">Contract</option><option value="policy_acknowledgement">Policy acknowledgement</option><option value="other">Other</option></select>:inputType==="textarea"?<textarea rows="2" value={fields[key]||""} onChange={e=>update(key,e.target.value)}/>:<input type={inputType||"text"} required value={fields[key]||""} onChange={e=>update(key,e.target.value)}/>}</label>)}\n    {domain==="documents"&&<label>Document file<input type="file" accept="application/pdf,image/jpeg,image/png" required onChange={e=>setDocumentFile(e.target.files?.[0]||null)}/><small>Private encrypted storage · PDF/JPEG/PNG · maximum 10 MB</small></label>}
     <button disabled={busy}>Create {type[1].toLowerCase()}</button>
    </form>
+   {hireOffer&&manager&&<section className="hr-panel"><div className="hr-directory-heading"><div><h3>Convert accepted offer to employee</h3><p>This creates the employee identity, opening salary profile and any configured onboarding checklist tasks.</p></div><button type="button" className="hr-secondary" onClick={()=>setHireOffer(null)}>Cancel</button></div>
+    <form className="hr-form hr-grid" onSubmit={submitHire}>
+     <label>Employee code<input required value={hireForm.employee_code} onChange={e=>setHireForm({...hireForm,employee_code:e.target.value})}/></label>
+     <label>First name<input required value={hireForm.first_name} onChange={e=>setHireForm({...hireForm,first_name:e.target.value})}/></label>
+     <label>Last name<input value={hireForm.last_name} onChange={e=>setHireForm({...hireForm,last_name:e.target.value})}/></label>
+     <label>Email<input required type="email" value={hireForm.email} onChange={e=>setHireForm({...hireForm,email:e.target.value})}/></label>
+     <label>Phone<input value={hireForm.phone} onChange={e=>setHireForm({...hireForm,phone:e.target.value})}/></label>
+     <label>Department ID<input type="number" min="1" value={hireForm.department_id} onChange={e=>setHireForm({...hireForm,department_id:e.target.value})}/></label>
+     <label>Designation<input required value={hireForm.designation} onChange={e=>setHireForm({...hireForm,designation:e.target.value})}/></label>
+     <label>Employment type<select value={hireForm.employment_type} onChange={e=>setHireForm({...hireForm,employment_type:e.target.value})}><option value="full_time">Full time</option><option value="part_time">Part time</option><option value="contract">Contract</option><option value="intern">Intern</option><option value="shift_worker">Shift worker</option></select></label>
+     <label>Employment status<select value={hireForm.status} onChange={e=>setHireForm({...hireForm,status:e.target.value})}><option value="active">Active</option><option value="probation">Probation</option></select></label>
+     <label>Joining date<input required type="date" value={hireForm.joining_date} onChange={e=>setHireForm({...hireForm,joining_date:e.target.value})}/></label>
+     <label>Reporting manager employee ID<input type="number" min="1" value={hireForm.reports_to_employee_id} onChange={e=>setHireForm({...hireForm,reports_to_employee_id:e.target.value})}/></label>
+     <label>Basic salary (monthly)<input required type="number" min="0" step="0.01" value={hireForm.basic_salary} onChange={e=>setHireForm({...hireForm,basic_salary:e.target.value})}/></label>
+     <label>HRA<input required type="number" min="0" step="0.01" value={hireForm.hra} onChange={e=>setHireForm({...hireForm,hra:e.target.value})}/></label>
+     <label>Special allowance<input required type="number" min="0" step="0.01" value={hireForm.special_allowance} onChange={e=>setHireForm({...hireForm,special_allowance:e.target.value})}/></label>
+     <label>Other allowance<input required type="number" min="0" step="0.01" value={hireForm.other_allowance} onChange={e=>setHireForm({...hireForm,other_allowance:e.target.value})}/></label>
+     <label>Offer acceptance reference<input value={hireForm.acceptance_reference} onChange={e=>setHireForm({...hireForm,acceptance_reference:e.target.value})} placeholder="Signed offer / email reference"/></label>
+     <label className="hr-check"><input type="checkbox" checked={hireAccepted} onChange={e=>setHireAccepted(e.target.checked)}/> Candidate acceptance has been confirmed</label>
+     <button disabled={busy||!hireAccepted}>Create employee and start onboarding</button>
+    </form>
+   </section>}
    <div className="hr-directory-heading"><h3>Records</h3><span className="hr-directory-count">{items.length} shown</span></div>
    <div className="hr-toolbar"><label>Search records<input value={recordSearch} onChange={e=>setRecordSearch(e.target.value)} placeholder="Search title or employee"/></label><label>Status<select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}><option value="">All statuses</option>{[...new Set(items.map(x=>x.status))].sort().map(s=><option key={s} value={s}>{s.replaceAll("_"," ")}</option>)}</select></label><button type="button" className="hr-secondary" onClick={()=>{setRecordSearch("");setStatusFilter("");}}>Reset filters</button></div>
    <div className="hr-table-wrap"><table><thead><tr><th>Record</th><th>Employee</th><th>Status</th><th>Updated</th><th>Workflow actions</th></tr></thead><tbody>
-    {items.filter(item=>(!statusFilter||item.status===statusFilter)&&(!recordSearch||[item.title,employeeNames[item.employee_id]||""].join(" ").toLowerCase().includes(recordSearch.toLowerCase()))).map(item=><tr key={item.id}><td><strong>{item.title}</strong><small>#{item.id} · {item.payload?.record_type||"Record"}</small></td><td>{employeeNames[item.employee_id]||"—"}</td><td>{item.status}</td><td>{item.updated_at?new Date(item.updated_at).toLocaleString():"—"}</td><td>{domain==="documents"&&["uploaded","under_review","verified"].includes(item.status)&&<button type="button" disabled={busy} onClick={async()=>{try{const result=await apiRequest("/hr/enterprise/documents/"+item.id+"/download",{method:"POST",body:"{}"});window.open(result.url,"_blank","noopener,noreferrer");}catch(e){setError(e.message||"Unable to download document.");}}}>Secure download</button>}{(manager?(transitions[domain]?.[item.status]||[]):(employeeTransitions[domain]?.[item.status]||[])).map(next=><button type="button" key={next} disabled={busy} onClick={()=>transition(item,next)}>{next.replaceAll("_"," ")}</button>)}{manager&&<button type="button" className="hr-secondary" disabled={busy} onClick={()=>showEvents(item)}>Audit trail</button>}</td></tr>)}
+    {items.filter(item=>(!statusFilter||item.status===statusFilter)&&(!recordSearch||[item.title,employeeNames[item.employee_id]||""].join(" ").toLowerCase().includes(recordSearch.toLowerCase()))).map(item=><tr key={item.id}><td><strong>{item.title}</strong><small>#{item.id} · {item.payload?.record_type||"Record"}</small></td><td>{employeeNames[item.employee_id]||"—"}</td><td>{item.status}</td><td>{item.updated_at?new Date(item.updated_at).toLocaleString():"—"}</td><td>{domain==="documents"&&["uploaded","under_review","verified"].includes(item.status)&&<button type="button" disabled={busy} onClick={async()=>{try{const result=await apiRequest("/hr/enterprise/documents/"+item.id+"/download",{method:"POST",body:"{}"});window.open(result.url,"_blank","noopener,noreferrer");}catch(e){setError(e.message||"Unable to download document.");}}}>Secure download</button>}{manager&&domain==="recruitment"&&item.payload?.record_type==="offer"&&item.status==="offered"&&<button type="button" disabled={busy} onClick={()=>startHire(item)}>Convert to employee</button>}{(manager?(transitions[domain]?.[item.status]||[]):(employeeTransitions[domain]?.[item.status]||[])).map(next=><button type="button" key={next} disabled={busy} onClick={()=>transition(item,next)}>{next.replaceAll("_"," ")}</button>)}{manager&&<button type="button" className="hr-secondary" disabled={busy} onClick={()=>showEvents(item)}>Audit trail</button>}</td></tr>)}
     {!items.filter(item=>(!statusFilter||item.status===statusFilter)&&(!recordSearch||[item.title,employeeNames[item.employee_id]||""].join(" ").toLowerCase().includes(recordSearch.toLowerCase()))).length&&<tr><td colSpan="5">{busy?"Loading…":"No records match these filters."}</td></tr>}
    </tbody></table></div>
    {eventRecord&&manager&&<section className="hr-panel"><div className="hr-directory-heading"><h3>Audit trail · {eventRecord.title}</h3><button type="button" className="hr-secondary" onClick={()=>{setEventRecord(null);setRecordEvents([]);}}>Close</button></div>{eventsBusy?<p role="status">Loading audit events…</p>:<ol>{recordEvents.map(ev=><li key={ev.id}><strong>{ev.event_type}</strong> · {ev.from_status||"—"} → {ev.to_status||"—"} · {ev.created_at?new Date(ev.created_at).toLocaleString():""}{ev.note&&<p>{ev.note}</p>}</li>)}{!recordEvents.length&&<li>No audit events found.</li>}</ol>}</section>}
