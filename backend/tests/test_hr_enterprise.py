@@ -351,3 +351,16 @@ def test_archive_event_records_the_record_id_and_complete_state(monkeypatch):
     assert event_params[2] == '{"id": 23, "domain": "assets", "status": "available", "version": 1}'
     assert event_params[3] == '{"id": 23, "domain": "assets", "status": "archived", "version": 2}'
     assert event_params[4] == 7
+
+
+@pytest.mark.parametrize("status", ["draft", "approved", "booked", "in_progress", "claimed", "reimbursed"])
+def test_travel_claim_rejects_non_completed_status(status):
+    from app.api.hr_enterprise import _ensure_travel_claimable
+    with pytest.raises(HTTPException) as exc:
+        _ensure_travel_claimable(status)
+    assert exc.value.status_code == 409
+
+
+def test_travel_claim_accepts_completed_status():
+    from app.api.hr_enterprise import _ensure_travel_claimable
+    _ensure_travel_claimable("completed")
