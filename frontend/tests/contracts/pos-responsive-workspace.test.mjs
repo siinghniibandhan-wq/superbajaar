@@ -35,3 +35,15 @@ test("responsive presentation retains the existing register, shift and checkout 
   assert.match(workspace, /confirm-cash/);
   assert.match(workspace, /checkout_idempotency_key/);
 });
+
+
+test("POS sales history exposes server-side search, date, register and tender filters", () => {
+  assert.match(workspace, /salesFilters/);
+  assert.match(workspace, /date_from/);
+  assert.match(workspace, /date_to/);
+  assert.match(workspace, /payment_method/);
+  assert.match(workspace, /register_id/);
+  assert.match(workspace, /apiRequest\("\/pos\/sales\?"/);
+  assert.match(workspace, /Apply filters/);
+  assert.match(workspace, /Clear/);
+});
