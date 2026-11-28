@@ -42,7 +42,7 @@ def test_pos_summary_separates_captured_and_pending(monkeypatch):
     assert result["orders"]["order_value"] == 900
     assert result["payments"]["captured_amount"] == 200
     assert result["payments"]["pending_amount"] == 700
-    assert "p.status='captured'" in conn.queries[1][0]
+    assert "p.status IN ('captured','refunded')" in conn.queries[1][0]
     assert "p.status IN ('pending','authorized')" in conn.queries[1][0]
 
 
