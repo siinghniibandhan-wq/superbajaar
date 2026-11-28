@@ -47,3 +47,12 @@ test("POS sales history exposes server-side search, date, register and tender fi
   assert.match(workspace, /Apply filters/);
   assert.match(workspace, /Clear/);
 });
+
+
+test("POS sales history opens server-backed item and payment details", () => {
+  assert.match(workspace, /openSaleDetails/);
+  assert.match(workspace, /apiRequest\("\/pos\/sales\/" \+ saleId\)/);
+  assert.match(workspace, /selectedSale\.lines/);
+  assert.match(workspace, /selectedSale\.payments/);
+  assert.match(workspace, /Close details/);
+});
