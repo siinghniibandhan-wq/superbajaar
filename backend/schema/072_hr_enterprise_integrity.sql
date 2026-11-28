@@ -19,4 +19,4 @@ CREATE UNIQUE INDEX IF NOT EXISTS hr_enterprise_document_object_key_uq
 
 CREATE INDEX IF NOT EXISTS hr_enterprise_expiry_due_idx
   ON public.hr_enterprise_records(domain,due_date)
-  WHERE domain IN ('documents','learning','assets','travel','exit') AND due_date IS NOT NULL;
+  WHERE domain IN ('documents','learning','assets','travel','exit','recruitment') AND due_date IS NOT NULL;
