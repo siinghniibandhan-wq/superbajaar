@@ -55,7 +55,7 @@ test("POS creates order and pending tender atomically with a retry-safe checkout
   await expect(chargeButton).toBeEnabled();
   await chargeButton.click();
   await expect(page.getByRole("dialog", { name: "Sale receipt" }).getByText("SB-POS-101", { exact: true })).toBeVisible();
-  await expect(page.getByText(/PAY-POS-201 · pending/)).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Sale receipt" }).getByText(/pending · PAY-POS-201/)).toBeVisible();
   expect(orderCreated).toBeTruthy();
   expect(writes).toHaveLength(1);
   expect(writes[0].body).toMatchObject({
