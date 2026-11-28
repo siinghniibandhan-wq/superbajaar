@@ -489,4 +489,4 @@ def test_recruitment_email_uses_authenticated_starttls_smtp(monkeypatch):
     mailer.send_candidate_email(recipient="candidate@example.com",subject=" Interview ",body="Details")
     assert ("starttls",) in sent
     assert ("login","hr@example.com","test-secret") in sent
-    assert ("send","candidate@example.com"," Interview ") in sent
+    assert ("send","candidate@example.com","Interview") in sent
