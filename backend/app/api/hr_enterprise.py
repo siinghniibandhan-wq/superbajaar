@@ -45,7 +45,7 @@ TRANSITIONS = {
 MANAGER_ONLY_TYPES = {
  "recruitment":{"job_opening","candidate","application","interview","offer"},
  "assets":{"asset","allocation","maintenance"},
- "performance":{"review_cycle","review"},
+ "performance":{"review_template","review_cycle","review","calibration"},
  "learning":{"course","assessment","certificate"},
  "travel":{"booking","advance"},
  "exit":{"clearance","settlement"},
@@ -71,6 +71,8 @@ def _initial_status(domain, record_type):
         ("documents", "employee_document"): "pending",
         ("performance", "feedback"): "acknowledged",
         ("performance", "self_review"): "self_review",
+        ("performance", "calibration"): "calibration",
+        ("performance", "acknowledgement"): "acknowledged",
         ("learning", "assessment"): "completed",
         ("learning", "certificate"): "completed",
         ("assets", "maintenance"): "maintenance",
@@ -99,11 +101,14 @@ REQUIRED = {
  },
  "documents":{"employee_document":["document_type","file_name","object_key","content_type","sha256"]},
  "performance":{
+  "review_template":["name","sections","rating_scale"],
   "review_cycle":["period_start","period_end"],
   "review":["cycle","reviewer_employee_id"],
   "self_review":["cycle","summary","rating","achievements","development_areas"],
   "goal":["description","measure","target"],
-  "feedback":["review_id","feedback"]
+  "feedback":["review_id","feedback"],
+  "calibration":["review_id","calibrated_rating","rationale"],
+  "acknowledgement":["review_id","acknowledgement"]
  },
  "learning":{
   "course":["provider","course_type"],
@@ -305,6 +310,25 @@ def _validate(domain, record_type, payload):
         except InvalidOperation: raise HTTPException(422,"Self-review rating must be numeric")
         if rating<1 or rating>5: raise HTTPException(422,"Self-review rating must be between 1 and 5")
         data["rating"]=str(rating)
+    if domain=="performance" and record_type=="goal" and data.get("weight") not in (None,""):
+        try: weight=Decimal(str(data["weight"]))
+        except InvalidOperation: raise HTTPException(422,"Goal weight must be numeric")
+        if weight<=0 or weight>100: raise HTTPException(422,"Goal weight must be greater than zero and no more than 100")
+        data["weight"]=str(weight)
+    if domain=="performance" and record_type=="review_template":
+        try: sections=json.loads(data["sections"]) if isinstance(data["sections"],str) else data["sections"]
+        except (ValueError,TypeError): raise HTTPException(422,"Review template sections must be valid JSON")
+        if not isinstance(sections,list) or not sections:
+            raise HTTPException(422,"Review template must contain at least one section")
+        try: scale=int(data["rating_scale"])
+        except (ValueError,TypeError): raise HTTPException(422,"Rating scale must be an integer")
+        if scale<2 or scale>10: raise HTTPException(422,"Rating scale must be between 2 and 10")
+        data["sections"]=sections; data["rating_scale"]=scale
+    if domain=="performance" and record_type=="calibration":
+        try: rating=Decimal(str(data["calibrated_rating"]))
+        except InvalidOperation: raise HTTPException(422,"Calibrated rating must be numeric")
+        if rating<1 or rating>5: raise HTTPException(422,"Calibrated rating must be between 1 and 5")
+        data["calibrated_rating"]=str(rating)
     if domain=="learning" and record_type=="assessment":
         try: score=Decimal(str(data["score"])); passing=Decimal(str(data["pass_score"])); enrollment_id=int(data["enrollment_id"])
         except (InvalidOperation,ValueError,TypeError): raise HTTPException(422,"Assessment enrollment and scores must be valid")
