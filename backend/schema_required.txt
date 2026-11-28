@@ -71,3 +71,4 @@
 070_hr_employee_records.sql
 071_hr_enterprise_workflows.sql
 072_hr_enterprise_integrity.sql
+073_recruitment_integrity.sql
