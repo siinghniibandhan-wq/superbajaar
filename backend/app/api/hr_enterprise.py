@@ -752,6 +752,26 @@ def _validate(domain, record_type, payload):
         try: gross=Decimal(str(data["gross_due"])); deductions=Decimal(str(data["deductions"])); net=Decimal(str(data["net_due"])); payable=date.fromisoformat(str(data["payable_on"]))
         except (ValueError,InvalidOperation): raise HTTPException(422,"Exit settlement amounts or payable date are invalid")
         if min(gross,deductions,net)<0 or gross-deductions!=net: raise HTTPException(422,"Exit settlement net due must equal gross due less deductions")
+        for field,expected in (("earnings_breakdown",gross),("deductions_breakdown",deductions)):
+            components=data.get(field)
+            if components is not None:
+                if isinstance(components,str):
+                    try: components=json.loads(components)
+                    except (ValueError,TypeError): raise HTTPException(422,f"{field.replace('_',' ').title()} must be valid JSON")
+                if not isinstance(components,list):
+                    raise HTTPException(422,f"{field.replace('_',' ').title()} must be a list")
+                total=Decimal("0")
+                for component in components:
+                    if not isinstance(component,dict) or len(str(component.get("type","")).strip())<2:
+                        raise HTTPException(422,f"Every {field.replace('_',' ')} item requires a type")
+                    try: amount=Decimal(str(component.get("amount","")))
+                    except InvalidOperation: raise HTTPException(422,f"Every {field.replace('_',' ')} amount must be numeric")
+                    if amount<0: raise HTTPException(422,"Settlement components cannot be negative")
+                    component["amount"]=str(amount)
+                    total+=amount
+                if total!=expected:
+                    raise HTTPException(422,f"{field.replace('_',' ').title()} components must add up to {expected}")
+                data[field]=components
         data.update({"gross_due":str(gross),"deductions":str(deductions),"net_due":str(net),"payable_on":payable.isoformat()})
     return data
 
