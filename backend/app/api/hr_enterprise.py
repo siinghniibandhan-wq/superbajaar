@@ -23,7 +23,7 @@ DOMAINS = {"recruitment","documents","performance","learning","assets","travel",
 MANAGER_ROLES = {"super_admin","owner","admin","manager"}
 EMPLOYEE_DOMAINS = {"documents","performance","learning","assets","travel","exit"}
 STATUSES = {
- "recruitment":{"draft","open","screening","shortlisted","interview","offered","hired","rejected","withdrawn","completed","archived"},
+ "recruitment":{"draft","open","closed","screening","shortlisted","interview","offered","hired","rejected","withdrawn","completed","archived"},
  "documents":{"pending","uploaded","under_review","verified","rejected","expired","archived"},
  "performance":{"draft","active","self_review","manager_review","calibration","acknowledged","closed","cancelled"},
  "learning":{"planned","enrolled","in_progress","completed","failed","cancelled"},
@@ -33,7 +33,7 @@ STATUSES = {
  "analytics":{"saved","scheduled","archived"}
 }
 TRANSITIONS = {
- "recruitment":{"draft":{"open","archived"},"open":{"screening","archived"},"screening":{"shortlisted","rejected","withdrawn"},"shortlisted":{"interview","rejected","withdrawn"},"interview":{"offered","rejected","withdrawn"},"offered":{"rejected","withdrawn"}},
+ "recruitment":{"draft":{"open","archived"},"open":{"screening","closed","archived"},"screening":{"shortlisted","rejected","withdrawn"},"shortlisted":{"interview","rejected","withdrawn"},"interview":{"offered","rejected","withdrawn"},"offered":{"rejected","withdrawn"}},
  "documents":{"pending":{"uploaded","archived"},"uploaded":{"under_review","rejected"},"under_review":{"verified","rejected","expired"},"verified":{"expired","archived"},"rejected":{"uploaded","archived"},"expired":{"uploaded","archived"}},
  "performance":{"draft":{"active","cancelled"},"active":{"self_review","cancelled"},"self_review":{"manager_review"},"manager_review":{"calibration","acknowledged"},"calibration":{"acknowledged"},"acknowledged":{"closed"}},
  "learning":{"planned":{"enrolled","cancelled"},"enrolled":{"in_progress","cancelled"},"in_progress":{"completed","failed"},"failed":{"enrolled"}},
