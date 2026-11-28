@@ -16,7 +16,7 @@ const transitions={
  documents:{pending:["uploaded","archived"],uploaded:["under_review","rejected"],under_review:["verified","rejected","expired"],verified:["expired","archived"],rejected:["uploaded","archived"],expired:["uploaded","archived"]},
  performance:{draft:["active","cancelled"],active:["self_review","cancelled"],self_review:["manager_review"],manager_review:["calibration","acknowledged"],calibration:["acknowledged"],acknowledged:["closed"]},
  learning:{planned:["enrolled","cancelled"],enrolled:["in_progress","cancelled"],in_progress:["completed","failed"],failed:["enrolled"]},
- assets:{requested:["approved","rejected"],approved:["assigned","rejected"],assigned:["returned","maintenance","written_off"],maintenance:["assigned","written_off"],returned:["maintenance","written_off"]},
+ assets:{available:["assigned","maintenance","written_off"],requested:["approved","rejected"],approved:["assigned","rejected"],assigned:["returned","maintenance","written_off"],maintenance:["assigned","written_off"],returned:["maintenance","written_off"]},
  travel:{draft:["submitted","cancelled"],submitted:["approved","rejected"],approved:["booked","cancelled"],booked:["in_progress","cancelled"],in_progress:["completed"],completed:["claimed"],claimed:["reimbursed"]},
  exit:{initiated:["notice_period","withdrawn"],notice_period:["handover","withdrawn"],handover:["clearance"],clearance:["settlement_review"],settlement_review:["completed"]},
  analytics:{saved:["scheduled","archived"],scheduled:["saved","archived"]}
