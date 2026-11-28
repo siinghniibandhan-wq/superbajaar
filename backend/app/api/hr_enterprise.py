@@ -45,6 +45,7 @@ TRANSITIONS = {
 MANAGER_ONLY_TYPES = {
  "recruitment":{"job_opening","candidate","application","interview","offer"},
  "assets":{"asset","allocation","maintenance"},
+ "performance":{"review_cycle","review"},
  "learning":{"course","assessment","certificate"},
  "travel":{"booking","advance"},
  "exit":{"clearance","settlement"},
