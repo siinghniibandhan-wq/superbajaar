@@ -169,15 +169,21 @@ class EmergencyContactInput(BaseModel):
     address: str | None = Field(default=None, max_length=500)
     is_primary: bool = False
 
-    @field_validator("contact_name", "relationship", "phone", "alternate_phone", "address")
+    @field_validator("contact_name", "relationship", "phone")
     @classmethod
-    def trim_contact_values(cls, value):
+    def trim_required_contact_values(cls, value):
+        value = value.strip()
+        if not value:
+            raise ValueError("Contact name, relationship and phone are required")
+        return value
+
+    @field_validator("alternate_phone", "address")
+    @classmethod
+    def trim_optional_contact_values(cls, value):
         if value is None:
             return None
         value = value.strip()
-        if not value:
-            return None
-        return value
+        return value or None
 
     @field_validator("email")
     @classmethod
@@ -202,9 +208,17 @@ class EmploymentHistoryInput(BaseModel):
     end_date: date | None = None
     description: str | None = Field(default=None, max_length=1000)
 
-    @field_validator("employer_name", "job_title", "location", "description")
+    @field_validator("employer_name", "job_title")
     @classmethod
-    def trim_history_values(cls, value):
+    def trim_required_history_values(cls, value):
+        value = value.strip()
+        if not value:
+            raise ValueError("Employer name and job title are required")
+        return value
+
+    @field_validator("location", "description")
+    @classmethod
+    def trim_optional_history_values(cls, value):
         if value is None:
             return None
         value = value.strip()
