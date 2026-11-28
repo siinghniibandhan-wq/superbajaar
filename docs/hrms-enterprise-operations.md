@@ -12,6 +12,10 @@ Employee document uploads require all of the following:
 - Optional `SB_DOCUMENT_CLAMAV_PORT` (default `3310`).
 - Optional `SB_DOCUMENT_CLAMAV_TIMEOUT_SECONDS` (default `10`, maximum `60`).
 
+A loopback-only ClamAV service definition is provided at `deploy/hrms/clamav.compose.yml`. Start it with `docker compose -f deploy/hrms/clamav.compose.yml up -d`, then set `SB_DOCUMENT_CLAMAV_HOST=127.0.0.1` and `SB_DOCUMENT_CLAMAV_PORT=3310` in the backend service environment. The first signature database download can take several minutes. Verify service health before enabling document uploads.
+
+Run `bash deploy/hrms/s3-bucket-security-check.sh` with an AWS identity that can inspect the bucket. It fails unless all S3 public-access blocks are enabled, default encryption is AES256, versioning is enabled and the bucket policy is not public.
+
 Uploads are blocked when the malware scanner is missing or unavailable. Files are checked by ClamAV before private S3 storage, and verification is blocked unless the stored scan result is clean. Downloads remain short-lived, employee-scoped and encryption-checked.
 
 Set a document expiry date separately from its retention deletion date. HR can place a legal hold by setting `payload.legal_hold=true` on the document record. Expiry reminders for documents, learning certificates and asset warranties are stored as employee-scoped in-app notifications. An authorised HR manager can refresh the reminder queue with `POST /hr/enterprise/notifications/refresh`; employees can view and acknowledge their own reminders through `GET /hr/enterprise/notifications` and `POST /hr/enterprise/notifications/{id}/read`. An external scheduler can invoke the refresh endpoint daily.
@@ -83,3 +87,17 @@ The feature branch adds migrations 071–074 for enterprise workflow records, in
 - Configure an external scheduler to invoke document-retention execution and any approved reminder/report jobs.
 - Run migrations against a staging database and verify payroll, leave, identity and accounting integrations.
 - Complete manual browser QA at phone, tablet and desktop widths.
+
+
+## Staging browser QA
+
+The frontend has Playwright configured. After staging is deployed with migrations applied and HR test users/data configured, run:
+
+```bash
+cd frontend
+npm ci
+npx playwright install --with-deps chromium
+npm run test:e2e
+```
+
+The current Playwright config starts a local production preview. Run the suite against staging only with a dedicated staging Playwright config that disables the local webServer and sets `baseURL` to the staging host. Cover manager and employee roles, all seven domain tabs, mobile width (390px), tablet width (768px), desktop width (1440px), upload/scanning failure, booking provider failure/retry, advance voucher idempotency, exit policy approval, leave/loan calculations, report exports and retention legal holds. Capture screenshots and traces for failures. This branch does not have access to the target staging host or seeded test identities, so live staging browser QA remains an environment execution gate.
