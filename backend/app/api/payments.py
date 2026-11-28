@@ -186,7 +186,7 @@ def create_payment_refund(
                         """INSERT INTO payment_refunds(payment_id,order_id,amount,status,idempotency_key,note,created_by_user_id,created_by_email)
                            VALUES(%s,%s,%s,'pending',%s,%s,%s,%s)
                            RETURNING id,payment_id,order_id,amount,status,idempotency_key,note,created_at""",
-                        (payment_id,payment["order_id"],payload.amount,idempotency_key,payload.note,int(actor_id),str(actor_email)),
+                        (payment_id,payment["order_id"],payload.amount,shift_id,idempotency_key,payload.note,int(actor_id),str(actor_email)),
                     ).fetchone()
                     provider_payment_id = payment["provider_reference"]
                 amount_paise = int((payload.amount * 100).quantize(Decimal("1")))
@@ -276,14 +276,19 @@ def create_manual_payment_refund(
                 remaining = Decimal(str(payment["amount"])) - Decimal(str(refunded))
                 if payload.amount > remaining:
                     raise HTTPException(status_code=422, detail=f"Refund exceeds the remaining refundable amount {remaining}")
-                shift_id = payment["pos_register_shift_id"]
+                shift_id = None
                 if payment["method"] == "cod" and payment["channel"] == "pos":
-                    shift = conn.execute("SELECT status FROM pos_register_shifts WHERE id=%s FOR UPDATE", (shift_id,)).fetchone()
-                    if not shift or shift["status"] != "open":
-                        raise HTTPException(status_code=409, detail="Cash refunds against POS sales must be recorded during an open cashier shift")
+                    original_shift = conn.execute("SELECT register_id FROM pos_register_shifts WHERE id=%s", (payment["pos_register_shift_id"],)).fetchone()
+                    open_shift = conn.execute(
+                        "SELECT id,status FROM pos_register_shifts WHERE register_id=%s AND status='open' ORDER BY opened_at DESC LIMIT 1 FOR UPDATE",
+                        (original_shift["register_id"] if original_shift else None,),
+                    ).fetchone()
+                    if not open_shift:
+                        raise HTTPException(status_code=409, detail="Cash refunds against POS sales must be recorded during an open cashier shift at the original counter")
+                    shift_id = open_shift["id"]
                 refund = conn.execute(
-                    "INSERT INTO payment_refunds(payment_id,order_id,amount,status,provider,idempotency_key,note,created_by_user_id,created_by_email) "
-                    "VALUES(%s,%s,%s,'processed','manual',%s,%s,%s,%s) "
+                    "INSERT INTO payment_refunds(payment_id,order_id,amount,status,provider,pos_shift_id,idempotency_key,note,created_by_user_id,created_by_email) "
+                    "VALUES(%s,%s,%s,'processed','manual',%s,%s,%s,%s,%s) "
                     "RETURNING id,payment_id,order_id,amount,status,provider,provider_refund_id,idempotency_key,note,created_at",
                     (payment_id,payment["order_id"],payload.amount,idempotency_key,payload.note,int(actor_id),str(actor_email)),
                 ).fetchone()
