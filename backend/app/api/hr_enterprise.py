@@ -108,7 +108,7 @@ REQUIRED = {
   "review_cycle":["period_start","period_end"],
   "review":["cycle_id","reviewer_employee_id","template_id"],
   "self_review":["cycle_id","summary","rating","achievements","development_areas"],
-  "goal":["description","measure","target"],
+  "goal":["cycle_id","description","measure","target"],
   "feedback":["review_id","feedback"],
   "calibration":["review_id","calibrated_rating","rationale"],
   "acknowledgement":["review_id","acknowledgement"]
@@ -190,6 +190,7 @@ def _validate_references(conn, domain, record_type, data):
         ("recruitment","offer"): {"application_id": ("recruitment","application")},
         ("performance","review"): {"template_id": ("performance","review_template"),"cycle_id": ("performance","review_cycle")},
         ("performance","self_review"): {"cycle_id": ("performance","review_cycle")},
+        ("performance","goal"): {"cycle_id": ("performance","review_cycle")},
         ("performance","feedback"): {"review_id": ("performance","review")},
         ("performance","calibration"): {"review_id": ("performance","review")},
         ("performance","acknowledgement"): {"review_id": ("performance","review")},
@@ -238,6 +239,10 @@ def _validate_references(conn, domain, record_type, data):
         cycle=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["cycle_id"],)).fetchone()
         if cycle["status"]!="self_review":
             raise HTTPException(409,"The review cycle must be open for employee self-review")
+    if domain=="performance" and record_type=="goal":
+        cycle=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["cycle_id"],)).fetchone()
+        if cycle["status"] not in {"active","self_review"}:
+            raise HTTPException(409,"Goals can be added only to an active performance cycle")
     if domain=="performance" and record_type=="review":
         cycle=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["cycle_id"],)).fetchone()
         if cycle["status"] not in {"manager_review","calibration"}:
