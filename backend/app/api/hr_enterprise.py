@@ -615,10 +615,20 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                     data["expense_id"]=expense["id"]
                 data["record_type"]=payload.record_type
                 status=_initial_status(domain,payload.record_type)
+                due_date=payload.due_date
+                if due_date is None:
+                    if domain=="learning" and payload.record_type=="certificate":
+                        due_date=date.fromisoformat(str(data["valid_until"]))
+                    elif domain=="exit" and payload.record_type=="case":
+                        due_date=date.fromisoformat(str(data["last_working_date"]))
+                    elif domain=="travel" and payload.record_type=="request":
+                        due_date=date.fromisoformat(str(data["end_date"]))
+                    elif domain=="assets" and payload.record_type=="asset_request":
+                        due_date=date.fromisoformat(str(data["needed_by"]))
                 row=conn.execute(
                   "INSERT INTO hr_enterprise_records(domain,employee_id,parent_id,title,status,payload,effective_date,due_date,created_by_user_id,updated_by_user_id) "
                   "VALUES(%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s) RETURNING *",
-                  (domain,employee_id,payload.parent_id,payload.title,status,json.dumps(data,default=str),payload.effective_date,payload.due_date,actor,actor)
+                  (domain,employee_id,payload.parent_id,payload.title,status,json.dumps(data,default=str),payload.effective_date,due_date,actor,actor)
                 ).fetchone()
                 conn.execute("INSERT INTO hr_enterprise_events(record_id,event_type,to_status,after_state,actor_user_id) VALUES(%s,'created',%s,%s::jsonb,%s)",
                   (row["id"],status,json.dumps(dict(row),default=str),actor))
