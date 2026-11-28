@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     razorpay_key_id: str = ""
     razorpay_key_secret: str = ""
     razorpay_webhook_secret: str = ""
+    # GST registration used to validate the dispatch origin and derive the supplier state code.
+    company_gstin: str = Field(default="", validation_alias=AliasChoices("COMPANY_GSTIN", "SB_COMPANY_GSTIN"))
     # Social sign-in. Leave client ids empty to hide/disable a provider.
     google_oauth_client_id: str = ""
     google_oauth_client_secret: str = ""

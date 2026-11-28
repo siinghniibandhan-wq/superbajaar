@@ -1,5 +1,7 @@
 """POS reporting/read APIs backed by the existing order and payment ledger."""
 import psycopg
+from datetime import date
+from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query
 from psycopg.rows import dict_row
 
@@ -36,39 +38,75 @@ def pos_summary():
             ).fetchone()
             payments = conn.execute(
                 """SELECT count(*) AS payment_count,
-                          count(*) FILTER (WHERE p.status='captured') AS captured_count,
-                          COALESCE(sum(amount) FILTER (WHERE p.status='captured'), 0) AS captured_amount,
+                          count(*) FILTER (WHERE p.status IN ('captured','refunded')) AS captured_count,
+                          COALESCE(sum(amount) FILTER (WHERE p.status IN ('captured','refunded')), 0) AS captured_amount,
                           count(*) FILTER (WHERE p.status IN ('pending','authorized')) AS pending_count,
                           COALESCE(sum(amount) FILTER (WHERE p.status IN ('pending','authorized')), 0) AS pending_amount
                    FROM payments p JOIN orders o ON o.id=p.order_id WHERE o.channel='pos'"""
             ).fetchone()
-        return {"source": "postgresql", "orders": orders, "payments": payments}
+            refunds = conn.execute(
+                """SELECT count(*) FILTER (WHERE r.status='processed') AS processed_count,
+                          COALESCE(sum(r.amount) FILTER (WHERE r.status='processed'),0) AS processed_amount,
+                          count(*) FILTER (WHERE r.status='pending') AS pending_count,
+                          COALESCE(sum(r.amount) FILTER (WHERE r.status='pending'),0) AS pending_amount
+                   FROM payment_refunds r JOIN orders o ON o.id=r.order_id WHERE o.channel='pos'"""
+            ).fetchone()
+        return {"source": "postgresql", "orders": orders, "payments": payments, "refunds": refunds}
     except psycopg.Error as exc:
         raise _db_error(exc) from exc
 
 
 @router.get("/sales")
 def list_pos_sales(
-    status: str | None = Query(default=None, max_length=40),
-    limit: int = Query(default=50, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
+    status: Annotated[str | None, Query(max_length=40)] = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    register_id: Annotated[int | None, Query(gt=0)] = None,
+    cashier_user_id: Annotated[int | None, Query(gt=0)] = None,
+    payment_method: Annotated[str | None, Query(pattern=r"^(upi|card|netbanking|cod|wallet|bank_transfer|other)$")] = None,
+    search: Annotated[str | None, Query(max_length=200)] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ):
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(status_code=422, detail="date_from cannot be after date_to")
     clauses = ["o.channel='pos'"]
     params = []
     if status:
         clauses.append("o.status=%s")
         params.append(status)
+    if date_from:
+        clauses.append("(o.created_at AT TIME ZONE 'Asia/Kolkata')::date >= %s")
+        params.append(date_from)
+    if date_to:
+        clauses.append("(o.created_at AT TIME ZONE 'Asia/Kolkata')::date <= %s")
+        params.append(date_to)
+    if register_id:
+        clauses.append("s.register_id=%s")
+        params.append(register_id)
+    if cashier_user_id:
+        clauses.append("s.cashier_user_id=%s")
+        params.append(cashier_user_id)
+    if payment_method:
+        clauses.append("EXISTS (SELECT 1 FROM payments pm WHERE pm.order_id=o.id AND pm.method=%s)")
+        params.append(payment_method)
+    if search and search.strip():
+        term = "%" + search.strip() + "%"
+        clauses.append("(o.order_number ILIKE %s OR o.customer_name ILIKE %s OR COALESCE(o.customer_phone,'') ILIKE %s)")
+        params.extend([term, term, term])
     where = " AND ".join(clauses)
     try:
         with _connect() as conn:
             items = conn.execute(
                 f"""SELECT o.id, o.order_number, o.customer_name, o.customer_phone, o.status,
-                           o.subtotal, o.total, o.created_at,
+                           o.subtotal, o.total, o.created_at, s.register_id, s.cashier_user_id,
                            COALESCE(l.line_count, 0) AS line_count,
                            COALESCE(p.captured_amount, 0) AS captured_amount,
                            COALESCE(p.pending_amount, 0) AS pending_amount,
+                           COALESCE(r.refunded_amount, 0) AS refunded_amount,
                            COALESCE(p.payment_statuses, '') AS payment_statuses
                     FROM orders o
+                    LEFT JOIN pos_register_shifts s ON s.id=o.pos_register_shift_id
                     LEFT JOIN (
                       SELECT order_id, count(*) AS line_count
                       FROM order_lines GROUP BY order_id
@@ -80,12 +118,19 @@ def list_pos_sales(
                              string_agg(DISTINCT p.status, ', ') AS payment_statuses
                       FROM payments p GROUP BY order_id
                     ) p ON p.order_id=o.id
+                    LEFT JOIN (
+                      SELECT order_id,COALESCE(sum(amount) FILTER (WHERE status='processed'),0) AS refunded_amount
+                      FROM payment_refunds GROUP BY order_id
+                    ) r ON r.order_id=o.id
                     WHERE {where}
                     ORDER BY o.created_at DESC
                     LIMIT %s OFFSET %s""",
                 (*params, limit, offset),
             ).fetchall()
-            total = conn.execute(f"SELECT count(*) AS total FROM orders o WHERE {where}", params).fetchone()["total"]
+            total = conn.execute(
+                f"SELECT count(*) AS total FROM orders o LEFT JOIN pos_register_shifts s ON s.id=o.pos_register_shift_id WHERE {where}",
+                params,
+            ).fetchone()["total"]
         return {"items": items, "total": total, "limit": limit, "offset": offset, "source": "postgresql"}
     except psycopg.Error as exc:
         raise _db_error(exc) from exc
@@ -96,16 +141,22 @@ def get_pos_sale(order_id: int):
     try:
         with _connect() as conn:
             order = conn.execute(
-                """SELECT id, order_number, customer_name, customer_phone, status,
-                          subtotal, total, notes, created_at, updated_at
-                   FROM orders WHERE id=%s AND channel='pos'""",
+                """SELECT o.id, o.order_number, o.customer_name, o.customer_phone, o.status,
+                          o.subtotal, o.total, o.discount_total, o.promotion_code, o.tax_total, o.place_of_supply_state, o.notes, o.created_at, o.updated_at,
+                          s.id AS shift_id, s.register_id, r.register_code, r.name AS register_name,
+                          s.cashier_user_id
+                   FROM orders o
+                   LEFT JOIN pos_register_shifts s ON s.id=o.pos_register_shift_id
+                   LEFT JOIN pos_registers r ON r.id=s.register_id
+                   WHERE o.id=%s AND o.channel='pos'""",
                 (order_id,),
             ).fetchone()
             if order is None:
                 raise HTTPException(status_code=404, detail="POS sale not found")
             lines = conn.execute(
                 """SELECT l.id, l.variant_id, v.sku, p.name AS product_name,
-                          l.quantity, l.unit_price, l.line_total
+                          l.quantity, l.unit_price, l.line_total, l.hsn_code, l.gst_rule_id, l.gst_rate, l.taxable_value,
+                          l.cgst_amount, l.sgst_amount, l.igst_amount, l.tax_total
                    FROM order_lines l JOIN product_variants v ON v.id=l.variant_id
                    JOIN products p ON p.id=v.product_id
                    WHERE l.order_id=%s ORDER BY l.id""",
@@ -116,7 +167,11 @@ def get_pos_sale(order_id: int):
                    FROM payments WHERE order_id=%s ORDER BY created_at""",
                 (order_id,),
             ).fetchall()
-        return {**order, "lines": lines, "payments": payments, "source": "postgresql"}
+            refunds = conn.execute(
+                "SELECT id,payment_id,amount,status,provider,pos_shift_id,provider_refund_id,idempotency_key,note,created_at FROM payment_refunds WHERE order_id=%s ORDER BY created_at,id",
+                (order_id,),
+            ).fetchall()
+        return {**order, "lines": lines, "payments": payments, "refunds": refunds, "source": "postgresql"}
     except HTTPException:
         raise
     except psycopg.Error as exc:

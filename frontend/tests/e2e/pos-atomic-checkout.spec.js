@@ -3,7 +3,18 @@ import { test, expect } from "@playwright/test";
 test("POS creates order and pending tender atomically with a retry-safe checkout key", async ({ page }) => {
   const writes = [];
   let orderCreated = false;
-  await page.addInitScript(() => localStorage.setItem("superbajaar.access_token", "owner-pos-checkout-token"));
+  await page.addInitScript(() => {
+    localStorage.setItem("superbajaar.access_token", "owner-pos-checkout-token");
+    window.Razorpay = class {
+      constructor(options) { this.options = options; }
+      on() {}
+      open() { this.options.handler({
+        razorpay_order_id: "order_test123456",
+        razorpay_payment_id: "pay_test123456",
+        razorpay_signature: "a".repeat(64),
+      }); }
+    };
+  });
   await page.route("**/api/**", async route => {
     const permissionRequest = route.request();
     if (new URL(permissionRequest.url()).pathname.includes("/auth/my-permissions")) {
@@ -39,6 +50,12 @@ test("POS creates order and pending tender atomically with a retry-safe checkout
         payment: { id: 201, payment_reference: "PAY-POS-201", order_id: 101, method: "upi", amount: "250.00", status: "pending" },
       } });
     }
+    if (url.pathname === "/api/razorpay/orders" && method === "POST") {
+      return route.fulfill({ json: { key_id: "rzp_test_key", razorpay_order_id: "order_test123456", amount: 25000, currency: "INR", payment_id: 201, order_number: "SB-POS-101" } });
+    }
+    if (url.pathname === "/api/razorpay/verify" && method === "POST") {
+      return route.fulfill({ json: { status: "captured", order_number: "SB-POS-101", order_status: "delivered" } });
+    }
     if (url.pathname === "/api/payments" && method === "POST") {
       writes.push({ path: url.pathname, method, body });
       return route.fulfill({ status: 500, json: { detail: "POS must not create a separate payment request" } });
@@ -55,7 +72,7 @@ test("POS creates order and pending tender atomically with a retry-safe checkout
   await expect(chargeButton).toBeEnabled();
   await chargeButton.click();
   await expect(page.getByRole("dialog", { name: "Sale receipt" }).getByText("SB-POS-101", { exact: true })).toBeVisible();
-  await expect(page.getByRole("dialog", { name: "Sale receipt" }).getByText(/pending · PAY-POS-201/)).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Sale receipt" }).getByText(/captured · PAY-POS-201/)).toBeVisible();
   expect(orderCreated).toBeTruthy();
   expect(writes).toHaveLength(1);
   expect(writes[0].body).toMatchObject({

@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+import pytest
 
 from app.main import app
 
@@ -99,3 +100,57 @@ def test_checkout_idempotency_uses_transaction_scoped_advisory_lock():
     assert "pg_advisory_xact_lock" in statement
     assert "hashtextextended" in statement
     assert params == ("checkout-attempt-123",)
+
+def test_promotion_code_is_normalized_and_validated():
+    from app.api.orders import PromotionCreate
+    payload = PromotionCreate(
+        code=" welcome-10 ", name="Welcome", discount_type="percent", discount_value="10",
+    )
+    assert payload.code == "WELCOME-10"
+    assert payload.maximum_discount is None
+
+
+@pytest.mark.parametrize("payload", [
+    {"code":"A","name":"Short","discount_type":"percent","discount_value":"101"},
+    {"code":"FIXED","name":"Fixed","discount_type":"fixed","discount_value":"10","maximum_discount":"5"},
+    {"code":"BAD CODE","name":"Bad","discount_type":"fixed","discount_value":"10"},
+])
+def test_promotion_configuration_rejects_invalid_values(payload):
+    from app.api.orders import PromotionCreate
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        PromotionCreate(**payload)
+
+
+def test_promotion_admin_routes_require_admin(monkeypatch):
+    response = client.get("/api/orders/promotions")
+    assert response.status_code == 403
+    response = client.post("/api/orders/promotions", json={
+        "code":"SAVE10","name":"Save ten","discount_type":"percent","discount_value":10,
+    })
+    assert response.status_code == 403
+
+
+def test_promotion_quote_requires_database_configuration(monkeypatch):
+    from app.api import orders
+    monkeypatch.setattr(orders.settings, "database_url", "")
+    response = client.get("/api/orders/promotions/quote?code=SAVE10&subtotal=100")
+    assert response.status_code == 503
+
+def test_order_model_accepts_pos_split_tenders_and_rejects_duplicate_methods():
+    from app.api.orders import OrderCreate
+    valid=OrderCreate(
+        channel="pos",customer_name="Split Test",location_id=1,
+        checkout_idempotency_key="split-model-test-key-01",
+        pos_tenders=[{"method":"cod","amount":"40.00"},{"method":"upi","amount":"60.00"}],
+        lines=[{"variant_id":1,"quantity":1}],
+    )
+    assert len(valid.pos_tenders)==2
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        OrderCreate(
+            channel="pos",customer_name="Split Test",location_id=1,
+            checkout_idempotency_key="split-model-test-key-02",
+            pos_tenders=[{"method":"cod","amount":"40.00"},{"method":"cod","amount":"60.00"}],
+            lines=[{"variant_id":1,"quantity":1}],
+        )

@@ -1,5 +1,6 @@
 """Order management API foundation. Requires database/migrations/002_orders.sql to be applied."""
 from decimal import Decimal
+from datetime import datetime
 import json
 import secrets
 import re
@@ -9,7 +10,7 @@ import uuid
 import psycopg
 from fastapi import APIRouter, HTTPException, Query, Request
 from psycopg.rows import dict_row
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 from app.core.config import settings
 from app.services.order_inventory import ensure_order_can_be_cancelled, order_has_reservation, release_order_stock, reserve_order_stock
@@ -17,6 +18,8 @@ from app.services.loyalty_redemption import COIN_VALIDITY_DAYS, redeem_for_order
 from app.services.loyalty_accounting import post_earning_accrual
 from app.services.pos_tender import checkout_payload_for_hash, validate_pos_tender
 from app.services.serviceability import blocked_product_ids, eligible_locations, lookup_pin
+from app.services.indian_gst import calculate_indian_gst_inclusive
+from app.services.promotions import calculate_promotion_discount
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 ORDER_STATUSES = {"draft", "placed", "confirmed", "processing", "ready_for_dispatch", "dispatched", "delivered", "cancelled"}
@@ -74,9 +77,122 @@ def _enforce_regional_availability(conn, delivery_pin: str, variant_ids: list[in
             raise HTTPException(status_code=422, detail="Express delivery is not available in your area yet. Please choose standard delivery.")
 
 
+
+
+GST_STATE_CODES = {
+    "JAMMU AND KASHMIR":"01","HIMACHAL PRADESH":"02","PUNJAB":"03","CHANDIGARH":"04",
+    "UTTARAKHAND":"05","HARYANA":"06","DELHI":"07","RAJASTHAN":"08","UTTAR PRADESH":"09",
+    "BIHAR":"10","SIKKIM":"11","ARUNACHAL PRADESH":"12","NAGALAND":"13","MANIPUR":"14",
+    "MIZORAM":"15","TRIPURA":"16","MEGHALAYA":"17","ASSAM":"18","WEST BENGAL":"19",
+    "JHARKHAND":"20","ODISHA":"21","CHHATTISGARH":"22","MADHYA PRADESH":"23","GUJARAT":"24",
+    "DAMAN AND DIU":"25","DADRA AND NAGAR HAVELI AND DAMAN AND DIU":"26","MAHARASHTRA":"27",
+    "ANDHRA PRADESH":"37","KARNATAKA":"29","GOA":"30","LAKSHADWEEP":"31","KERALA":"32",
+    "TAMIL NADU":"33","PUDUCHERRY":"34","ANDAMAN AND NICOBAR ISLANDS":"35","TELANGANA":"36",
+    "LADAKH":"38","OTHER TERRITORY":"97"
+}
+
+
+def _apply_order_gst(conn, order_id: int, *, delivery_pin: str | None, discount_total: Decimal):
+    """Persist GST-inclusive tax snapshots; prices remain the customer-payable gross prices."""
+    gstin = str(settings.company_gstin or "").strip().upper()
+    if not gstin:
+        return Decimal("0.00"), None
+    if len(gstin) != 15 or not gstin[:2].isdigit() or not gstin.isalnum():
+        raise HTTPException(status_code=503, detail="COMPANY_GSTIN must be a valid 15-character GST registration")
+    origin_state_code = gstin[:2]
+    destination_state_code = origin_state_code
+    destination_state = None
+    if delivery_pin:
+        pin_info = lookup_pin(conn, delivery_pin)
+        if not pin_info or not pin_info.get("state"):
+            raise HTTPException(status_code=422, detail="Unable to determine destination state for GST; verify the delivery PIN")
+        destination_state = str(pin_info["state"]).strip()
+        destination_state_code = GST_STATE_CODES.get(destination_state.upper(), "")
+        if not destination_state_code:
+            raise HTTPException(status_code=422, detail="Destination state is not mapped for GST; contact support")
+    supply_type = "intra_state" if destination_state_code == origin_state_code else "inter_state"
+    lines = conn.execute(
+        """SELECT ol.id,ol.quantity,ol.line_total,p.id AS product_id,p.category_id,
+                  p.tax_code,p.tax_rate,p.name,v.attributes,COALESCE(pa.attributes,'{}'::jsonb) AS product_attributes,
+                  rule.id AS gst_rule_id,rule.hsn_code AS rule_hsn_code,rule.gst_rate AS rule_gst_rate
+           FROM order_lines ol
+           JOIN product_variants v ON v.id=ol.variant_id
+           JOIN products p ON p.id=v.product_id
+           LEFT JOIN LATERAL (
+               SELECT jsonb_object_agg(a.code,pav.value #>> '{}') AS attributes
+               FROM product_attribute_values pav JOIN product_attributes a ON a.id=pav.attribute_id
+               WHERE pav.product_id=p.id AND a.is_variant_attribute=FALSE
+           ) pa ON TRUE
+           LEFT JOIN LATERAL (
+               WITH RECURSIVE category_hierarchy(id,depth) AS (
+                   SELECT p.category_id,0 WHERE p.category_id IS NOT NULL
+                   UNION
+                   SELECT pc.category_id,0 FROM product_category_assignments pc WHERE pc.product_id=p.id
+                   UNION ALL
+                   SELECT c.parent_id,ch.depth+1 FROM categories c
+                   JOIN category_hierarchy ch ON ch.id=c.id WHERE c.parent_id IS NOT NULL
+               )
+               SELECT h.id,h.hsn_code,h.gst_rate FROM hsn_rules h
+               LEFT JOIN category_hierarchy ch ON ch.id=h.category_id
+               WHERE h.is_active=TRUE AND (h.category_id IS NULL OR ch.id IS NOT NULL)
+                 AND (COALESCE(pa.attributes,'{}'::jsonb) || v.attributes) @> h.conditions
+               ORDER BY COALESCE(ch.depth,999) ASC,(SELECT count(*) FROM jsonb_object_keys(h.conditions)) DESC,h.updated_at DESC,h.id DESC
+               LIMIT 1
+           ) rule ON TRUE
+           WHERE ol.order_id=%s ORDER BY ol.id FOR UPDATE OF ol""",
+        (order_id,),
+    ).fetchall()
+    gross_total = sum((Decimal(str(line["line_total"])) for line in lines), Decimal("0.00"))
+    remaining_discount = Decimal(str(discount_total or 0)).quantize(Decimal("0.01"))
+    tax_total = Decimal("0.00")
+    for index, line in enumerate(lines):
+        gross = Decimal(str(line["line_total"]))
+        if index == len(lines) - 1:
+            line_discount = remaining_discount
+        elif gross_total > 0:
+            line_discount = (Decimal(str(discount_total or 0)) * gross / gross_total).quantize(Decimal("0.01"))
+        else:
+            line_discount = Decimal("0.00")
+        line_discount = min(max(line_discount, Decimal("0.00")), gross)
+        remaining_discount -= line_discount
+        discounted_gross = gross - line_discount
+        hsn_code = line["rule_hsn_code"] or line["tax_code"]
+        rate_value = line["rule_gst_rate"] if line["rule_gst_rate"] is not None else line["tax_rate"]
+        if rate_value is None or not hsn_code:
+            raise HTTPException(status_code=422, detail=f"GST/HSN mapping is missing for {line['name']}; configure its product tax code or category HSN rule")
+        try:
+            tax = calculate_indian_gst_inclusive(
+                gross_value=discounted_gross, gst_rate=rate_value,
+                supply_type=supply_type, hsn_code=str(hsn_code),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=f"Invalid GST/HSN mapping for {line['name']}: {exc}") from exc
+        conn.execute(
+            """UPDATE order_lines SET hsn_code=%s,gst_rule_id=%s,discount_amount=%s,gst_rate=%s,taxable_value=%s,
+                      cgst_rate=%s,sgst_rate=%s,igst_rate=%s,cgst_amount=%s,
+                      sgst_amount=%s,igst_amount=%s,tax_total=%s
+               WHERE id=%s""",
+            (tax["hsn_code"],line["gst_rule_id"],line_discount,tax["gst_rate"],tax["taxable_value"],
+             tax["cgst_rate"],tax["sgst_rate"],tax["igst_rate"],
+             tax["cgst_amount"],tax["sgst_amount"],tax["igst_amount"],
+             tax["total_tax"],line["id"]),
+        )
+        tax_total += tax["total_tax"]
+    tax_total = tax_total.quantize(Decimal("0.01"))
+    conn.execute(
+        "UPDATE orders SET tax_total=%s,place_of_supply_state=%s WHERE id=%s",
+        (tax_total,destination_state or origin_state_code,order_id),
+    )
+    return tax_total, destination_state or origin_state_code
+
 class OrderLineCreate(BaseModel):
     variant_id: int = Field(gt=0)
     quantity: int = Field(gt=0, le=100000)
+
+
+class PosTenderCreate(BaseModel):
+    method: str = Field(pattern=r"^(cod|upi|card|netbanking|wallet|bank_transfer|other)$")
+    amount: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
 
 
 class OrderCreate(BaseModel):
@@ -91,8 +207,30 @@ class OrderCreate(BaseModel):
     redeem_coins: int = Field(default=0, ge=0, le=10000000)
     checkout_idempotency_key: str = Field(min_length=16, max_length=100)
     pos_payment_method: str | None = None
+    pos_tenders: list[PosTenderCreate] | None = Field(default=None, min_length=2, max_length=5)
     pos_register_id: int | None = Field(default=None, gt=0)
+    coupon_code: str | None = Field(default=None, max_length=40)
     lines: list[OrderLineCreate] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_pos_tenders(self):
+        if self.pos_tenders and self.channel != "pos":
+            raise ValueError("Split tenders are only supported for POS orders")
+        if self.pos_tenders and self.pos_payment_method:
+            raise ValueError("Use either one POS tender or split tenders, not both")
+        if self.pos_tenders and len({t.method for t in self.pos_tenders}) != len(self.pos_tenders):
+            raise ValueError("Each split tender method can be entered only once")
+        return self
+
+    @field_validator("coupon_code")
+    @classmethod
+    def normalize_coupon_code(cls, value):
+        if value is None:
+            return None
+        code = value.strip().upper()
+        if not code or not re.fullmatch(r"[A-Z0-9][A-Z0-9_-]{1,39}", code):
+            raise ValueError("Coupon code must contain 2-40 letters, numbers, hyphens or underscores")
+        return code
 
     @field_validator("checkout_idempotency_key")
     @classmethod
@@ -135,6 +273,156 @@ class OrderStatusUpdate(BaseModel):
         return value
 
 
+class PromotionCreate(BaseModel):
+    code: str = Field(min_length=2, max_length=40)
+    name: str = Field(min_length=2, max_length=160)
+    discount_type: str = Field(pattern=r"^(percent|fixed)$")
+    discount_value: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
+    minimum_subtotal: Decimal = Field(default=0, ge=0, max_digits=14, decimal_places=2)
+    maximum_discount: Decimal | None = Field(default=None, gt=0, max_digits=14, decimal_places=2)
+    usage_limit: int | None = Field(default=None, gt=0)
+    per_customer_limit: int | None = Field(default=None, gt=0)
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    is_active: bool = True
+
+    @field_validator("code")
+    @classmethod
+    def clean_code(cls, value):
+        code = value.strip().upper()
+        if not re.fullmatch(r"[A-Z0-9][A-Z0-9_-]{1,39}", code):
+            raise ValueError("Promotion code must be 2-40 letters, numbers, hyphens or underscores")
+        return code
+
+    @field_validator("name")
+    @classmethod
+    def clean_name(cls, value):
+        if not value.strip():
+            raise ValueError("Promotion name cannot be blank")
+        return value.strip()
+
+    @field_validator("discount_value")
+    @classmethod
+    def validate_value(cls, value, info):
+        if info.data.get("discount_type") == "percent" and value > 100:
+            raise ValueError("Percentage discount cannot exceed 100")
+        return value
+
+    @field_validator("maximum_discount")
+    @classmethod
+    def max_discount_only_for_percentage(cls, value, info):
+        if value is not None and info.data.get("discount_type") != "percent":
+            raise ValueError("Maximum discount cap is only valid for percentage promotions")
+        return value
+
+    @field_validator("ends_at")
+    @classmethod
+    def valid_window(cls, value, info):
+        starts = info.data.get("starts_at")
+        if starts is not None and value is not None and value <= starts:
+            raise ValueError("Promotion end must be after start")
+        return value
+
+
+class PromotionUpdate(PromotionCreate):
+    pass
+
+
+def _require_promotion_admin(request: Request):
+    if getattr(request.state, "role", "") not in {"super_admin", "admin"}:
+        raise HTTPException(status_code=403, detail="Administrator access required")
+
+
+@router.get("/promotions/quote")
+def promotion_quote(code: str = Query(min_length=2, max_length=40), subtotal: Decimal = Query(gt=0)):
+    """Non-reserving quote. Checkout recalculates and enforces all usage limits in its transaction."""
+    normalized = code.strip().upper()
+    try:
+        with _connect() as conn:
+            promo = conn.execute(
+                "SELECT * FROM promotions WHERE upper(code)=upper(%s) AND is_active=TRUE",
+                (normalized,),
+            ).fetchone()
+            if promo is None:
+                raise HTTPException(status_code=404, detail="Coupon code is invalid or inactive")
+            now = conn.execute("SELECT now() AS current_time").fetchone()["current_time"]
+            if promo["starts_at"] and promo["starts_at"] > now:
+                raise HTTPException(status_code=422, detail="Coupon is not active yet")
+            if promo["ends_at"] and promo["ends_at"] <= now:
+                raise HTTPException(status_code=422, detail="Coupon has expired")
+            used = conn.execute("SELECT count(*) AS n FROM promotion_redemptions WHERE promotion_id=%s AND status='redeemed'",(promo["id"],)).fetchone()["n"]
+            if promo["usage_limit"] is not None and used >= promo["usage_limit"]:
+                raise HTTPException(status_code=409, detail="Coupon redemption limit has been reached")
+            try:
+                amount = calculate_promotion_discount(
+                    subtotal=subtotal, discount_type=promo["discount_type"], discount_value=promo["discount_value"],
+                    minimum_subtotal=promo["minimum_subtotal"], maximum_discount=promo["maximum_discount"],
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            return {"code":promo["code"],"name":promo["name"],"discount_amount":amount,"subtotal":subtotal,"payable":subtotal-amount}
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.get("/promotions")
+def list_promotions(request: Request, include_inactive: bool = False):
+    _require_promotion_admin(request)
+    try:
+        with _connect() as conn:
+            rows = conn.execute(
+                "SELECT p.*, (SELECT count(*) FROM promotion_redemptions r WHERE r.promotion_id=p.id AND r.status='redeemed') AS redeemed_count "
+                "FROM promotions p WHERE (%s OR p.is_active=TRUE) ORDER BY p.created_at DESC",
+                (include_inactive,),
+            ).fetchall()
+        return {"items":rows}
+    except psycopg.Error as exc:
+        raise _db_error(exc) from exc
+
+
+@router.post("/promotions", status_code=201)
+def create_promotion(payload: PromotionCreate, request: Request):
+    _require_promotion_admin(request)
+    try:
+        with _connect() as conn:
+            row = conn.execute(
+                "INSERT INTO promotions(code,name,discount_type,discount_value,minimum_subtotal,maximum_discount,usage_limit,per_customer_limit,starts_at,ends_at,is_active,created_by_user_id) "
+                "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *",
+                (payload.code,payload.name,payload.discount_type,payload.discount_value,payload.minimum_subtotal,payload.maximum_discount,
+                 payload.usage_limit,payload.per_customer_limit,payload.starts_at,payload.ends_at,payload.is_active,getattr(request.state,"user_id",None)),
+            ).fetchone()
+        return row
+    except psycopg.Error as exc:
+        if getattr(exc,"sqlstate",None)=="23505":
+            raise HTTPException(status_code=409,detail="Promotion code already exists") from exc
+        raise _db_error(exc) from exc
+
+
+@router.patch("/promotions/{promotion_id}")
+def update_promotion(promotion_id: int, payload: PromotionUpdate, request: Request):
+    _require_promotion_admin(request)
+    try:
+        with _connect() as conn:
+            with conn.transaction():
+                current = conn.execute("SELECT id FROM promotions WHERE id=%s FOR UPDATE",(promotion_id,)).fetchone()
+                if current is None:
+                    raise HTTPException(status_code=404,detail="Promotion not found")
+                row = conn.execute(
+                    "UPDATE promotions SET code=%s,name=%s,discount_type=%s,discount_value=%s,minimum_subtotal=%s,maximum_discount=%s,usage_limit=%s,per_customer_limit=%s,starts_at=%s,ends_at=%s,is_active=%s,updated_at=now() WHERE id=%s RETURNING *",
+                    (payload.code,payload.name,payload.discount_type,payload.discount_value,payload.minimum_subtotal,payload.maximum_discount,
+                     payload.usage_limit,payload.per_customer_limit,payload.starts_at,payload.ends_at,payload.is_active,promotion_id),
+                ).fetchone()
+        return row
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        if getattr(exc,"sqlstate",None)=="23505":
+            raise HTTPException(status_code=409,detail="Promotion code already exists") from exc
+        raise _db_error(exc) from exc
+
+
 @router.get("")
 def list_orders(
     status: str | None = Query(default=None),
@@ -159,7 +447,7 @@ def list_orders(
         with _connect() as conn:
             items = conn.execute(
                 "SELECT o.id, o.order_number, o.channel, o.customer_name, o.customer_phone, o.delivery_pin, o.delivery_type, "
-                "o.status, o.subtotal, o.total, o.notes, o.created_at, o.updated_at, "
+                "o.status, o.subtotal, o.total, o.discount_total, o.promotion_code, o.tax_total, o.place_of_supply_state, o.notes, o.created_at, o.updated_at, "
                 "assigned_location.id AS inventory_location_id, assigned_location.name AS inventory_location_name, "
                 "(SELECT count(*) FROM order_lines l WHERE l.order_id=o.id) AS line_count "
                 "FROM orders o LEFT JOIN stock_locations assigned_location ON assigned_location.id=COALESCE("
@@ -206,7 +494,7 @@ def get_order(order_id: int):
             if order is None:
                 raise HTTPException(status_code=404, detail="Order not found")
             lines = conn.execute(
-                "SELECT l.id, l.variant_id, v.sku, p.name AS product_name, l.quantity, l.unit_price, l.line_total "
+                "SELECT l.id, l.variant_id, v.sku, p.name AS product_name, l.quantity, l.unit_price, l.line_total, l.hsn_code, l.gst_rule_id, l.gst_rate, l.taxable_value, l.cgst_amount, l.sgst_amount, l.igst_amount, l.tax_total "
                 "FROM order_lines l JOIN product_variants v ON v.id=l.variant_id JOIN products p ON p.id=v.product_id "
                 "WHERE l.order_id=%s ORDER BY l.id", (order_id,)
             ).fetchall()
@@ -262,23 +550,24 @@ def create_order(payload: OrderCreate, request: Request):
                 ).hexdigest()
                 if payload.checkout_idempotency_key:
                     prior = conn.execute(
-                        "SELECT id,order_number,channel,customer_name,customer_phone,customer_email,delivery_pin,status,subtotal,total,notes,checkout_payload_hash "
+                        "SELECT id,order_number,channel,customer_name,customer_phone,customer_email,delivery_pin,status,subtotal,total,discount_total,promotion_code,notes,checkout_payload_hash "
                         "FROM orders WHERE checkout_idempotency_key=%s FOR UPDATE",
                         (payload.checkout_idempotency_key,),
                     ).fetchone()
                     if prior:
                         if str(prior.get("customer_email") or "").lower() != str(payload.customer_email or "").lower() or prior.get("checkout_payload_hash") != payload_hash:
                             raise HTTPException(status_code=409, detail="Checkout idempotency key was already used with a different order payload")
-                        existing_payment = None
-                        if payload.pos_payment_method:
-                            existing_payment = conn.execute(
+                        existing_payments = []
+                        if payload.pos_payment_method or payload.pos_tenders:
+                            existing_payments = conn.execute(
                                 "SELECT id,payment_reference,order_id,method,amount,status,provider_reference,note,created_at,updated_at "
-                                "FROM payments WHERE order_id=%s ORDER BY created_at,id LIMIT 1",
+                                "FROM payments WHERE order_id=%s ORDER BY created_at,id",
                                 (prior["id"],),
-                            ).fetchone()
-                            if existing_payment is None:
+                            ).fetchall()
+                            if not existing_payments:
                                 raise HTTPException(status_code=409, detail="POS order exists without its atomic tender record; reconcile before retrying")
-                        return {**prior, "payment": existing_payment,
+                        existing_payment = existing_payments[0] if existing_payments else None
+                        return {**prior, "payment": existing_payment, "payments": existing_payments,
                                 "inventory_location_id": None, "stock_reserved": order_has_reservation(conn, int(prior["id"])),
                                 "idempotent_replay": True}
                 variant_ids = list(dict.fromkeys(line.variant_id for line in payload.lines))
@@ -294,6 +583,57 @@ def create_order(payload: OrderCreate, request: Request):
                 if payload.channel == "website":
                     _enforce_regional_availability(conn, payload.delivery_pin, variant_ids, delivery_type)
                 subtotal = sum((Decimal(str(by_id[line.variant_id]["selling_price"])) * line.quantity for line in payload.lines), Decimal("0"))
+                promotion = None
+                promotion_discount = Decimal("0.00")
+                if payload.coupon_code:
+                    promotion = conn.execute(
+                        "SELECT * FROM promotions WHERE upper(code)=upper(%s) FOR UPDATE",
+                        (payload.coupon_code,),
+                    ).fetchone()
+                    if promotion is None or not promotion["is_active"]:
+                        raise HTTPException(status_code=422, detail="Coupon code is invalid or inactive")
+                    if promotion["starts_at"] and promotion["starts_at"] > conn.execute("SELECT now() AS current_time").fetchone()["current_time"]:
+                        raise HTTPException(status_code=422, detail="Coupon is not active yet")
+                    if promotion["ends_at"] and promotion["ends_at"] <= conn.execute("SELECT now() AS current_time").fetchone()["current_time"]:
+                        raise HTTPException(status_code=422, detail="Coupon has expired")
+                    redeemed_count = conn.execute(
+                        "SELECT count(*) AS n FROM promotion_redemptions WHERE promotion_id=%s AND status='redeemed'",
+                        (promotion["id"],),
+                    ).fetchone()["n"]
+                    if promotion["usage_limit"] is not None and redeemed_count >= promotion["usage_limit"]:
+                        raise HTTPException(status_code=409, detail="Coupon redemption limit has been reached")
+                    customer_identifier = str(payload.customer_email or "").strip().lower() or str(payload.customer_phone or "").strip()
+                    if promotion["per_customer_limit"] is not None:
+                        if not customer_identifier:
+                            raise HTTPException(status_code=422, detail="This coupon requires customer details to enforce its per-customer limit")
+                        customer_email = str(payload.customer_email).strip().lower() if payload.customer_email else None
+                        customer_phone = str(payload.customer_phone).strip() if payload.customer_phone else None
+                        if customer_email and customer_phone:
+                            customer_redemptions = conn.execute(
+                                "SELECT count(*) AS n FROM promotion_redemptions WHERE promotion_id=%s AND status='redeemed' "
+                                "AND (lower(customer_email)=lower(%s) OR customer_phone=%s)",
+                                (promotion["id"], customer_email, customer_phone),
+                            ).fetchone()["n"]
+                        elif customer_email:
+                            customer_redemptions = conn.execute(
+                                "SELECT count(*) AS n FROM promotion_redemptions WHERE promotion_id=%s AND status='redeemed' AND lower(customer_email)=lower(%s)",
+                                (promotion["id"], customer_email),
+                            ).fetchone()["n"]
+                        else:
+                            customer_redemptions = conn.execute(
+                                "SELECT count(*) AS n FROM promotion_redemptions WHERE promotion_id=%s AND status='redeemed' AND customer_phone=%s",
+                                (promotion["id"], customer_phone),
+                            ).fetchone()["n"]
+                        if customer_redemptions >= promotion["per_customer_limit"]:
+                            raise HTTPException(status_code=409, detail="This customer has already used the coupon the allowed number of times")
+                    try:
+                        promotion_discount = calculate_promotion_discount(
+                            subtotal=subtotal, discount_type=promotion["discount_type"],
+                            discount_value=promotion["discount_value"], minimum_subtotal=promotion["minimum_subtotal"],
+                            maximum_discount=promotion["maximum_discount"],
+                        )
+                    except ValueError as exc:
+                        raise HTTPException(status_code=422, detail=str(exc)) from exc
                 pos_shift_id = None
                 if payload.channel == "pos":
                     actor_id = getattr(request.state, "user_id", None)
@@ -309,16 +649,24 @@ def create_order(payload: OrderCreate, request: Request):
                     pos_shift_id = active_shift["id"]
                 order_number = "SB-" + __import__("uuid").uuid4().hex[:12].upper()
                 order = conn.execute(
-                    "INSERT INTO orders (order_number, channel, customer_name, customer_phone, customer_email, delivery_pin, delivery_type, status, subtotal, total, notes, checkout_idempotency_key, checkout_payload_hash, pos_register_shift_id) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s,'placed',%s,%s,%s,%s,%s,%s) "
-                    "RETURNING id, order_number, channel, customer_name, customer_phone, customer_email, delivery_pin, delivery_type, status, subtotal, total, notes, created_at, updated_at",
-                    (order_number, payload.channel, payload.customer_name, payload.customer_phone, str(payload.customer_email).lower() if payload.customer_email else None, payload.delivery_pin, delivery_type, subtotal, subtotal, payload.notes, payload.checkout_idempotency_key, payload_hash, pos_shift_id),
+                    "INSERT INTO orders (order_number, channel, customer_name, customer_phone, customer_email, delivery_pin, delivery_type, status, subtotal, total, discount_total, promotion_code, notes, checkout_idempotency_key, checkout_payload_hash, pos_register_shift_id) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,'placed',%s,%s,%s,%s,%s,%s,%s,%s) "
+                    "RETURNING id, order_number, channel, customer_name, customer_phone, customer_email, delivery_pin, delivery_type, status, subtotal, total, discount_total, promotion_code, notes, created_at, updated_at",
+                    (order_number, payload.channel, payload.customer_name, payload.customer_phone, str(payload.customer_email).lower() if payload.customer_email else None, payload.delivery_pin, delivery_type, subtotal, subtotal-promotion_discount, promotion_discount, promotion["code"] if promotion else None, payload.notes, payload.checkout_idempotency_key, payload_hash, pos_shift_id),
                 ).fetchone()
                 for line in payload.lines:
                     unit_price = Decimal(str(by_id[line.variant_id]["selling_price"]))
                     conn.execute(
                         "INSERT INTO order_lines (order_id, variant_id, quantity, unit_price, line_total) VALUES (%s,%s,%s,%s,%s)",
                         (order["id"], line.variant_id, line.quantity, unit_price, unit_price * line.quantity),
+                    )
+                if promotion:
+                    conn.execute(
+                        "INSERT INTO promotion_redemptions (promotion_id,order_id,customer_email,customer_phone,subtotal,discount_amount,discount_type_snapshot,discount_value_snapshot,minimum_subtotal_snapshot,maximum_discount_snapshot,code_snapshot) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                        (promotion["id"], order["id"], str(payload.customer_email).lower() if payload.customer_email else None,
+                         payload.customer_phone, subtotal, promotion_discount, promotion["discount_type"], promotion["discount_value"],
+                         promotion["minimum_subtotal"], promotion["maximum_discount"], promotion["code"]),
                     )
                 loyalty_discount = Decimal("0.00")
                 redeemed_coins = 0
@@ -328,14 +676,14 @@ def create_order(payload: OrderCreate, request: Request):
                         customer_email=str(payload.customer_email).strip().lower(),
                         order_id=int(order["id"]),
                         order_reference=order["order_number"],
-                        payable_amount=subtotal,
+                        payable_amount=subtotal-promotion_discount,
                         requested_coins=payload.redeem_coins,
                     )
                     loyalty_discount = redemption["discount_amount"]
                     redeemed_coins = redemption["coins"]
                     order = conn.execute(
-                        "UPDATE orders SET total=%s WHERE id=%s RETURNING id,order_number,channel,customer_name,customer_phone,customer_email,delivery_pin,status,subtotal,total,notes,created_at,updated_at",
-                        (subtotal - loyalty_discount, order["id"]),
+                        "UPDATE orders SET total=%s,discount_total=%s WHERE id=%s RETURNING id,order_number,channel,customer_name,customer_phone,customer_email,delivery_pin,status,subtotal,total,discount_total,promotion_code,notes,created_at,updated_at",
+                        (subtotal - promotion_discount - loyalty_discount, promotion_discount + loyalty_discount, order["id"]),
                     ).fetchone()
                 try:
                     inventory_location_id = reserve_order_stock(
@@ -347,8 +695,37 @@ def create_order(payload: OrderCreate, request: Request):
                     )
                 except ValueError as exc:
                     raise HTTPException(status_code=409, detail=str(exc)) from exc
+                tax_total, place_of_supply_state = _apply_order_gst(
+                    conn, int(order["id"]), delivery_pin=payload.delivery_pin,
+                    discount_total=promotion_discount + loyalty_discount,
+                )
+                order["tax_total"] = tax_total
+                order["place_of_supply_state"] = place_of_supply_state
+                order["tax_lines"] = conn.execute(
+                    """SELECT ol.id,ol.hsn_code,ol.gst_rate,ol.taxable_value,ol.cgst_rate,
+                              ol.sgst_rate,ol.igst_rate,ol.cgst_amount,ol.sgst_amount,
+                              ol.igst_amount,ol.tax_total
+                       FROM order_lines ol WHERE ol.order_id=%s ORDER BY ol.id""",
+                    (order["id"],),
+                ).fetchall()
                 payment = None
-                if payload.pos_payment_method:
+                payments = []
+                if payload.pos_tenders:
+                    tender_total = sum((t.amount for t in payload.pos_tenders), Decimal("0.00"))
+                    if tender_total != Decimal(str(order["total"])).quantize(Decimal("0.01")):
+                        raise HTTPException(status_code=422, detail="Split tender amounts must exactly equal the final order total")
+                    for tender in payload.pos_tenders:
+                        payment_reference = "PAY-" + uuid.uuid4().hex[:12].upper()
+                        created = conn.execute(
+                            "INSERT INTO payments(payment_reference,order_id,method,amount,status,note) "
+                            "VALUES(%s,%s,%s,%s,'pending',%s) "
+                            "RETURNING id,payment_reference,order_id,method,amount,status,provider_reference,note,created_at,updated_at",
+                            (payment_reference,order["id"],tender.method,tender.amount,
+                             "POS split tender created atomically; awaiting cashier or provider confirmation"),
+                        ).fetchone()
+                        payments.append(created)
+                    payment = payments[0]
+                elif payload.pos_payment_method:
                     payment_reference = "PAY-" + uuid.uuid4().hex[:12].upper()
                     payment = conn.execute(
                         "INSERT INTO payments(payment_reference,order_id,method,amount,status,note) "
@@ -357,7 +734,8 @@ def create_order(payload: OrderCreate, request: Request):
                         (payment_reference, order["id"], payload.pos_payment_method, order["total"],
                          "POS tender intent created atomically with order; awaiting cashier or provider confirmation"),
                     ).fetchone()
-        return {**order, "payment": payment, "loyalty_discount": loyalty_discount, "redeemed_coins": redeemed_coins,
+                    payments = [payment]
+        return {**order, "payment": payment, "payments": payments, "promotion_discount": promotion_discount, "loyalty_discount": loyalty_discount, "redeemed_coins": redeemed_coins,
                 "inventory_location_id": inventory_location_id, "stock_reserved": inventory_location_id is not None}
     except HTTPException:
         raise
@@ -393,6 +771,7 @@ def update_order_status(order_id: int, payload: OrderStatusUpdate, request: Requ
                         ensure_order_can_be_cancelled(conn, order_id)
                         release_order_stock(conn, order_id)
                         restore_order_redemption(conn, order_id=order_id, reason="Restored after eligible pre-dispatch cancellation")
+                        conn.execute("UPDATE promotion_redemptions SET status='reversed',reversed_at=now(),reversal_reason='Order cancelled before dispatch' WHERE order_id=%s AND status='redeemed'", (order_id,))
                     except ValueError as exc:
                         raise HTTPException(status_code=409, detail=str(exc)) from exc
                 elif payload.status == "delivered":

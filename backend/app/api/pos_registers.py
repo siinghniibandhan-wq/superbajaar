@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.core.config import settings
 from app.services.pos_tender import order_is_fully_paid
+from app.services.order_inventory import consume_pos_order_stock
 
 router = APIRouter(prefix="/pos", tags=["pos-registers"])
 
@@ -340,6 +341,48 @@ def confirm_cash_payment(shift_id: int, payment_id: int, request: Request):
                            WHERE EXISTS (SELECT 1 FROM orders WHERE id=%s AND status='confirmed')
                              AND NOT EXISTS (SELECT 1 FROM order_status_history
                                              WHERE order_id=%s AND from_status='placed' AND to_status='confirmed')""",
+                        (payment["order_id"],payment["order_id"],payment["order_id"]),
+                    )
+                    try:
+                        consume_pos_order_stock(conn, int(payment["order_id"]))
+                    except ValueError as exc:
+                        raise HTTPException(status_code=409, detail=str(exc)) from exc
+                    cost_row = conn.execute(
+                        "SELECT COALESCE(sum(total_cost),0) AS total_cost FROM inventory_order_issues WHERE order_id=%s",
+                        (payment["order_id"],),
+                    ).fetchone()
+                    total_cost = Decimal(str(cost_row["total_cost"] or 0))
+                    if total_cost > 0:
+                        actor_email = getattr(request.state, "user_email", None)
+                        if not actor_email:
+                            raise HTTPException(status_code=401, detail="A valid cashier session is required to post POS cost of goods sold")
+                        from app.api import accounting
+                        accounts = accounting._accounts_by_code(conn, ["1200", "5000"])
+                        accounting._post_voucher(
+                            conn,
+                            {"voucher_type": "journal", "voucher_date": accounting._today(),
+                             "narration": f"Cost of goods sold for POS order {payment['order_number']}",
+                             "reference": payment["order_number"], "party_type": "customer",
+                             "party_name": "POS walk-in customer", "taxable_total": total_cost,
+                             "total_amount": total_cost, "source_type": "order_fulfilment",
+                             "source_id": str(payment["order_id"]),
+                             "idempotency_key": f"order-fulfilment-cogs:{payment['order_id']}"},
+                            [{"account_id": accounts["5000"]["id"], "debit": total_cost, "credit": 0,
+                              "narration": "Cost of goods sold"},
+                             {"account_id": accounts["1200"]["id"], "debit": 0, "credit": total_cost,
+                              "narration": "Inventory issued"}],
+                            (actor, actor_email),
+                        )
+                    conn.execute(
+                        "UPDATE orders SET status='delivered',updated_at=now() WHERE id=%s AND status='confirmed' AND channel='pos'",
+                        (payment["order_id"],),
+                    )
+                    conn.execute(
+                        """INSERT INTO order_status_history(order_id,from_status,to_status)
+                           SELECT %s,'confirmed','delivered'
+                           WHERE EXISTS (SELECT 1 FROM orders WHERE id=%s AND status='delivered')
+                             AND NOT EXISTS (SELECT 1 FROM order_status_history
+                                             WHERE order_id=%s AND from_status='confirmed' AND to_status='delivered')""",
                         (payment["order_id"],payment["order_id"],payment["order_id"]),
                     )
                 conn.execute(

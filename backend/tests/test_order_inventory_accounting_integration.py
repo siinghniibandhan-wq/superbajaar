@@ -94,6 +94,15 @@ def api(monkeypatch):
     client.suffix=suffix
     yield client
     app.dependency_overrides.pop(require_active_session,None)
+    with psycopg.connect(TEST_DB) as conn:
+        conn.execute("""
+            UPDATE pos_register_shifts s SET
+                expected_cash=s.opening_float+COALESCE((SELECT sum(amount) FROM pos_cash_movements WHERE shift_id=s.id AND movement_type='cash_in'),0)-COALESCE((SELECT sum(amount) FROM pos_cash_movements WHERE shift_id=s.id AND movement_type='cash_out'),0),
+                counted_cash=s.opening_float+COALESCE((SELECT sum(amount) FROM pos_cash_movements WHERE shift_id=s.id AND movement_type='cash_in'),0)-COALESCE((SELECT sum(amount) FROM pos_cash_movements WHERE shift_id=s.id AND movement_type='cash_out'),0),
+                cash_variance=0,status='closed',closed_by=%s,closed_at=now()
+            WHERE s.cashier_user_id=%s AND s.status='open'
+        """, (user_id,user_id))
+        conn.execute("DELETE FROM accounting_event_account_mappings WHERE legal_entity_code=%s", (client.legal_entity_code,))
 
 
 def ok(response,status=200):
@@ -101,9 +110,74 @@ def ok(response,status=200):
     return response.json()
 
 
+
+def test_paid_pos_cash_sale_consumes_stock_and_records_cost_once(api):
+    register = ok(api.post("/api/pos/registers", json={
+        "location_id": api.location_id,
+        "register_code": "POS-" + api.suffix,
+        "name": "Counter " + api.suffix,
+    }), 201)
+    shift = ok(api.post(f"/api/pos/registers/{register['id']}/open", json={
+        "opening_float": "1000.00",
+    }), 201)
+    order = ok(api.post("/api/orders", json={
+        "channel": "pos",
+        "customer_name": "POS Cash Customer",
+        "location_id": api.location_id,
+        "pos_register_id": register["id"],
+        "pos_payment_method": "cod",
+        "checkout_idempotency_key": "pos-cash-stock-" + api.suffix + "-key",
+        "lines": [{"variant_id": api.variant_id, "quantity": 3}],
+    }), 201)
+    assert order["payment"]["status"] == "pending"
+    captured = ok(api.post(
+        f"/api/pos/shifts/{shift['id']}/payments/{order['payment']['id']}/confirm-cash",
+        json={},
+    ))
+    assert captured["status"] == "captured"
+    with psycopg.connect(TEST_DB) as conn:
+        balance = conn.execute(
+            "SELECT on_hand,reserved FROM inventory_balances WHERE variant_id=%s AND location_id=%s",
+            (api.variant_id, api.location_id),
+        ).fetchone()
+        assert balance == (2, 0)
+        sale_movements = conn.execute(
+            "SELECT count(*) FROM inventory_movements WHERE reference_type='order_fulfilment' AND reference_id=%s AND movement_type='sale'",
+            (str(order["id"]),),
+        ).fetchone()[0]
+        assert sale_movements == 1
+        issue = conn.execute(
+            "SELECT quantity,total_cost FROM inventory_order_issues WHERE order_id=%s",
+            (order["id"],),
+        ).fetchone()
+        assert issue == (3, Decimal("30.00"))
+        status = conn.execute("SELECT status FROM orders WHERE id=%s", (order["id"],)).fetchone()[0]
+        assert status == "delivered"
+        voucher = conn.execute(
+            "SELECT total_amount FROM accounting_vouchers WHERE source_type='order_fulfilment' AND source_id=%s",
+            (str(order["id"]),),
+        ).fetchone()
+        assert voucher is not None and voucher[0] == Decimal("30.00")
+    # A second confirmation is rejected; the sale and its stock issue remain single-posted.
+    replay = api.post(
+        f"/api/pos/shifts/{shift['id']}/payments/{order['payment']['id']}/confirm-cash",
+        json={},
+    )
+    assert replay.status_code == 409
+    with psycopg.connect(TEST_DB) as conn:
+        assert conn.execute(
+            "SELECT count(*) FROM inventory_movements WHERE reference_type='order_fulfilment' AND reference_id=%s AND movement_type='sale'",
+            (str(order["id"]),),
+        ).fetchone()[0] == 1
+
+
 def test_pos_order_reservation_dispatch_and_cogs_posting(api):
+    register=ok(api.post("/api/pos/registers",json={
+        "location_id":api.location_id,"register_code":"SHIP-"+api.suffix,"name":"Dispatch Counter",
+    }),201)
+    ok(api.post(f"/api/pos/registers/{register['id']}/open",json={"opening_float":"100"}),201)
     order=ok(api.post("/api/orders",json={
-        "channel":"pos","customer_name":"POS Test Customer","location_id":api.location_id,
+        "channel":"pos","customer_name":"POS Test Customer","location_id":api.location_id,"pos_register_id":register["id"],
         "checkout_idempotency_key":"integration-pos-order-key-0001",
         "lines":[{"variant_id":api.variant_id,"quantity":3}]
     }),201)
@@ -249,6 +323,7 @@ def test_pos_order_reservation_dispatch_and_cogs_posting(api):
     }))
     assert posted["status"]=="posted" and Decimal(str(posted["total_cost"]))==Decimal("10.00")
 
+    ok(api.post(f"/api/pos/shifts/{shift['id']}/close",json={"counted_cash":"100.00"}))
     holding=ok(api.post("/api/inventory/locations",json={
         "name":"Return Quarantine "+api.suffix,"location_type":"warehouse",
         "establishment_id":api.establishment_id,"is_fulfillable":False,
@@ -258,8 +333,10 @@ def test_pos_order_reservation_dispatch_and_cogs_posting(api):
         "disposition":"quarantine","location_id":holding["id"],
     }))
     assert quarantined["status"]=="posted" and Decimal(str(quarantined["total_cost"]))==Decimal("10.00")
+    register=ok(api.post("/api/pos/registers",json={"location_id":api.location_id,"register_code":"QUAR-"+api.suffix,"name":"Quarantine Counter"}),201)
+    ok(api.post(f"/api/pos/registers/{register['id']}/open",json={"opening_float":"100"}),201)
     blocked_order=api.post("/api/orders",json={
-        "channel":"pos","customer_name":"Quarantine reservation must fail",
+        "channel":"pos","customer_name":"Quarantine reservation must fail","pos_register_id":register["id"],
         "checkout_idempotency_key":"integration-quarantine-order-key-01",
         "location_id":holding["id"],"lines":[{"variant_id":api.variant_id,"quantity":1}],
     })
@@ -312,3 +389,177 @@ def test_pos_order_reservation_dispatch_and_cogs_posting(api):
         assert conn.execute(
             "SELECT count(*) FROM accounting_vouchers WHERE source_type='fulfilment_return_line'",
         ).fetchone()[0]==3
+
+
+def test_coupon_discount_is_applied_once_and_enforces_customer_limit(api):
+    promotion = ok(api.post("/api/orders/promotions", json={
+        "code": "POS10-" + api.suffix,
+        "name": "Integration ten percent",
+        "discount_type": "percent",
+        "discount_value": "10",
+        "minimum_subtotal": "50",
+        "maximum_discount": "20",
+        "usage_limit": 5,
+        "per_customer_limit": 1,
+        "is_active": True,
+    }), 201)
+    quote = ok(api.get("/api/orders/promotions/quote", params={
+        "code": promotion["code"], "subtotal": "100.00",
+    }))
+    assert Decimal(str(quote["discount_amount"])) == Decimal("10.00")
+    assert Decimal(str(quote["payable"])) == Decimal("90.00")
+
+    register = ok(api.post("/api/pos/registers", json={
+        "location_id": api.location_id,
+        "register_code": "PROMO-" + api.suffix,
+        "name": "Coupon Counter",
+    }), 201)
+    shift = ok(api.post(f"/api/pos/registers/{register['id']}/open", json={"opening_float": "100"}), 201)
+    payload = {
+        "channel": "pos", "customer_name": "Coupon Customer",
+        "customer_email": "coupon-" + api.suffix + "@example.com",
+        "location_id": api.location_id, "pos_register_id": register["id"],
+        "pos_payment_method": "cod", "coupon_code": promotion["code"],
+        "checkout_idempotency_key": "promo-checkout-" + api.suffix + "-one",
+        "lines": [{"variant_id": api.variant_id, "quantity": 1}],
+    }
+    order = ok(api.post("/api/orders", json=payload), 201)
+    assert Decimal(str(order["subtotal"])) == Decimal("100.00")
+    assert Decimal(str(order["discount_total"])) == Decimal("10.00")
+    assert Decimal(str(order["total"])) == Decimal("90.00")
+    assert order["promotion_code"] == promotion["code"]
+    assert Decimal(str(order["payment"]["amount"])) == Decimal("90.00")
+    replay = ok(api.post("/api/orders", json=payload), 201)
+    assert replay["idempotent_replay"] is True
+    assert replay["id"] == order["id"]
+
+    payload["checkout_idempotency_key"] = "promo-checkout-" + api.suffix + "-two"
+    blocked = api.post("/api/orders", json=payload)
+    assert blocked.status_code == 409
+    cancelled = ok(api.patch(f"/api/orders/{order['id']}/status", json={"status":"cancelled"}))
+    assert cancelled["status"] == "cancelled"
+    payload["checkout_idempotency_key"] = "promo-checkout-" + api.suffix + "-three"
+    replacement = ok(api.post("/api/orders", json=payload), 201)
+    assert Decimal(str(replacement["discount_total"])) == Decimal("10.00")
+    with psycopg.connect(TEST_DB) as conn:
+        redemption = conn.execute(
+            "SELECT count(*) FILTER (WHERE status='redeemed'),count(*) FILTER (WHERE status='reversed'),sum(discount_amount) FILTER (WHERE status='redeemed') "
+            "FROM promotion_redemptions WHERE promotion_id=%s",
+            (promotion["id"],),
+        ).fetchone()
+        assert redemption == (1, 1, Decimal("10.00"))
+
+def test_manual_pos_cash_refund_is_idempotent_and_reconciles_drawer(api):
+    register = ok(api.post("/api/pos/registers", json={
+        "location_id": api.location_id,
+        "register_code": "REFUND-" + api.suffix,
+        "name": "Refund Counter",
+    }), 201)
+    shift = ok(api.post(f"/api/pos/registers/{register['id']}/open", json={"opening_float":"500"}), 201)
+    order = ok(api.post("/api/orders", json={
+        "channel":"pos","customer_name":"Refund Customer","location_id":api.location_id,
+        "pos_register_id":register["id"],"pos_payment_method":"cod",
+        "checkout_idempotency_key":"manual-refund-sale-"+api.suffix,
+        "lines":[{"variant_id":api.variant_id,"quantity":1}],
+    }),201)
+    payment_id=order["payment"]["id"]
+    ok(api.post(f"/api/pos/shifts/{shift['id']}/payments/{payment_id}/confirm-cash",json={}))
+    headers={"Idempotency-Key":"manual-pos-refund-"+api.suffix+"-key"}
+    refund=ok(api.post(f"/api/payments/{payment_id}/manual-refunds",headers=headers,json={
+        "amount":"100.00","note":"Returned unopened product",
+    }),201)
+    assert refund["provider"]=="manual"
+    assert refund["pos_shift_id"]==shift["id"]
+    replay=ok(api.post(f"/api/payments/{payment_id}/manual-refunds",headers=headers,json={
+        "amount":"100.00","note":"Returned unopened product",
+    }),201)
+    assert replay["id"]==refund["id"]
+    with psycopg.connect(TEST_DB) as conn:
+        assert conn.execute("SELECT status FROM payments WHERE id=%s",(payment_id,)).fetchone()[0]=="refunded"
+        cash_out=conn.execute(
+            "SELECT count(*),sum(amount) FROM pos_cash_movements WHERE shift_id=%s AND movement_type='cash_out' AND reference=%s",
+            (shift["id"],"payment-refund:"+str(refund["id"])),
+        ).fetchone()
+        assert cash_out==(1,Decimal("100.00"))
+        assert conn.execute(
+            "SELECT pos_shift_id FROM payment_refunds WHERE id=%s",(refund["id"],)
+        ).fetchone()[0]==shift["id"]
+
+def test_order_gst_uses_specific_category_attribute_rule_and_persists_tax_snapshot(api, monkeypatch):
+    from app.api import orders
+    monkeypatch.setattr(orders.settings, "company_gstin", "20ABCDE1234F1Z5")
+    register=ok(api.post("/api/pos/registers",json={
+        "location_id":api.location_id,"register_code":"GST-"+api.suffix,"name":"GST Counter",
+    }),201)
+    ok(api.post(f"/api/pos/registers/{register['id']}/open",json={"opening_float":"100"}),201)
+    with psycopg.connect(TEST_DB) as conn:
+        attribute_id=conn.execute(
+            "INSERT INTO product_attributes(name,code,value_type,is_variant_attribute) VALUES('Packaging','packaging','text',false) RETURNING id",
+        ).fetchone()[0]
+        conn.execute(
+            "INSERT INTO product_attribute_values(product_id,attribute_id,value) VALUES((SELECT product_id FROM product_variants WHERE id=%s),%s,%s::jsonb)",
+            (api.variant_id,attribute_id,json.dumps("Loose")),
+        )
+        category_id=conn.execute("SELECT category_id FROM products WHERE id=(SELECT product_id FROM product_variants WHERE id=%s)",(api.variant_id,)).fetchone()[0]
+        general=conn.execute(
+            "INSERT INTO hsn_rules(category_id,conditions,hsn_code,gst_rate,note) VALUES(%s,'{}'::jsonb,'11111111',18,'General category rate') RETURNING id",
+            (category_id,),
+        ).fetchone()[0]
+        specific=conn.execute(
+            "INSERT INTO hsn_rules(category_id,conditions,hsn_code,gst_rate,note) VALUES(%s,%s::jsonb,'22222222',5,'Loose packaging rate') RETURNING id",
+            (category_id,json.dumps({"packaging":"Loose"})),
+        ).fetchone()[0]
+    order=ok(api.post("/api/orders",json={
+        "channel":"pos","customer_name":"GST Snapshot Customer","location_id":api.location_id,"pos_register_id":register["id"],
+        "checkout_idempotency_key":"gst-rule-snapshot-"+api.suffix,
+        "lines":[{"variant_id":api.variant_id,"quantity":1}],
+    }),201)
+    assert Decimal(str(order["tax_total"]))==Decimal("4.76")
+    assert order["place_of_supply_state"]=="20"
+    with psycopg.connect(TEST_DB) as conn:
+        snapshot=conn.execute(
+            "SELECT gst_rule_id,hsn_code,gst_rate,taxable_value,cgst_amount,sgst_amount,igst_amount,tax_total FROM order_lines WHERE order_id=%s",
+            (order["id"],),
+        ).fetchone()
+        assert snapshot==(specific,"22222222",Decimal("5.00"),Decimal("95.24"),Decimal("2.38"),Decimal("2.38"),Decimal("0.00"),Decimal("4.76"))
+
+def test_split_pos_tenders_capture_cash_without_premature_stock_consumption(api):
+    register=ok(api.post("/api/pos/registers",json={
+        "location_id":api.location_id,"register_code":"SPLIT-"+api.suffix,"name":"Split Counter",
+    }),201)
+    shift=ok(api.post(f"/api/pos/registers/{register['id']}/open",json={"opening_float":"500"}),201)
+    order=ok(api.post("/api/orders",json={
+        "channel":"pos","customer_name":"Split Tender Customer","location_id":api.location_id,
+        "pos_register_id":register["id"],"checkout_idempotency_key":"split-tender-"+api.suffix,
+        "pos_tenders":[{"method":"cod","amount":"40.00"},{"method":"upi","amount":"60.00"}],
+        "lines":[{"variant_id":api.variant_id,"quantity":1}],
+    }),201)
+    assert len(order["payments"])==2
+    cash=next(p for p in order["payments"] if p["method"]=="cod")
+    online=next(p for p in order["payments"] if p["method"]=="upi")
+    assert Decimal(str(cash["amount"]))==Decimal("40.00")
+    assert Decimal(str(online["amount"]))==Decimal("60.00")
+    ok(api.post(f"/api/pos/shifts/{shift['id']}/payments/{cash['id']}/confirm-cash",json={}))
+    replay=ok(api.post("/api/orders",json={
+        "channel":"pos","customer_name":"Split Tender Customer","location_id":api.location_id,
+        "pos_register_id":register["id"],"checkout_idempotency_key":"split-tender-"+api.suffix,
+        "pos_tenders":[{"method":"cod","amount":"40.00"},{"method":"upi","amount":"60.00"}],
+        "lines":[{"variant_id":api.variant_id,"quantity":1}],
+    }),201)
+    assert replay["idempotent_replay"] is True and len(replay["payments"])==2
+    assert next(p for p in replay["payments"] if p["method"]=="cod")["status"]=="captured"
+
+    with psycopg.connect(TEST_DB) as conn:
+        statuses=conn.execute("SELECT method,status,amount FROM payments WHERE order_id=%s ORDER BY id",(order["id"],)).fetchall()
+        assert statuses==[("cod","captured",Decimal("40.00")),("upi","pending",Decimal("60.00"))]
+        order_status=conn.execute("SELECT status FROM orders WHERE id=%s",(order["id"],)).fetchone()[0]
+        assert order_status=="placed"
+        balance=conn.execute("SELECT on_hand,reserved FROM inventory_balances WHERE variant_id=%s AND location_id=%s",(api.variant_id,api.location_id)).fetchone()
+        assert balance==(5,1)
+    invalid=api.post("/api/orders",json={
+        "channel":"pos","customer_name":"Invalid Split","location_id":api.location_id,
+        "pos_register_id":register["id"],"checkout_idempotency_key":"invalid-split-"+api.suffix,
+        "pos_tenders":[{"method":"cod","amount":"30.00"},{"method":"upi","amount":"60.00"}],
+        "lines":[{"variant_id":api.variant_id,"quantity":1}],
+    })
+    assert invalid.status_code==422

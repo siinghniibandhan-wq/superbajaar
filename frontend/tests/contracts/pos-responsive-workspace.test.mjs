@@ -35,3 +35,45 @@ test("responsive presentation retains the existing register, shift and checkout 
   assert.match(workspace, /confirm-cash/);
   assert.match(workspace, /checkout_idempotency_key/);
 });
+
+
+test("POS sales history exposes server-side search, date, register and tender filters", () => {
+  assert.match(workspace, /salesFilters/);
+  assert.match(workspace, /date_from/);
+  assert.match(workspace, /date_to/);
+  assert.match(workspace, /payment_method/);
+  assert.match(workspace, /register_id/);
+  assert.match(workspace, /apiRequest\("\/pos\/sales\?"/);
+  assert.match(workspace, /Apply filters/);
+  assert.match(workspace, /Clear/);
+});
+
+
+test("POS sales history opens server-backed item and payment details", () => {
+  assert.match(workspace, /openSaleDetails/);
+  assert.match(workspace, /apiRequest\("\/pos\/sales\/" \+ saleId\)/);
+  assert.match(workspace, /selectedSale\.lines/);
+  assert.match(workspace, /selectedSale\.payments/);
+  assert.match(workspace, /Close details/);
+});
+
+
+test("POS sales history paginates server-filtered results", () => {
+  assert.match(workspace, /salesOffset/);
+  assert.match(workspace, /offset: String\(offset\)/);
+  assert.match(workspace, />Previous</);
+  assert.match(workspace, />Next</);
+});
+
+
+test("POS sales history can be narrowed to an individual cashier", () => {
+  assert.match(workspace, /cashier_user_id/);
+  assert.match(workspace, /Cashier user ID/);
+});
+
+
+test("POS sales history can filter by order lifecycle status", () => {
+  assert.match(workspace, /Order status/);
+  assert.match(workspace, /value=\{salesFilters\.status\}/);
+  assert.match(workspace, /ready_for_dispatch/);
+});

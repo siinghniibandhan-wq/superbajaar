@@ -143,6 +143,85 @@ def _dispatch_shelf_life_policy(conn, location_id: int, variant_id: int) -> int 
     )
 
 
+
+def consume_pos_order_stock(conn, order_id: int):
+    """Consume a fully paid in-store POS reservation at the counter, exactly once.
+
+    POS sales are handed to the customer immediately, so they must not remain
+    reserved for a later warehouse dispatch. The inventory movement, FIFO/FEFO
+    cost allocation and order issue are written in the caller's payment
+    transaction. Replays are safe because the outstanding reservation ledger
+    subtracts previously recorded sale movements.
+    """
+    order = conn.execute(
+        "SELECT id, channel, status FROM orders WHERE id=%s FOR UPDATE",
+        (order_id,),
+    ).fetchone()
+    if order is None or order["channel"] != "pos":
+        raise ValueError("Immediate stock consumption is restricted to POS orders")
+    if order["status"] == "cancelled":
+        raise ValueError("A cancelled POS order cannot consume stock")
+    rows = _outstanding_order_reservations(conn, order_id)
+    if not rows:
+        # An already-consumed POS order is an idempotent replay.
+        already_consumed = conn.execute(
+            "SELECT EXISTS (SELECT 1 FROM inventory_movements WHERE reference_type=%s AND reference_id=%s AND movement_type='sale') AS consumed",
+            (ORDER_FULFILMENT_REF, str(order_id)),
+        ).fetchone()
+        if already_consumed and already_consumed["consumed"]:
+            return 0
+        raise ValueError("POS order has no outstanding stock reservation to consume")
+    reserved_by_variant = {}
+    for row in rows:
+        variant_id = int(row["variant_id"])
+        reserved_by_variant[variant_id] = reserved_by_variant.get(variant_id, Decimal("0")) + Decimal(str(row["outstanding"]))
+    expected = conn.execute(
+        "SELECT variant_id, quantity FROM order_lines WHERE order_id=%s ORDER BY variant_id FOR UPDATE",
+        (order_id,),
+    ).fetchall()
+    if {int(row["variant_id"]): Decimal(str(row["quantity"])) for row in expected} != reserved_by_variant:
+        raise ValueError("POS stock reservation does not match the complete order; reconcile before capturing payment")
+    consumed = 0
+    for row in rows:
+        variant_id = int(row["variant_id"])
+        location_id = int(row["location_id"])
+        quantity = Decimal(str(row["outstanding"]))
+        updated = conn.execute(
+            "UPDATE inventory_balances SET on_hand=on_hand-%s,reserved=reserved-%s,updated_at=now() "
+            "WHERE variant_id=%s AND location_id=%s AND on_hand >= %s AND reserved >= %s RETURNING variant_id",
+            (quantity, quantity, variant_id, location_id, quantity, quantity),
+        ).fetchone()
+        if updated is None:
+            raise ValueError("Reserved POS inventory changed before payment capture; stock was not consumed")
+        movement = conn.execute(
+            "INSERT INTO inventory_movements (variant_id,location_id,movement_type,quantity,reference_type,reference_id,note) "
+            "VALUES (%s,%s,'sale',%s,%s,%s,%s) RETURNING id",
+            (variant_id, location_id, quantity, ORDER_FULFILMENT_REF, str(order_id), f"POS counter sale {order_id}"),
+        ).fetchone()
+        line = conn.execute(
+            "SELECT id FROM order_lines WHERE order_id=%s AND variant_id=%s FOR UPDATE",
+            (order_id, variant_id),
+        ).fetchone()
+        if line is None:
+            raise ValueError(f"POS order line not found for variant {variant_id}")
+        method = cost_allocation_method(conn, variant_id, location_id)
+        costing = allocate_cost_layers(
+            conn, movement_id=movement["id"], variant_id=variant_id,
+            location_id=location_id, quantity=quantity, method=method,
+            allow_expired=False,
+        )
+        conn.execute(
+            "INSERT INTO inventory_order_issues "
+            "(order_id,order_line_id,movement_id,location_id,fulfilment_reference,quantity,total_cost,allocation_method) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+            (order_id, line["id"], movement["id"], location_id,
+             f"pos:{order_id}:movement:{movement['id']}", quantity,
+             costing["total_cost"], costing["method"]),
+        )
+        consumed += 1
+    return consumed
+
+
 def dispatch_order_stock(conn, order_id: int, requested_quantities: dict[int, int] | None = None):
     """Consume all or selected outstanding quantities, supporting partial dispatch."""
     rows = _outstanding_order_reservations(conn, order_id)

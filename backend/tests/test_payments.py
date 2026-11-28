@@ -20,6 +20,9 @@ class _FakeResult:
     def fetchone(self):
         return self.row
 
+    def fetchall(self):
+        return self.row or []
+
 
 class _FakePaymentConnection:
     def __init__(
@@ -58,10 +61,18 @@ class _FakePaymentConnection:
             return _FakeResult(self.payment)
         if "FROM payments WHERE provider_order_id" in normalized_query:
             return _FakeResult(self.payment)
-        if "FROM payments WHERE order_id" in normalized_query and "provider_order_id IS NOT NULL" in normalized_query:
+        if "FROM payments WHERE order_id" in normalized_query and ("provider_order_id IS NOT NULL" in normalized_query or "method IN" in normalized_query):
             return _FakeResult(self.payment)
         if "FROM payments WHERE order_id" in normalized_query:
             return _FakeResult({"amount": Decimal("12.34")})
+        if "FROM orders o LEFT JOIN pos_register_shifts" in normalized_query:
+            return _FakeResult(self.order)
+        if "UPDATE orders SET status='confirmed'" in normalized_query and self.payment:
+            self.payment["order_status"] = "confirmed"
+            return _FakeResult()
+        if "SELECT status FROM orders WHERE id=%s" in normalized_query:
+            status = self.payment.get("order_status", "confirmed") if self.payment else "confirmed"
+            return _FakeResult({"status": status})
         if "FROM orders WHERE id=%s FOR UPDATE" in normalized_query:
             return _FakeResult(self.order)
         return _FakeResult()
@@ -219,6 +230,9 @@ def test_razorpay_verify_confirms_captured_payment_with_provider_and_updates_ord
         "currency": "INR",
         "status": "pending",
         "order_status": "placed",
+        "order_total": Decimal("12.34"),
+        "channel": "web",
+        "cashier_user_id": None,
         "customer_email": "buyer@example.com",
         "order_number": "SB-ORDER-41",
     })
@@ -409,6 +423,9 @@ def test_razorpay_verify_reports_captured_payment_for_cancelled_order_without_cl
         "currency": "INR",
         "status": "pending",
         "order_status": "cancelled",
+        "order_total": Decimal("12.34"),
+        "channel": "web",
+        "cashier_user_id": None,
         "customer_email": "buyer@example.com",
         "order_number": "SB-ORDER-41",
     })
@@ -452,3 +469,56 @@ def test_razorpay_verify_reports_captured_payment_for_cancelled_order_without_cl
     }
     assert any("UPDATE payments SET status='captured'" in query for query, _ in db.statements)
     assert not any("UPDATE orders SET status='confirmed'" in query for query, _ in db.statements)
+
+def test_manual_refund_requires_manager_or_admin_session():
+    response = client.post(
+        "/api/payments/1/manual-refunds",
+        headers={"Idempotency-Key":"manual-refund-key-0001"},
+        json={"amount":"10.00","note":"Customer returned item"},
+    )
+    assert response.status_code == 403
+    assert "manager or administrator" in response.json()["detail"]
+
+
+def test_manual_refund_requires_positive_amount_and_reason():
+    response = client.post(
+        "/api/payments/1/manual-refunds",
+        headers={"Idempotency-Key":"manual-refund-key-0002"},
+        json={"amount":"0","note":"No"},
+    )
+    assert response.status_code == 422
+
+def test_payment_reconciliation_subtracts_refund_ledger_and_reports_pending(monkeypatch):
+    from contextlib import contextmanager
+    from app.api import payments
+    class Connection:
+        def __init__(self): self.queries=[]
+        def execute(self, query, params=()):
+            self.queries.append(query)
+            normalized=" ".join(query.split())
+            if "GROUP BY status ORDER BY status" in normalized:
+                return _FakeResult([{"status":"captured","payment_count":2,"amount":500}])
+            if "FROM orders WHERE status <> 'cancelled'" in normalized:
+                return _FakeResult({"order_count":2,"order_value":500})
+            if "status IN ('captured','refunded')" in normalized:
+                return _FakeResult({"amount":500})
+            if "GROUP BY provider" in normalized:
+                return _FakeResult([{"provider":"manual","count":1,"amount":75}])
+            if "payment_refunds WHERE status='processed'" in normalized:
+                return _FakeResult({"amount":75})
+            if "payment_refunds WHERE status='pending'" in normalized:
+                return _FakeResult({"count":1,"amount":20})
+            return _FakeResult()
+        def fetchone(self): return None
+        def fetchall(self): return []
+    connection=Connection()
+    @contextmanager
+    def connect():
+        yield connection
+    monkeypatch.setattr(payments,"_connect",connect)
+    result=payments.payment_reconciliation()
+    assert result["captured_amount_recorded"]==500
+    assert result["refunded_amount_recorded"]==75
+    assert result["net_captured_amount_recorded"]==425
+    assert result["pending_refunds"]["amount"]==20
+    assert result["refunds_by_provider"][0]["provider"]=="manual"

@@ -78,3 +78,6 @@
 077_hr_travel_advance_disbursements.sql
 078_hr_travel_payout_beneficiaries.sql
 079_hr_employee_loan_accounting.sql
+080_payment_refunds.sql
+081_order_gst_snapshots.sql
+082_promotions_and_order_discounts.sql

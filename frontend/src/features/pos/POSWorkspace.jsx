@@ -20,6 +20,21 @@ const PAYMENT_METHODS = [
 ];
 const methodLabel = id => PAYMENT_METHODS.find(m => m.id === id)?.label || id;
 
+let posRazorpayScript;
+function loadPosRazorpay() {
+  if (window.Razorpay) return Promise.resolve();
+  if (!posRazorpayScript) posRazorpayScript = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    script.onload = resolve;
+    script.onerror = () => { posRazorpayScript = null; reject(new Error("Unable to load secure Razorpay Checkout.")); };
+    document.head.appendChild(script);
+  });
+  return posRazorpayScript;
+}
+
+
 // Readable variant text. Picture-type values show their name, never a long link.
 const cleanValue = value => {
   const text = Array.isArray(value) ? value.join(", ") : String(value ?? "");
@@ -35,6 +50,16 @@ export default function POSWorkspace({ onBack }) {
   const [variants, setVariants] = useState([]);
   const [posSummary, setPosSummary] = useState(null);
   const [recentSales, setRecentSales] = useState([]);
+  const [salesTotal, setSalesTotal] = useState(0);
+  const [salesOffset, setSalesOffset] = useState(0);
+  const [salesFilters, setSalesFilters] = useState({ search: "", date_from: "", date_to: "", payment_method: "", register_id: "", cashier_user_id: "", status: "" });
+  const [salesBusy, setSalesBusy] = useState(false);
+  const [selectedSale, setSelectedSale] = useState(null);
+  const [refundPayment, setRefundPayment] = useState(null);
+  const [refundAmount, setRefundAmount] = useState("");
+  const [refundReason, setRefundReason] = useState("");
+  const [refundBusy, setRefundBusy] = useState(false);
+  const [saleDetailBusy, setSaleDetailBusy] = useState(false);
   const [analyticsError, setAnalyticsError] = useState("");
   const [locations, setLocations] = useState([]);
   const [registers, setRegisters] = useState([]);
@@ -53,7 +78,13 @@ export default function POSWorkspace({ onBack }) {
   const [locationId, setLocationId] = useState("");
   const [registerLocationId, setRegisterLocationId] = useState("");
   const [customer, setCustomer] = useState({ name: "Walk-in Customer", phone: "", pin: "" });
+  const [couponCode, setCouponCode] = useState("");
+  const [couponApplied, setCouponApplied] = useState(null);
+  const [couponBusy, setCouponBusy] = useState(false);
   const [method, setMethod] = useState("cod");
+  const [splitTender, setSplitTender] = useState(false);
+  const [splitCashAmount, setSplitCashAmount] = useState("");
+  const [splitOnlineMethod, setSplitOnlineMethod] = useState("upi");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -71,6 +102,59 @@ export default function POSWorkspace({ onBack }) {
   const [showHeld, setShowHeld] = useState(false);
   const [pickerId, setPickerId] = useState(null);
   const [held, setHeld] = useState(() => { try { return JSON.parse(window.localStorage.getItem("superbajaar.pos_held") || "[]"); } catch { return []; } });
+
+  async function loadSales(filters = salesFilters, offset = 0) {
+    setSalesBusy(true);
+    try {
+      const query = new URLSearchParams({ limit: "50", offset: String(offset) });
+      for (const [key, value] of Object.entries(filters)) if (String(value || "").trim()) query.set(key, String(value).trim());
+      const result = await apiRequest("/pos/sales?" + query.toString());
+      setRecentSales(result.items || []);
+      setSalesTotal(Number(result.total || 0));
+      setSalesOffset(offset);
+      setAnalyticsError("");
+    } catch (e) {
+      setAnalyticsError(e.message || "Unable to load POS sales history.");
+    } finally {
+      setSalesBusy(false);
+    }
+  }
+
+  function startRefund(payment) {
+    const alreadyRefunded = (selectedSale?.refunds || []).filter(r => r.payment_id === payment.id && ["processed","pending"].includes(r.status)).reduce((sum,r)=>sum+Number(r.amount||0),0);
+    const remaining = Math.max(0,Number(payment.amount||0)-alreadyRefunded);
+    setRefundPayment(payment); setRefundAmount(remaining.toFixed(2)); setRefundReason("");
+  }
+
+  async function submitRefund(event) {
+    event.preventDefault();
+    if (!refundPayment || !selectedSale) return;
+    const amount = Number(refundAmount);
+    if (!Number.isFinite(amount) || amount <= 0 || !refundReason.trim()) { setAnalyticsError("Enter a positive refund amount and a reason."); return; }
+    setRefundBusy(true); setAnalyticsError("");
+    try {
+      const key = globalThis.crypto?.randomUUID?.() || (Date.now().toString(16)+Math.random().toString(16).slice(2));
+      await apiRequest("/payments/"+refundPayment.id+(refundPayment.provider_reference?"/refunds":"/manual-refunds"), {
+        method:"POST", headers:{"Idempotency-Key":key}, body:JSON.stringify({amount,note:refundReason.trim()}),
+      });
+      setRefundPayment(null); setRefundAmount(""); setRefundReason("");
+      await openSaleDetails(selectedSale.id); await refreshAnalytics();
+      setNotice(refundPayment.provider_reference ? "Refund request submitted to payment provider." : "Manual refund recorded. POS cash drawer movement was audited where applicable.");
+    } catch(e) { setAnalyticsError(e.message || "Refund could not be recorded."); }
+    finally { setRefundBusy(false); }
+  }
+
+  async function openSaleDetails(saleId) {
+    setSaleDetailBusy(true);
+    setSelectedSale(null);
+    try {
+      setSelectedSale(await apiRequest("/pos/sales/" + saleId));
+    } catch (e) {
+      setAnalyticsError(e.message || "Unable to load sale details.");
+    } finally {
+      setSaleDetailBusy(false);
+    }
+  }
 
   async function refreshAnalytics() {
     const analytics = await Promise.allSettled([
@@ -232,14 +316,22 @@ export default function POSWorkspace({ onBack }) {
   }
 
   const cartCount = cart.reduce((sum, line) => sum + line.quantity, 0);
-  const total = round2(cart.reduce((sum, line) => sum + Number(line.selling_price || 0) * line.quantity, 0));
+  const subtotal = round2(cart.reduce((sum, line) => sum + Number(line.selling_price || 0) * line.quantity, 0));
+  const validCouponQuote = couponApplied && couponApplied.subtotal === subtotal && couponApplied.code === couponCode.trim().toUpperCase();
+  const couponDiscount = validCouponQuote ? Number(couponApplied.discount_amount || 0) : 0;
+  const total = round2(subtotal - couponDiscount);
   const qtyById = useMemo(() => new Map(cart.map(line => [line.id, line.quantity])), [cart]);
   const selectedRegister = registers.find(r => String(r.id) === String(selectedRegisterId));
   const locationName = locations.find(l => String(l.id) === String(locationId))?.name || selectedRegister?.location_name || "";
 
   const tenderedNumber = method === "cod" && tendered !== "" ? Number(tendered) : null;
   const changeDue = tenderedNumber != null && tenderedNumber >= total ? round2(tenderedNumber - total) : null;
-  const shortBy = tenderedNumber != null && tenderedNumber < total ? round2(total - tenderedNumber) : null;
+  const shortBy = !splitTender && tenderedNumber != null && tenderedNumber < total ? round2(total - tenderedNumber) : null;
+  const splitCash = splitCashAmount === "" ? null : Number(splitCashAmount);
+  const splitOnline = splitCash == null ? null : round2(total - splitCash);
+  const splitIsTwoTenders = splitTender && splitCash != null && splitCash > 0 && splitCash < total && splitOnline > 0;
+  const checkoutMethod = splitTender ? (splitCash === total ? "cod" : splitOnlineMethod) : method;
+  const splitTenders = splitIsTwoTenders ? [{method:"cod",amount:splitCash},{method:splitOnlineMethod,amount:splitOnline}] : null;
   const quickCash = useMemo(() => {
     if (method !== "cod" || total <= 0) return [];
     const up = step => Math.ceil(total / step) * step;
@@ -247,12 +339,14 @@ export default function POSWorkspace({ onBack }) {
   }, [method, total]);
 
   const blocker = !cart.length ? "Tap an item on the left to start a sale."
+    : couponCode.trim() && !validCouponQuote ? "Apply or reapply the coupon against the current cart subtotal."
+    : splitTender && (splitCash == null || !Number.isFinite(splitCash) || splitCash < 0 || splitCash > total) ? "Enter a valid cash portion for the split tender."
     : !selectedRegisterId ? "Choose a counter to sell from."
     : !activeShift ? "Open the cashier shift above to take payment."
     : !locationId ? "Choose a stock location."
     : shortBy != null ? "Cash received is " + money(shortBy) + " short."
     : "";
-  const chargeLabel = saving ? "Processing…" : method === "cod" ? "Receive cash · " + money(total) : "Charge " + money(total) + " · " + methodLabel(method);
+  const chargeLabel = saving ? "Processing…" : splitIsTwoTenders ? "Split · Cash " + money(splitCash) + " + " + methodLabel(splitOnlineMethod) + " " + money(splitOnline) : method === "cod" ? "Receive cash · " + money(total) : "Charge " + money(total) + " · " + methodLabel(method);
 
   useEffect(() => { try { window.localStorage.setItem(HELD_KEY, JSON.stringify(held)); } catch {} }, [held]);
   useEffect(() => {
@@ -286,17 +380,18 @@ export default function POSWorkspace({ onBack }) {
   const removeLine = id => setCart(old => old.filter(line => line.id !== id));
 
   function resetSale() {
-    setCart([]); setCustomer({ ...WALK_IN }); setTendered(""); setReference(""); setShowCustomer(false);
+    setCart([]); setCustomer({ ...WALK_IN }); setTendered(""); setReference(""); setShowCustomer(false); setSplitTender(false); setSplitCashAmount("");
+    setCouponCode(""); setCouponApplied(null);
     checkoutAttempt.current = null;
   }
   function holdSale() {
     if (!cart.length) return;
-    setHeld(old => [...old, { id: Date.now(), at: new Date().toISOString(), cart, customer, total }]);
+    setHeld(old => [...old, { id: Date.now(), at: new Date().toISOString(), cart, customer, subtotal, total, couponCode, couponApplied }]);
     resetSale(); setNotice("Sale put on hold. Recall it from “Held” whenever you're ready.");
   }
   function recallSale(entry) {
     if (cart.length) { setError("Hold or clear the current sale before recalling a held one."); return; }
-    setCart(entry.cart); setCustomer(entry.customer || { ...WALK_IN });
+    setCart(entry.cart); setCustomer(entry.customer || { ...WALK_IN }); setCouponCode(entry.couponCode || ""); setCouponApplied(entry.couponApplied || null);
     setHeld(old => old.filter(x => x.id !== entry.id)); setShowHeld(false); setError("");
   }
   function onSearchKey(event) {
@@ -311,18 +406,37 @@ export default function POSWorkspace({ onBack }) {
   }
   function closeReceipt() { setShowReceipt(false); window.setTimeout(() => searchRef.current?.focus(), 50); }
 
+  async function applyCoupon() {
+    const code = couponCode.trim().toUpperCase();
+    if (!code) { setCouponApplied(null); setError("Enter a coupon code first."); return; }
+    if (!cart.length) { setError("Add items before applying a coupon."); return; }
+    setCouponBusy(true); setError("");
+    try {
+      const quote = await apiRequest("/orders/promotions/quote?code=" + encodeURIComponent(code) + "&subtotal=" + encodeURIComponent(subtotal.toFixed(2)));
+      setCouponCode(code); setCouponApplied({ code, subtotal, discount_amount: Number(quote.discount_amount) });
+      setNotice(code + " applied. You save " + money(quote.discount_amount) + ".");
+    } catch (e) { setCouponApplied(null); setError(e.message || "Coupon could not be applied."); }
+    finally { setCouponBusy(false); }
+  }
+
   async function checkout(event) {
+    let pendingSplitReceipt = null;
     event?.preventDefault?.();
     if (!cart.length) { setError("Add at least one item before checkout."); return; }
+    if (couponCode.trim() && !validCouponQuote) { setError("Apply or reapply the coupon against the current cart subtotal."); return; }
     const customerName = customer.name.trim() || WALK_IN.name;
     const pin = customer.pin.trim();
     if (pin && !/^[0-9]{6}$/.test(pin)) { setError("Delivery PIN must be exactly 6 digits."); setShowCustomer(true); return; }
     if (shortBy != null) { setError("Cash received is less than the total."); return; }
+    if (splitTender && (splitCash == null || !Number.isFinite(splitCash) || splitCash < 0 || splitCash > total)) { setError("Enter a valid cash portion for the split tender."); return; }
     setSaving(true); setError(""); setNotice(""); setReceipt(null);
     const note = "Created at POS" + (reference.trim() ? " · Ref: " + reference.trim().slice(0, 100) : "");
     const checkoutPayload = {
       channel: "pos", customer_name: customerName, customer_phone: customer.phone.trim() || null,
-      delivery_pin: pin || null, location_id: Number(locationId), pos_register_id: Number(selectedRegisterId), pos_payment_method: method,
+      delivery_pin: pin || null, location_id: Number(locationId), pos_register_id: Number(selectedRegisterId),
+      pos_payment_method: splitTender ? (splitCash === total ? "cod" : splitCash === 0 ? splitOnlineMethod : null) : method,
+      pos_tenders: splitIsTwoTenders ? splitTenders : null,
+      coupon_code: couponCode.trim() || null,
       notes: note, lines: cart.map(line => ({ variant_id: line.id, quantity: line.quantity })),
     };
     const signature = JSON.stringify(checkoutPayload);
@@ -334,21 +448,62 @@ export default function POSWorkspace({ onBack }) {
         method: "POST",
         body: JSON.stringify({ ...checkoutPayload, checkout_idempotency_key: checkoutAttempt.current.key }),
       });
-      const payment = order.payment || null;
+      let payments = order.payments || (order.payment ? [order.payment] : []);
+      if (!payments.length) {
+        setError("Order " + order.order_number + " was returned without its tender record. Do not create another order; reconcile this sale before retrying.");
+        return;
+      }
+      if (splitIsTwoTenders) {
+        const cashPayment = payments.find(p => p.method === "cod");
+        const onlinePayment = payments.find(p => p.method !== "cod");
+        if (cashPayment && cashPayment.status === "pending") {
+          const confirmed = await apiRequest("/pos/shifts/" + activeShift.id + "/payments/" + cashPayment.id + "/confirm-cash", {method:"POST"});
+          payments = payments.map(p => p.id === cashPayment.id ? {...p,...confirmed} : p);
+        }
+        const partialReceipt = { order, payment: payments[0], payments, method:"split", at:new Date().toISOString(), counter:activeShift?.register_code||"", customer:{name:customerName,phone:customer.phone.trim()}, tendered:splitCash, lines:cart.map((line,index)=>({id:line.id,name:productTitle(line),label:variantLabel(line),sku:line.sku,quantity:line.quantity,price:Number(line.selling_price||0),tax:order.tax_lines?.[index]||null})) };
+        pendingSplitReceipt = partialReceipt;
+        setReceipt(partialReceipt);
+        if (onlinePayment) {
+          const gatewayOrder = await apiRequest("/razorpay/orders", {method:"POST",body:JSON.stringify({order_id:order.id,payment_id:onlinePayment.id})});
+          await loadPosRazorpay();
+          const result = await new Promise((resolve,reject) => {
+            let settled=false; const finish=(fn,value)=>{if(settled)return;settled=true;fn(value);};
+            const checkout = new window.Razorpay({key:gatewayOrder.key_id,amount:gatewayOrder.amount,currency:gatewayOrder.currency,name:"Super Bajaar",description:"POS split sale "+order.order_number,order_id:gatewayOrder.razorpay_order_id,prefill:{name:customerName,contact:customer.phone.trim()},handler:response=>finish(resolve,response),modal:{ondismiss:()=>finish(reject,new Error("Online split tender window closed. Cash remains recorded; online amount is still pending and may be retried from the sale."))}});
+            checkout.on("payment.failed",response=>finish(reject,new Error(response?.error?.description||"Online split payment failed; cash remains recorded.")));
+            checkout.open();
+          });
+          const verified=await apiRequest("/razorpay/verify",{method:"POST",body:JSON.stringify(result)});
+          payments=payments.map(p=>p.id===onlinePayment.id?{...p,status:verified.status||"captured",provider_reference:result.razorpay_payment_id}:p);
+          pendingSplitReceipt = {...partialReceipt,payments,payment:payments[0]};
+        }
+      } else {
+        let payment = payments[0];
+        if (checkoutMethod !== "cod" && payment) {
+          const gatewayOrder = await apiRequest("/razorpay/orders", {method:"POST",body:JSON.stringify({order_id:order.id,payment_id:payment.id})});
+          await loadPosRazorpay();
+          const result = await new Promise((resolve,reject)=>{
+            let settled=false; const finish=(fn,value)=>{if(settled)return;settled=true;fn(value);};
+            const checkout=new window.Razorpay({key:gatewayOrder.key_id,amount:gatewayOrder.amount,currency:gatewayOrder.currency,name:"Super Bajaar",description:"POS sale "+order.order_number,order_id:gatewayOrder.razorpay_order_id,prefill:{name:customerName,contact:customer.phone.trim()},handler:response=>finish(resolve,response),modal:{ondismiss:()=>finish(reject,new Error("Payment window closed. The sale is pending; retry using the same checkout."))}});
+            checkout.on("payment.failed",response=>finish(reject,new Error(response?.error?.description||"Payment failed. Retry this sale.")));
+            checkout.open();
+          });
+          const verified=await apiRequest("/razorpay/verify",{method:"POST",body:JSON.stringify(result)});
+          payment={...payment,status:verified.status||"captured",provider_reference:result.razorpay_payment_id};
+          payments=[payment];
+        }
+      }
+      let payment = payments[0];
       const sale = {
-        order, payment, method, at: new Date().toISOString(), counter: activeShift?.register_code || "",
+        order, payment, payments, method: splitTender ? (splitIsTwoTenders ? "split" : checkoutMethod) : method, at: new Date().toISOString(), counter: activeShift?.register_code || "",
         customer: { name: customerName, phone: customer.phone.trim() },
-        tendered: tenderedNumber,
-        lines: cart.map(line => ({ id: line.id, name: productTitle(line), label: variantLabel(line), sku: line.sku, quantity: line.quantity, price: Number(line.selling_price || 0) })),
+        tendered: splitIsTwoTenders ? splitCash : tenderedNumber,
+        lines: cart.map((line, index) => ({ id: line.id, name: productTitle(line), label: variantLabel(line), sku: line.sku, quantity: line.quantity, price: Number(line.selling_price || 0), tax: order.tax_lines?.[index] || null })),
       };
       setReceipt(sale);
-      if (!payment) {
-        setError("Order " + order.order_number + " was returned without its tender record. Do not create another order; reconcile this sale before retrying.");
-      } else {
-        resetSale(); setShowReceipt(true);
-      }
+      resetSale(); setShowReceipt(true);
       void refreshAnalytics();
     } catch (e) {
+      if (pendingSplitReceipt) { setReceipt(pendingSplitReceipt); setShowReceipt(true); }
       setError(e.message || "POS checkout could not be completed. Retry the same sale to safely reuse its checkout key.");
     } finally { setSaving(false); }
   }
@@ -361,7 +516,7 @@ export default function POSWorkspace({ onBack }) {
     <button className="sb-back" type="button" onClick={onBack}>← All workspaces</button>
     <div className="sb-pos-head">
       <div><p className="sb-eyebrow">OPERATIONS · STORES</p><h1>POS & Stores</h1></div>
-      <nav className="sb-pos-nav" aria-label="POS modules"><button type="button" className={activeView === "checkout" ? "is-active" : ""} onClick={() => setActiveView("checkout")}>Checkout</button><button type="button" className={activeView === "sales" ? "is-active" : ""} onClick={() => setActiveView("sales")}>Sales history</button><button type="button" className={activeView === "registers" ? "is-active" : ""} onClick={() => setActiveView("registers")}>Registers & cash</button><span>{activeShift ? "Counter active" : "No active shift"}</span></nav>
+      <nav className="sb-pos-nav" aria-label="POS modules"><button type="button" className={activeView === "checkout" ? "is-active" : ""} onClick={() => setActiveView("checkout")}>Checkout</button><button type="button" className={activeView === "sales" ? "is-active" : ""} onClick={() => { setActiveView("sales"); loadSales(salesFilters, 0); }}>Sales history</button><button type="button" className={activeView === "registers" ? "is-active" : ""} onClick={() => setActiveView("registers")}>Registers & cash</button><span>{activeShift ? "Counter active" : "No active shift"}</span></nav>
     </div>
     {activeView !== "checkout" && <p className="sb-pos-sub">Retail checkout, independent counters, cashier shifts and auditable cash-drawer controls.</p>}
     {error && <p className="sb-alert" role="alert">{error}</p>}
@@ -384,11 +539,33 @@ export default function POSWorkspace({ onBack }) {
       <article className="sb-report-card"><small>Today's sales value</small><strong>{money(posSummary.orders?.today_order_value)}</strong><span>{Number(posSummary.orders?.today_order_count || 0)} orders today</span></article>
       <article className="sb-report-card"><small>Captured payments</small><strong>{money(posSummary.payments?.captured_amount)}</strong><span>{Number(posSummary.payments?.captured_count || 0)} confirmed records</span></article>
       <article className="sb-report-card"><small>Pending payments</small><strong>{money(posSummary.payments?.pending_amount)}</strong><span>{Number(posSummary.payments?.pending_count || 0)} awaiting confirmation</span></article>
+      <article className="sb-report-card"><small>Refunds recorded</small><strong>{money(posSummary.refunds?.processed_amount)}</strong><span>{Number(posSummary.refunds?.processed_count || 0)} processed</span></article>
+      <article className="sb-report-card"><small>Net captured</small><strong>{money(Number(posSummary.payments?.captured_amount || 0)-Number(posSummary.refunds?.processed_amount || 0))}</strong><span>Gross captured less processed refunds</span></article>
     </div>}
     {receipt && <div className="sb-data-card" style={{ display: activeView === "sales" ? "block" : "none" }}><h2>Latest order</h2><p><strong>{receipt.order.order_number}</strong> · {money(receipt.order.total)} · {receipt.order.status}</p><p>Payment record: {receipt.payment ? receipt.payment.payment_reference + " · " + receipt.payment.status : "Not returned — reconcile before retrying."}</p>{receipt.payment?.method === "cod" && receipt.payment.status === "pending" && activeShift && <button type="button" className="sb-primary" onClick={confirmCashTender} disabled={registerBusy}>Confirm cash received</button>}</div>}
     <div className="sb-data-card" style={{ display: activeView === "sales" ? "block" : "none" }}>
-      <div className="sb-data-heading"><h2>Recent POS sales</h2><button type="button" onClick={load} disabled={loading}>Refresh sales</button></div>
-      {recentSales.length ? <div className="sb-table-wrap"><table><thead><tr><th>Order</th><th>Customer</th><th>Status</th><th>Total</th><th>Captured</th><th>Payment state</th></tr></thead><tbody>{recentSales.map(sale => <tr key={sale.id}><td>{sale.order_number}</td><td>{sale.customer_name}</td><td>{sale.status}</td><td>{money(sale.total)}</td><td>{money(sale.captured_amount)}</td><td>{sale.payment_statuses || "No payment record"}</td></tr>)}</tbody></table></div> : <p className="sb-empty">No POS sales recorded yet.</p>}
+      <div className="sb-data-heading"><h2>POS sales history</h2><span>{salesTotal.toLocaleString("en-IN")} matching sales</span></div>
+      <form className="sb-pos-inline-form" onSubmit={event => { event.preventDefault(); loadSales(salesFilters, 0); }}>
+        <label>Search order / customer / phone<input type="search" maxLength="200" value={salesFilters.search} onChange={event => setSalesFilters(old => ({ ...old, search: event.target.value }))} placeholder="Order number, name or phone" /></label>
+        <label>From date<input type="date" value={salesFilters.date_from} onChange={event => setSalesFilters(old => ({ ...old, date_from: event.target.value }))} /></label>
+        <label>To date<input type="date" value={salesFilters.date_to} onChange={event => setSalesFilters(old => ({ ...old, date_to: event.target.value }))} /></label>
+        <label>Register<select value={salesFilters.register_id} onChange={event => setSalesFilters(old => ({ ...old, register_id: event.target.value }))}><option value="">All registers</option>{registers.map(register => <option key={register.id} value={register.id}>{register.register_code} — {register.name}</option>)}</select></label>
+        <label>Order status<select value={salesFilters.status} onChange={event => setSalesFilters(old => ({ ...old, status: event.target.value }))}><option value="">All statuses</option><option value="placed">Placed</option><option value="confirmed">Confirmed</option><option value="processing">Processing</option><option value="ready_for_dispatch">Ready for dispatch</option><option value="dispatched">Dispatched</option><option value="delivered">Delivered</option><option value="cancelled">Cancelled</option></select></label>
+        <label>Cashier user ID<input type="number" min="1" step="1" value={salesFilters.cashier_user_id} onChange={event => setSalesFilters(old => ({ ...old, cashier_user_id: event.target.value }))} placeholder="All cashiers" /></label>
+        <label>Payment method<select value={salesFilters.payment_method} onChange={event => setSalesFilters(old => ({ ...old, payment_method: event.target.value }))}><option value="">All methods</option><option value="cod">Cash / COD</option><option value="upi">UPI</option><option value="card">Card</option><option value="wallet">Wallet</option><option value="netbanking">Net banking</option><option value="bank_transfer">Bank transfer</option><option value="other">Other</option></select></label>
+        <button type="submit" disabled={salesBusy}>{salesBusy ? "Searching…" : "Apply filters"}</button>
+        <button type="button" onClick={() => { const cleared = { search: "", date_from: "", date_to: "", payment_method: "", register_id: "", cashier_user_id: "", status: "" }; setSalesFilters(cleared); loadSales(cleared, 0); }} disabled={salesBusy}>Clear</button>
+      </form>
+      <div className="sb-data-heading"><span>Showing {recentSales.length} of {salesTotal}</span><button type="button" onClick={() => loadSales()} disabled={salesBusy}>Refresh sales</button></div>
+      {recentSales.length ? <div className="sb-table-wrap"><table><thead><tr><th>Order</th><th>Customer</th><th>Register / cashier</th><th>Status</th><th>Total</th><th>Captured</th><th>Refunded</th><th>Payment state</th><th>Details</th></tr></thead><tbody>{recentSales.map(sale => <tr key={sale.id}><td>{sale.order_number}</td><td>{sale.customer_name}<br/><small>{sale.customer_phone || "—"}</small></td><td>{sale.register_id ? "#" + sale.register_id : "—"} / {sale.cashier_user_id || "—"}</td><td>{sale.status}</td><td>{money(sale.total)}</td><td>{money(sale.captured_amount)}</td><td>{money(sale.refunded_amount)}</td><td>{sale.payment_statuses || "No payment record"}</td><td><button type="button" onClick={() => openSaleDetails(sale.id)} disabled={saleDetailBusy}>View</button></td></tr>)}</tbody></table></div> : <p className="sb-empty">{salesBusy ? "Loading sales…" : "No POS sales match these filters."}</p>}
+      {saleDetailBusy && <p role="status">Loading sale details…</p>}
+      <div className="sb-data-heading" aria-label="Sales history pagination"><span>Page {Math.floor(salesOffset / 50) + 1} of {Math.max(1, Math.ceil(salesTotal / 50))}</span><div><button type="button" onClick={() => loadSales(salesFilters, Math.max(0, salesOffset - 50))} disabled={salesBusy || salesOffset === 0}>Previous</button><button type="button" onClick={() => loadSales(salesFilters, salesOffset + 50)} disabled={salesBusy || salesOffset + 50 >= salesTotal}>Next</button></div></div>
+      {selectedSale && <section className="sb-pos-sale-detail" aria-label={"Sale details " + selectedSale.order_number}>
+        <div className="sb-data-heading"><h3>{selectedSale.order_number} · {money(selectedSale.total)}</h3><button type="button" onClick={() => setSelectedSale(null)}>Close details</button></div>
+        <p>{selectedSale.customer_name} · {selectedSale.customer_phone || "No phone"} · {selectedSale.status}</p><p>Subtotal {money(selectedSale.subtotal)} · Discount {money(selectedSale.discount_total)}{selectedSale.promotion_code ? " (" + selectedSale.promotion_code + ")" : ""} · GST {money(selectedSale.tax_total)} · Total {money(selectedSale.total)}</p>
+        <div className="sb-table-wrap"><table><thead><tr><th>Item</th><th>SKU</th><th>Qty</th><th>Unit price</th><th>Line total</th><th>GST</th></tr></thead><tbody>{(selectedSale.lines || []).map(line => <tr key={line.id}><td>{line.product_name}</td><td>{line.sku}</td><td>{line.quantity}</td><td>{money(line.unit_price)}</td><td>{money(line.line_total)}</td><td>{money(line.tax_total)}{line.hsn_code ? <small>HSN {line.hsn_code} · {line.gst_rate}%</small> : null}</td></tr>)}</tbody></table></div>
+        <div className="sb-table-wrap"><table><thead><tr><th>Payment ref</th><th>Method</th><th>Amount</th><th>Status</th><th>Provider ref</th><th>Action</th></tr></thead><tbody>{(selectedSale.payments || []).map(payment => <tr key={payment.id}><td>{payment.payment_reference}</td><td>{payment.method}</td><td>{money(payment.amount)}</td><td>{payment.status}</td><td>{payment.provider_reference || "—"}</td><td>{canManageRegisters && ["captured","refunded"].includes(payment.status) && Number(payment.amount) > (selectedSale.refunds || []).filter(r=>r.payment_id===payment.id && ["processed","pending"].includes(r.status)).reduce((sum,r)=>sum+Number(r.amount||0),0) ? <button type="button" onClick={()=>startRefund(payment)}>Refund</button> : "—"}</td></tr>)}</tbody></table></div>{refundPayment && <form className="sb-pos-refund-form" onSubmit={submitRefund}><h4>Refund payment {refundPayment.payment_reference}</h4><label>Refund amount ₹<input type="number" min="0.01" max={Number(refundPayment.amount)} step="0.01" value={refundAmount} onChange={e=>setRefundAmount(e.target.value)} required/></label><label>Reason<input maxLength={500} value={refundReason} onChange={e=>setRefundReason(e.target.value)} placeholder="Customer return / price adjustment" required/></label><button type="submit" disabled={refundBusy}>{refundBusy?"Recording…":"Record refund"}</button><button type="button" disabled={refundBusy} onClick={()=>setRefundPayment(null)}>Cancel</button><small>Gateway refunds are sent to the provider; manual refunds are manager-approved ledger entries with cash-drawer audit when applicable.</small></form>}{(selectedSale.refunds || []).length > 0 && <div className="sb-table-wrap"><h4>Refund ledger</h4><table><thead><tr><th>Refund ID</th><th>Amount</th><th>Method</th><th>Status</th><th>Cash shift</th><th>Reference</th></tr></thead><tbody>{selectedSale.refunds.map(refund=><tr key={refund.id}><td>{refund.id}</td><td>{money(refund.amount)}</td><td>{refund.provider}</td><td>{refund.status}</td><td>{refund.pos_shift_id || "—"}</td><td>{refund.provider_refund_id || refund.note || "—"}</td></tr>)}</tbody></table></div>}
+      </section>}
     </div>
     <div className="sb-pos-terminal" style={{ display: activeView === "checkout" ? "block" : "none" }}>
       <div className={"sb-pos-statusbar" + (activeShift ? " is-open" : "")}>
@@ -456,7 +633,15 @@ export default function POSWorkspace({ onBack }) {
               <strong className="sb-pos-line-total">{money(Number(line.selling_price || 0) * line.quantity)}</strong>
               <button type="button" className="sb-pos-remove" onClick={() => removeLine(line.id)} aria-label={"Remove " + productTitle(line)}>✕</button>
             </div>)}</div>}
-            <div className="sb-pos-total"><span>Subtotal</span><strong>{money(total)}</strong></div>
+            <div className="sb-pos-total"><span>Subtotal</span><strong>{money(subtotal)}</strong></div>
+            <div className="sb-pos-coupon" aria-label="Coupon discount">
+              <label>Coupon code<input value={couponCode} maxLength={40} onChange={e => { setCouponCode(e.target.value.toUpperCase()); setCouponApplied(null); }} placeholder="Enter coupon" /></label>
+              <button type="button" onClick={applyCoupon} disabled={couponBusy || !couponCode.trim() || !cart.length}>{couponBusy ? "Checking…" : "Apply"}</button>
+              {validCouponQuote && <button type="button" onClick={() => { setCouponCode(""); setCouponApplied(null); setNotice("Coupon removed."); }} aria-label="Remove coupon">Remove</button>}
+            </div>
+            {couponCode.trim() && !validCouponQuote && <small className="sb-muted">Reapply the coupon if cart items or quantities change.</small>}
+            {validCouponQuote && <div className="sb-pos-total sb-pos-discount"><span>Coupon · {couponCode}</span><strong>−{money(couponDiscount)}</strong></div>}
+            <div className="sb-pos-total"><span>Total due</span><strong>{money(total)}</strong></div>
             <button className="sb-pos-mobile-next" type="button" onClick={() => setMobileCheckoutTab("pay")}>Continue to payment</button>
           </div>
           <form className={"sb-pos-payment-panel " + (mobileCheckoutTab === "pay" ? "is-mobile-active" : "")} onSubmit={checkout} noValidate>
@@ -470,11 +655,11 @@ export default function POSWorkspace({ onBack }) {
                 {!selectedRegisterId && <label>Stock location<select value={locationId} onChange={e => setLocationId(e.target.value)}><option value="">Choose stock location</option>{locations.map(location => <option key={location.id} value={location.id}>{location.name} · {location.location_type || "location"}</option>)}</select></label>}
               </div>}
             </div>
-            <div className="sb-pos-methods" role="radiogroup" aria-label="Payment method">
+            <label className="sb-pos-split-toggle"><input type="checkbox" checked={splitTender} onChange={e=>{setSplitTender(e.target.checked);setSplitCashAmount("");setTendered("");}}/> Split tender (cash + online)</label>{splitTender ? <div className="sb-pos-split-controls"><label>Cash portion (₹)<input type="number" min="0" max={total} step="0.01" inputMode="decimal" value={splitCashAmount} onChange={e=>setSplitCashAmount(e.target.value)} placeholder="0.00"/></label><label>Online method<select value={splitOnlineMethod} onChange={e=>setSplitOnlineMethod(e.target.value)}><option value="upi">UPI</option><option value="card">Card</option><option value="wallet">Wallet</option><option value="netbanking">Net banking</option></select></label><p>Online balance: {splitCash==null?"—":money(Math.max(0,splitOnline))}</p><small>Cash and online amounts must add up to the total. Cash is confirmed at the register; the online part is verified through Razorpay.</small></div> : <div className="sb-pos-methods" role="radiogroup" aria-label="Payment method">
               {PAYMENT_METHODS.map(m => <button type="button" role="radio" aria-checked={method === m.id} key={m.id} className={method === m.id ? "is-selected" : ""} onClick={() => { setMethod(m.id); setTendered(""); }}><i aria-hidden="true">{m.mark}</i>{m.label}</button>)}
-            </div>
+            </div>}
             <div className="sb-pos-tender">
-              {method === "cod" ? <>
+              {splitTender ? <div className="sb-pos-split-summary"><strong>Cash portion</strong> {money(splitCash || 0)}<br/><strong>Online portion</strong> {money(splitOnline || 0)}<br/><strong>Total tender</strong> {money(total)}</div> : method === "cod" ? <>
                 <label>Cash received (₹)<input type="number" min="0" step="0.01" inputMode="decimal" value={tendered} onChange={e => setTendered(e.target.value)} placeholder={total ? "Leave empty if exact" : "0.00"} /></label>
                 {quickCash.length > 0 || total > 0 ? <div className="sb-pos-quick"><button type="button" onClick={() => setTendered(total.toFixed(2))} disabled={!total}>Exact</button>{quickCash.map(x => <button type="button" key={x} onClick={() => setTendered(String(x))}>{money(x)}</button>)}</div> : null}
                 <div className={"sb-pos-change" + (shortBy != null ? " is-short" : "")}><span>{shortBy != null ? "Still to collect" : "Change to return"}</span><strong>{money(shortBy != null ? shortBy : (changeDue ?? 0))}</strong></div>
@@ -512,9 +697,11 @@ export default function POSWorkspace({ onBack }) {
         <div className="sb-pos-receipt-sheet">
           <div className="sb-pos-receipt-top"><span className="sb-pos-tick" aria-hidden="true">✓</span><h2>Sale recorded</h2><p>{receipt.order.order_number}</p></div>
           <p className="sb-pos-receipt-meta">Super Bajaar{receipt.counter ? " · " + receipt.counter : ""}<br />{new Date(receipt.at).toLocaleString("en-IN")}<br />Customer: {receipt.customer.name}{receipt.customer.phone ? " · " + receipt.customer.phone : ""}</p>
-          <table><tbody>{receipt.lines.map(l => <tr key={l.id}><td>{l.name}{l.label ? <small>{l.label}</small> : null}<small>{l.quantity} × {money(l.price)}</small></td><td>{money(l.price * l.quantity)}</td></tr>)}</tbody></table>
+          <table><tbody>{receipt.lines.map(l => <tr key={l.id}><td>{l.name}{l.label ? <small>{l.label}</small> : null}<small>{l.quantity} × {money(l.price)}</small>{l.tax?.hsn_code ? <small>HSN {l.tax.hsn_code} · GST {l.tax.gst_rate}%</small> : null}</td><td>{money(l.price * l.quantity)}</td></tr>)}</tbody></table>
+          {Number(receipt.order.tax_total || 0) > 0 && <div className="sb-pos-receipt-tax"><span>GST included in total</span><strong>{money(receipt.order.tax_total)}</strong></div>}
+          {Number(receipt.order.discount_total || 0) > 0 && <div className="sb-pos-receipt-tax"><span>Discount{receipt.order.promotion_code ? " · " + receipt.order.promotion_code : ""}</span><strong>−{money(receipt.order.discount_total)}</strong></div>}
           <div className="sb-pos-receipt-total"><span>Total</span><strong>{money(receiptTotal)}</strong></div>
-          <p className="sb-pos-receipt-pay">{methodLabel(receipt.method)} · {cashPending ? "cash awaiting confirmation" : receipt.payment.status}{receipt.payment.payment_reference ? " · " + receipt.payment.payment_reference : ""}</p>
+          <p className="sb-pos-receipt-pay">{receipt.method === "split" ? "Split tender" : methodLabel(receipt.method)} · {cashPending ? "cash awaiting confirmation" : receipt.payment.status}{receipt.payment.payment_reference ? " · " + receipt.payment.payment_reference : ""}</p>{(receipt.payments||[]).length>1&&<p className="sb-pos-receipt-pay">{receipt.payments.map(p=>p.method+": "+money(p.amount)+" · "+p.status).join(" | ")}</p>}
           {receipt.tendered != null && <p className="sb-pos-receipt-pay">Cash received {money(receipt.tendered)}{receiptChange != null ? " · Change " + money(receiptChange) : ""}</p>}
           <p className="sb-pos-receipt-thanks">Thank you for shopping at Super Bajaar!</p>
         </div>
