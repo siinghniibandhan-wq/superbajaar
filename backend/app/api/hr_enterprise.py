@@ -1415,7 +1415,7 @@ def enterprise_workflow_analytics(
     request:Request,
     from_date:date=Query(...),
     to_date:date=Query(...),
-    domain_filter:str|None=Query(None,alias="domain",pattern="^(documents|performance|learning|assets|travel|exit)$"),
+    domain_filter:str|None=Query(None,alias="domain",pattern="^(documents|performance|learning|assets|travel|exit|analytics)$"),
     record_type:str|None=Query(None,max_length=48),
     status:str|None=Query(None,max_length=32),
     department_id:int|None=Query(None,gt=0),
@@ -1426,7 +1426,7 @@ def enterprise_workflow_analytics(
         raise HTTPException(422,"Report end date cannot precede its start date")
     try:
         with _hr_connection() as conn:
-            clauses=["domain IN ('documents','performance','learning','assets','travel','exit')","created_at::date BETWEEN %s AND %s"]
+            clauses=["domain IN ('documents','performance','learning','assets','travel','exit','analytics')","created_at::date BETWEEN %s AND %s"]
             params=[from_date,to_date]
             if domain_filter:
                 clauses.append("domain=%s");params.append(domain_filter)
