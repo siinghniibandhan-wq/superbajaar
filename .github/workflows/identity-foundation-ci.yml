@@ -76,3 +76,7 @@ jobs:
         run: npm run test:routes
       - name: Build admin frontend
         run: npm run build
+      - name: Install Chromium for browser tests
+        run: npx playwright install --with-deps chromium
+      - name: Run responsive browser tests
+        run: npm run test:e2e
