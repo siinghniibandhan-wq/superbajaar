@@ -160,11 +160,11 @@ def _apply_order_gst(conn, order_id: int, *, delivery_pin: str | None, discount_
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=f"Invalid GST/HSN mapping for {line['name']}: {exc}") from exc
         conn.execute(
-            """UPDATE order_lines SET hsn_code=%s,gst_rule_id=%s,gst_rate=%s,taxable_value=%s,
+            """UPDATE order_lines SET hsn_code=%s,gst_rule_id=%s,discount_amount=%s,gst_rate=%s,taxable_value=%s,
                       cgst_rate=%s,sgst_rate=%s,igst_rate=%s,cgst_amount=%s,
                       sgst_amount=%s,igst_amount=%s,tax_total=%s
                WHERE id=%s""",
-            (tax["hsn_code"],line["gst_rule_id"],tax["gst_rate"],tax["taxable_value"],
+            (tax["hsn_code"],line["gst_rule_id"],line_discount,tax["gst_rate"],tax["taxable_value"],
              tax["cgst_rate"],tax["sgst_rate"],tax["igst_rate"],
              tax["cgst_amount"],tax["sgst_amount"],tax["igst_amount"],
              tax["total_tax"],line["id"]),
@@ -581,16 +581,14 @@ def create_order(payload: OrderCreate, request: Request):
                     if promotion["per_customer_limit"] is not None:
                         if not customer_identifier:
                             raise HTTPException(status_code=422, detail="This coupon requires customer details to enforce its per-customer limit")
-                        if payload.customer_email:
-                            customer_redemptions = conn.execute(
-                                "SELECT count(*) AS n FROM promotion_redemptions WHERE promotion_id=%s AND lower(customer_email)=lower(%s)",
-                                (promotion["id"], customer_identifier),
-                            ).fetchone()["n"]
-                        else:
-                            customer_redemptions = conn.execute(
-                                "SELECT count(*) AS n FROM promotion_redemptions WHERE promotion_id=%s AND COALESCE(customer_email,'')='' AND customer_phone=%s",
-                                (promotion["id"], customer_identifier),
-                            ).fetchone()["n"]
+                        customer_email = str(payload.customer_email).strip().lower() if payload.customer_email else None
+                        customer_phone = str(payload.customer_phone).strip() if payload.customer_phone else None
+                        customer_redemptions = conn.execute(
+                            "SELECT count(*) AS n FROM promotion_redemptions WHERE promotion_id=%s "
+                            "AND ((%s IS NOT NULL AND lower(COALESCE(customer_email,''))=lower(%s)) "
+                            "OR (%s IS NOT NULL AND customer_phone=%s))",
+                            (promotion["id"], customer_email, customer_email or "", customer_phone, customer_phone or ""),
+                        ).fetchone()["n"]
                         if customer_redemptions >= promotion["per_customer_limit"]:
                             raise HTTPException(status_code=409, detail="This customer has already used the coupon the allowed number of times")
                     try:
@@ -629,10 +627,11 @@ def create_order(payload: OrderCreate, request: Request):
                     )
                 if promotion:
                     conn.execute(
-                        "INSERT INTO promotion_redemptions (promotion_id,order_id,customer_email,customer_phone,subtotal,discount_amount,code_snapshot) "
-                        "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                        "INSERT INTO promotion_redemptions (promotion_id,order_id,customer_email,customer_phone,subtotal,discount_amount,discount_type_snapshot,discount_value_snapshot,minimum_subtotal_snapshot,maximum_discount_snapshot,code_snapshot) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                         (promotion["id"], order["id"], str(payload.customer_email).lower() if payload.customer_email else None,
-                         payload.customer_phone, subtotal, promotion_discount, promotion["code"]),
+                         payload.customer_phone, subtotal, promotion_discount, promotion["discount_type"], promotion["discount_value"],
+                         promotion["minimum_subtotal"], promotion["maximum_discount"], promotion["code"]),
                     )
                 loyalty_discount = Decimal("0.00")
                 redeemed_coins = 0
