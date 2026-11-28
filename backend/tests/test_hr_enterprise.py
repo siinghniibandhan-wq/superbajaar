@@ -770,3 +770,23 @@ def test_exit_settlement_calculates_policy_earnings_leave_and_loan_deductions():
 def test_travel_advance_requires_approval_before_disbursement():
     assert _allowed_record_transitions("travel","advance","requested")=={"approved","rejected"}
     assert _allowed_record_transitions("travel","advance","approved")=={"disbursed"}
+
+from app.services.hr_travel_integrations import create_provider_booking, TravelIntegrationConfigurationError
+
+
+def test_travel_booking_requires_stable_idempotency_reference():
+    with pytest.raises(HTTPException):
+        _validate("travel","booking",{"travel_record_id":5,"booked_cost":"1000"})
+    result=_validate("travel","booking",{
+        "travel_record_id":5,"booked_cost":"1000","client_reference":"hr-trip-2026-0001",
+        "booking_details":"{}"
+    })
+    assert result["client_reference"]=="hr-trip-2026-0001"
+    assert result["booking_details"]=={}
+
+
+def test_travel_provider_fails_closed_without_secrets(monkeypatch):
+    for key in ("SB_TRAVEL_BOOKING_API_URL","SB_TRAVEL_BOOKING_API_TOKEN","SB_TRAVEL_BOOKING_PROVIDER"):
+        monkeypatch.delenv(key,raising=False)
+    with pytest.raises(TravelIntegrationConfigurationError):
+        create_provider_booking(travel={"destination":"Patna"},booking={"booked_cost":"1000","client_reference":"hr-trip-2026-0001"},record_id=99)
