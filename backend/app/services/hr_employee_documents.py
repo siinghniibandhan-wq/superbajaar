@@ -31,7 +31,7 @@ def scan_employee_document(content:bytes)->str:
  try:
   with socket.create_connection((host,port),timeout=timeout) as client:
    client.settimeout(timeout)
-   client.sendall(b"zINSTREAM\\0")
+   client.sendall(b"zINSTREAM\0")
    for offset in range(0,len(content),65536):
     chunk=content[offset:offset+65536]
     client.sendall(struct.pack("!I",len(chunk))+chunk)
