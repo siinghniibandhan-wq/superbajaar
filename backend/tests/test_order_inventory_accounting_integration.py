@@ -144,6 +144,11 @@ def test_paid_pos_cash_sale_consumes_stock_and_records_cost_once(api):
         assert issue == (3, Decimal("30.00"))
         status = conn.execute("SELECT status FROM orders WHERE id=%s", (order["id"],)).fetchone()[0]
         assert status == "delivered"
+        voucher = conn.execute(
+            "SELECT total_amount FROM accounting_vouchers WHERE source_type='order_fulfilment' AND source_id=%s",
+            (str(order["id"]),),
+        ).fetchone()
+        assert voucher is not None and voucher[0] == Decimal("30.00")
     # A second confirmation is rejected; the sale and its stock issue remain single-posted.
     replay = api.post(
         f"/api/pos/shifts/{shift['id']}/payments/{order['payment']['id']}/confirm-cash",
