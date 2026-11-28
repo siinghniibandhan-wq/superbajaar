@@ -87,9 +87,17 @@ Recruitment, full performance/appraisal, training, asset allocation, travel, doc
 - Employee date handling now safely accommodates legacy records with a missing joining date.
 - No new backend tables, API contracts or permissions were introduced in this implementation slice.
 
+## Employee records slice delivered
+- Emergency contacts: create and list active/inactive contacts, optional primary contact, phone/email/address fields, soft deactivation and actor/timestamp audit events.
+- Previous employment: capture employer, job title, employment type, location, date range and notes; records are append-only so corrections are additive rather than destructive.
+- HR manager-only API authorization; no employee ID is accepted from client payloads as an authority source.
+- Employee profile UI includes contact management, prior-employment history and record audit history.
+- Migration `070_hr_employee_records.sql` is included in `backend/schema_required.txt`; it has not been applied to production.
+- Focused backend validation and authorization tests added.
+
 ## Remaining work — do not mark HRMS complete yet
 - Split the monolithic HR workspace into independently testable employee, attendance, leave, payroll and compliance workspaces.
-- Verify and implement secure employee document storage, emergency contacts and employment-history records only after retention, access and audit requirements are agreed.
+- Secure employee documents remain blocked pending a verified storage, access and retention design. Emergency contacts and prior employment history are now implemented as manager-authorized employee-profile records with validation and append-only audit events.
 - Recruitment, performance, learning, asset management, travel, central approvals and dedicated analytics remain separate capability projects.
 - Add workflow-level tests and complete manual role-matrix, keyboard, phone/tablet/desktop and regression QA.
 - Confirm production migrations and deployment compatibility before any release.
