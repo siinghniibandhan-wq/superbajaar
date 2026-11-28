@@ -34,6 +34,10 @@ CREATE TABLE IF NOT EXISTS public.promotion_redemptions (
     customer_phone TEXT,
     subtotal NUMERIC(14,2) NOT NULL CHECK (subtotal >= 0),
     discount_amount NUMERIC(14,2) NOT NULL CHECK (discount_amount > 0),
+    discount_type_snapshot VARCHAR(12) NOT NULL CHECK (discount_type_snapshot IN ('percent','fixed')),
+    discount_value_snapshot NUMERIC(14,2) NOT NULL CHECK (discount_value_snapshot > 0),
+    minimum_subtotal_snapshot NUMERIC(14,2) NOT NULL CHECK (minimum_subtotal_snapshot >= 0),
+    maximum_discount_snapshot NUMERIC(14,2),
     code_snapshot VARCHAR(40) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
