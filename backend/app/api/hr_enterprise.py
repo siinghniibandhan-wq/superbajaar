@@ -20,7 +20,7 @@ from reportlab.lib.pagesizes import landscape, A4
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from pydantic import BaseModel, Field, field_validator
-from app.api.hr import EmployeeInput, _actor, _manager, _employee, _hr_connection, _db_error, _link_employee_login_identity
+from app.api.hr import EmployeeInput, _actor, _manager, _employee, _hr_connection, _db_error, _link_employee_login_identity, hr_overview
 from app.services.hr_employee_documents import (
     EmployeeDocumentConfigurationError, EmployeeDocumentError,
     upload_employee_document, employee_document_download_url, delete_employee_document,
@@ -1514,12 +1514,15 @@ def run_scheduled_analytics_reports(request:Request):
                         period_start=today-timedelta(days=7)
                         next_run=today+timedelta(days=7)
                     filters=payload.get("filters",{})
-                    result=enterprise_workflow_analytics(
-                        request,period_start,period_end,filters.get("domain"),
-                        filters.get("record_type"),filters.get("status"),
-                        int(filters["department_id"]) if filters.get("department_id") else None
-                    )
-                    payload["last_result"]=result["domains"]
+                    if payload.get("report_type")=="workforce":
+                        result=hr_overview(request,period_end.strftime("%Y-%m"))
+                    else:
+                        result=enterprise_workflow_analytics(
+                            request,period_start,period_end,filters.get("domain"),
+                            filters.get("record_type"),filters.get("status"),
+                            int(filters["department_id"]) if filters.get("department_id") else None
+                        )
+                    payload["last_result"]=result
                     payload["last_run_at"]=datetime.utcnow().isoformat()+"Z"
                     payload["last_period"]={"from_date":period_start.isoformat(),"to_date":period_end.isoformat()}
                     payload["next_run_at"]=datetime.combine(next_run,datetime.min.time()).isoformat()+"Z"
