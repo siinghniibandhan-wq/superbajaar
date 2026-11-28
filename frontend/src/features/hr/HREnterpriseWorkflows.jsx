@@ -21,6 +21,14 @@ const transitions={
  exit:{initiated:["notice_period","withdrawn"],notice_period:["handover","withdrawn"],handover:["clearance"],clearance:["settlement_review"],settlement_review:["completed"]},
  analytics:{saved:["scheduled","archived"],scheduled:["saved","archived"]}
 };
+const recruitmentRecordTransitions={
+ job_opening:{draft:["open","archived"],open:["closed","archived"],closed:["archived"]},
+ candidate:{draft:["withdrawn","archived"],withdrawn:["archived"]},
+ application:{screening:["shortlisted","rejected","withdrawn"],shortlisted:["interview","rejected","withdrawn"],interview:["offered","rejected","withdrawn"],offered:["rejected","withdrawn"]},
+ interview:{interview:["completed"]},
+ offer:{offered:["rejected","withdrawn"]},
+ interview_feedback:{},communication:{}
+};
 const employeeTransitions={
  travel:{draft:["submitted","cancelled"]},
  performance:{active:["self_review"]},
@@ -123,6 +131,12 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
    try{const result=await apiRequest("/hr/enterprise/"+domain+"/"+item.id+"/events");setRecordEvents(result.items||[]);}
    catch(e){setError(e.message||"Unable to load audit history.");}
    finally{setEventsBusy(false);}
+ }
+ function allowedTransitionsForRecord(item){
+   if(domain==="recruitment"){
+     return recruitmentRecordTransitions[item.payload?.record_type]?.[item.status]||[];
+   }
+   return transitions[domain]?.[item.status]||[];
  }
  function selectableRecords(key){
    const type=referenceTypeByField[key];
@@ -296,7 +310,7 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
    <div className="hr-directory-heading"><h3>Records</h3><span className="hr-directory-count">{items.length} shown</span></div>
    <div className="hr-toolbar"><label>Search records<input value={recordSearch} onChange={e=>setRecordSearch(e.target.value)} placeholder="Search title or employee"/></label><label>Status<select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}><option value="">All statuses</option>{[...new Set(items.map(x=>x.status))].sort().map(s=><option key={s} value={s}>{s.replaceAll("_"," ")}</option>)}</select></label><button type="button" className="hr-secondary" onClick={()=>{setRecordSearch("");setStatusFilter("");}}>Reset filters</button></div>
    <div className="hr-table-wrap"><table><thead><tr><th>Record</th><th>Employee</th><th>Status</th><th>Due / expiry</th><th>Updated</th><th>Workflow actions</th></tr></thead><tbody>
-    {items.filter(item=>(!statusFilter||item.status===statusFilter)&&(!recordSearch||[item.title,employeeNames[item.employee_id]||""].join(" ").toLowerCase().includes(recordSearch.toLowerCase()))).map(item=><tr key={item.id}><td><strong>{item.title}</strong><small>#{item.id} · {item.payload?.record_type||"Record"}</small></td><td>{employeeNames[item.employee_id]||"—"}</td><td>{item.status}</td><td>{item.due_date||"—"}</td><td>{item.updated_at?new Date(item.updated_at).toLocaleString():"—"}</td><td>{domain==="documents"&&(manager?["under_review","verified"]:["verified"]).includes(item.status)&&<button type="button" disabled={busy} onClick={async()=>{try{const result=await apiRequest("/hr/enterprise/documents/"+item.id+"/download",{method:"POST",body:"{}"});window.open(result.url,"_blank","noopener,noreferrer");}catch(e){setError(e.message||"Unable to download document.");}}}>Secure download</button>}{manager&&domain==="recruitment"&&item.payload?.record_type==="offer"&&item.status==="offered"&&<button type="button" disabled={busy} onClick={()=>startHire(item)}>Convert to employee</button>}{(manager?(transitions[domain]?.[item.status]||[]):(employeeTransitions[domain]?.[item.status]||[])).map(next=><button type="button" key={next} disabled={busy} onClick={()=>transition(item,next)}>{next.replaceAll("_"," ")}</button>)}{manager&&<button type="button" className="hr-secondary" disabled={busy} onClick={()=>showEvents(item)}>Audit trail</button>}</td></tr>)}
+    {items.filter(item=>(!statusFilter||item.status===statusFilter)&&(!recordSearch||[item.title,employeeNames[item.employee_id]||""].join(" ").toLowerCase().includes(recordSearch.toLowerCase()))).map(item=><tr key={item.id}><td><strong>{item.title}</strong><small>#{item.id} · {item.payload?.record_type||"Record"}</small></td><td>{employeeNames[item.employee_id]||"—"}</td><td>{item.status}</td><td>{item.due_date||"—"}</td><td>{item.updated_at?new Date(item.updated_at).toLocaleString():"—"}</td><td>{domain==="documents"&&(manager?["under_review","verified"]:["verified"]).includes(item.status)&&<button type="button" disabled={busy} onClick={async()=>{try{const result=await apiRequest("/hr/enterprise/documents/"+item.id+"/download",{method:"POST",body:"{}"});window.open(result.url,"_blank","noopener,noreferrer");}catch(e){setError(e.message||"Unable to download document.");}}}>Secure download</button>}{manager&&domain==="recruitment"&&item.payload?.record_type==="offer"&&item.status==="offered"&&<button type="button" disabled={busy} onClick={()=>startHire(item)}>Convert to employee</button>}{(manager?allowedTransitionsForRecord(item):(employeeTransitions[domain]?.[item.status]||[])).map(next=><button type="button" key={next} disabled={busy} onClick={()=>transition(item,next)}>{next.replaceAll("_"," ")}</button>)}{manager&&<button type="button" className="hr-secondary" disabled={busy} onClick={()=>showEvents(item)}>Audit trail</button>}</td></tr>)}
     {!items.filter(item=>(!statusFilter||item.status===statusFilter)&&(!recordSearch||[item.title,employeeNames[item.employee_id]||""].join(" ").toLowerCase().includes(recordSearch.toLowerCase()))).length&&<tr><td colSpan="6">{busy?"Loading…":"No records match these filters."}</td></tr>}
    </tbody></table></div>
    {eventRecord&&manager&&<section className="hr-panel"><div className="hr-directory-heading"><h3>Audit trail · {eventRecord.title}</h3><button type="button" className="hr-secondary" onClick={()=>{setEventRecord(null);setRecordEvents([]);}}>Close</button></div>{eventsBusy?<p role="status">Loading audit events…</p>:<ol>{recordEvents.map(ev=><li key={ev.id}><strong>{ev.event_type}</strong> · {ev.from_status||"—"} → {ev.to_status||"—"} · {ev.created_at?new Date(ev.created_at).toLocaleString():""}{ev.note&&<p>{ev.note}</p>}</li>)}{!recordEvents.length&&<li>No audit events found.</li>}</ol>}</section>}
