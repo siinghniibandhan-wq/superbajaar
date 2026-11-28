@@ -99,6 +99,9 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
  const [expiryNotifications,setExpiryNotifications]=useState([]);
  const [exitEstablishments,setExitEstablishments]=useState([]);
  const [exitPolicies,setExitPolicies]=useState([]);
+ const [employeeLoans,setEmployeeLoans]=useState([]);
+ const [loanRepaymentAmounts,setLoanRepaymentAmounts]=useState({});
+ const [loanForm,setLoanForm]=useState({employee_id:"",loan_reference:"",principal_amount:"",currency:"INR"});
  const [exitPolicyForm,setExitPolicyForm]=useState({
   establishment_id:"",version_label:"Exit settlement policy v1",jurisdiction_code:"IN",
   effective_from:new Date().toISOString().slice(0,10),effective_to:"",
@@ -128,18 +131,20 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
  useEffect(()=>{
    if(domain!=="exit"||!manager)return;
    let active=true;
-   Promise.all([apiRequest("/hr/establishments"),apiRequest("/hr/enterprise/exit/statutory-policies")])
-    .then(([establishments,policies])=>{
+   Promise.all([apiRequest("/hr/establishments"),apiRequest("/hr/enterprise/exit/statutory-policies"),apiRequest("/hr/enterprise/exit/loans")])
+    .then(([establishments,policies,loans])=>{
       if(!active)return;
       const rows=establishments.items||[];
       setExitEstablishments(rows);
       setExitPolicies(policies.items||[]);
+      setEmployeeLoans(loans.items||[]);
+      if(!loanForm.employee_id&&employees.length)setLoanForm(old=>({...old,employee_id:String(employees[0].id)}));
       if(!exitPolicyForm.establishment_id&&rows.length){
         setExitPolicyForm(old=>({...old,establishment_id:String(rows[0].id)}));
       }
     }).catch(e=>{if(active)setError(e.message||"Unable to load exit statutory policies.");});
    return()=>{active=false;};
- },[domain,manager]);
+ },[domain,manager,employees]);
  useEffect(()=>{
    if(domain!=="documents"||!manager)return;
    let active=true;setExpiringLoading(true);setExpiringError("");
@@ -216,6 +221,45 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
      setExitPolicies(result.items||[]);
      setNotice("Exit statutory policy saved as draft. A different authorised manager must approve it.");
    }catch(e){setError(e.message||"Unable to save exit statutory policy.");}
+   finally{setBusy(false);}
+ }
+ async function createEmployeeLoan(e){
+   e.preventDefault();setBusy(true);setError("");setNotice("");
+   try{
+     await apiRequest("/hr/enterprise/exit/loans",{method:"POST",body:JSON.stringify({
+       employee_id:Number(loanForm.employee_id),loan_reference:loanForm.loan_reference,
+       principal_amount:loanForm.principal_amount,currency:loanForm.currency
+     })});
+     const result=await apiRequest("/hr/enterprise/exit/loans");
+     setEmployeeLoans(result.items||[]);
+     setLoanForm(old=>({...old,loan_reference:"",principal_amount:""}));
+     setNotice("Employee loan saved as draft. A different manager must approve it.");
+   }catch(e){setError(e.message||"Unable to create employee loan.");}
+   finally{setBusy(false);}
+ }
+ async function approveEmployeeLoan(id){
+   setBusy(true);setError("");setNotice("");
+   try{
+     await apiRequest("/hr/enterprise/exit/loans/"+id+"/approve",{method:"POST",body:"{}"});
+     const result=await apiRequest("/hr/enterprise/exit/loans");
+     setEmployeeLoans(result.items||[]);
+     setNotice("Employee loan approved and included in future exit calculations.");
+   }catch(e){setError(e.message||"Unable to approve employee loan.");}
+   finally{setBusy(false);}
+ }
+ async function recordLoanRepayment(id){
+   const amount=loanRepaymentAmounts[id];
+   if(!amount||Number(amount)<=0){setError("Enter a positive repayment amount.");return;}
+   setBusy(true);setError("");setNotice("");
+   try{
+     await apiRequest("/hr/enterprise/exit/loans/"+id+"/repayments",{method:"POST",body:JSON.stringify({
+       amount,transaction_date:new Date().toISOString().slice(0,10),reference:"Manager-recorded employee loan repayment"
+     })});
+     const result=await apiRequest("/hr/enterprise/exit/loans");
+     setEmployeeLoans(result.items||[]);
+     setLoanRepaymentAmounts(old=>({...old,[id]:""}));
+     setNotice("Loan repayment recorded and outstanding balance updated.");
+   }catch(e){setError(e.message||"Unable to record loan repayment.");}
    finally{setBusy(false);}
  }
  async function approveExitPolicy(id){
@@ -456,6 +500,22 @@ export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCr
     <div className="hr-list">{exitPolicies.map(policy=><article key={policy.id} className="hr-list-row">
      <div><strong>{policy.version_label}</strong><small>{policy.jurisdiction_code} · {policy.status} · {policy.effective_from} to {policy.effective_to||"open-ended"}</small></div>
      {policy.status==="draft"&&<button type="button" className="hr-secondary" disabled={busy} onClick={()=>approveExitPolicy(policy.id)}>Approve policy</button>}
+    </article>)}</div>
+   </section>}
+   {domain==="exit"&&manager&&<section className="hr-panel" aria-label="Employee loan register">
+    <div className="hr-directory-heading"><div><h3>Employee loan register</h3><p>Approved outstanding balances feed automatic full-and-final deductions. Repayments are recorded in the loan ledger.</p></div></div>
+    <form className="hr-form hr-grid" onSubmit={createEmployeeLoan}>
+     <label>Employee<select required value={loanForm.employee_id} onChange={e=>setLoanForm(x=>({...x,employee_id:e.target.value}))}><option value="">Select employee</option>{employees.map(x=><option key={x.id} value={x.id}>{employeeNames[x.id]||x.employee_code}</option>)}</select></label>
+     <label>Loan reference<input required value={loanForm.loan_reference} onChange={e=>setLoanForm(x=>({...x,loan_reference:e.target.value}))}/></label>
+     <label>Principal amount (₹)<input required type="number" min="0.01" step="0.01" value={loanForm.principal_amount} onChange={e=>setLoanForm(x=>({...x,principal_amount:e.target.value}))}/></label>
+     <button disabled={busy||!employees.length}>Create loan draft</button>
+    </form>
+    <div className="hr-list">{employeeLoans.map(loan=><article key={loan.id} className="hr-list-row">
+     <div><strong>{loan.loan_reference} · {loan.employee_id&&employeeNames[loan.employee_id]}</strong><small>Outstanding {money(loan.outstanding_amount)} · {loan.status}</small></div>
+     <div className="hr-actions">
+      {loan.status==="draft"&&<button type="button" className="hr-secondary" disabled={busy} onClick={()=>approveEmployeeLoan(loan.id)}>Approve</button>}
+      {["active","approved"].includes(loan.status)&&<><input aria-label={"Repayment amount for "+loan.loan_reference} type="number" min="0.01" step="0.01" value={loanRepaymentAmounts[loan.id]||""} onChange={e=>setLoanRepaymentAmounts(old=>({...old,[loan.id]:e.target.value}))}/><button type="button" className="hr-secondary" disabled={busy} onClick={()=>recordLoanRepayment(loan.id)}>Record repayment</button></>}
+     </div>
     </article>)}</div>
    </section>}
    <form className="hr-form hr-grid" onSubmit={create}>
