@@ -38,8 +38,8 @@ def pos_summary():
             ).fetchone()
             payments = conn.execute(
                 """SELECT count(*) AS payment_count,
-                          count(*) FILTER (WHERE p.status='captured') AS captured_count,
-                          COALESCE(sum(amount) FILTER (WHERE p.status='captured'), 0) AS captured_amount,
+                          count(*) FILTER (WHERE p.status IN ('captured','refunded')) AS captured_count,
+                          COALESCE(sum(amount) FILTER (WHERE p.status IN ('captured','refunded')), 0) AS captured_amount,
                           count(*) FILTER (WHERE p.status IN ('pending','authorized')) AS pending_count,
                           COALESCE(sum(amount) FILTER (WHERE p.status IN ('pending','authorized')), 0) AS pending_amount
                    FROM payments p JOIN orders o ON o.id=p.order_id WHERE o.channel='pos'"""
