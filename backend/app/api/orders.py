@@ -126,9 +126,9 @@ def _apply_order_gst(conn, order_id: int, *, delivery_pin: str | None, discount_
                    JOIN category_hierarchy ch ON ch.id=c.id WHERE c.parent_id IS NOT NULL
                )
                SELECT h.id,h.hsn_code,h.gst_rate FROM hsn_rules h
-               JOIN category_hierarchy ch ON ch.id=h.category_id
-               WHERE h.is_active=TRUE AND v.attributes @> h.conditions
-               ORDER BY ch.depth ASC,jsonb_object_length(h.conditions) DESC,h.updated_at DESC,h.id DESC
+               LEFT JOIN category_hierarchy ch ON ch.id=h.category_id
+               WHERE h.is_active=TRUE AND (h.category_id IS NULL OR ch.id IS NOT NULL) AND v.attributes @> h.conditions
+               ORDER BY COALESCE(ch.depth,999) ASC,jsonb_object_length(h.conditions) DESC,h.updated_at DESC,h.id DESC
                LIMIT 1
            ) rule ON TRUE
            WHERE ol.order_id=%s ORDER BY ol.id FOR UPDATE OF ol""",
