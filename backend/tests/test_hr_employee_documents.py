@@ -17,6 +17,7 @@ class FakeS3:
 def test_employee_document_upload_uses_private_encrypted_employee_scoped_key(monkeypatch):
     fake=FakeS3()
     monkeypatch.setattr(docs,"_storage",lambda:("private-bucket",fake))
+    monkeypatch.setattr(docs,"scan_employee_document",lambda content:"clean")
     result=docs.upload_employee_document(
         employee_id=42,uploader_id=7,document_type="identity",
         file_name="../../identity proof.pdf",content_type="application/pdf",
@@ -29,6 +30,7 @@ def test_employee_document_upload_uses_private_encrypted_employee_scoped_key(mon
     assert stored["Metadata"]["employee-id"]=="42"
     assert stored["Metadata"]["uploaded-by-user-id"]=="7"
     assert len(result["sha256"])==64
+    assert result["malware_scan_status"]=="clean"
 
 
 def test_employee_document_upload_rejects_mime_signature_mismatch():
