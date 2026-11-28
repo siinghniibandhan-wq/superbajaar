@@ -16,6 +16,9 @@ from app.services.hr_employee_documents import (
     EmployeeDocumentConfigurationError, EmployeeDocumentError,
     upload_employee_document, employee_document_download_url,
 )
+from app.services.hr_candidate_email import (
+    CandidateEmailConfigurationError, CandidateEmailDeliveryError, send_candidate_email,
+)
 
 router = APIRouter(prefix="/hr/enterprise", tags=["hr-enterprise"])
 
@@ -180,6 +183,10 @@ class RecruitmentHireInput(BaseModel):
     candidate_accepted: bool
     acceptance_reference: str | None = Field(default=None,max_length=500)
     employee: EmployeeInput
+
+class CandidateEmailInput(BaseModel):
+    subject: str = Field(min_length=2,max_length=200)
+    message: str = Field(min_length=2,max_length=10000)
 
 def _role(request):
     return getattr(request.state,"role","")
@@ -580,6 +587,46 @@ def download_document(record_id:int,request:Request):
     except EmployeeDocumentConfigurationError as exc: raise HTTPException(503,str(exc)) from exc
     except EmployeeDocumentError as exc: raise HTTPException(422,str(exc)) from exc
     except psycopg.Error as exc: raise _db_error(exc) from exc
+
+@router.post("/recruitment/{candidate_id}/email",status_code=201)
+def send_recruitment_candidate_email(candidate_id:int,payload:CandidateEmailInput,request:Request):
+    actor=_manager(request)
+    try:
+        with _hr_connection() as conn:
+            candidate=conn.execute(
+                "SELECT * FROM hr_enterprise_records WHERE id=%s AND domain='recruitment' "
+                "AND payload->>'record_type'='candidate'",(candidate_id,),
+            ).fetchone()
+            if not candidate:
+                raise HTTPException(404,"Recruitment candidate not found")
+            recipient=str(candidate["payload"].get("email","")).strip().lower()
+            if not recipient:
+                raise HTTPException(422,"Candidate profile has no email address")
+        send_candidate_email(recipient=recipient,subject=payload.subject,body=payload.message)
+        occurred=datetime.utcnow().isoformat()+"Z"
+        communication={
+            "record_type":"communication","candidate_id":candidate_id,"channel":"email",
+            "direction":"outbound","subject":payload.subject.strip(),"message":payload.message.strip(),
+            "occurred_at":occurred,"recipient":recipient,"delivery_status":"sent",
+        }
+        with _hr_connection() as conn:
+            with conn.transaction():
+                row=conn.execute(
+                    "INSERT INTO hr_enterprise_records(domain,title,status,payload,created_by_user_id,updated_by_user_id) "
+                    "VALUES('recruitment',%s,'completed',%s::jsonb,%s,%s) RETURNING *",
+                    ("Email to "+recipient,json.dumps(communication),actor,actor),
+                ).fetchone()
+                conn.execute(
+                    "INSERT INTO hr_enterprise_events(record_id,event_type,to_status,after_state,actor_user_id) "
+                    "VALUES(%s,'candidate_email_sent','completed',%s::jsonb,%s)",
+                    (row["id"],json.dumps(dict(row),default=str),actor),
+                )
+        return {"communication":row,"recipient":recipient,"delivery_status":"sent"}
+    except HTTPException: raise
+    except CandidateEmailConfigurationError as exc: raise HTTPException(503,str(exc)) from exc
+    except CandidateEmailDeliveryError as exc: raise HTTPException(502,str(exc)) from exc
+    except psycopg.Error as exc: raise _db_error(exc) from exc
+
 
 @router.post("/recruitment/{offer_id}/hire",status_code=201)
 def hire_recruitment_candidate(offer_id:int,payload:RecruitmentHireInput,request:Request):
