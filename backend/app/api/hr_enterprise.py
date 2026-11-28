@@ -71,6 +71,7 @@ def _initial_status(domain, record_type):
         ("documents", "employee_document"): "pending",
         ("performance", "feedback"): "acknowledged",
         ("performance", "self_review"): "self_review",
+        ("performance", "review"): "manager_review",
         ("performance", "calibration"): "calibration",
         ("performance", "acknowledgement"): "acknowledged",
         ("learning", "assessment"): "completed",
@@ -103,8 +104,8 @@ REQUIRED = {
  "performance":{
   "review_template":["name","sections","rating_scale"],
   "review_cycle":["period_start","period_end"],
-  "review":["cycle","reviewer_employee_id","template_id"],
-  "self_review":["cycle","summary","rating","achievements","development_areas"],
+  "review":["cycle_id","reviewer_employee_id","template_id"],
+  "self_review":["cycle_id","summary","rating","achievements","development_areas"],
   "goal":["description","measure","target"],
   "feedback":["review_id","feedback"],
   "calibration":["review_id","calibrated_rating","rationale"],
@@ -183,7 +184,8 @@ def _validate_references(conn, domain, record_type, data):
         },
         ("recruitment","interview"): {"application_id": ("recruitment","application")},
         ("recruitment","offer"): {"application_id": ("recruitment","application")},
-        ("performance","review"): {"template_id": ("performance","review_template")},
+        ("performance","review"): {"template_id": ("performance","review_template"),"cycle_id": ("performance","review_cycle")},
+        ("performance","self_review"): {"cycle_id": ("performance","review_cycle")},
         ("performance","feedback"): {"review_id": ("performance","review")},
         ("performance","calibration"): {"review_id": ("performance","review")},
         ("performance","acknowledgement"): {"review_id": ("performance","review")},
@@ -226,6 +228,14 @@ def _validate_references(conn, domain, record_type, data):
         allowed={"interview":{"shortlisted","interview"},"offer":{"interview"}}
         if application["status"] not in allowed[record_type]:
             raise HTTPException(409,"The application must reach the required recruitment stage first")
+    if domain=="performance" and record_type=="self_review":
+        cycle=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["cycle_id"],)).fetchone()
+        if cycle["status"]!="self_review":
+            raise HTTPException(409,"The review cycle must be open for employee self-review")
+    if domain=="performance" and record_type=="review":
+        cycle=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["cycle_id"],)).fetchone()
+        if cycle["status"] not in {"manager_review","calibration"}:
+            raise HTTPException(409,"The review cycle must reach manager review before appraisals are created")
     if domain=="performance" and record_type=="calibration":
         review=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["review_id"],)).fetchone()
         if review["status"]!="calibration":
