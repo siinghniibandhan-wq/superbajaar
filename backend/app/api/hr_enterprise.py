@@ -589,6 +589,23 @@ def _validate(domain, record_type, payload):
         except (ValueError,InvalidOperation,TypeError): raise HTTPException(422,"Travel dates, policy ID or estimated costs are invalid")
         if end<start or cost<=0 or per_diem<0 or policy_id<=0: raise HTTPException(422,"Travel dates and cost values are invalid")
         data["estimated_cost"]=str(cost);data["estimated_per_diem"]=str(per_diem);data["policy_id"]=policy_id
+    if domain=="travel" and record_type=="booking":
+        client_ref=str(data["client_reference"]).strip()
+        if not re.fullmatch(r"[A-Za-z0-9._:-]{8,100}",client_ref):
+            raise HTTPException(422,"Travel booking client_reference must be 8 to 100 safe characters")
+        details=data.get("booking_details",{})
+        if isinstance(details,str):
+            try: details=json.loads(details or "{}")
+            except (ValueError,TypeError) as exc:
+                raise HTTPException(422,"Provider booking details must be valid JSON") from exc
+        if not isinstance(details,dict):
+            raise HTTPException(422,"Provider booking details must be a JSON object")
+        try: amount=Decimal(str(data["booked_cost"]))
+        except (InvalidOperation,TypeError,ValueError) as exc:
+            raise HTTPException(422,"Booking cost must be numeric") from exc
+        if not amount.is_finite() or amount<=0:
+            raise HTTPException(422,"Booking cost must be greater than zero")
+        data.update({"client_reference":client_ref,"booking_details":details,"booked_cost":str(amount)})
     if domain=="documents":
         digest=str(data.get("sha256",""))
         if len(digest)!=64 or any(ch not in "0123456789abcdef" for ch in digest.lower()):
