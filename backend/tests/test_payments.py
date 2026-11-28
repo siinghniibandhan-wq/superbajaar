@@ -502,12 +502,12 @@ def test_payment_reconciliation_subtracts_refund_ledger_and_reports_pending(monk
                 return _FakeResult({"order_count":2,"order_value":500})
             if "status IN ('captured','refunded')" in normalized:
                 return _FakeResult({"amount":500})
+            if "GROUP BY provider" in normalized:
+                return _FakeResult([{"provider":"manual","count":1,"amount":75}])
             if "payment_refunds WHERE status='processed'" in normalized:
                 return _FakeResult({"amount":75})
             if "payment_refunds WHERE status='pending'" in normalized:
                 return _FakeResult({"count":1,"amount":20})
-            if "GROUP BY provider" in normalized:
-                return _FakeResult([{"provider":"manual","count":1,"amount":75}])
             return _FakeResult()
         def fetchone(self): return None
         def fetchall(self): return []
