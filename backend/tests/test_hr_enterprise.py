@@ -682,3 +682,19 @@ def test_asset_reducing_balance_depreciation_and_invalid_inputs():
     assert result["book_value"]=="6400.00"
     with pytest.raises(HTTPException):
         _calculate_asset_book_value("10000","11000",60,"2024-01-01","2026-01-01")
+
+def test_travel_policy_normalises_and_stores_job_grade():
+    result=_validate("travel","travel_policy",{
+        "name":"Manager travel","employment_type":"full_time","job_grade":"M2",
+        "max_trip_cost":"50000","per_diem_limit":"3000","currency":"inr"
+    })
+    assert result["job_grade"]=="M2"
+    assert result["currency"]=="INR"
+
+
+def test_travel_policy_defaults_job_grade_to_all():
+    result=_validate("travel","travel_policy",{
+        "name":"General travel","employment_type":"all",
+        "max_trip_cost":"50000","per_diem_limit":"3000","currency":"INR"
+    })
+    assert result["job_grade"]=="all"
