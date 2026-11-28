@@ -557,16 +557,17 @@ def create_order(payload: OrderCreate, request: Request):
                     if prior:
                         if str(prior.get("customer_email") or "").lower() != str(payload.customer_email or "").lower() or prior.get("checkout_payload_hash") != payload_hash:
                             raise HTTPException(status_code=409, detail="Checkout idempotency key was already used with a different order payload")
-                        existing_payment = None
-                        if payload.pos_payment_method:
-                            existing_payment = conn.execute(
+                        existing_payments = []
+                        if payload.pos_payment_method or payload.pos_tenders:
+                            existing_payments = conn.execute(
                                 "SELECT id,payment_reference,order_id,method,amount,status,provider_reference,note,created_at,updated_at "
-                                "FROM payments WHERE order_id=%s ORDER BY created_at,id LIMIT 1",
+                                "FROM payments WHERE order_id=%s ORDER BY created_at,id",
                                 (prior["id"],),
-                            ).fetchone()
-                            if existing_payment is None:
+                            ).fetchall()
+                            if not existing_payments:
                                 raise HTTPException(status_code=409, detail="POS order exists without its atomic tender record; reconcile before retrying")
-                        return {**prior, "payment": existing_payment,
+                        existing_payment = existing_payments[0] if existing_payments else None
+                        return {**prior, "payment": existing_payment, "payments": existing_payments,
                                 "inventory_location_id": None, "stock_reserved": order_has_reservation(conn, int(prior["id"])),
                                 "idempotent_replay": True}
                 variant_ids = list(dict.fromkeys(line.variant_id for line in payload.lines))
