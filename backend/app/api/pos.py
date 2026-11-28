@@ -129,9 +129,14 @@ def get_pos_sale(order_id: int):
     try:
         with _connect() as conn:
             order = conn.execute(
-                """SELECT id, order_number, customer_name, customer_phone, status,
-                          subtotal, total, notes, created_at, updated_at
-                   FROM orders WHERE id=%s AND channel='pos'""",
+                """SELECT o.id, o.order_number, o.customer_name, o.customer_phone, o.status,
+                          o.subtotal, o.total, o.notes, o.created_at, o.updated_at,
+                          s.id AS shift_id, s.register_id, r.register_code, r.name AS register_name,
+                          s.cashier_user_id
+                   FROM orders o
+                   LEFT JOIN pos_register_shifts s ON s.id=o.pos_register_shift_id
+                   LEFT JOIN pos_registers r ON r.id=s.register_id
+                   WHERE o.id=%s AND o.channel='pos'""",
                 (order_id,),
             ).fetchone()
             if order is None:
