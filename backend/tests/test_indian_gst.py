@@ -48,3 +48,28 @@ def test_zero_rate_tax_is_supported():
     result = calculate_indian_gst(taxable_value="99.99", gst_rate="0", supply_type="intra_state")
     assert result["total_tax"] == Decimal("0.00")
     assert result["line_total"] == Decimal("99.99")
+
+def test_inclusive_gst_extracts_cgst_sgst_without_changing_payable_total():
+    from app.services.indian_gst import calculate_indian_gst_inclusive
+
+    result = calculate_indian_gst_inclusive(
+        gross_value="118.00", gst_rate="18", supply_type="intra_state", hsn_code="12345678",
+    )
+    assert result["taxable_value"] == Decimal("100.00")
+    assert result["cgst_amount"] == Decimal("9.00")
+    assert result["sgst_amount"] == Decimal("9.00")
+    assert result["igst_amount"] == Decimal("0.00")
+    assert result["line_total"] == Decimal("118.00")
+
+
+def test_inclusive_gst_extracts_igst_for_inter_state_supply():
+    from app.services.indian_gst import calculate_indian_gst_inclusive
+
+    result = calculate_indian_gst_inclusive(
+        gross_value="118.00", gst_rate="18", supply_type="inter_state", hsn_code="12345678",
+    )
+    assert result["taxable_value"] == Decimal("100.00")
+    assert result["igst_amount"] == Decimal("18.00")
+    assert result["cgst_amount"] == Decimal("0.00")
+    assert result["sgst_amount"] == Decimal("0.00")
+    assert result["line_total"] == Decimal("118.00")
