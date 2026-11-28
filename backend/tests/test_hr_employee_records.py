@@ -67,6 +67,8 @@ def test_employee_record_routes_require_hr_manager_session(monkeypatch):
         "contact_name": "Asha Singh", "relationship": "Parent", "phone": "9876543210"
     }).status_code == 401
     assert client.get("/api/hr/employees/1/employment-history").status_code == 401
+    assert client.get("/api/hr/employees/1/record-events").status_code == 401
+    assert client.post("/api/hr/employees/1/emergency-contacts/1/deactivate", json={}).status_code == 401
     assert client.post("/api/hr/employees/1/employment-history", json={
         "employer_name": "Previous Company", "job_title": "Associate",
         "start_date": "2024-01-01"
