@@ -6,6 +6,7 @@ import HRStatutoryPolicies from "./HRStatutoryPolicies.jsx";
 import HROverview from "./HROverview.jsx";
 import HRAdvancedWorkflows from "./HRAdvancedWorkflows.jsx";
 import HREmployeeRecords from "./HREmployeeRecords.jsx";
+import HREnterpriseWorkflows from "./HREnterpriseWorkflows.jsx";
 import OrganisationChart from "./OrganisationChart.jsx";
 import { formatHRDateTime, toLocalDateTimeInput, todayHRDate } from "./hrDateTime.js";
 import { exportPayslipsCsv } from "./hrPayslipExport.js";
@@ -143,7 +144,7 @@ export default function HRWorkspace({onBack,currentUser}) {
     if(decision==="rejected"&&(!note||!note.trim())) return;
     return act(()=>patch(path,{decision,note:note?.trim()||null}),"Request "+decision+".");
   };
-  const tabs=[{group:"Command centre",items:[["overview","Overview"]]},...(manager?[{group:"People & organisation",items:[["organisation","Organisation chart"],["people","Employee directory & departments"]]}]:[]),{group:"Workforce operations",items:[["attendance","Attendance & shifts"],["leave","Leave management"],["advanced","Workforce planning"]]},{group:"Payroll & finance",items:[["expenses","Expenses & claims"],["payroll","Payroll processing"],["payslips","Payslips"]]},...(manager?[{group:"Governance & compliance",items:[["statutory","Statutory compliance"]]}]:[])];
+  const tabs=[{group:"Command centre",items:[["overview","Overview"]]},...(manager?[{group:"People & organisation",items:[["organisation","Organisation chart"],["people","Employee directory & departments"]]}]:[]),{group:"Workforce operations",items:[["attendance","Attendance & shifts"],["leave","Leave management"],["advanced","Workforce planning"]]},{group:"Payroll & finance",items:[["expenses","Expenses & claims"],["payroll","Payroll processing"],["payslips","Payslips"]]}, {group:"Enterprise HR",items:[["enterprise","Recruitment & employee lifecycle"]]}, ...(manager?[{group:"Governance & compliance",items:[["statutory","Statutory compliance"]]}]:[])];
   const filteredEmployees=filterEmployees(employees,{query:employeeQuery,status:employeeStatusFilter,departmentId:employeeDepartmentFilter});
   const visibleLeaves=filterLeaveRequests(leaves,{status:leaveStatusFilter,leaveType:leaveTypeFilter,query:leaveQuery});
   const selectedEmployee=employees.find(employee=>Number(employee.id)===Number(selectedEmployeeId))||null;
@@ -159,6 +160,7 @@ export default function HRWorkspace({onBack,currentUser}) {
     <div className="hr-toolbar"><label>Month <input type="month" value={month} onChange={e=>setMonth(e.target.value)}/></label><button type="button" onClick={load} disabled={busy}>Refresh</button></div>
     <nav className="hr-nav" aria-label="HR sections">{tabs.map(group=><div className="hr-nav-group" key={group.group}><span>{group.group}</span><div className="hr-tabs">{group.items.map(([key,label])=><button key={key} type="button" className={tab===key?"active":""} aria-current={tab===key?"page":undefined} onClick={()=>setTab(key)}>{label}</button>)}</div></div>)}</nav>
     {tab==="overview"&&manager&&<HROverview data={overviewData} loading={overviewLoading} error={overviewError} onRefresh={load} onNavigate={setTab}/>}
+    {tab==="enterprise"&&<HREnterpriseWorkflows manager={manager} employees={employees}/> }}
     {tab==="overview"&&!manager&&<div className="hr-overview"><article><span>My attendance sessions</span><strong>{attendance.length}</strong><small>Selected month</small></article><article><span>My pending leave</span><strong>{leaves.filter(x=>x.status==="pending").length}</strong><small>Requests awaiting review</small></article><article><span>My pending expenses</span><strong>{expenses.filter(x=>x.status==="pending").length}</strong><small>Claims awaiting review</small></article><article><span>My payslips</span><strong>{payslips.length}</strong><small>Available salary statements</small></article><div className="hr-overview-note"><strong>Employee self-service</strong><p>View your attendance, leave requests, reimbursements and payslips using the sections above.</p></div></div>}
     {tab==="organisation"&&manager&&<OrganisationChart departments={departments}/>}
     {tab==="people"&&<div className="hr-panel">
