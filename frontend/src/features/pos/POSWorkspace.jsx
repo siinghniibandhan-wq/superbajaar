@@ -82,6 +82,9 @@ export default function POSWorkspace({ onBack }) {
   const [couponApplied, setCouponApplied] = useState(null);
   const [couponBusy, setCouponBusy] = useState(false);
   const [method, setMethod] = useState("cod");
+  const [splitTender, setSplitTender] = useState(false);
+  const [splitCashAmount, setSplitCashAmount] = useState("");
+  const [splitOnlineMethod, setSplitOnlineMethod] = useState("upi");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -323,7 +326,11 @@ export default function POSWorkspace({ onBack }) {
 
   const tenderedNumber = method === "cod" && tendered !== "" ? Number(tendered) : null;
   const changeDue = tenderedNumber != null && tenderedNumber >= total ? round2(tenderedNumber - total) : null;
-  const shortBy = tenderedNumber != null && tenderedNumber < total ? round2(total - tenderedNumber) : null;
+  const shortBy = !splitTender && tenderedNumber != null && tenderedNumber < total ? round2(total - tenderedNumber) : null;
+  const splitCash = splitCashAmount === "" ? null : Number(splitCashAmount);
+  const splitOnline = splitCash == null ? null : round2(total - splitCash);
+  const splitIsTwoTenders = splitTender && splitCash != null && splitCash > 0 && splitCash < total && splitOnline > 0;
+  const splitTenders = splitIsTwoTenders ? [{method:"cod",amount:splitCash},{method:splitOnlineMethod,amount:splitOnline}] : null;
   const quickCash = useMemo(() => {
     if (method !== "cod" || total <= 0) return [];
     const up = step => Math.ceil(total / step) * step;
@@ -337,7 +344,7 @@ export default function POSWorkspace({ onBack }) {
     : !locationId ? "Choose a stock location."
     : shortBy != null ? "Cash received is " + money(shortBy) + " short."
     : "";
-  const chargeLabel = saving ? "Processing…" : method === "cod" ? "Receive cash · " + money(total) : "Charge " + money(total) + " · " + methodLabel(method);
+  const chargeLabel = saving ? "Processing…" : splitIsTwoTenders ? "Split · Cash " + money(splitCash) + " + " + methodLabel(splitOnlineMethod) + " " + money(splitOnline) : method === "cod" ? "Receive cash · " + money(total) : "Charge " + money(total) + " · " + methodLabel(method);
 
   useEffect(() => { try { window.localStorage.setItem(HELD_KEY, JSON.stringify(held)); } catch {} }, [held]);
   useEffect(() => {
@@ -371,7 +378,7 @@ export default function POSWorkspace({ onBack }) {
   const removeLine = id => setCart(old => old.filter(line => line.id !== id));
 
   function resetSale() {
-    setCart([]); setCustomer({ ...WALK_IN }); setTendered(""); setReference(""); setShowCustomer(false);
+    setCart([]); setCustomer({ ...WALK_IN }); setTendered(""); setReference(""); setShowCustomer(false); setSplitTender(false); setSplitCashAmount("");
     setCouponCode(""); setCouponApplied(null);
     checkoutAttempt.current = null;
   }
@@ -421,7 +428,7 @@ export default function POSWorkspace({ onBack }) {
     const note = "Created at POS" + (reference.trim() ? " · Ref: " + reference.trim().slice(0, 100) : "");
     const checkoutPayload = {
       channel: "pos", customer_name: customerName, customer_phone: customer.phone.trim() || null,
-      delivery_pin: pin || null, location_id: Number(locationId), pos_register_id: Number(selectedRegisterId), pos_payment_method: method,
+      delivery_pin: pin || null, location_id: Number(locationId), pos_register_id: Number(selectedRegisterId),\n      pos_payment_method: splitTender ? (splitCash === total ? "cod" : splitCash === 0 ? splitOnlineMethod : null) : method,\n      pos_tenders: splitIsTwoTenders ? splitTenders : null,
       coupon_code: couponCode.trim() || null,
       notes: note, lines: cart.map(line => ({ variant_id: line.id, quantity: line.quantity })),
     };
@@ -434,39 +441,53 @@ export default function POSWorkspace({ onBack }) {
         method: "POST",
         body: JSON.stringify({ ...checkoutPayload, checkout_idempotency_key: checkoutAttempt.current.key }),
       });
-      let payment = order.payment || null;
-      if (!payment) {
+      let payments = order.payments || (order.payment ? [order.payment] : []);
+      if (!payments.length) {
         setError("Order " + order.order_number + " was returned without its tender record. Do not create another order; reconcile this sale before retrying.");
         return;
       }
-      if (method !== "cod") {
-        const gatewayOrder = await apiRequest("/razorpay/orders", {
-          method: "POST", body: JSON.stringify({ order_id: order.id }),
-        });
-        await loadPosRazorpay();
-        const result = await new Promise((resolve, reject) => {
-          let settled = false;
-          const finish = (fn, value) => { if (settled) return; settled = true; fn(value); };
-          const checkout = new window.Razorpay({
-            key: gatewayOrder.key_id, amount: gatewayOrder.amount, currency: gatewayOrder.currency,
-            name: "Super Bajaar", description: "POS sale " + order.order_number,
-            order_id: gatewayOrder.razorpay_order_id,
-            prefill: { name: customerName, contact: customer.phone.trim() },
-            handler: response => finish(resolve, response),
-            modal: { ondismiss: () => finish(reject, new Error("Payment window closed. The sale is pending; retry using the same checkout.")) },
+      if (splitIsTwoTenders) {
+        const cashPayment = payments.find(p => p.method === "cod");
+        const onlinePayment = payments.find(p => p.method !== "cod");
+        if (cashPayment) {
+          const confirmed = await apiRequest("/pos/shifts/" + activeShift.id + "/payments/" + cashPayment.id + "/confirm-cash", {method:"POST"});
+          payments = payments.map(p => p.id === cashPayment.id ? {...p,...confirmed} : p);
+        }
+        const partialReceipt = { order, payment: payments[0], payments, method:"split", at:new Date().toISOString(), counter:activeShift?.register_code||"", customer:{name:customerName,phone:customer.phone.trim()}, tendered:splitCash, lines:cart.map((line,index)=>({id:line.id,name:productTitle(line),label:variantLabel(line),sku:line.sku,quantity:line.quantity,price:Number(line.selling_price||0),tax:order.tax_lines?.[index]||null})) };
+        setReceipt(partialReceipt);
+        if (onlinePayment) {
+          const gatewayOrder = await apiRequest("/razorpay/orders", {method:"POST",body:JSON.stringify({order_id:order.id,payment_id:onlinePayment.id})});
+          await loadPosRazorpay();
+          const result = await new Promise((resolve,reject) => {
+            let settled=false; const finish=(fn,value)=>{if(settled)return;settled=true;fn(value);};
+            const checkout = new window.Razorpay({key:gatewayOrder.key_id,amount:gatewayOrder.amount,currency:gatewayOrder.currency,name:"Super Bajaar",description:"POS split sale "+order.order_number,order_id:gatewayOrder.razorpay_order_id,prefill:{name:customerName,contact:customer.phone.trim()},handler:response=>finish(resolve,response),modal:{ondismiss:()=>finish(reject,new Error("Online split tender window closed. Cash remains recorded; online amount is still pending and may be retried from the sale."))});
+            checkout.on("payment.failed",response=>finish(reject,new Error(response?.error?.description||"Online split payment failed; cash remains recorded.")));
+            checkout.open();
           });
-          checkout.on("payment.failed", response => finish(reject, new Error(response?.error?.description || "Payment failed. Retry this sale.")));
-          checkout.open();
-        });
-        const verified = await apiRequest("/razorpay/verify", {
-          method: "POST", body: JSON.stringify(result),
-        });
-        payment = { ...payment, status: verified.status || "captured", provider_reference: result.razorpay_payment_id };
+          const verified=await apiRequest("/razorpay/verify",{method:"POST",body:JSON.stringify(result)});
+          payments=payments.map(p=>p.id===onlinePayment.id?{...p,status:verified.status||"captured",provider_reference:result.razorpay_payment_id}:p);
+        }
+      } else {
+        let payment = payments[0];
+        if (method !== "cod" && payment) {
+          const gatewayOrder = await apiRequest("/razorpay/orders", {method:"POST",body:JSON.stringify({order_id:order.id,payment_id:payment.id})});
+          await loadPosRazorpay();
+          const result = await new Promise((resolve,reject)=>{
+            let settled=false; const finish=(fn,value)=>{if(settled)return;settled=true;fn(value);};
+            const checkout=new window.Razorpay({key:gatewayOrder.key_id,amount:gatewayOrder.amount,currency:gatewayOrder.currency,name:"Super Bajaar",description:"POS sale "+order.order_number,order_id:gatewayOrder.razorpay_order_id,prefill:{name:customerName,contact:customer.phone.trim()},handler:response=>finish(resolve,response),modal:{ondismiss:()=>finish(reject,new Error("Payment window closed. The sale is pending; retry using the same checkout."))});
+            checkout.on("payment.failed",response=>finish(reject,new Error(response?.error?.description||"Payment failed. Retry this sale.")));
+            checkout.open();
+          });
+          const verified=await apiRequest("/razorpay/verify",{method:"POST",body:JSON.stringify(result)});
+          payment={...payment,status:verified.status||"captured",provider_reference:result.razorpay_payment_id};
+          payments=[payment];
+        }
       }
+      let payment = payments[0];
       const sale = {
-        order, payment, method, at: new Date().toISOString(), counter: activeShift?.register_code || "",
+        order, payment, payments, method: splitIsTwoTenders ? "split" : method, at: new Date().toISOString(), counter: activeShift?.register_code || "",
         customer: { name: customerName, phone: customer.phone.trim() },
-        tendered: tenderedNumber,
+        tendered: splitIsTwoTenders ? splitCash : tenderedNumber,
         lines: cart.map((line, index) => ({ id: line.id, name: productTitle(line), label: variantLabel(line), sku: line.sku, quantity: line.quantity, price: Number(line.selling_price || 0), tax: order.tax_lines?.[index] || null })),
       };
       setReceipt(sale);
