@@ -70,30 +70,53 @@ def _employee_transition_allowed(domain, from_status, to_status):
 
 
 def _allowed_record_transitions(domain, record_type, status):
-    if domain != "recruitment":
-        return TRANSITIONS[domain].get(status,set())
+    # Transitions are scoped to the record's actual lifecycle. A shared domain
+    # status vocabulary must never let (for example) a course be "reimbursed".
     per_type = {
-        "job_opening": {
-            "draft":{"open","archived"},
-            "open":{"closed","archived"},
-            "closed":{"archived"},
+        "recruitment": {
+            "job_opening": {"draft":{"open","archived"},"open":{"closed","archived"},"closed":{"archived"}},
+            "candidate": {"draft":{"withdrawn","archived"},"withdrawn":{"archived"}},
+            "application": {"screening":{"shortlisted","rejected","withdrawn"},"shortlisted":{"interview","rejected","withdrawn"},"interview":{"offered","rejected","withdrawn"},"offered":{"rejected","withdrawn"}},
+            "interview": {"interview":{"completed"}},
+            "offer": {"offered":{"rejected","withdrawn"}},
+            "interview_feedback": {}, "communication": {},
         },
-        "candidate": {
-            "draft":{"withdrawn","archived"},
-            "withdrawn":{"archived"},
+        "documents": {
+            "employee_document": {"pending":{"under_review","archived"},"under_review":{"verified","rejected","expired"},"verified":{"expired","archived"},"rejected":{"archived"},"expired":{"archived"}},
         },
-        "application": {
-            "screening":{"shortlisted","rejected","withdrawn"},
-            "shortlisted":{"interview","rejected","withdrawn"},
-            "interview":{"offered","rejected","withdrawn"},
-            "offered":{"rejected","withdrawn"},
+        "performance": {
+            "review_template": {"draft":{"active","cancelled"},"active":{"cancelled"}},
+            "review_cycle": {"draft":{"active","cancelled"},"active":{"self_review","cancelled"},"self_review":{"manager_review"},"manager_review":{"calibration","closed"},"calibration":{"closed"}},
+            "review": {"manager_review":{"calibration","acknowledged"},"calibration":{"acknowledged"},"acknowledged":{"closed"}},
+            "self_review": {"self_review":{"manager_review"}},
+            "goal": {"draft":{"active","cancelled"},"active":{"cancelled"}},
+            "feedback": {}, "calibration": {"calibration":{"acknowledged"}}, "acknowledgement": {"acknowledged":{"closed"}},
         },
-        "interview": {"interview":{"completed"}},
-        "offer": {"offered":{"rejected","withdrawn"}},
-        "interview_feedback": {},
-        "communication": {},
+        "learning": {
+            "course": {"planned":{"enrolled","cancelled"},"enrolled":{"cancelled"}},
+            "enrollment": {"planned":{"enrolled","cancelled"},"enrolled":{"in_progress","cancelled"},"in_progress":{"completed","failed"},"failed":{"enrolled"}},
+            "progress": {}, "assessment": {}, "certificate": {"completed":{"expired","archived"},"expired":{"archived"}},
+        },
+        "assets": {
+            "asset": {"available":{"assigned","maintenance","written_off"},"assigned":{"available","maintenance","written_off"},"maintenance":{"available","written_off"},"written_off":{}},
+            "asset_request": {"requested":{"approved","rejected"},"approved":{"assigned","rejected"}},
+            "allocation": {"requested":{"approved","rejected"},"approved":{"assigned","rejected"},"assigned":{"acknowledged","returned","maintenance","written_off"},"acknowledged":{"returned","maintenance","written_off"}},
+            "maintenance": {"maintenance":{"completed","written_off"}},
+        },
+        "travel": {
+            "travel_policy": {}, "request": {"draft":{"submitted","cancelled"},"submitted":{"approved","rejected"},"approved":{"booked","cancelled"},"booked":{"in_progress","cancelled"},"in_progress":{"completed"},"completed":{"claimed"},"claimed":{"reimbursed"}},
+            "booking": {}, "advance": {}, "claim": {},
+        },
+        "exit": {
+            "case": {"initiated":{"notice_period","withdrawn"},"notice_period":{"handover","withdrawn"},"handover":{"clearance"},"clearance":{"settlement_review"},"settlement_review":{"completed"}},
+            "clearance": {"clearance":{"completed","rejected"}},
+            "settlement": {"settlement_review":{"completed"}},
+        },
     }
-    return per_type.get(record_type,{}).get(status,set())
+    domain_rules = per_type.get(domain)
+    if domain_rules is None:
+        return TRANSITIONS.get(domain,{}).get(status,set())
+    return domain_rules.get(record_type,{}).get(status,set())
 
 
 def _initial_status(domain, record_type):
