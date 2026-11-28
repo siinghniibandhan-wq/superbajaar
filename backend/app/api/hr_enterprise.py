@@ -388,6 +388,18 @@ def _validate(domain, record_type, payload):
         if int(data["asset_id"])<=0: raise HTTPException(422,"Asset ID must be positive")
         try: date.fromisoformat(str(data["reported_at"])[:10])
         except ValueError: raise HTTPException(422,"Maintenance reported_at date is invalid")
+    if domain=="assets" and record_type=="asset":
+        if data.get("purchase_value") not in (None,""):
+            try: purchase_value=Decimal(str(data["purchase_value"]))
+            except InvalidOperation: raise HTTPException(422,"Asset purchase value must be numeric")
+            if purchase_value<0: raise HTTPException(422,"Asset purchase value cannot be negative")
+            data["purchase_value"]=str(purchase_value)
+        for field in ("purchase_date","warranty_expiry"):
+            if data.get(field):
+                try: data[field]=date.fromisoformat(str(data[field])).isoformat()
+                except ValueError: raise HTTPException(422,f"Asset {field.replace('_',' ')} must be an ISO date")
+        if data.get("purchase_date") and data.get("warranty_expiry") and data["warranty_expiry"]<data["purchase_date"]:
+            raise HTTPException(422,"Asset warranty expiry cannot precede purchase date")
     if domain=="travel" and record_type in {"booking","advance","claim"}:
         amount_key={"booking":"booked_cost","advance":"requested_amount","claim":"actual_cost"}[record_type]
         try: amount=Decimal(str(data[amount_key]))
@@ -702,6 +714,8 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                         due_date=date.fromisoformat(str(data["end_date"]))
                     elif domain=="assets" and payload.record_type=="asset_request":
                         due_date=date.fromisoformat(str(data["needed_by"]))
+                    elif domain=="assets" and payload.record_type=="asset" and data.get("warranty_expiry"):
+                        due_date=date.fromisoformat(str(data["warranty_expiry"]))
                 row=conn.execute(
                   "INSERT INTO hr_enterprise_records(domain,employee_id,parent_id,title,status,payload,effective_date,due_date,created_by_user_id,updated_by_user_id) "
                   "VALUES(%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s) RETURNING *",
