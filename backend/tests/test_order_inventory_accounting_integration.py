@@ -101,6 +101,62 @@ def ok(response,status=200):
     return response.json()
 
 
+
+def test_paid_pos_cash_sale_consumes_stock_and_records_cost_once(api):
+    register = ok(api.post("/api/pos/registers", json={
+        "location_id": api.location_id,
+        "register_code": "POS-" + api.suffix,
+        "name": "Counter " + api.suffix,
+    }), 201)
+    shift = ok(api.post(f"/api/pos/registers/{register['id']}/open", json={
+        "opening_float": "1000.00",
+    }), 201)
+    order = ok(api.post("/api/orders", json={
+        "channel": "pos",
+        "customer_name": "POS Cash Customer",
+        "location_id": api.location_id,
+        "pos_register_id": register["id"],
+        "pos_payment_method": "cod",
+        "checkout_idempotency_key": "pos-cash-stock-" + api.suffix + "-key",
+        "lines": [{"variant_id": api.variant_id, "quantity": 3}],
+    }), 201)
+    assert order["payment"]["status"] == "pending"
+    captured = ok(api.post(
+        f"/api/pos/shifts/{shift['id']}/payments/{order['payment']['id']}/confirm-cash",
+        json={},
+    ))
+    assert captured["status"] == "captured"
+    with psycopg.connect(TEST_DB) as conn:
+        balance = conn.execute(
+            "SELECT on_hand,reserved FROM inventory_balances WHERE variant_id=%s AND location_id=%s",
+            (api.variant_id, api.location_id),
+        ).fetchone()
+        assert balance == (2, 0)
+        sale_movements = conn.execute(
+            "SELECT count(*) FROM inventory_movements WHERE reference_type='order_fulfilment' AND reference_id=%s AND movement_type='sale'",
+            (str(order["id"]),),
+        ).fetchone()[0]
+        assert sale_movements == 1
+        issue = conn.execute(
+            "SELECT quantity,total_cost FROM inventory_order_issues WHERE order_id=%s",
+            (order["id"],),
+        ).fetchone()
+        assert issue == (3, Decimal("30.00"))
+        status = conn.execute("SELECT status FROM orders WHERE id=%s", (order["id"],)).fetchone()[0]
+        assert status == "delivered"
+    # A second confirmation is rejected; the sale and its stock issue remain single-posted.
+    replay = api.post(
+        f"/api/pos/shifts/{shift['id']}/payments/{order['payment']['id']}/confirm-cash",
+        json={},
+    )
+    assert replay.status_code == 409
+    with psycopg.connect(TEST_DB) as conn:
+        assert conn.execute(
+            "SELECT count(*) FROM inventory_movements WHERE reference_type='order_fulfilment' AND reference_id=%s AND movement_type='sale'",
+            (str(order["id"]),),
+        ).fetchone()[0] == 1
+
+
 def test_pos_order_reservation_dispatch_and_cogs_posting(api):
     order=ok(api.post("/api/orders",json={
         "channel":"pos","customer_name":"POS Test Customer","location_id":api.location_id,
