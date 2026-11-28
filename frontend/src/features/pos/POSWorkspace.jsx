@@ -649,7 +649,7 @@ export default function POSWorkspace({ onBack }) {
               {PAYMENT_METHODS.map(m => <button type="button" role="radio" aria-checked={method === m.id} key={m.id} className={method === m.id ? "is-selected" : ""} onClick={() => { setMethod(m.id); setTendered(""); }}><i aria-hidden="true">{m.mark}</i>{m.label}</button>)}
             </div>}
             <div className="sb-pos-tender">
-              {method === "cod" ? <>
+              {splitTender ? <div className="sb-pos-split-summary"><strong>Cash portion</strong> {money(splitCash || 0)}<br/><strong>Online portion</strong> {money(splitOnline || 0)}<br/><strong>Total tender</strong> {money(total)}</div> : method === "cod" ? <>
                 <label>Cash received (₹)<input type="number" min="0" step="0.01" inputMode="decimal" value={tendered} onChange={e => setTendered(e.target.value)} placeholder={total ? "Leave empty if exact" : "0.00"} /></label>
                 {quickCash.length > 0 || total > 0 ? <div className="sb-pos-quick"><button type="button" onClick={() => setTendered(total.toFixed(2))} disabled={!total}>Exact</button>{quickCash.map(x => <button type="button" key={x} onClick={() => setTendered(String(x))}>{money(x)}</button>)}</div> : null}
                 <div className={"sb-pos-change" + (shortBy != null ? " is-short" : "")}><span>{shortBy != null ? "Still to collect" : "Change to return"}</span><strong>{money(shortBy != null ? shortBy : (changeDue ?? 0))}</strong></div>
