@@ -584,5 +584,5 @@ def test_recruitment_record_types_have_distinct_transition_permissions():
     assert _allowed_record_transitions("recruitment","interview","interview") == {"completed"}
     assert _allowed_record_transitions("recruitment","offer","offered") == {"rejected","withdrawn"}
     assert _allowed_record_transitions("recruitment","communication","completed") == set()
-    assert _allowed_record_transitions("recruitment","application","screening") != TRANSITIONS["recruitment"]["screening"]
+    assert _allowed_record_transitions("recruitment","job_opening","open") != TRANSITIONS["recruitment"]["open"]
 
