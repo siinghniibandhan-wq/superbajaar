@@ -95,7 +95,7 @@ export default function HREmployeeRecords({ employee }) {
         {!events.length&&<tr><td colSpan="5">No employee record changes have been recorded.</td></tr>}
       </tbody></table></div>
     </section>
-    {error&&<p className="sb-alert" role="alert">{error}</p>
+    {error&&<p className="sb-alert" role="alert">{error}</p>}
     {notice&&<p className="sb-success" role="status">{notice}</p>}
   </div>;
 }
