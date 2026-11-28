@@ -305,6 +305,30 @@ def _ensure_assessment_attempt_limit(attempts, maximum):
     if attempts >= maximum:
         raise HTTPException(409,f"Assessment attempt limit reached ({maximum})")
 
+def _calculate_asset_book_value(purchase_value, salvage_value, useful_life_months, purchase_date, as_of_date, method="straight_line", annual_rate="20"):
+    try:
+        cost=Decimal(str(purchase_value)); salvage=Decimal(str(salvage_value))
+        life=int(useful_life_months); purchased=date.fromisoformat(str(purchase_date)); as_of=date.fromisoformat(str(as_of_date))
+        rate=Decimal(str(annual_rate))
+    except (ValueError,TypeError,InvalidOperation):
+        raise HTTPException(422,"Asset depreciation inputs are invalid")
+    if cost<0 or salvage<0 or salvage>cost or life<1 or rate<=0 or rate>100 or as_of<purchased:
+        raise HTTPException(422,"Asset depreciation values, useful life or dates are outside permitted ranges")
+    months=max(0,(as_of.year-purchased.year)*12+as_of.month-purchased.month-(1 if as_of.day<purchased.day else 0))
+    elapsed=min(months,life)
+    if method=="straight_line":
+        monthly=(cost-salvage)/Decimal(life)
+        book=max(salvage,cost-monthly*Decimal(elapsed))
+    elif method=="reducing_balance":
+        annual_factor=Decimal("1")-rate/Decimal("100")
+        years=months//12
+        book=max(salvage,cost*(annual_factor**years))
+    else:
+        raise HTTPException(422,"Depreciation method must be straight_line or reducing_balance")
+    return {"method":method,"purchase_value":str(cost),"salvage_value":str(salvage),"useful_life_months":life,
+            "elapsed_months":elapsed,"as_of_date":as_of.isoformat(),"annual_rate_percent":str(rate),
+            "accumulated_depreciation":str(cost-book),"book_value":str(book)}
+
 
 def _validate_references(conn, domain, record_type, data):
     references = {
@@ -667,6 +691,14 @@ def _validate(domain, record_type, payload):
                 except ValueError: raise HTTPException(422,f"Asset {field.replace('_',' ')} must be an ISO date")
         if data.get("purchase_date") and data.get("warranty_expiry") and data["warranty_expiry"]<data["purchase_date"]:
             raise HTTPException(422,"Asset warranty expiry cannot precede purchase date")
+        if data.get("depreciation_method"):
+            if not data.get("purchase_date") or data.get("purchase_value") in (None,""):
+                raise HTTPException(422,"Depreciable assets require purchase date and purchase value")
+            data["depreciation"]=_calculate_asset_book_value(
+                data["purchase_value"],data.get("salvage_value","0"),data.get("useful_life_months",60),
+                data["purchase_date"],data.get("depreciation_as_of",date.today().isoformat()),
+                data["depreciation_method"],data.get("annual_depreciation_rate","20")
+            )
     if domain=="travel" and record_type in {"booking","advance","claim"}:
         amount_key={"booking":"booked_cost","advance":"requested_amount","claim":"actual_cost"}[record_type]
         try: amount=Decimal(str(data[amount_key]))
