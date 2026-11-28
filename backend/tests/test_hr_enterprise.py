@@ -415,3 +415,20 @@ def test_travel_budget_guard_rejects_over_limit(existing, requested, limit):
     with pytest.raises(HTTPException) as exc:
         _ensure_travel_amount_budget(existing, requested, limit, "bookings")
     assert exc.value.status_code == 422
+
+
+def test_recruitment_rejects_duplicate_candidate_and_active_application():
+    from app.api.hr_enterprise import _ensure_no_active_recruitment_duplicate
+    _ensure_no_active_recruitment_duplicate(None, "duplicate")
+    with pytest.raises(HTTPException) as exc:
+        _ensure_no_active_recruitment_duplicate({"id": 12}, "A candidate with this email already exists")
+    assert exc.value.status_code == 409
+    assert "candidate" in exc.value.detail.lower()
+
+
+def test_recruitment_duplicate_guard_reports_existing_application():
+    from app.api.hr_enterprise import _ensure_no_active_recruitment_duplicate
+    with pytest.raises(HTTPException) as exc:
+        _ensure_no_active_recruitment_duplicate({"id": 28}, "This candidate already has an active application")
+    assert exc.value.status_code == 409
+    assert "application" in exc.value.detail.lower()
