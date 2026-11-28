@@ -3,7 +3,7 @@ from fastapi import HTTPException
 
 from app.api.hr_enterprise import (
     DOMAINS, EMPLOYEE_TRANSITIONS, REQUIRED, STATUSES, TRANSITIONS,
-    _employee_transition_allowed, _validate,
+    _employee_transition_allowed, _initial_status, _validate,
 )
 
 
@@ -89,3 +89,47 @@ def test_employee_cannot_approve_or_complete_manager_workflows():
     assert not _employee_transition_allowed("assets", "requested", "approved")
     assert not _employee_transition_allowed("documents", "under_review", "verified")
     assert not _employee_transition_allowed("recruitment", "offered", "hired")
+
+
+
+def test_typed_workflows_start_in_their_business_state():
+    assert _initial_status("recruitment", "interview") == "interview"
+    assert _initial_status("recruitment", "offer") == "offered"
+    assert _initial_status("travel", "booking") == "booked"
+    assert _initial_status("travel", "claim") == "claimed"
+    assert _initial_status("exit", "clearance") == "clearance"
+    assert _initial_status("assets", "maintenance") == "maintenance"
+
+
+def test_recruitment_offer_requires_positive_salary_and_valid_currency():
+    result = _validate("recruitment", "offer", {
+        "application_id": 15, "offered_salary": "45000",
+        "currency": "inr", "expires_on": "2026-12-31"
+    })
+    assert result["offered_salary"] == "45000"
+    assert result["currency"] == "INR"
+    with pytest.raises(HTTPException):
+        _validate("recruitment", "offer", {
+            "application_id": 15, "offered_salary": "0",
+            "currency": "INR", "expires_on": "2026-12-31"
+        })
+
+
+def test_exit_settlement_must_reconcile_to_net_due():
+    result = _validate("exit", "settlement", {
+        "exit_record_id": 7, "gross_due": "60000",
+        "deductions": "5000", "net_due": "55000", "payable_on": "2027-01-05"
+    })
+    assert result["net_due"] == "55000"
+    with pytest.raises(HTTPException):
+        _validate("exit", "settlement", {
+            "exit_record_id": 7, "gross_due": "60000",
+            "deductions": "5000", "net_due": "57000", "payable_on": "2027-01-05"
+        })
+
+
+def test_learning_assessment_scores_are_bounded():
+    with pytest.raises(HTTPException):
+        _validate("learning", "assessment", {
+            "enrollment_id": 4, "score": "105", "pass_score": "70"
+        })
