@@ -64,3 +64,9 @@ test("POS sales history paginates server-filtered results", () => {
   assert.match(workspace, />Previous</);
   assert.match(workspace, />Next</);
 });
+
+
+test("POS sales history can be narrowed to an individual cashier", () => {
+  assert.match(workspace, /cashier_user_id/);
+  assert.match(workspace, /Cashier user ID/);
+});
