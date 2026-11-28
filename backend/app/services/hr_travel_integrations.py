@@ -41,14 +41,23 @@ def create_provider_booking(*,travel:dict,booking:dict,record_id:int)->dict:
         result=response.json()
     except (httpx.HTTPError,ValueError) as exc:
         raise HTTPException(502,"Configured travel booking provider did not confirm the booking") from exc
+    if not isinstance(result,dict):
+        raise HTTPException(502,"Travel booking provider returned an invalid booking response")
     reference=str(result.get("booking_reference") or result.get("id") or "").strip()
     if not reference:
         raise HTTPException(502,"Travel booking provider response did not contain a booking reference")
+    provider_status=str(result.get("status") or "").strip().lower()
+    if provider_status not in {"confirmed","booked","success","succeeded"}:
+        raise HTTPException(409,f"Travel booking provider has not confirmed the booking (status {provider_status or 'unknown'})")
     try: confirmed=Decimal(str(result.get("confirmed_amount",booking["booked_cost"])))
     except Exception as exc: raise HTTPException(502,"Travel booking provider returned an invalid confirmed amount") from exc
-    if confirmed<=0: raise HTTPException(502,"Travel booking provider returned a non-positive booking amount")
+    if not confirmed.is_finite() or confirmed<=0:
+        raise HTTPException(502,"Travel booking provider returned a non-positive or invalid booking amount")
+    ceiling=Decimal(str(booking.get("maximum_allowed_amount") or booking["booked_cost"]))
+    if confirmed>ceiling:
+        raise HTTPException(502,"Travel booking provider confirmed an amount above the approved policy ceiling")
     return {"provider":provider,"booking_reference":reference,"provider_booking_id":str(result.get("id") or reference),
-            "booked_cost":str(confirmed),"provider_status":str(result.get("status") or "confirmed")}
+            "booked_cost":str(confirmed),"provider_status":provider_status}
 
 def disburse_travel_advance(conn,*,record_id:int,employee_id:int,amount:Decimal,currency:str,actor_user_id:int|None)->int:
     if currency.upper()!="INR":
