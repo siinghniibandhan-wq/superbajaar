@@ -103,7 +103,7 @@ REQUIRED = {
  "performance":{
   "review_template":["name","sections","rating_scale"],
   "review_cycle":["period_start","period_end"],
-  "review":["cycle","reviewer_employee_id"],
+  "review":["cycle","reviewer_employee_id","template_id"],
   "self_review":["cycle","summary","rating","achievements","development_areas"],
   "goal":["description","measure","target"],
   "feedback":["review_id","feedback"],
@@ -183,6 +183,7 @@ def _validate_references(conn, domain, record_type, data):
         },
         ("recruitment","interview"): {"application_id": ("recruitment","application")},
         ("recruitment","offer"): {"application_id": ("recruitment","application")},
+        ("performance","review"): {"template_id": ("performance","review_template")},
         ("performance","feedback"): {"review_id": ("performance","review")},
         ("performance","calibration"): {"review_id": ("performance","review")},
         ("performance","acknowledgement"): {"review_id": ("performance","review")},
