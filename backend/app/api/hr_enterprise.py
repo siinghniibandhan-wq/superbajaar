@@ -21,6 +21,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from pydantic import BaseModel, Field, field_validator
 from app.api.hr import EmployeeInput, _actor, _manager, _employee, _hr_connection, _db_error, _link_employee_login_identity, hr_overview
+from app.services.hr_travel_integrations import create_provider_booking, disburse_travel_advance, TravelIntegrationConfigurationError
 from app.services.hr_employee_documents import (
     EmployeeDocumentConfigurationError, EmployeeDocumentError,
     upload_employee_document, employee_document_download_url, delete_employee_document,
@@ -40,7 +41,7 @@ STATUSES = {
  "performance":{"draft","active","self_review","manager_review","calibration","acknowledged","closed","cancelled"},
  "learning":{"planned","enrolled","in_progress","completed","failed","cancelled"},
  "assets":{"available","requested","approved","assigned","acknowledged","returned","maintenance","written_off","rejected","received","partially_received","reconciled","investigating","closed"},
- "travel":{"draft","submitted","approved","rejected","booked","in_progress","completed","claimed","reimbursed","cancelled"},
+ "travel":{"draft","submitted","approved","rejected","booked","in_progress","completed","claimed","reimbursed","cancelled","requested","disbursed"},
  "exit":{"initiated","notice_period","handover","clearance","settlement_review","completed","withdrawn"},
  "analytics":{"saved","scheduled","archived"}
 }
@@ -117,7 +118,7 @@ def _allowed_record_transitions(domain, record_type, status):
         },
         "travel": {
             "travel_policy": {}, "request": {"draft":{"submitted","cancelled"},"submitted":{"approved","rejected"},"approved":{"booked","cancelled"},"booked":{"in_progress","cancelled"},"in_progress":{"completed"},"completed":{"claimed"}},
-            "booking": {}, "advance": {}, "claim": {"claimed":{"reimbursed"}},
+            "booking": {}, "advance": {"requested":{"approved","rejected"},"approved":{"disbursed"}}, "claim": {"claimed":{"reimbursed"}},
         },
         "exit": {
             "case": {"initiated":{"notice_period","withdrawn"},"notice_period":{"handover","withdrawn"},"handover":{"clearance"},"clearance":{"settlement_review"},"settlement_review":{"completed"}},
@@ -152,7 +153,7 @@ def _initial_status(domain, record_type):
         ("assets", "asset_loss"): "investigating",
         ("travel", "travel_policy"): "approved",
         ("travel", "booking"): "booked",
-        ("travel", "advance"): "approved",
+        ("travel", "advance"): "requested",
         ("travel", "claim"): "claimed",
         ("exit", "clearance"): "clearance",
         ("exit", "settlement"): "settlement_review",
@@ -207,7 +208,7 @@ REQUIRED = {
  "travel":{
   "travel_policy":["name","employment_type","max_trip_cost","per_diem_limit","currency"],
   "request":["destination","purpose","start_date","end_date","estimated_cost","estimated_per_diem","policy_id"],
-  "booking":["travel_record_id","booking_reference","provider","booked_cost"],
+  "booking":["travel_record_id","booked_cost"],
   "advance":["travel_record_id","requested_amount"],
   "claim":["travel_record_id","actual_cost","receipt_reference"]
  },
@@ -453,6 +454,16 @@ def _validate_references(conn, domain, record_type, data):
         asset=conn.execute("SELECT status FROM hr_enterprise_records WHERE id=%s",(data["asset_id"],)).fetchone()
         if asset["status"] not in {"available","approved"}:
             raise HTTPException(409,"Only available or approved assets can be allocated")
+    if domain=="travel" and record_type=="booking":
+        try: amount=Decimal(str(data["booked_cost"]))
+        except (InvalidOperation,TypeError): raise HTTPException(422,"Booking cost must be numeric")
+        if amount<=0: raise HTTPException(422,"Booking cost must be greater than zero")
+        data["booked_cost"]=str(amount)
+    if domain=="travel" and record_type=="advance":
+        try: amount=Decimal(str(data["requested_amount"]))
+        except (InvalidOperation,TypeError): raise HTTPException(422,"Travel advance must be numeric")
+        if amount<=0: raise HTTPException(422,"Travel advance must be greater than zero")
+        data["requested_amount"]=str(amount)
     if domain=="travel" and record_type=="request":
         policy=conn.execute("SELECT status,payload FROM hr_enterprise_records WHERE id=%s",(data["policy_id"],)).fetchone()
         if policy["status"]!="approved":
@@ -1431,6 +1442,30 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                 ).fetchone()
                 conn.execute("INSERT INTO hr_enterprise_events(record_id,event_type,to_status,after_state,actor_user_id) VALUES(%s,'created',%s,%s::jsonb,%s)",
                   (row["id"],status,json.dumps(dict(row),default=str),actor))
+                if domain=="travel" and payload.record_type=="booking":
+                    travel=conn.execute(
+                        "SELECT employee_id,payload FROM hr_enterprise_records WHERE id=%s FOR UPDATE",
+                        (int(data["travel_record_id"]),)
+                    ).fetchone()
+                    if not travel or travel["employee_id"] is None:
+                        raise HTTPException(409,"Travel booking requires an employee-linked travel request")
+                    provider_result=create_provider_booking(travel={**travel["payload"],"employee_id":travel["employee_id"]},
+                        booking=data,record_id=row["id"])
+                    data.update(provider_result)
+                    row=conn.execute(
+                        "UPDATE hr_enterprise_records SET payload=%s::jsonb,updated_at=now(),version=version+1 WHERE id=%s RETURNING *",
+                        (json.dumps(data,default=str),row["id"])
+                    ).fetchone()
+                    conn.execute(
+                        "INSERT INTO hr_enterprise_events(record_id,event_type,after_state,actor_user_id) VALUES(%s,'travel_provider_booking_confirmed',%s::jsonb,%s)",
+                        (row["id"],json.dumps(dict(row),default=str),actor)
+                    )
+                if domain=="travel" and payload.record_type=="advance":
+                    travel=conn.execute("SELECT employee_id FROM hr_enterprise_records WHERE id=%s",(int(data["travel_record_id"]),)).fetchone()
+                    if not travel or travel["employee_id"] is None:
+                        raise HTTPException(409,"Travel advance requires an employee-linked travel request")
+                    employee_id=travel["employee_id"]
+                    row=conn.execute("UPDATE hr_enterprise_records SET employee_id=%s WHERE id=%s RETURNING *",(employee_id,row["id"])).fetchone()
                 if domain=="assets" and payload.record_type=="stock_receipt":
                     procurement_id=int(data["procurement_id"])
                     procurement=conn.execute("SELECT * FROM hr_enterprise_records WHERE id=%s AND domain='assets' FOR UPDATE",(procurement_id,)).fetchone()
