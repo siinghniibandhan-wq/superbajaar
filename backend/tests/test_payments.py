@@ -225,6 +225,8 @@ def test_razorpay_verify_confirms_captured_payment_with_provider_and_updates_ord
         "status": "pending",
         "order_status": "placed",
         "order_total": Decimal("12.34"),
+        "channel": "web",
+        "cashier_user_id": None,
         "customer_email": "buyer@example.com",
         "order_number": "SB-ORDER-41",
     })
@@ -416,6 +418,8 @@ def test_razorpay_verify_reports_captured_payment_for_cancelled_order_without_cl
         "status": "pending",
         "order_status": "cancelled",
         "order_total": Decimal("12.34"),
+        "channel": "web",
+        "cashier_user_id": None,
         "customer_email": "buyer@example.com",
         "order_number": "SB-ORDER-41",
     })
