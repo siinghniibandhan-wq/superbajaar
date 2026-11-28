@@ -691,7 +691,7 @@ export default function POSWorkspace({ onBack }) {
           {Number(receipt.order.tax_total || 0) > 0 && <div className="sb-pos-receipt-tax"><span>GST included in total</span><strong>{money(receipt.order.tax_total)}</strong></div>}
           {Number(receipt.order.discount_total || 0) > 0 && <div className="sb-pos-receipt-tax"><span>Discount{receipt.order.promotion_code ? " · " + receipt.order.promotion_code : ""}</span><strong>−{money(receipt.order.discount_total)}</strong></div>}
           <div className="sb-pos-receipt-total"><span>Total</span><strong>{money(receiptTotal)}</strong></div>
-          <p className="sb-pos-receipt-pay">{methodLabel(receipt.method)} · {cashPending ? "cash awaiting confirmation" : receipt.payment.status}{receipt.payment.payment_reference ? " · " + receipt.payment.payment_reference : ""}</p>
+          <p className="sb-pos-receipt-pay">{receipt.method === "split" ? "Split tender" : methodLabel(receipt.method)} · {cashPending ? "cash awaiting confirmation" : receipt.payment.status}{receipt.payment.payment_reference ? " · " + receipt.payment.payment_reference : ""}</p>{(receipt.payments||[]).length>1&&<p className="sb-pos-receipt-pay">{receipt.payments.map(p=>p.method+": "+money(p.amount)+" · "+p.status).join(" | ")}</p>}
           {receipt.tendered != null && <p className="sb-pos-receipt-pay">Cash received {money(receipt.tendered)}{receiptChange != null ? " · Change " + money(receiptChange) : ""}</p>}
           <p className="sb-pos-receipt-thanks">Thank you for shopping at Super Bajaar!</p>
         </div>
