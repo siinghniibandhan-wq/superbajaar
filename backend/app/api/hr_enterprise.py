@@ -1492,6 +1492,7 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                     period_start=payable.replace(day=1)
                     next_month=(period_start.replace(day=28)+timedelta(days=4)).replace(day=1)
                     period_end=next_month-timedelta(days=1)
+                    adjustment_id=None
                     if Decimal(str(data["net_due"]))>0:
                         closed_period=conn.execute(
                             "SELECT id FROM hr_payroll_runs WHERE period_start=%s AND period_end=%s "
@@ -1505,24 +1506,23 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                             (exit_case["employee_id"],period_start,period_end,data["net_due"],
                              f"Full-and-final settlement for exit case #{exit_id}",actor)
                         ).fetchone()
-                        data["payroll_adjustment_id"]=adjustment["id"]
-                        for component in data.get("deductions_breakdown",[]):
-                            if component.get("type")=="employee_loan_recovery":
-                                loan_id=int(component["loan_id"])
-                                amount=Decimal(str(component["amount"]))
-                                loan=conn.execute("SELECT outstanding_amount FROM hr_employee_loans WHERE id=%s AND employee_id=%s FOR UPDATE",
-                                    (loan_id,int(exit_case["employee_id"]))).fetchone()
-                                if not loan or amount>Decimal(str(loan["outstanding_amount"])):
-                                    raise HTTPException(409,"Employee loan balance changed; recalculate the settlement")
-                                conn.execute("UPDATE hr_employee_loans SET outstanding_amount=outstanding_amount-%s,status=CASE WHEN outstanding_amount-%s=0 THEN 'closed' ELSE 'active' END,updated_at=now() WHERE id=%s",
-                                    (amount,amount,loan_id))
-                                conn.execute(
-                                    "INSERT INTO hr_employee_loan_transactions(loan_id,transaction_type,amount,transaction_date,reference,payroll_adjustment_id,created_by_user_id) "
-                                    "VALUES(%s,'settlement_recovery',%s,%s,%s,%s,%s)",
-                                    (loan_id,amount,payable,f"Exit settlement #{exit_id}",adjustment["id"],actor)
-                                )
-                    else:
-                        data["payroll_adjustment_id"]=None
+                        adjustment_id=adjustment["id"]
+                    data["payroll_adjustment_id"]=adjustment_id
+                    for component in data.get("deductions_breakdown",[]):
+                        if component.get("type")=="employee_loan_recovery":
+                            loan_id=int(component["loan_id"])
+                            amount=Decimal(str(component["amount"]))
+                            loan=conn.execute("SELECT outstanding_amount FROM hr_employee_loans WHERE id=%s AND employee_id=%s FOR UPDATE",
+                                (loan_id,int(exit_case["employee_id"]))).fetchone()
+                            if not loan or amount>Decimal(str(loan["outstanding_amount"])):
+                                raise HTTPException(409,"Employee loan balance changed; recalculate the settlement")
+                            conn.execute("UPDATE hr_employee_loans SET outstanding_amount=outstanding_amount-%s,status=CASE WHEN outstanding_amount-%s=0 THEN 'closed' ELSE 'active' END,updated_at=now() WHERE id=%s",
+                                (amount,amount,loan_id))
+                            conn.execute(
+                                "INSERT INTO hr_employee_loan_transactions(loan_id,transaction_type,amount,transaction_date,reference,payroll_adjustment_id,created_by_user_id) "
+                                "VALUES(%s,'settlement_recovery',%s,%s,%s,%s,%s)",
+                                (loan_id,amount,payable,f"Exit settlement #{exit_id}",adjustment_id,actor)
+                            )
                 if domain=="analytics" and payload.record_type=="report":
                     interval=7 if data.get("frequency")=="weekly" else 30
                     data["next_run_at"]=(datetime.utcnow()+timedelta(days=interval)).isoformat()+"Z"
