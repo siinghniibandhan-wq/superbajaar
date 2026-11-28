@@ -597,6 +597,12 @@ def create_record(domain:str,payload:RecordInput,request:Request):
                     raise HTTPException(422,"Parent record must belong to the same HR domain")
                 data=_validate(domain,payload.record_type,payload.payload)
                 _validate_references(conn,domain,payload.record_type,data)
+                if domain=="assets" and payload.record_type=="allocation":
+                    allocation_employee_id=int(data["employee_id"])
+                    if employee_id is None:
+                        employee_id=allocation_employee_id
+                    elif int(employee_id)!=allocation_employee_id:
+                        raise HTTPException(422,"Allocation employee must match the linked employee profile")
                 if domain=="travel" and payload.record_type=="claim":
                     travel=conn.execute("SELECT employee_id,payload FROM hr_enterprise_records WHERE id=%s AND domain='travel'",(int(data["travel_record_id"]),)).fetchone()
                     if not travel or travel["employee_id"] is None:
