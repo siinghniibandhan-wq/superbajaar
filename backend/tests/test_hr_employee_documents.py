@@ -1,4 +1,5 @@
 import pytest
+import struct
 from app.services import hr_employee_documents as docs
 
 
@@ -86,3 +87,21 @@ def test_employee_document_retention_rejects_cross_employee_delete(monkeypatch):
     monkeypatch.setattr(docs,"_storage",lambda:("private-bucket",fake))
     with pytest.raises(docs.EmployeeDocumentError,match="outside"):
         docs.delete_employee_document(employee_id=43,object_key="hr-employee-documents/42/0123456789abcdef0123456789abcdef.pdf")
+
+
+def test_clamav_stream_uses_nul_terminated_command_and_length_framing(monkeypatch):
+    sent = []
+    class FakeSocket:
+        def settimeout(self, value): pass
+        def sendall(self, data): sent.append(data)
+        def recv(self, size): return b"stream: OK"
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+
+    fake = FakeSocket()
+    monkeypatch.setenv("SB_DOCUMENT_CLAMAV_HOST", "clamav")
+    monkeypatch.setenv("SB_DOCUMENT_CLAMAV_PORT", "3310")
+    monkeypatch.setattr(docs.socket, "create_connection", lambda *args, **kwargs: fake)
+
+    assert docs.scan_employee_document(b"abc") == "clean"
+    assert sent == [b"zINSTREAM\\0", struct.pack("!I", 3) + b"abc", struct.pack("!I", 0)]
