@@ -604,6 +604,9 @@ def _validate(domain, record_type, payload):
         try: needed_by=date.fromisoformat(str(data["needed_by"]))
         except ValueError: raise HTTPException(422,"Asset needed-by date is invalid")
         data["needed_by"]=needed_by.isoformat()
+    if domain=="assets" and record_type in {"procurement","stock_receipt"} and isinstance(data.get("items"),str):
+        try: data["items"]=json.loads(data["items"])
+        except (ValueError,TypeError): raise HTTPException(422,"Asset item lines must be valid JSON")
     if domain=="assets" and record_type=="procurement":
         try: total=Decimal(str(data["estimated_total"]))
         except InvalidOperation: raise HTTPException(422,"Procurement estimated total must be numeric")
