@@ -37,7 +37,7 @@ const managerOnlyTypes={
  exit:["clearance","settlement"],
  analytics:["report"]
 };
-const optionalFields=new Set(["last_name","phone","source","resume_reference","description","serial_number","purchase_value","condition","completion_due","due_date","expiry_date","handover_owner","weight","department_id","reports_to_employee_id","acceptance_reference"]);
+const optionalFields=new Set(["last_name","phone","source","resume_reference","description","serial_number","purchase_value","condition","completion_due","due_date","expiry_date","handover_owner","weight","department_id","reports_to_employee_id","acceptance_reference","evidence_reference"]);
 const blank={};
 
 export default function HREnterpriseWorkflows({manager,employees=[],onEmployeeCreated}) {
